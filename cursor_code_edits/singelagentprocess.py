@@ -24,13 +24,13 @@ from ..replaybuffer import Episode
 def _move_state_dict_to_cpu(state_dict):
     """
     Recursively move all tensors in a state dict to CPU.
-
+    
     This is necessary because CUDA tensors cannot be sent through
     multiprocessing queues - they cause 'invalid resource handle' errors.
-
+    
     Args:
         state_dict: A dict, tensor, or other value
-
+        
     Returns:
         The same structure with all tensors moved to CPU
     """
@@ -142,7 +142,7 @@ def run(
         )
         agent.step_counter = step_counter
         agent.episode_counter = episode_counter
-
+        
         # Initialize diagnostics logger for trainer subprocess
         if diagnostics_config is not None and diagnostics_config.get("enabled", False):
             from ..util.diagnostics_logger import DiagnosticsLogger, DiagnosticsConfig
@@ -259,7 +259,7 @@ def run(
                 if agent.diagnostics is not None:
                     import numpy as np
                     agent.diagnostics.set_probe_states(
-                        np.array(probe_states),
+                        np.array(probe_states), 
                         device=device
                     )
                     logger.info(f"Set {len(probe_states)} probe states")

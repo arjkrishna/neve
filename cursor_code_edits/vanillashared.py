@@ -97,11 +97,11 @@ class VanillaSharedBase(ReplayBuffer):
 
     def set_step_counter(self, step_counter):
         """Update the shared update_step value from the step_counter.
-
+        
         This method is called periodically by the parent process to sync the
         current update step. The subprocess reads from _shared_update_step
         which is inherited shared memory (no pickling needed).
-
+        
         Workers receive a copy with _shared_update_step=None; this is fine
         since workers don't need to update the step counter.
         """
