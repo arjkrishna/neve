@@ -1,4 +1,4 @@
-import os
+﻿import os
 import logging
 import argparse
 import numpy as np
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     embedder_layers = args.embedder_layers
     env_version = args.env_version
     worker_device = torch.device("cpu")
-
+    
     # Select environment class based on version
     if env_version == 5:
         EnvClass = BenchEnv5
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     ) = get_result_checkpoint_config_and_log_path(
         all_results_folder=RESULTS_FOLDER, name=trial_name, create_diagnostics=True
     )
-
+    
     # CRITICAL: Set STEP_LOG_DIR BEFORE agent is created, so worker processes inherit it
     # Workers are spawned in BenchAgentSynchron.__init__, which happens before Runner.__init__
     if diagnostics_folder is not None:
@@ -217,7 +217,7 @@ if __name__ == "__main__":
         os.makedirs(logs_subprocesses, exist_ok=True)
         os.environ["STEP_LOG_DIR"] = logs_subprocesses
         print(f"Set STEP_LOG_DIR={logs_subprocesses}")
-
+    
     logging.basicConfig(
         filename=log_file,
         level=DEBUG_LEVEL,

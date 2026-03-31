@@ -184,10 +184,10 @@ class Single(SingleEvalOnly, Agent):
         self.to(device)
         self._next_batch = None
         self._replay_too_small = True
-
+        
         # Diagnostics logger (set externally by subprocess runner)
         self.diagnostics = None
-
+        
         self.logger.info("Single agent initialized")
 
     def heatup(
@@ -270,10 +270,10 @@ class Single(SingleEvalOnly, Agent):
         heuristic_factory=None,
     ) -> List[Episode]:
         """Seed replay buffer with heuristic-guided episodes.
-
+        
         Similar to heatup() but uses a heuristic controller instead of
         random actions. The heuristic follows the centerline path.
-
+        
         Args:
             steps: Target number of steps (mutually exclusive with episodes)
             episodes: Target number of episodes (mutually exclusive with steps)
@@ -281,7 +281,7 @@ class Single(SingleEvalOnly, Agent):
             episode_limit: Maximum number of episodes
             heuristic_factory: Factory object with .create(env) method that
                 returns a callable action function
-
+        
         Returns:
             List of collected episodes
         """
@@ -295,7 +295,7 @@ class Single(SingleEvalOnly, Agent):
         )
 
         episodes_data = []
-
+        
         # Create heuristic action function for this environment
         if heuristic_factory is not None:
             heuristic_action = heuristic_factory.create(self.env_train)
@@ -316,7 +316,7 @@ class Single(SingleEvalOnly, Agent):
 
             # Reset heuristic at episode start
             heuristic_action.reset()
-
+            
             episode, n_steps_episode = self._play_episode(
                 env=self.env_train,
                 action_function=heuristic_action,
@@ -404,7 +404,7 @@ class Single(SingleEvalOnly, Agent):
             result = self.algo.update(batch)
             results.append(result)
             n_steps += 1
-
+            
             # Log diagnostics after each gradient step
             if self.diagnostics is not None:
                 self.diagnostics.log_losses(
@@ -415,9 +415,9 @@ class Single(SingleEvalOnly, Agent):
                     policy_loss=float(result[2]),
                     **self.algo.last_metrics,
                 )
-
+                
                 # Log probe values periodically
-                if (self.diagnostics.probe_states is not None and
+                if (self.diagnostics.probe_states is not None and 
                     self.step_counter.update % self.diagnostics.config.log_probe_values_every_n_steps == 0):
                     probe_values = self.algo.compute_probe_values(
                         self.diagnostics.probe_states
@@ -427,7 +427,7 @@ class Single(SingleEvalOnly, Agent):
                         probe_values=probe_values,
                         explore_step=self.step_counter.exploration,  # NEW: Added for timestamp correlation
                     )
-
+                
                 # Log batch samples periodically
                 if self.step_counter.update % self.diagnostics.config.log_batch_samples_every_n_steps == 0:
                     try:
@@ -444,30 +444,30 @@ class Single(SingleEvalOnly, Agent):
         if self.diagnostics is None:
             self.logger.debug("_log_batch_samples: diagnostics is None, skipping")
             return
-
+            
         (all_states, actions, rewards, dones, padding_mask) = batch
-
+        
         # Log batch shape info for debugging (only first time)
         if self.step_counter.update <= 100:
             self.logger.info(
                 f"_log_batch_samples: batch shapes - states={all_states.shape}, "
                 f"actions={actions.shape}, rewards={rewards.shape}, dones={dones.shape}"
             )
-
+        
         # Determine number of samples to log
         n_samples = min(
             self.diagnostics.config.n_batch_samples,
             all_states.shape[0]
         )
-
+        
         # Sample random indices from the batch
         batch_size = all_states.shape[0]
         sample_indices = np.random.choice(batch_size, size=n_samples, replace=False).tolist()
-
+        
         # Get next states (shifted by 1 in sequence dimension)
         seq_length = actions.shape[1]
         next_states = all_states[:, 1:seq_length+1, :] if all_states.shape[1] > seq_length else None
-
+        
         # Compute actor/critic values for sampled transitions
         batch_samples = self.algo.compute_batch_sample_values(
             states=all_states[:, :seq_length, :],
@@ -477,18 +477,18 @@ class Single(SingleEvalOnly, Agent):
             next_states=next_states,
             sample_indices=sample_indices,
         )
-
+        
         # Log info about computed samples
         if self.step_counter.update <= 100:
             self.logger.info(f"_log_batch_samples: computed {len(batch_samples)} samples")
-
+        
         # Log the samples
         self.diagnostics.log_batch_samples(
             update_step=self.step_counter.update,
             explore_step=self.step_counter.exploration,
             batch_samples=batch_samples,
         )
-
+        
         if self.step_counter.update <= 100:
             self.logger.info(f"_log_batch_samples: successfully logged at step {self.step_counter.update}")
 
@@ -515,7 +515,7 @@ class Single(SingleEvalOnly, Agent):
         # Close diagnostics logger if present
         if self.diagnostics is not None:
             self.diagnostics.close()
-
+            
         self.env_train.close()
         if id(self.env_train) != id(self.env_eval):
             self.env_eval.close()

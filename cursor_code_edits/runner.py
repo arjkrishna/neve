@@ -35,7 +35,7 @@ class Runner(EveRLObject):
         self.quality_info = quality_info
         self.info_results = info_results or []
         self.logger = logging.getLogger(self.__module__)
-
+        
         # Diagnostics settings
         self.diagnostics_folder = diagnostics_folder
         # Ensure worker step logs directory exists.
@@ -53,7 +53,7 @@ class Runner(EveRLObject):
         self._probe_states_set = False
         self._eval_count = 0
         self._replay_save_interval = 4  # save replay buffer every N evals
-
+        
         # Episode summary logger
         self._episode_summary_file = None
         self._episode_summary_logger = None
@@ -296,13 +296,13 @@ class Runner(EveRLObject):
                 explore_episodes=explore_episodes_between_updates,
                 update_steps=update_steps,
             )
-
+            
             # Log episode summaries if we got results
             if result is not None:
                 episodes, _ = result if isinstance(result, tuple) else (result, None)
                 if episodes:
                     self._log_episode_summaries(episodes)
-
+            
             # Check for policy snapshots after each exploration cycle
             # This ensures snapshots are saved at the actual milestone with correct weights
             self._maybe_save_policy_snapshot()
@@ -336,7 +336,7 @@ class Runner(EveRLObject):
 
         # Capture and set probe states after heatup
         self._capture_and_set_probe_states(heatup_episodes)
-
+        
         next_eval_step_limt = (
             self.agent.step_counter.exploration + explore_steps_between_eval
         )
@@ -346,10 +346,10 @@ class Runner(EveRLObject):
                 update_steps_per_explore_step,
                 explore_steps_limit=next_eval_step_limt,
             )
-
+            
             # Note: policy snapshots are now saved inside explore_and_update()
             # at the actual milestone steps with correct weights
-
+            
             quality, reward = self.eval(episodes=eval_episodes, seeds=eval_seeds)
             next_eval_step_limt += explore_steps_between_eval
 
@@ -359,30 +359,30 @@ class Runner(EveRLObject):
         """Capture probe states from heatup episodes and set them in trainer."""
         if not episodes or self._probe_states_set:
             return
-
+            
         try:
             probe_states = []
             n_episodes = min(len(episodes), self.n_probe_episodes)
-
+            
             for ep_idx in range(n_episodes):
                 episode = episodes[ep_idx]
                 if hasattr(episode, 'flat_obs') and len(episode.flat_obs) > 0:
                     # Collect start state
                     probe_states.append(episode.flat_obs[0])
-
+                    
                     # Collect near-start states
                     n_states = min(self.n_probe_near_start_steps, len(episode.flat_obs) - 1)
                     for step_idx in range(1, n_states + 1):
                         probe_states.append(episode.flat_obs[step_idx])
-
+                        
             if probe_states:
                 probe_states_array = np.array(probe_states)
-
+                
                 # Set probe states in agent (if it supports it)
                 if hasattr(self.agent, 'set_probe_states'):
                     self.agent.set_probe_states(probe_states_array.tolist())
                     self.logger.info(f"Set {len(probe_states)} probe states for diagnostics")
-
+                    
                 # Save probe states to disk
                 if self.diagnostics_folder is not None:
                     probes_dir = os.path.join(self.diagnostics_folder, "probes")
@@ -390,43 +390,43 @@ class Runner(EveRLObject):
                     probe_path = os.path.join(probes_dir, "probe_states.npz")
                     np.savez(probe_path, probe_states=probe_states_array)
                     self.logger.info(f"Saved probe states to {probe_path}")
-
+                    
                 self._probe_states_set = True
-
+                
         except Exception as e:
             self.logger.warning(f"Failed to capture probe states: {e}")
 
     def _maybe_save_policy_snapshot(self):
         """
         Save policy snapshot if we've reached the next snapshot step.
-
+        
         FIXED: Uses a while loop to catch up on all missed snapshots when the
         eval cycle spans multiple snapshot intervals.
         """
         if self.diagnostics_folder is None:
             return
-
+            
         current_step = self.step_counter.exploration
-
+        
         # Save all missed snapshots (in case eval cycle spans multiple snapshot intervals)
         while current_step >= self._next_snapshot_step:
             try:
                 snapshots_dir = os.path.join(self.diagnostics_folder, "policy_snapshots")
                 os.makedirs(snapshots_dir, exist_ok=True)
-
+                
                 # Use the scheduled snapshot step, not current step, for consistent naming
                 snapshot_step = self._next_snapshot_step
                 snapshot_path = os.path.join(snapshots_dir, f"policy_{snapshot_step}.pt")
-
+                
                 if hasattr(self.agent, 'save_policy_snapshot'):
                     self.agent.save_policy_snapshot(snapshot_path)
                     self.logger.info(f"Saved policy snapshot at scheduled step {snapshot_step} (current={current_step})")
-
+                    
             except Exception as e:
                 self.logger.warning(f"Failed to save policy snapshot at step {self._next_snapshot_step}: {e}")
-
+                
             self._next_snapshot_step += self.policy_snapshot_every_steps
-
+        
         # Flush diagnostics logs after all snapshots are saved
         if hasattr(self.agent, 'flush_diagnostics'):
             try:
@@ -437,13 +437,13 @@ class Runner(EveRLObject):
     def _log_episode_summaries(self, episodes: List):
         """
         Log episode summaries to episode_summary.jsonl with explore_step and update_step.
-
+        
         This directly solves the timestamp correlation problem by providing exact
         step counters at episode completion time.
         """
         if self._episode_summary_file is None:
             return
-
+            
         try:
             # Fix #4: Use per-episode step counters stamped by the worker at
             # completion time. Fall back to current shared counter for backward
@@ -497,13 +497,13 @@ class Runner(EveRLObject):
                         }
                         if max_insertion is not None:
                             summary["max_insertion"] = max_insertion
-
+                        
                         f.write(json.dumps(summary) + "\n")
-
+                        
                     except Exception as e:
                         self.logger.debug(f"Failed to log episode {i} summary: {e}")
-
+                        
                 f.flush()
-
+                
         except Exception as e:
             self.logger.warning(f"Failed to log episode summaries: {e}")

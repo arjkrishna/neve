@@ -361,33 +361,33 @@ class Synchron(SynchronEvalOnly, Agent):
         heuristic_factory=None,
     ) -> List[Episode]:
         """Seed replay buffer using parallel workers with heuristic controller.
-
+        
         Uses the same counters as heatup since both are pre-training phases.
-
+        
         Args:
             steps: Target number of total steps across all workers
             episodes: Target number of total episodes across all workers
             step_limit: Maximum steps per episode
             episode_limit: Maximum episodes per worker
             heuristic_factory: Factory with .create(env) method returning action function
-
+        
         Returns:
             List of collected episodes from all workers
         """
         t_start = perf_counter()
         steps_start = self.step_counter.heatup
         episodes_start = self.episode_counter.heatup
-
+        
         self.logger.info(
             f"Parallel heuristic seeding: {steps=}, {episodes=}, "
             f"{step_limit=}, {episode_limit=}, n_workers={self.n_worker}"
         )
-
+        
         # Use "heatup" counters since heuristic seeding is a pre-training phase
         step_limit, episode_limit = self._log_and_convert_limits(
             "heatup", steps, step_limit, episodes, episode_limit
         )
-
+        
         # Dispatch heuristic_seed task to all workers
         for agent in self.worker:
             agent.heuristic_seed(
@@ -395,18 +395,18 @@ class Synchron(SynchronEvalOnly, Agent):
                 episode_limit=episode_limit,
                 heuristic_factory=heuristic_factory,
             )
-
+        
         # Heuristic episodes can take 500-800s (1000 steps × 0.5-0.8s/step).
         # The default 90s timeout kills workers mid-episode, losing their results.
         # Temporarily increase to 1200s so all workers finish their last episode.
         saved_timeout = self.timeout_worker_after_reaching_limit
         self.timeout_worker_after_reaching_limit = max(saved_timeout, 1200)
-
+        
         # Wait for workers to complete (uses heatup counters)
         result = self._get_worker_results(step_limit, episode_limit, "heatup")
-
+        
         self.timeout_worker_after_reaching_limit = saved_timeout
-
+        
         n_steps = self.step_counter.heatup - steps_start
         n_episodes = self.episode_counter.heatup - episodes_start
         t_duration = perf_counter() - t_start

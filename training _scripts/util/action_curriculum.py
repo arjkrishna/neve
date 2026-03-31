@@ -55,19 +55,20 @@ class ActionCurriculumWrapper(gym.Wrapper):
         return 3
 
     def step(self, action):
-        action = np.asarray(action, dtype=np.float64).copy()
-
         stage = self.current_stage
 
         if stage == 1:
             # Catheter follows guidewire with a simple rule
+            action = np.asarray(action, dtype=np.float64).copy()
             gw_trans = action.flat[0]
             action.flat[2] = gw_trans * self.catheter_follow_ratio  # cath translation
             action.flat[3] = 0.0  # cath rotation = 0
         elif stage == 2:
             # Catheter actions scaled down
+            action = np.asarray(action, dtype=np.float64).copy()
             action.flat[2] *= self.stage2_action_scale
             action.flat[3] *= self.stage2_action_scale
+        # Stage 3: pass through unchanged — no copy needed
 
         self._total_steps += 1
         return self.env.step(action)
