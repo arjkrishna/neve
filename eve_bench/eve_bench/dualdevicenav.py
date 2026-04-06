@@ -43,7 +43,7 @@ class DualDeviceNav(eve.intervention.MonoPlaneStatic):
         device1 = eve.intervention.device.JShaped(
             name="mic_guide",
             length=900,
-            velocity_limit=(35, 3.14),
+            velocity_limit=(30, 1.5),
             visu_edges_per_mm=0.5,
             tip_outer_diameter=0.36,
             straight_outer_diameter=0.36,
@@ -59,7 +59,7 @@ class DualDeviceNav(eve.intervention.MonoPlaneStatic):
         device2 = eve.intervention.device.JShaped(
             name="mic_cath",
             length=900,
-            velocity_limit=(35, 3.14),
+            velocity_limit=(30, 1.5),
             visu_edges_per_mm=0.5,
             tip_outer_diameter=0.6,
             straight_outer_diameter=0.7,
@@ -102,6 +102,7 @@ class DualDeviceNav(eve.intervention.MonoPlaneStatic):
             target,
             stop_device_at_tree_end,
             normalize_action,
+            velocity_limit_low=np.array([[-10.0, -1.5], [-10.0, -1.5]]),
         )
 
 
@@ -275,7 +276,7 @@ class DualDeviceNavCustom(eve.intervention.MonoPlaneStatic):
         device1 = eve.intervention.device.JShaped(
             name="mic_guide",
             length=900,
-            velocity_limit=(35, 3.14),
+            velocity_limit=(30, 1.5),
             visu_edges_per_mm=0.5,
             tip_outer_diameter=0.36,
             straight_outer_diameter=0.36,
@@ -291,7 +292,7 @@ class DualDeviceNavCustom(eve.intervention.MonoPlaneStatic):
         device2 = eve.intervention.device.JShaped(
             name="mic_cath",
             length=900,
-            velocity_limit=(35, 3.14),
+            velocity_limit=(30, 1.5),
             visu_edges_per_mm=0.5,
             tip_outer_diameter=0.6,
             straight_outer_diameter=0.7,
@@ -344,4 +345,5 @@ class DualDeviceNavCustom(eve.intervention.MonoPlaneStatic):
             target,
             stop_device_at_tree_end,
             normalize_action,
+            velocity_limit_low=np.array([[-10.0, -1.5], [-10.0, -1.5]]),
         )

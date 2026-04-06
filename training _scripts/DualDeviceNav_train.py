@@ -17,6 +17,42 @@ from eve_bench import DualDeviceNav
 
 RESULTS_FOLDER = os.getcwd() + "/results/eve_paper/neurovascular/full/mesh_ben"
 
+# Target branches for DualDeviceNav (4 supra-aortic branches)
+TARGET_BRANCHES = [
+    "Centerline curve - LCCA.mrk",
+    "Centerline curve - LVA.mrk",
+    "Centerline curve - RCCA.mrk",
+    "Centerline curve - RVA.mrk",
+]
+
+
+def build_episode_schedule(n_episodes, branches, base_seed=42):
+    """Build a branch-balanced, reproducibly-shuffled episode schedule.
+
+    Returns a list of (seed, {"target_branch": branch}) tuples where
+    branches are assigned round-robin so each branch gets exactly
+    n_episodes // len(branches) episodes (plus remainder distributed
+    across the first branches).
+
+    Args:
+        n_episodes: Total number of episodes to schedule.
+        branches: List of target branch names.
+        base_seed: Base seed for reproducible seed generation.
+
+    Returns:
+        List of (seed, options) tuples, one per episode.
+    """
+    rng = np.random.default_rng(base_seed)
+    schedule = []
+    for i in range(n_episodes):
+        ep_seed = int(rng.integers(0, 2**31))
+        branch = branches[i % len(branches)]
+        schedule.append((ep_seed, {"target_branch": branch}))
+    # Shuffle to avoid workers getting only one branch each,
+    # but deterministically so runs are reproducible.
+    rng.shuffle(schedule)
+    return schedule
+
 EVAL_SEEDS = "1,2,3,5,6,7,8,9,10,12,13,14,16,17,18,21,22,23,27,31,34,35,37,39,42,43,44,47,48,50,52,55,56,58,61,62,63,68,69,70,71,73,79,80,81,84,89,91,92,93,95,97,102,103,108,109,110,115,116,117,118,120,122,123,124,126,127,128,129,130,131,132,134,136,138,139,140,141,142,143,144,147,148,149,150,151,152,154,155,156,158,159,161,162,167,168,171,175"
 EVAL_SEEDS = EVAL_SEEDS.split(",")
 EVAL_SEEDS = [int(seed) for seed in EVAL_SEEDS]
@@ -131,6 +167,18 @@ if __name__ == "__main__":
         type=int,
         default=0,
         help="Number of heuristic episodes to seed replay buffer (0=disabled, recommended: 500)",
+    )
+    parser.add_argument(
+        "--min_success_rate",
+        type=float,
+        default=0.3,
+        help="Minimum fraction of successful episodes in heuristic seeding (default: 0.3)",
+    )
+    parser.add_argument(
+        "--max_seeding_multiplier",
+        type=int,
+        default=5,
+        help="Max total episodes = heuristic_seeding * this (safety cap, default: 5)",
     )
     parser.add_argument(
         "--heuristic_cache_file",
@@ -291,8 +339,8 @@ if __name__ == "__main__":
     infos = list(env_eval.info.info.keys())
     runner = Runner(
         agent=agent,
-        heatup_action_low=[[-10.0, -1.0], [-11.0, -1.0]],
-        heatup_action_high=[[35, 3.14], [30, 3.14]],
+        heatup_action_low=[[-10.0, -1.5], [-10.0, -1.5]],
+        heatup_action_high=[[30.0, 1.5], [30.0, 1.5]],
         agent_parameter_for_result_file=custom_parameters,
         checkpoint_folder=checkpoint_folder,
         results_file=results_file,
@@ -330,25 +378,106 @@ if __name__ == "__main__":
                 n_pushed += 1
             print(f"Heuristic cache loaded: {n_pushed} episodes pushed to replay buffer.")
         else:
-            # Parallel heuristic seeding using workers
+            # Parallel heuristic seeding with minimum success rate guarantee
             from util.heuristic_policy import HeuristicActionFunctionFactory
+            import math
 
-            print(f"Parallel heuristic seeding: {args.heuristic_seeding} episodes across {n_worker} workers...")
+            N = args.heuristic_seeding
+            min_successes = math.ceil(args.min_success_rate * N)
+            max_total = N * args.max_seeding_multiplier
+
             factory = HeuristicActionFunctionFactory(
                 noise_std=0.0,
-                normalize_output=True,  # Agent uses normalize_actions=True
+                normalize_output=True,
             )
-            seed_episodes = agent.heuristic_seed(
-                episodes=args.heuristic_seeding,
-                heuristic_factory=factory,
-            )
-            n_pushed = len(seed_episodes)
-            print(f"Heuristic seeding complete: {n_pushed} episodes pushed to replay buffer.")
 
-            # Save cache if requested
-            if args.save_heuristic_cache and seed_episodes:
+            def _is_success(ep):
+                """Check episode success via info dict (clearer contract than terminals)."""
+                if ep.infos and "success" in ep.infos[-1]:
+                    return bool(ep.infos[-1]["success"])
+                # Fallback to terminals if info not available
+                return bool(ep.terminals[-1]) if ep.terminals else False
+
+            all_episodes = []
+            batch_num = 0
+            seed_offset = 0
+            # Dedicated RNG for failure sampling — derived from base seed
+            # so the final selected set is fully reproducible.
+            selection_rng = np.random.default_rng(42 + 999)
+
+            while True:
+                batch_num += 1
+                if batch_num == 1:
+                    batch_size = N
+                else:
+                    # Deficit-based: estimate how many more episodes needed
+                    n_success_so_far = sum(1 for ep in all_episodes if _is_success(ep))
+                    needed = min_successes - n_success_so_far
+                    observed_rate = max(n_success_so_far / len(all_episodes), 0.05)
+                    batch_size = math.ceil(needed / observed_rate * 1.5)
+                    batch_size = min(batch_size, max_total - len(all_episodes))
+
+                if batch_size <= 0:
+                    break
+
+                schedule = build_episode_schedule(
+                    batch_size, TARGET_BRANCHES, base_seed=42 + seed_offset
+                )
+                seed_offset += batch_size
+
+                batch_episodes = agent.heuristic_seed(
+                    episodes=batch_size,
+                    heuristic_factory=factory,
+                    episode_schedule=schedule,
+                    push_to_buffer=False,
+                )
+                all_episodes.extend(batch_episodes)
+
+                n_success = sum(1 for ep in all_episodes if _is_success(ep))
+                batch_success = sum(1 for ep in batch_episodes if _is_success(ep))
+                print(f"  Batch {batch_num}: {len(batch_episodes)} episodes, "
+                      f"{batch_success} successes | "
+                      f"Total: {len(all_episodes)} episodes, {n_success} successes "
+                      f"({100*n_success/len(all_episodes):.1f}%)")
+
+                if n_success >= min_successes:
+                    break
+                if len(all_episodes) >= max_total:
+                    print(f"  WARNING: hit max seeding cap ({max_total} episodes) "
+                          f"with only {n_success} successes")
+                    break
+
+            # Filter: keep all successes + enough failures for healthy mix
+            successes = [ep for ep in all_episodes if _is_success(ep)]
+            failures = [ep for ep in all_episodes if not _is_success(ep)]
+
+            n_success = len(successes)
+            # Ensure success ratio <= 70%: pad with failures if needed
+            min_failures = math.ceil(n_success / 0.7) - n_success
+            # Also fill up to at least N total
+            n_failures_needed = max(min_failures, N - n_success)
+            n_failures_needed = max(n_failures_needed, 0)
+
+            if n_failures_needed > 0 and len(failures) > 0:
+                n_sample = min(n_failures_needed, len(failures))
+                sampled_failures = list(
+                    selection_rng.choice(failures, size=n_sample, replace=False)
+                )
+            else:
+                sampled_failures = []
+
+            to_push = successes + sampled_failures
+            for ep in to_push:
+                agent.replay_buffer.push(ep)
+
+            print(f"Heuristic seeding complete: pushing {n_success} successes + "
+                  f"{len(sampled_failures)} failures = {len(to_push)} episodes "
+                  f"({100*n_success/len(to_push):.1f}% success rate)")
+
+            # Save cache — saves the final selected set, not all attempts
+            if args.save_heuristic_cache and to_push:
                 episodes_to_save = []
-                for ep in seed_episodes:
+                for ep in to_push:
                     episodes_to_save.append((
                         np.array(ep.flat_obs),
                         np.array(ep.actions),

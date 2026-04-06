@@ -172,6 +172,7 @@ def run(
                     episode_limit=task[4],
                     custom_action_low=task[5],
                     custom_action_high=task[6],
+                    episode_schedule=task[7],
                 )
             elif task_name == "heuristic_seed":
                 result = agent.heuristic_seed(
@@ -180,6 +181,8 @@ def run(
                     step_limit=task[3],
                     episode_limit=task[4],
                     heuristic_factory=task[5],
+                    episode_schedule=task[6],
+                    push_to_buffer=task[7],
                 )
             elif task_name == "explore":
                 result = agent.explore(
@@ -380,6 +383,7 @@ class SingleAgentProcess(Agent):
         episode_limit: Optional[int] = None,
         custom_action_low: Optional[List[float]] = None,
         custom_action_high: Optional[List[float]] = None,
+        episode_schedule=None,
     ) -> None:
         self._task_queue.put(
             [
@@ -390,6 +394,7 @@ class SingleAgentProcess(Agent):
                 episode_limit,
                 custom_action_low,
                 custom_action_high,
+                episode_schedule,
             ]
         )
 
@@ -401,6 +406,8 @@ class SingleAgentProcess(Agent):
         step_limit: Optional[int] = None,
         episode_limit: Optional[int] = None,
         heuristic_factory=None,
+        episode_schedule=None,
+        push_to_buffer=True,
     ) -> None:
         """Send heuristic seeding task to worker."""
         self._task_queue.put(
@@ -411,6 +418,8 @@ class SingleAgentProcess(Agent):
                 step_limit,
                 episode_limit,
                 heuristic_factory,
+                episode_schedule,
+                push_to_buffer,
             ]
         )
 

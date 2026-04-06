@@ -78,11 +78,11 @@ class LocalGuidance(Observation):
     @property
     def space(self) -> gym.spaces.Box:
         low = np.array(
-            [0.0, 0.0, -1.0, -1.0, -np.pi, 0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, -1.0, -1.0, 0.0, 0.0, 0.0],
             dtype=np.float32,
         )
         high = np.array(
-            [1.0, _MAX_CROSS_TRACK_MM, 1.0, 1.0, np.pi, 10.0, _MAX_BIFURC_DIST_MM, 1.0],
+            [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             dtype=np.float32,
         )
         return gym.spaces.Box(low=low, high=high, dtype=np.float32)
@@ -167,14 +167,14 @@ class LocalGuidance(Observation):
 
         self.obs = np.array(
             [
-                d_rem_norm,
-                cross_track,
-                tangent_2d[0],
-                tangent_2d[1],
-                heading_error,
-                curvature_ahead,
-                dist_to_bifurc,
-                on_path,
+                d_rem_norm,                          # already [0, 1]
+                cross_track / _MAX_CROSS_TRACK_MM,   # [0, 50] → [0, 1]
+                tangent_2d[0],                        # already [-1, 1]
+                tangent_2d[1],                        # already [-1, 1]
+                heading_error / np.pi,               # [-π, π] → [-1, 1]
+                curvature_ahead / 10.0,              # [0, ~10] → [0, ~1]
+                dist_to_bifurc / _MAX_BIFURC_DIST_MM, # [0, 200] → [0, 1]
+                on_path,                              # already {0, 1}
             ],
             dtype=np.float32,
         )

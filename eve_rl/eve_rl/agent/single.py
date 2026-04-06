@@ -199,6 +199,7 @@ class Single(SingleEvalOnly, Agent):
         episode_limit: Optional[int] = None,
         custom_action_low: Optional[List[float]] = None,
         custom_action_high: Optional[List[float]] = None,
+        episode_schedule: Optional[List[Tuple[Optional[int], Optional[Dict[str, Any]]]]] = None,
     ) -> List[Episode]:
         t_start = perf_counter()
         self._log_heatup(
@@ -236,6 +237,7 @@ class Single(SingleEvalOnly, Agent):
 
         n_episodes = 0
         n_steps = 0
+        sched_idx = 0
         while (
             self.step_counter.heatup < step_limit
             and self.episode_counter.heatup < episode_limit
@@ -243,10 +245,19 @@ class Single(SingleEvalOnly, Agent):
             with self.episode_counter.lock:
                 self.episode_counter.heatup += 1
 
+            # Consume per-episode seed/options from schedule if available
+            ep_seed = None
+            ep_options = None
+            if episode_schedule is not None and sched_idx < len(episode_schedule):
+                ep_seed, ep_options = episode_schedule[sched_idx]
+                sched_idx += 1
+
             episode, n_steps_episode = self._play_episode(
                 env=self.env_train,
                 action_function=random_action,
                 consecutive_actions=self.consecutive_action_steps,
+                seed=ep_seed,
+                options=ep_options,
             )
 
             with self.step_counter.lock:
@@ -268,6 +279,8 @@ class Single(SingleEvalOnly, Agent):
         step_limit: Optional[int] = None,
         episode_limit: Optional[int] = None,
         heuristic_factory=None,
+        episode_schedule: Optional[List[Tuple[Optional[int], Optional[Dict[str, Any]]]]] = None,
+        push_to_buffer: bool = True,
     ) -> List[Episode]:
         """Seed replay buffer with heuristic-guided episodes.
 
@@ -281,6 +294,9 @@ class Single(SingleEvalOnly, Agent):
             episode_limit: Maximum number of episodes
             heuristic_factory: Factory object with .create(env) method that
                 returns a callable action function
+            episode_schedule: List of (seed, options) per episode. Each entry
+                provides a unique seed and optional options (e.g. target_branch)
+                for that episode. If None, episodes run without explicit seeds.
 
         Returns:
             List of collected episodes
@@ -307,6 +323,7 @@ class Single(SingleEvalOnly, Agent):
 
         n_episodes = 0
         n_steps = 0
+        sched_idx = 0
         while (
             self.step_counter.heatup < step_limit
             and self.episode_counter.heatup < episode_limit
@@ -317,17 +334,27 @@ class Single(SingleEvalOnly, Agent):
             # Reset heuristic at episode start
             heuristic_action.reset()
 
+            # Consume per-episode seed/options from schedule if available
+            ep_seed = None
+            ep_options = None
+            if episode_schedule is not None and sched_idx < len(episode_schedule):
+                ep_seed, ep_options = episode_schedule[sched_idx]
+                sched_idx += 1
+
             episode, n_steps_episode = self._play_episode(
                 env=self.env_train,
                 action_function=heuristic_action,
                 consecutive_actions=self.consecutive_action_steps,
+                seed=ep_seed,
+                options=ep_options,
             )
 
             with self.step_counter.lock:
                 self.step_counter.heatup += n_steps_episode
             n_steps += n_steps_episode
             n_episodes += 1
-            self.replay_buffer.push(episode)
+            if push_to_buffer:
+                self.replay_buffer.push(episode)
             episodes_data.append(episode)
 
         t_duration = perf_counter() - t_start

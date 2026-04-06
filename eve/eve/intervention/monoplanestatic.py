@@ -22,19 +22,27 @@ class MonoPlaneStatic(SimulatedIntervention):
         target: Target,
         stop_device_at_tree_end: bool = True,
         normalize_action: bool = False,
+        velocity_limit_low: Optional[np.ndarray] = None,
     ) -> None:
         self.vessel_tree = vessel_tree
         self.devices = devices
         self.target = target
         self.fluoroscopy = fluoroscopy
         self.stop_device_at_tree_end = stop_device_at_tree_end
-        self.normlaize_action = normalize_action
+        self.normalize_action = normalize_action
         self.simulation = simulation
         self._np_random = np.random.default_rng()
 
         self.velocity_limits = np.array(
             [device.velocity_limit for device in self.devices]
         )
+        # Asymmetric lower bounds: defaults to -velocity_limits if not provided
+        if velocity_limit_low is not None:
+            self.velocity_limit_low = np.array(velocity_limit_low).reshape(
+                self.velocity_limits.shape
+            )
+        else:
+            self.velocity_limit_low = -self.velocity_limits
         self.last_action = np.zeros_like(self.velocity_limits)
         self._device_lengths_inserted = self.simulation.inserted_lengths
         self._device_rotations = self.simulation.rotations
@@ -66,7 +74,9 @@ class MonoPlaneStatic(SimulatedIntervention):
             high = np.ones_like(self.velocity_limits)
             space = gym.spaces.Box(low=-high, high=high)
         else:
-            space = gym.spaces.Box(low=-self.velocity_limits, high=self.velocity_limits)
+            space = gym.spaces.Box(
+                low=self.velocity_limit_low, high=self.velocity_limits
+            )
         return space
 
     def step(self, action: np.ndarray) -> None:
@@ -75,10 +85,10 @@ class MonoPlaneStatic(SimulatedIntervention):
             action = np.clip(action, -1.0, 1.0)
             self.last_action = action
             high = self.velocity_limits
-            low = -high
+            low = self.velocity_limit_low
             action = (action + 1) / 2 * (high - low) + low
         else:
-            action = np.clip(action, -self.velocity_limits, self.velocity_limits)
+            action = np.clip(action, self.velocity_limit_low, self.velocity_limits)
             self.last_action = action
 
         # Store commanded action before masking
@@ -146,7 +156,10 @@ class MonoPlaneStatic(SimulatedIntervention):
             vessel_visual_path=self.vessel_tree.visu_mesh_path,
         )
         target_seed = None if seed is None else self._np_random.integers(0, 2**31)
-        self.target.reset(episode_number, target_seed)
+        target_kwargs = {}
+        if options is not None and "target_branch" in options:
+            target_kwargs["target_branch"] = options["target_branch"]
+        self.target.reset(episode_number, target_seed, **target_kwargs)
         self.fluoroscopy.reset(episode_number)
         self.last_action *= 0.0
         self.last_cmd_action *= 0.0
