@@ -1,4 +1,4 @@
-from .replaybuffer import ReplayBuffer, Batch, Episode
+from .replaybuffer import ReplayBuffer, Batch, Episode, EpisodeReplay
 from .vanillastep import VanillaStep
 from .vanillaepisode import VanillaEpisode
 from .vanillashared import VanillaStepShared, VanillaEpisodeShared

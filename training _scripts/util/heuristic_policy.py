@@ -75,8 +75,12 @@ class HeuristicActionFunction:
     def __call__(self, obs: np.ndarray) -> np.ndarray:
         """Get action from heuristic controller.
 
+        When on correct branch: use centerline-following heuristic.
+        When off branch: use random retraction in [-10, 5] to pull back
+        toward the correct branch (mirrors the RL action space lower bound).
+
         Args:
-            obs: Observation (ignored - heuristic uses pathfinder directly)
+            obs: Observation (unused — branch state read from path_context directly)
 
         Returns:
             Action as flat numpy array, normalized to [-1, 1] if normalize_output=True
@@ -87,8 +91,22 @@ class HeuristicActionFunction:
             self.heuristic.reset()
             self._needs_reset = False
 
-        # Get raw action from heuristic (in environment action space)
-        raw_action = self.heuristic.get_action(self._rng)
+        # Check branch membership from the shared path cache (same source as guidance[7])
+        base_env = getattr(self.env, 'unwrapped', self.env)
+        on_correct_branch = True
+        try:
+            on_correct_branch = base_env._path_context.is_on_correct_branch()
+        except Exception:
+            pass
+
+        if not on_correct_branch:
+            # Always-negative retraction: pull back toward bifurcation
+            gw_trans = float(self._rng.uniform(-10.0, -1.0))
+            cath_trans = gw_trans * self.heuristic.catheter_follow_ratio
+            raw_action = np.array([gw_trans, 0.0, cath_trans, 0.0], dtype=np.float32)
+        else:
+            # Normal centerline-following
+            raw_action = self.heuristic.get_action(self._rng)
 
         # Ensure it's a flat numpy array
         action = np.asarray(raw_action).flatten().astype(np.float64)

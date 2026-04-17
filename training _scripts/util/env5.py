@@ -20,17 +20,14 @@ from eve.util.pathcontext import PathProjectionCache
 # ---------------------------------------------------------------------------
 # Heuristic-mode detector thresholds
 # ---------------------------------------------------------------------------
-NEAR_MAX_MM = 2.0
-NO_PROGRESS_MM = 0.10
-BOTH_MAX_STALL_STEPS = 8
-GW_PARTIAL_STALL_GRACE_STEPS = 25
-OFF_BRANCH_GRACE_STEPS = 10
-OFF_BRANCH_INSERTION_DIST_MM = 20.0
-NEAR_TARGET_DREM_NORM = 0.10
-SATURATED_ROT_RAD = 1.30
-SATURATED_ROT_STEPS = 6
-OFF_BRANCH_MIN_INSERTED_MM = 50.0
+OFF_BRANCH_GRACE_STEPS = 20
+OFF_BRANCH_MIN_INSERTED_MM = 0.0  # was 50.0 workaround; now using true branch membership
 FAILURE_TRUNCATION_PENALTY = -5.0
+WRONG_BRANCH_ENTRY_PENALTY = -1.0   # one-time penalty on the step the tip enters a wrong branch
+WRONG_BRANCH_STEP_PENALTY = -0.1    # per-step penalty for each step while remaining off-branch
+FOLD_STALL_STEPS = 15          # consecutive inserting-without-arclength-progress steps
+FOLD_INSERTION_MM = 0.5        # min commanded gw insertion per step to count as inserting
+FOLD_ARCLENGTH_MM = 0.5        # min tip arclength progress per step to count as advancing
 
 
 def setup_step_logger(name="step_logger"):
@@ -199,18 +196,13 @@ class BenchEnv5(eve.Env):
         self._vessel_end_trunc = vessel_end
         self._sim_error_trunc = sim_error
 
-        # Heuristic mode state (reset each episode in reset())
+        # Detector state (reset each episode in reset())
         self._heuristic_mode = False
         self._heuristic_abort_reason = None
-        self._best_d_rem_norm = float("inf")
-        self._det_prev_inserted = [0.0, 0.0]
-        self._both_max_stall_count = 0
-        self._gw_partial_stall_count = 0
-        self._gw_partial_drem_at_entry = None
-        self._gw_partial_cath_inserted_at_entry = None
         self._off_branch_steps = 0
-        self._off_branch_start_inserted_gw = None
-        self._sat_rot_count = 0
+        self._fold_stall_count = 0
+        self._prev_tip_s = 0.0
+        self._prev_inserted_gw = 0.0
 
         super().__init__(
             intervention,
@@ -270,29 +262,33 @@ class BenchEnv5(eve.Env):
         self._last_step_time = time.time()
         self._prev_inserted = [0.0, 0.0]
 
-        # Heuristic mode activation and state reset
+        # Detector state reset
         self._heuristic_mode = bool(options and options.get("heuristic_mode", False))
         self._heuristic_abort_reason = None
-        self._best_d_rem_norm = float("inf")
-        self._det_prev_inserted = [0.0, 0.0]
-        self._both_max_stall_count = 0
-        self._gw_partial_stall_count = 0
-        self._gw_partial_drem_at_entry = None
-        self._gw_partial_cath_inserted_at_entry = None
         self._off_branch_steps = 0
-        self._off_branch_start_inserted_gw = None
-        self._sat_rot_count = 0
-
-        self._step_logger.info(
-            f"EPISODE_START | ep={self._episode_count} | global_steps={self._step_count} | "
-            f"wall_time={time.time():.6f} | pid={os.getpid()}"
-        )
-        sys.stderr.flush()
+        self._fold_stall_count = 0
+        self._prev_tip_s = 0.0
+        self._prev_inserted_gw = 0.0
 
         # path_context.reset() is called by LocalGuidance.reset() and
         # ArcLengthProgress.reset() inside super().reset(), AFTER
         # pathfinder.reset() has already computed the new path.
-        return super().reset(seed=seed, options=options)
+        result = super().reset(seed=seed, options=options)
+
+        # Log after super().reset() so target coords are populated for this episode
+        target_str = ""
+        try:
+            tc = self.intervention.target.coordinates3d
+            target_str = f" | target=({tc[0]:.1f},{tc[1]:.1f},{tc[2]:.1f})"
+        except Exception:
+            pass
+        self._step_logger.info(
+            f"EPISODE_START | ep={self._episode_count} | global_steps={self._step_count} | "
+            f"wall_time={time.time():.6f} | pid={os.getpid()}{target_str}"
+        )
+        sys.stderr.flush()
+
+        return result
 
     # ------------------------------------------------------------------
     # Heuristic abort helper
@@ -333,102 +329,51 @@ class BenchEnv5(eve.Env):
         self._episode_step_count += 1
         self._last_step_time = step_end_time
 
-        # ---- Heuristic detectors (before reward shaping) ----
-        d_rem_norm = None
-        on_correct_branch = None
+        # ---- Per-step insertion delta (fold detector) ----
+        inserted_gw = self.intervention.device_lengths_inserted[0]
+        delta_gw = inserted_gw - self._prev_inserted_gw
+        self._prev_inserted_gw = inserted_gw
 
-        if self._heuristic_mode and not terminated and not truncated:
-            # Read guidance
-            guidance = obs["guidance"]
-            d_rem_norm = float(guidance[0])
-            on_correct_branch = bool(round(guidance[7]))
+        # ---- Detector: wire_fold_stall (both modes) ----
+        if not terminated and not truncated:
+            tip_s = self._path_context.get_projection().s
+            delta_s = tip_s - self._prev_tip_s
+            self._prev_tip_s = tip_s
 
-            self._best_d_rem_norm = min(self._best_d_rem_norm, d_rem_norm)
-
-            # Read device data
-            inserted = self.intervention.device_lengths_inserted
-            max_lens = self.intervention.device_lengths_maximum
-
-            # Per-step insertion deltas (detector-specific tracker)
-            delta_gw = inserted[0] - self._det_prev_inserted[0]
-            delta_cath = inserted[1] - self._det_prev_inserted[1]
-            self._det_prev_inserted = [inserted[0], inserted[1]]
-
-            # -- Detector 1: both_max_stall --
-            if (inserted[0] >= max_lens[0] - NEAR_MAX_MM and
-                    inserted[1] >= max_lens[1] - NEAR_MAX_MM and
-                    abs(delta_gw) <= NO_PROGRESS_MM and
-                    abs(delta_cath) <= NO_PROGRESS_MM):
-                self._both_max_stall_count += 1
+            if delta_gw >= FOLD_INSERTION_MM and delta_s < FOLD_ARCLENGTH_MM:
+                self._fold_stall_count += 1
             else:
-                self._both_max_stall_count = 0
+                self._fold_stall_count = 0
 
-            if self._both_max_stall_count >= BOTH_MAX_STALL_STEPS:
-                self._heuristic_abort("both_max_stall", info)
+            if self._fold_stall_count >= FOLD_STALL_STEPS:
+                if self._heuristic_mode:
+                    self._heuristic_abort("wire_fold_stall", info)
                 truncated = True
 
-            # -- Detector 2: gw_partial_stall --
-            if self._heuristic_abort_reason is None:
-                if (inserted[0] >= max_lens[0] - NEAR_MAX_MM and
-                        abs(delta_gw) <= NO_PROGRESS_MM and
-                        not (inserted[1] >= max_lens[1] - NEAR_MAX_MM)):
-                    if self._gw_partial_stall_count == 0:
-                        self._gw_partial_drem_at_entry = d_rem_norm
-                        self._gw_partial_cath_inserted_at_entry = inserted[1]
-                    self._gw_partial_stall_count += 1
-
-                    if self._gw_partial_stall_count >= GW_PARTIAL_STALL_GRACE_STEPS:
-                        drem_improved = d_rem_norm < self._gw_partial_drem_at_entry - 0.01
-                        cath_advanced = inserted[1] > self._gw_partial_cath_inserted_at_entry + 1.0
-                        if not drem_improved and not cath_advanced:
-                            self._heuristic_abort("gw_partial_stall", info)
-                            truncated = True
+        # ---- Detector: wrong_branch (both modes) ----
+        # -1 on entry, -0.1 per step while off-branch.
+        # After OFF_BRANCH_GRACE_STEPS → truncate + failure penalty.
+        on_correct_branch = self._path_context.is_on_correct_branch()
+        if not terminated and not truncated:
+            if not on_correct_branch:
+                self._off_branch_steps += 1
+                if self._off_branch_steps == 1:
+                    reward += WRONG_BRANCH_ENTRY_PENALTY
                 else:
-                    self._gw_partial_stall_count = 0
-                    self._gw_partial_drem_at_entry = None
-                    self._gw_partial_cath_inserted_at_entry = None
-
-            # -- Detector 3: wrong_branch --
-            # Gate: skip during launch zone. guidance[7] is a cross-track
-            # distance proxy (< 5mm), not true branch membership. Near the
-            # insertion point the device naturally drifts > 5mm from the
-            # polyline centerline, causing false off-branch in 100% of episodes.
-            if self._heuristic_abort_reason is None and inserted[0] >= OFF_BRANCH_MIN_INSERTED_MM:
-                if not on_correct_branch:
-                    if self._off_branch_steps == 0:
-                        self._off_branch_start_inserted_gw = inserted[0]
-                    self._off_branch_steps += 1
-
-                    if self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS:
+                    reward += WRONG_BRANCH_STEP_PENALTY
+                if self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS:
+                    if self._heuristic_mode:
                         self._heuristic_abort("wrong_branch_timeout", info)
-                        truncated = True
-                    elif (inserted[0] - self._off_branch_start_inserted_gw) >= OFF_BRANCH_INSERTION_DIST_MM:
-                        self._heuristic_abort("wrong_branch_insertion", info)
-                        truncated = True
-                else:
-                    self._off_branch_steps = 0
-                    self._off_branch_start_inserted_gw = None
-
-            # -- Detector 4: sat_rot (pseudo-close acceleration) --
-            # Same launch-zone gate as wrong_branch (uses on_correct_branch)
-            if self._heuristic_abort_reason is None and inserted[0] >= OFF_BRANCH_MIN_INSERTED_MM:
-                gw_rot_cmd = float(action[1]) if hasattr(action, "__getitem__") else 0.0
-                if (not on_correct_branch and
-                        d_rem_norm < NEAR_TARGET_DREM_NORM and
-                        abs(gw_rot_cmd) >= SATURATED_ROT_RAD):
-                    self._sat_rot_count += 1
-                else:
-                    self._sat_rot_count = 0
-
-                if self._sat_rot_count >= SATURATED_ROT_STEPS:
-                    self._heuristic_abort("sat_rot_wrong_branch_close", info)
                     truncated = True
+            else:
+                self._off_branch_steps = 0
 
-        # ---- Reward shaping ----
-        # Vessel-end penalty (always — both heuristic and RL)
-        if self._heuristic_mode and self._heuristic_abort_reason is not None:
-            reward += FAILURE_TRUNCATION_PENALTY
-        elif truncated and not terminated and self._vessel_end_trunc.truncated:
+        # ---- Failure truncation penalty (both modes) ----
+        if truncated and not terminated and (
+            self._vessel_end_trunc.truncated
+            or self._fold_stall_count >= FOLD_STALL_STEPS
+            or self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS
+        ):
             reward += FAILURE_TRUNCATION_PENALTY
 
         self._episode_total_reward += reward
@@ -466,25 +411,40 @@ class BenchEnv5(eve.Env):
             except Exception:
                 action_str = str(action)
 
-            # Heuristic fields
+            # Shared fields (both modes)
+            _obr = f"{int(on_correct_branch)}"
+            _off = self._off_branch_steps
+            _fold = f"{self._fold_stall_count}/{FOLD_STALL_STEPS}"
+            _dwe = "?"
+            _dce = "?"
+            _wcoord = "?"
+            _ccoord = "?"
+            try:
+                _dwe = f"{self._path_context.get_dist_to_closest_wrong_entry():.1f}"
+                _dce = f"{self._path_context.get_dist_to_next_correct_entry():.1f}"
+                wc = self._path_context.get_closest_wrong_entry_coords()
+                cc = self._path_context.get_closest_correct_entry_coords()
+                _wcoord = f"({wc[0]:.1f},{wc[1]:.1f},{wc[2]:.1f})"
+                _ccoord = f"({cc[0]:.1f},{cc[1]:.1f},{cc[2]:.1f})"
+            except Exception:
+                pass
+
             heur_str = ""
             if self._heuristic_mode:
-                _drn = f"{d_rem_norm:.3f}" if d_rem_norm is not None else "?"
-                _obr = f"{int(on_correct_branch)}" if on_correct_branch is not None else "?"
                 _abort = self._heuristic_abort_reason or "none"
                 _mask = "?"
                 try:
                     _mask = ",".join(self.intervention.last_mask_reasons)
                 except Exception:
                     pass
-                heur_str = (
-                    f" | heur=1 | d_rem_n={_drn} | on_br={_obr}"
-                    f" | off_br={self._off_branch_steps}"
-                    f" | stall={self._both_max_stall_count}/{BOTH_MAX_STALL_STEPS}"
-                    f" | gw_stall={self._gw_partial_stall_count}/{GW_PARTIAL_STALL_GRACE_STEPS}"
-                    f" | mask={_mask}"
-                    f" | abort={_abort}"
-                )
+                heur_str = f" | heur=1 | abort={_abort} | mask={_mask}"
+
+            shared_str = (
+                f" | on_br={_obr} | off_br={_off}"
+                f" | fold={_fold}"
+                f" | d_wrong={_dwe} | wrong_pt={_wcoord}"
+                f" | d_corr={_dce} | corr_pt={_ccoord}"
+            )
 
             log_msg = (
                 f"STEP | ep={self._episode_count} | ep_step={self._episode_step_count} | "
@@ -494,7 +454,7 @@ class BenchEnv5(eve.Env):
                 f"step_time={step_duration:.3f}s | gap_time={time_since_last:.3f}s | "
                 f"term={terminated} | trunc={truncated} | "
                 f"{sofa_info} | delta_ins=[{delta_ins[0]:.2f},{delta_ins[1]:.2f}]"
-                f"{heur_str}"
+                f"{shared_str}{heur_str}"
             )
             self._step_logger.info(log_msg)
             for handler in self._step_logger.handlers:

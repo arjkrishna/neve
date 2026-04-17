@@ -1,18 +1,24 @@
 """Compact local guidance observation for path-aware navigation.
 
-Provides an 8-dimensional observation vector encoding the agent's
+Provides a 14-dimensional observation vector encoding the agent's
 relationship to the known correct path, replacing the much larger
 Centerlines2D observation (154+ dims).
 
 Features:
-    0: d_rem_norm       - remaining arclength / total length  [0, 1]
-    1: cross_track_dist - distance from tip to polyline (mm, clipped)
-    2: tangent_x_2d     - path tangent x-component at projection  [-1, 1]
-    3: tangent_z_2d     - path tangent z-component at projection  [-1, 1]
-    4: heading_error    - angle between device direction and tangent  [-pi, pi]
-    5: curvature_ahead  - max curvature in next 20mm of path
-    6: dist_to_bifurc   - arclength to next branching point (mm, clipped)
-    7: on_correct_branch - 1 if tip is on a path branch, 0 otherwise
+    0:  d_rem_norm          - remaining arclength / total length  [0, 1]
+    1:  cross_track_dist    - distance from tip to polyline (mm, clipped)  [0, 1]
+    2:  tangent_x_2d        - path tangent x-component at projection  [-1, 1]
+    3:  tangent_z_2d        - path tangent z-component at projection  [-1, 1]
+    4:  heading_error       - angle between device direction and tangent  [-1, 1]
+    5:  curvature_ahead     - max curvature in next 20mm of path  [0, ~1]
+    6:  dist_to_bifurc      - arclength to next branching point (mm, clipped)  [0, 1]
+    7:  on_correct_branch   - 1 if tip is on a path branch, 0 otherwise  {0, 1}
+    8:  dist_wrong_entry    - distance to nearest wrong-branch bifurcation (clipped)  [0, 1]
+    9:  wrong_entry_dir_x   - x-component of unit vector toward nearest wrong entry  [-1, 1]
+    10: wrong_entry_dir_z   - z-component of unit vector toward nearest wrong entry  [-1, 1]
+    11: dist_correct_entry  - distance to nearest correct-path bifurcation (clipped)  [0, 1]
+    12: correct_entry_dir_x - x-component of unit vector toward nearest correct entry  [-1, 1]
+    13: correct_entry_dir_z - z-component of unit vector toward nearest correct entry  [-1, 1]
 """
 
 import numpy as np
@@ -20,7 +26,7 @@ import gymnasium as gym
 
 from .observation import Observation
 from ..intervention import Intervention
-from ..util.coordtransform import tracking3d_to_vessel_cs
+from ..util.coordtransform import tracking3d_to_vessel_cs, vessel_cs_to_tracking3d
 from ..util.polyline import (
     compute_cumulative_arclength,
     compute_segment_tangents,
@@ -36,8 +42,32 @@ _LOOKAHEAD_MM = 20.0
 _ON_PATH_THRESHOLD_MM = 5.0
 
 
+def _entry_direction(
+    tip_vessel: np.ndarray,
+    entry_coords: np.ndarray,
+    dist: float,
+    image_rot_zx,
+) -> tuple:
+    """Return (dir_x, dir_z) unit vector from tip toward entry_coords in 2D.
+
+    Converts the delta vector from vessel-CS to tracking3d (applying the C-arm
+    rotation) before projecting to 2D, consistent with tracking3d_to_2d().
+    Returns (0.0, 0.0) when dist is effectively infinite (no entry exists).
+    """
+    if dist >= _MAX_BIFURC_DIST_MM:
+        return 0.0, 0.0
+    # Rotate delta into tracking3d space; use zero center so translation cancels
+    delta_vessel = entry_coords - tip_vessel
+    delta_tracking = vessel_cs_to_tracking3d(delta_vessel, image_rot_zx, (0.0, 0.0, 0.0), None)
+    dx, dz = float(delta_tracking[0]), float(delta_tracking[2])
+    norm = (dx * dx + dz * dz) ** 0.5
+    if norm < 1e-8:
+        return 0.0, 0.0
+    return dx / norm, dz / norm
+
+
 class LocalGuidance(Observation):
-    """Compact 8-dim observation encoding the agent's state relative to the path.
+    """Compact 14-dim observation encoding the agent's state relative to the path.
 
     Args:
         intervention: The intervention object.
@@ -73,16 +103,17 @@ class LocalGuidance(Observation):
         self._total_length: float = 0.0
         self._bifurc_arclengths: np.ndarray = np.empty(0)
 
-        self.obs = np.zeros(8, dtype=np.float32)
+        self.obs = np.zeros(14, dtype=np.float32)
 
     @property
     def space(self) -> gym.spaces.Box:
         low = np.array(
-            [0.0, 0.0, -1.0, -1.0, -1.0, 0.0, 0.0, 0.0],
+            # 0       1      2     3     4     5    6    7    8     9    10    11    12    13
+            [0.0,   0.0,  -1.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 0.0, -1.0, -1.0],
             dtype=np.float32,
         )
         high = np.array(
-            [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            [1.0,   1.0,   1.0,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0,  1.0,  1.0, 1.0,  1.0,  1.0],
             dtype=np.float32,
         )
         return gym.spaces.Box(low=low, high=high, dtype=np.float32)
@@ -101,7 +132,7 @@ class LocalGuidance(Observation):
             self._curvature = np.empty(0)
             self._total_length = 0.0
             self._bifurc_arclengths = np.empty(0)
-            self.obs = np.zeros(8, dtype=np.float32)
+            self.obs = np.zeros(14, dtype=np.float32)
             return
 
         self._cumlen = compute_cumulative_arclength(self._polyline)
@@ -109,8 +140,14 @@ class LocalGuidance(Observation):
         self._tangents = compute_segment_tangents(self._polyline)
         self._curvature = compute_curvature(self._tangents, self._cumlen)
 
-        # Pre-compute 2D tangent projections (drop y-component, normalize)
-        t2d = self._tangents[:, [0, 2]]
+        # Pre-compute 2D tangent projections: rotate into tracking3d space then
+        # drop Y (axis 1), consistent with tracking3d_to_2d() used everywhere else.
+        # Use zero image_center so the translation offset cancels for direction vectors.
+        fluoro = self.intervention.fluoroscopy
+        t_tracking = vessel_cs_to_tracking3d(
+            self._tangents, fluoro.image_rot_zx, (0.0, 0.0, 0.0), None
+        )
+        t2d = t_tracking[:, [0, 2]]
         norms = np.linalg.norm(t2d, axis=1, keepdims=True)
         norms = np.maximum(norms, 1e-8)
         self._tangents_2d = t2d / norms
@@ -123,7 +160,7 @@ class LocalGuidance(Observation):
 
     def step(self) -> None:
         if self._total_length < 1e-6:
-            self.obs = np.zeros(8, dtype=np.float32)
+            self.obs = np.zeros(14, dtype=np.float32)
             return
 
         fluoro = self.intervention.fluoroscopy
@@ -162,19 +199,47 @@ class LocalGuidance(Observation):
         # Feature 6: distance to next bifurcation along path
         dist_to_bifurc = self._compute_dist_to_bifurcation(proj.s)
 
-        # Feature 7: on correct branch? (cheap threshold check on cross-track)
-        on_path = 1.0 if proj.cross_track_dist < _ON_PATH_THRESHOLD_MM else 0.0
+        # Feature 7: on correct branch? (true branch membership via nearest-branch lookup)
+        if self._path_context is not None:
+            on_path = 1.0 if self._path_context.is_on_correct_branch() else 0.0
+        else:
+            from ..intervention.vesseltree import find_nearest_branch_to_point
+            nearest = find_nearest_branch_to_point(tip_vessel, self.intervention.vessel_tree)
+            on_path = 1.0 if self.pathfinder.is_branch_on_path(nearest) else 0.0
+
+        # Features 8-10: distance and direction to nearest wrong-branch bifurcation
+        # Features 11-13: distance and direction to nearest correct-path bifurcation
+        if self._path_context is not None:
+            d_wrong = self._path_context.get_dist_to_closest_wrong_entry()
+            wrong_coords = self._path_context.get_closest_wrong_entry_coords()
+            d_correct = self._path_context.get_dist_to_next_correct_entry()
+            correct_coords = self._path_context.get_closest_correct_entry_coords()
+        else:
+            d_wrong = _MAX_BIFURC_DIST_MM
+            wrong_coords = tip_vessel.copy()
+            d_correct = _MAX_BIFURC_DIST_MM
+            correct_coords = tip_vessel.copy()
+
+        rot_zx = fluoro.image_rot_zx
+        wrong_dir_x, wrong_dir_z = _entry_direction(tip_vessel, wrong_coords, d_wrong, rot_zx)
+        correct_dir_x, correct_dir_z = _entry_direction(tip_vessel, correct_coords, d_correct, rot_zx)
 
         self.obs = np.array(
             [
-                d_rem_norm,                          # already [0, 1]
-                cross_track / _MAX_CROSS_TRACK_MM,   # [0, 50] → [0, 1]
-                tangent_2d[0],                        # already [-1, 1]
-                tangent_2d[1],                        # already [-1, 1]
-                heading_error / np.pi,               # [-π, π] → [-1, 1]
-                curvature_ahead / 10.0,              # [0, ~10] → [0, ~1]
-                dist_to_bifurc / _MAX_BIFURC_DIST_MM, # [0, 200] → [0, 1]
-                on_path,                              # already {0, 1}
+                d_rem_norm,                                              # [0, 1]
+                cross_track / _MAX_CROSS_TRACK_MM,                      # [0, 1]
+                tangent_2d[0],                                           # [-1, 1]
+                tangent_2d[1],                                           # [-1, 1]
+                heading_error / np.pi,                                   # [-1, 1]
+                curvature_ahead / 10.0,                                  # [0, ~1]
+                dist_to_bifurc / _MAX_BIFURC_DIST_MM,                   # [0, 1]
+                on_path,                                                  # {0, 1}
+                min(d_wrong, _MAX_BIFURC_DIST_MM) / _MAX_BIFURC_DIST_MM, # [0, 1]
+                wrong_dir_x,                                             # [-1, 1]
+                wrong_dir_z,                                             # [-1, 1]
+                min(d_correct, _MAX_BIFURC_DIST_MM) / _MAX_BIFURC_DIST_MM, # [0, 1]
+                correct_dir_x,                                           # [-1, 1]
+                correct_dir_z,                                           # [-1, 1]
             ],
             dtype=np.float32,
         )
@@ -186,7 +251,11 @@ class LocalGuidance(Observation):
     def _compute_heading_error(
         self, fluoro, tangent_3d: np.ndarray, tip_vessel_cs: np.ndarray
     ) -> float:
-        """Angle between device tip direction and path tangent.
+        """Angle between device tip direction and path tangent in tracking3d space.
+
+        Both vectors are rotated into tracking3d space before computing the angle
+        so the sign (determined by the Y-axis cross product) corresponds to the
+        image-plane up direction, consistent with the 2D tangent projection.
 
         Args:
             fluoro: Fluoroscopy object.
@@ -198,8 +267,7 @@ class LocalGuidance(Observation):
         if len(tracking) < 2:
             return 0.0
 
-        # Device direction in vessel CS: tip (already transformed) minus
-        # second tracked point (needs one transform)
+        # Device direction in vessel CS: tip minus second tracked point
         p1_v = tracking3d_to_vessel_cs(
             tracking[1], fluoro.image_rot_zx, fluoro.image_center
         )
@@ -209,9 +277,14 @@ class LocalGuidance(Observation):
             return 0.0
         device_dir_v = device_dir_v / d_norm
 
-        # Angle between device direction and path tangent
-        dot = float(np.clip(np.dot(device_dir_v, tangent_3d), -1.0, 1.0))
-        cross = np.cross(device_dir_v, tangent_3d)
+        # Rotate both vectors into tracking3d space so the sign uses the
+        # image-plane Y-axis (axis 1 in tracking3d), not the vessel-CS Y-axis.
+        rot_zx = fluoro.image_rot_zx
+        device_dir_t = vessel_cs_to_tracking3d(device_dir_v, rot_zx, (0.0, 0.0, 0.0), None)
+        tangent_t = vessel_cs_to_tracking3d(tangent_3d, rot_zx, (0.0, 0.0, 0.0), None)
+
+        dot = float(np.clip(np.dot(device_dir_t, tangent_t), -1.0, 1.0))
+        cross = np.cross(device_dir_t, tangent_t)
         sign = 1.0 if cross[1] >= 0 else -1.0
         return float(sign * np.arccos(dot))
 
