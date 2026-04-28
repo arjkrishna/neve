@@ -20,12 +20,20 @@ from eve.util.pathcontext import PathProjectionCache
 # ---------------------------------------------------------------------------
 # Heuristic-mode detector thresholds
 # ---------------------------------------------------------------------------
-OFF_BRANCH_GRACE_STEPS = 20
+OFF_BRANCH_GRACE_STEPS = 50  # was 20; bumped in RL_IMPROV_7 §7 Fix 3 — with
+                              # is_on_correct_branch() hysteresis (§7 Fix 2)
+                              # the counter no longer resets on spurious flips,
+                              # so 20 was too short for retract recovery from
+                              # bif2 wrong branches (~50 steps of retract needed).
 OFF_BRANCH_MIN_INSERTED_MM = 0.0  # was 50.0 workaround; now using true branch membership
 FAILURE_TRUNCATION_PENALTY = -5.0
 WRONG_BRANCH_ENTRY_PENALTY = -1.0   # one-time penalty on the step the tip enters a wrong branch
 WRONG_BRANCH_STEP_PENALTY = -0.1    # per-step penalty for each step while remaining off-branch
-FOLD_STALL_STEPS = 15          # consecutive inserting-without-arclength-progress steps
+CORRECT_ENTRY_REWARD = +1.0         # one-time reward each time the tip projection
+                                    # crosses past a correct daughter entry (RL_IMPROV_7
+                                    # §7 Fix 18): incentive to actually commit into the
+                                    # daughter rather than stall at the bifurcation.
+FOLD_STALL_STEPS = 20          # kill stuck wires quickly to speed up cycle
 FOLD_INSERTION_MM = 0.5        # min commanded gw insertion per step to count as inserting
 FOLD_ARCLENGTH_MM = 0.5        # min tip arclength progress per step to count as advancing
 
@@ -71,7 +79,7 @@ class BenchEnv5(eve.Env):
         intervention: eve.intervention.SimulatedIntervention,
         mode: str = "train",
         visualisation: bool = False,
-        n_max_steps=1000,
+        n_max_steps=600,
     ) -> None:
         self.mode = mode
         self.visualisation = visualisation
@@ -103,12 +111,9 @@ class BenchEnv5(eve.Env):
         # ----------------------------------------------------------------
         # Observation
         # ----------------------------------------------------------------
-        tracking = eve.observation.Tracking2D(intervention, n_points=3, resolution=2)
+        tracking = eve.observation.Tracking2D(intervention, n_points=5, resolution=10)
         tracking = eve.observation.wrapper.NormalizeTracking2DEpisode(
             tracking, intervention
-        )
-        tracking = eve.observation.wrapper.Memory(
-            tracking, 2, eve.observation.wrapper.MemoryResetMode.FILL
         )
 
         target_state = eve.observation.Target2D(intervention)
@@ -269,11 +274,71 @@ class BenchEnv5(eve.Env):
         self._fold_stall_count = 0
         self._prev_tip_s = 0.0
         self._prev_inserted_gw = 0.0
+        # Fold-detector d_corr bypass: if the tip is closing on the correct
+        # entry (arclength d_corr decreasing), don't count this step as
+        # folding even if path-projection delta is slow. Switched from
+        # Euclidean-to-interior-marker d_corr (Fix 18) — the old metric
+        # picked up trunk markers that were almost always nearby.
+        self._prev_d_corr_arc = float("inf")
+        # +1 reward bookkeeping: junction arclengths already rewarded this
+        # episode (set, so each junction is rewarded exactly once).
+        self._correct_entries_seen = set()
+
+        # Extract restore_checkpoint BEFORE super().reset(). Reason:
+        # eve.Env.reset() calls self.start.reset(), which for InsertionPoint
+        # runs intervention.reset_devices() and unconditionally zeros xtip /
+        # indexFirstNode / DOFs. If we let simulation.reset(checkpoint=...)
+        # restore during intervention.reset(), start.reset() immediately
+        # wipes it. So we pop the checkpoint here, run super().reset() to
+        # let every component initialise normally (with wire at 0 mm), then
+        # apply the restore + re-run observation/reward reset so the obs
+        # returned from reset() reflects the restored 380 mm state.
+        ckpt = None
+        if options is not None and "restore_checkpoint" in options:
+            options = dict(options)
+            ckpt = options.pop("restore_checkpoint")
 
         # path_context.reset() is called by LocalGuidance.reset() and
         # ArcLengthProgress.reset() inside super().reset(), AFTER
         # pathfinder.reset() has already computed the new path.
         result = super().reset(seed=seed, options=options)
+
+        if ckpt is not None:
+            self.intervention.simulation.restore_checkpoint(ckpt)
+            # Re-reset observation and reward so their initial per-step
+            # quantities (projection, d_rem_prev, cross-track, guidance
+            # features) reflect the restored tip state rather than the
+            # zero-insertion state that super().reset() computed.
+            self._path_context.invalidate()
+            ep_nr = max(0, self._episode_count - 1)
+            try:
+                self.observation.reset(ep_nr)
+            except Exception as e:
+                self._step_logger.warning(f"observation re-reset after restore failed: {e}")
+            try:
+                self.reward.reset(ep_nr)
+            except Exception as e:
+                self._step_logger.warning(f"reward re-reset after restore failed: {e}")
+            # Rebuild the (obs, info) tuple gym expects from reset() using
+            # the refreshed observation.
+            from copy import deepcopy
+            result = (deepcopy(self.observation()), deepcopy(self.info.info))
+
+        # Initialise CORRECT_ENTRY_REWARD bookkeeping from the wire's CURRENT
+        # position (post-restore). Junctions that the wire is already past at
+        # episode start (typically bif1, since checkpoints place the wire at
+        # ~372 mm insertion past bif1) are pre-marked as 'seen' so they do
+        # NOT trigger the +1 reward. Only junctions the wire CROSSES during
+        # the episode count.
+        try:
+            self._path_context.invalidate()  # ensure projection is fresh
+            proj_s = self._path_context.get_projection().s
+            for j_arc in self._path_context._path_junction_arclengths:
+                if j_arc <= proj_s - 10.0:
+                    # wire is at least 10 mm past this junction at start
+                    self._correct_entries_seen.add(float(j_arc))
+        except Exception:
+            pass
 
         # Log after super().reset() so target coords are populated for this episode
         target_str = ""
@@ -282,9 +347,16 @@ class BenchEnv5(eve.Env):
             target_str = f" | target=({tc[0]:.1f},{tc[1]:.1f},{tc[2]:.1f})"
         except Exception:
             pass
+        ins_str = ""
+        try:
+            il = self.intervention.device_lengths_inserted
+            if il is not None:
+                ins_str = f" | inserted=[{il[0]:.2f},{il[1]:.2f}]"
+        except Exception:
+            pass
         self._step_logger.info(
             f"EPISODE_START | ep={self._episode_count} | global_steps={self._step_count} | "
-            f"wall_time={time.time():.6f} | pid={os.getpid()}{target_str}"
+            f"wall_time={time.time():.6f} | pid={os.getpid()}{target_str}{ins_str}"
         )
         sys.stderr.flush()
 
@@ -340,7 +412,26 @@ class BenchEnv5(eve.Env):
             delta_s = tip_s - self._prev_tip_s
             self._prev_tip_s = tip_s
 
-            if delta_gw >= FOLD_INSERTION_MM and delta_s < FOLD_ARCLENGTH_MM:
+            # d_corr bypass: cancel the fold increment if the tip is
+            # closing on the next correct junction (arclength d_corr
+            # decreasing). Switched from Euclidean-to-interior-marker
+            # d_corr (Fix 18) — the old metric included trunk markers,
+            # so any tip-near-trunk-centerline reset the fold counter and
+            # let wires ball up indefinitely in the trunk.
+            d_corr_improving = False
+            try:
+                d_corr_now = self._path_context.get_arclength_to_next_correct_entry()
+                if d_corr_now < self._prev_d_corr_arc - 0.1:
+                    d_corr_improving = True
+                self._prev_d_corr_arc = d_corr_now
+            except Exception:
+                pass
+
+            if (
+                delta_gw >= FOLD_INSERTION_MM
+                and delta_s < FOLD_ARCLENGTH_MM
+                and not d_corr_improving
+            ):
                 self._fold_stall_count += 1
             else:
                 self._fold_stall_count = 0
@@ -368,6 +459,27 @@ class BenchEnv5(eve.Env):
             else:
                 self._off_branch_steps = 0
 
+        # ---- +1 reward on correct daughter entry (RL_IMPROV_7 §7 Fix 18) ----
+        # Once per junction per episode: when the tip's projection on the
+        # planned path is at least 10 mm past the most-recent junction (the
+        # "second entry point"), award +1 the FIRST time. Encourages the
+        # heuristic-seeded policy to actually commit into a daughter rather
+        # than hover at bif2.
+        if not terminated and not truncated and on_correct_branch:
+            try:
+                arc_past = self._path_context.get_arclength_past_last_junction()
+                if arc_past >= 10.0:
+                    junctions_arr = self._path_context._path_junction_arclengths
+                    proj_s = self._path_context.get_projection().s
+                    behind = junctions_arr[junctions_arr <= proj_s]
+                    if len(behind) > 0:
+                        current_junction_s = float(behind[-1])
+                        if current_junction_s not in self._correct_entries_seen:
+                            self._correct_entries_seen.add(current_junction_s)
+                            reward += CORRECT_ENTRY_REWARD
+            except Exception:
+                pass
+
         # ---- Failure truncation penalty (both modes) ----
         if truncated and not terminated and (
             self._vessel_end_trunc.truncated
@@ -379,8 +491,14 @@ class BenchEnv5(eve.Env):
         self._episode_total_reward += reward
 
         # ---- Logging ----
+        # INFO every step for first 30 steps of each episode (diagnosing
+        # post-restore bif2 steering), then every 50 steps afterwards or on
+        # terminal/truncation.
         is_info_step = (
-            self._episode_step_count % 50 == 0 or terminated or truncated
+            self._episode_step_count <= 30
+            or self._episode_step_count % 50 == 0
+            or terminated
+            or truncated
         )
 
         if is_info_step:
@@ -415,17 +533,16 @@ class BenchEnv5(eve.Env):
             _obr = f"{int(on_correct_branch)}"
             _off = self._off_branch_steps
             _fold = f"{self._fold_stall_count}/{FOLD_STALL_STEPS}"
-            _dwe = "?"
-            _dce = "?"
-            _wcoord = "?"
-            _ccoord = "?"
+            # Replaced Euclidean d_corr/d_wrong + interior-marker coords
+            # (Fix 18) with arclength-based metrics that actually measure
+            # progress along the planned path.
+            _dca = "?"        # arclength to next correct junction
+            _arc_past = "?"   # arclength past most-recent junction (≥10 = inside daughter)
+            _entries = len(self._correct_entries_seen)
             try:
-                _dwe = f"{self._path_context.get_dist_to_closest_wrong_entry():.1f}"
-                _dce = f"{self._path_context.get_dist_to_next_correct_entry():.1f}"
-                wc = self._path_context.get_closest_wrong_entry_coords()
-                cc = self._path_context.get_closest_correct_entry_coords()
-                _wcoord = f"({wc[0]:.1f},{wc[1]:.1f},{wc[2]:.1f})"
-                _ccoord = f"({cc[0]:.1f},{cc[1]:.1f},{cc[2]:.1f})"
+                dca_val = self._path_context.get_arclength_to_next_correct_entry()
+                _dca = "inf" if dca_val == float("inf") else f"{dca_val:.1f}"
+                _arc_past = f"{self._path_context.get_arclength_past_last_junction():.1f}"
             except Exception:
                 pass
 
@@ -439,13 +556,34 @@ class BenchEnv5(eve.Env):
                     pass
                 heur_str = f" | heur=1 | abort={_abort} | mask={_mask}"
 
+            # Extra diagnostics: tip3d position and current rotation_instrument
+            _tip = "?"
+            _rots = "?"
+            try:
+                t3 = self.intervention.fluoroscopy.tracking3d
+                if t3 is not None and len(t3) > 0:
+                    _tip = f"({t3[0][0]:.1f},{t3[0][1]:.1f},{t3[0][2]:.1f})"
+            except Exception:
+                pass
+            try:
+                r = self.intervention.device_rotations
+                if r is not None:
+                    _rots = f"[{float(r[0]):.3f},{float(r[1]):.3f}]"
+            except Exception:
+                pass
+
+            _nearest = str(getattr(self, "_heur_nearest_named", "?"))
             shared_str = (
                 f" | on_br={_obr} | off_br={_off}"
                 f" | fold={_fold}"
-                f" | d_wrong={_dwe} | wrong_pt={_wcoord}"
-                f" | d_corr={_dce} | corr_pt={_ccoord}"
+                f" | d_corr_arc={_dca} | arc_past={_arc_past}"
+                f" | nearest_named={_nearest} | entries_passed={_entries}"
+                f" | tip3d={_tip} | rot_inst={_rots}"
             )
 
+            # Heuristic diagnostics published by heuristic_policy wrapper
+            _head_err = float(getattr(self, "_heur_heading_error", 0.0))
+            _cross_tr = float(getattr(self, "_heur_cross_track", 0.0))
             log_msg = (
                 f"STEP | ep={self._episode_count} | ep_step={self._episode_step_count} | "
                 f"global={self._step_count} | wall_time={time.time():.6f} | pid={os.getpid()} | "
@@ -454,6 +592,7 @@ class BenchEnv5(eve.Env):
                 f"step_time={step_duration:.3f}s | gap_time={time_since_last:.3f}s | "
                 f"term={terminated} | trunc={truncated} | "
                 f"{sofa_info} | delta_ins=[{delta_ins[0]:.2f},{delta_ins[1]:.2f}]"
+                f" | heading_err={_head_err:+.3f} | cross_tr={_cross_tr:+.2f}"
                 f"{shared_str}{heur_str}"
             )
             self._step_logger.info(log_msg)

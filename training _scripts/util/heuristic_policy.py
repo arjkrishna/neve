@@ -105,8 +105,63 @@ class HeuristicActionFunction:
             cath_trans = gw_trans * self.heuristic.catheter_follow_ratio
             raw_action = np.array([gw_trans, 0.0, cath_trans, 0.0], dtype=np.float32)
         else:
-            # Normal centerline-following
-            raw_action = self.heuristic.get_action(self._rng)
+            # Normal centerline-following (alternating trans/rot, RL_IMPROV_7 §7 Fix 10).
+            # Fold brake (Fix 11): when the fold detector has fired >5 times,
+            # the wire is coiling — force pure translate so the base stops
+            # adding twist. Brake threshold lowered to >2 + d_corr stagnation
+            # trigger (Fix 13) were tried in runs 15-16 and made things worse
+            # (fold rate 83% -> 96%), so reverted to the run-14 config that
+            # produced our only success (pid=350 ep=2).
+            fold_count = getattr(base_env, "_fold_stall_count", 0)
+            force_translate = fold_count > 5
+            # Pull arclength-based metrics for the heuristic's regime decisions:
+            #   d_corr_mm        — arclength along path to NEXT junction.
+            #   arc_past_mm      — arclength past the MOST-RECENT junction
+            #                      (used to detect "inside daughter past
+            #                      second entry zone"; Fix 18).
+            try:
+                d_corr_mm = float(
+                    base_env._path_context.get_arclength_to_next_correct_entry()
+                )
+                arc_past_mm = float(
+                    base_env._path_context.get_arclength_past_last_junction()
+                )
+            except Exception:
+                d_corr_mm = float("inf")
+                arc_past_mm = 0.0
+            raw_action = self.heuristic.get_action(
+                self._rng,
+                force_translate=force_translate,
+                d_corr_mm=d_corr_mm,
+                arc_past_junction_mm=arc_past_mm,
+            )
+
+        # Publish heuristic internals onto the env so env5's STEP logger can
+        # include them in INFO lines for offline analysis (Fix 14, 18).
+        try:
+            base_env._heur_heading_error = float(getattr(self.heuristic, "_last_heading_error", 0.0))
+            base_env._heur_cross_track = float(getattr(self.heuristic, "_last_cross_track", 0.0))
+            base_env._heur_arc_past_junction = float(getattr(self.heuristic, "_last_arc_past_junction", 0.0))
+            # Identify which named daughter the wire is currently nearest to —
+            # diagnostic to track whether rotations are steering the tip
+            # toward the correct daughter or away from it.
+            try:
+                idx = base_env._path_context.get_nearest_named_branch_idx()
+                if idx >= 0:
+                    br = base_env._path_context._branches_tuple[idx]
+                    name = getattr(br, "name", "") or ""
+                    short = "none"
+                    for tag in ("LCCA", "LVA", "RCCA", "RVA"):
+                        if tag in name:
+                            short = tag
+                            break
+                else:
+                    short = "none"
+            except Exception:
+                short = "none"
+            base_env._heur_nearest_named = short
+        except Exception:
+            pass
 
         # Ensure it's a flat numpy array
         action = np.asarray(raw_action).flatten().astype(np.float64)

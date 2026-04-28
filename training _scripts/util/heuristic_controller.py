@@ -63,9 +63,22 @@ class CenterlineFollowerHeuristic:
         self._tangents = np.empty((0, 3))
         self._total_length = 0.0
 
+        # Last computed diagnostics (for env-level logging)
+        self._last_heading_error = 0.0
+        self._last_cross_track = 0.0
+        self._last_arc_past_junction = 0.0
+
+        # Phase 1 step counter — caps Phase 1 at 30 commands per episode.
+        # Previously used a distance-based cap (20 mm retracted), but the
+        # wire physically stalls around 19 mm retraction (wedged against a
+        # vessel bend), so the cap was never crossed and Phase 1 looped
+        # forever. Counting commands decouples us from physical motion.
+        self._phase1_steps = 0
+
     def reset(self) -> None:
         """Recompute path data from the pathfinder (call after env.reset)."""
         self._polyline = self.pathfinder.path_points_vessel_cs
+        self._phase1_steps = 0
         if len(self._polyline) < 2:
             self._cumlen = np.zeros(max(1, len(self._polyline)))
             self._tangents = np.empty((0, 3))
@@ -75,7 +88,13 @@ class CenterlineFollowerHeuristic:
         self._total_length = float(self._cumlen[-1])
         self._tangents = compute_segment_tangents(self._polyline)
 
-    def get_action(self, rng: "Optional[np.random.Generator]" = None) -> np.ndarray:
+    def get_action(
+        self,
+        rng: "Optional[np.random.Generator]" = None,
+        force_translate: bool = False,
+        d_corr_mm: float = float("inf"),
+        arc_past_junction_mm: float = 0.0,
+    ) -> np.ndarray:
         """Compute a heuristic action for the current state.
 
         Translation: proportional to remaining distance, capped at max_translation.
@@ -102,46 +121,145 @@ class CenterlineFollowerHeuristic:
 
         d_rem = self._total_length - proj.s
 
-        # ---- Translation: proportional to remaining distance, capped ----
-        gw_trans = min(self.max_translation, d_rem * 0.1)
-        gw_trans = max(gw_trans, 5.0)  # minimum forward push
-
-        # ---- Rotation: align with tangent + correct cross-track error ----
+        # ---- Compute geometric quantities ----
         seg_idx = min(proj.segment_idx, len(self._tangents) - 1)
         tangent = self._tangents[seg_idx]
 
-        # (a) Heading error: angle between device direction and path tangent
+        # Heading error: signed angle between the WIRE'S LOCAL DIRECTION
+        # (device_dir) and the path tangent (RL_IMPROV_7 §7 Fix 18). The
+        # earlier J-tip-curvature formula returned garbage in the trunk:
+        # when the wire is well-aligned with the path, the path tangent's
+        # perpendicular component to the wire axis is near zero, and the
+        # angle between J-curvature direction and that near-zero vector
+        # is essentially random — saturating heading_err near ±π. Empirically
+        # 47% of run-26 trunk rotation steps improved heading_err and 52%
+        # worsened it (pure noise) while the formula commanded ±1.5 rad/s
+        # the whole time, wedging the wire at the arch top.
+        # The new formula is `angle_between(device_dir, tangent)` signed
+        # about the cross product's z-axis component, mirroring run 17's
+        # property that |heading_err| → 0 when wire is aligned with path.
         heading_error = 0.0
+        cross_track_signed = 0.0
         tracking = fluoro.tracking3d
-        if len(tracking) >= 2:
+        K = 5  # beam-node spacing for the wire's local long axis (~5-10 mm)
+        if len(tracking) >= K + 1:
             p0_v = tracking3d_to_vessel_cs(
                 tracking[0], fluoro.image_rot_zx, fluoro.image_center
             )
-            p1_v = tracking3d_to_vessel_cs(
-                tracking[1], fluoro.image_rot_zx, fluoro.image_center
+            pk_v = tracking3d_to_vessel_cs(
+                tracking[K], fluoro.image_rot_zx, fluoro.image_center
             )
-            device_dir = p0_v - p1_v
-            d_norm = np.linalg.norm(device_dir)
-            if d_norm > 1e-8:
-                device_dir = device_dir / d_norm
-                cross = np.cross(device_dir, tangent)
-                heading_error = float(cross[1])
+            device_dir_raw = p0_v - pk_v
+            d_norm = np.linalg.norm(device_dir_raw)
+            if d_norm > 1e-6:
+                device_dir = device_dir_raw / d_norm
+                cross_v = np.cross(device_dir, tangent)
+                cos_a = float(np.dot(device_dir, tangent))
+                sin_mag = float(np.linalg.norm(cross_v))
+                # Sign convention: use cross_v[2] (world-z component) to
+                # determine which way to rotate. Falls back to cross_v[1]
+                # if z-component is degenerate (wire purely in horizontal
+                # plane, very rare in this anatomy).
+                if abs(cross_v[2]) > 1e-3:
+                    sign_v = float(np.sign(cross_v[2]))
+                else:
+                    sign_v = float(np.sign(cross_v[1])) if abs(cross_v[1]) > 1e-3 else 1.0
+                heading_error = float(np.arctan2(sin_mag * sign_v, cos_a))
 
-        # (b) Cross-track error: signed lateral offset from centerline
-        # Vector from projected point on path to actual tip position
-        offset_vec = tip_vessel - proj.proj_point
-        # Signed cross-track: positive = one side, negative = other side
-        # Use cross product with tangent to determine sign
-        cross_track_signed = float(np.cross(tangent, offset_vec)[1])
+                # Cross-track: signed lateral offset from centerline.
+                # Use simple y-component of cross(tangent, offset_vec) — this
+                # matches the original heuristic's lateral-correction signal
+                # that worked in run 17. Magnitude scales with offset.
+                offset_vec = tip_vessel - proj.proj_point
+                cross_track_signed = float(np.cross(tangent, offset_vec)[2])
 
-        # Combined rotation: steer to align with tangent AND reduce cross-track error
-        gw_rot = -self.heading_kp * heading_error - self.crosstrack_kp * cross_track_signed
-        gw_rot = float(np.clip(gw_rot, -np.pi, np.pi))
+        # ---- Two-phase strategy (RL_IMPROV_7 §7 Fix 15) ----
+        #   Phase 1 (alignment): |heading_err| > 1.2 rad — the J-tip is
+        #     pointing badly wrong. PURE retract at -3 mm/s (no rotation) to
+        #     pull the tip out of whatever vessel segment it is wedged
+        #     against, so its torsional state can relax before we try to
+        #     advance again. Capped at 20 mm of retraction per episode — if
+        #     the tip is still misaligned after 20 mm pullback, we accept
+        #     that and fall through to Phase 2 (advance with whatever pose).
+        #     Earlier attempts rotated during retraction, but retraction
+        #     itself changes the path tangent at the tip's projection and
+        #     confounds the heading_err signal (atan2 wraparound, sign
+        #     thrashing → net rotation cancels). Pure translation is the
+        #     cleanest way to unload torsional stress.
+        #   Phase 2 (advance): original continuous-blend heuristic —
+        #     forward translation + rotation correction (±1.5 clamp), both
+        #     simultaneously.
+        # force_translate=True (fold brake >5) skips Phase 1.
+        heading_abs = abs(heading_error)
+        # Phase 1 threshold raised 1.2 → 2.0 (RL_IMPROV_7 §7 Fix 18b): with
+        # the new angle_between(device_dir, tangent) heading_err formula,
+        # values cluster between 1.0 and 1.5 in trunk/approach (smaller
+        # than the old J-curvature formula which saturated at ±π). At the
+        # old 1.2 threshold the wire alternated Phase 1 retract / Phase 2
+        # advance every step, wasting motion. 2.0 means Phase 1 only fires
+        # when the tip is very badly misaligned (≥115°) — actually pre-bent
+        # in the wrong direction at the restore point.
+        if (
+            heading_abs > 2.0
+            and self._phase1_steps < 30
+            and not force_translate
+        ):
+            # Phase 1: pure retract, no rotation
+            gw_trans = -3.0
+            gw_rot = 0.0
+            self._phase1_steps += 1
+        else:
+            # Phase 2: continuous blend of translation + rotation. THREE
+            # regimes (RL_IMPROV_7 §7 Fix 18):
+            #   NEAR correct entry (d_corr_arc < 10mm): precision threading.
+            #     gw_trans = 2 mm/s, gw_rot ∈ [-0.3, +0.3] with gain 0.6.
+            #   INSIDE daughter past entry (arc_past_junction > 10mm):
+            #     gw_trans = min(5, 0.1*d_rem),
+            #     gw_rot ∈ [-0.2, +0.2] with HIGHER crosstrack weight (0.2)
+            #     so wire re-centers on daughter centerline (the missing
+            #     piece that caused near-success episodes to slide past
+            #     target by 5-10 mm laterally).
+            #   DEFAULT (trunk, between junctions, before bif1): full
+            #     rotation authority for big course corrections.
+            #     gw_trans = min(5, 0.1*d_rem),
+            #     gw_rot ∈ [-1.5, +1.5] with crosstrack weight 0.05.
+            #     Note: the new heading_err formula returns small values
+            #     when wire is aligned with path, so the ±1.5 clamp will
+            #     rarely fire in the trunk (unlike run 26's J-curvature
+            #     formula which pegged at ±1.5 in 70-80% of trunk steps).
+            if d_corr_mm < 10.0:
+                gw_trans = 2.0
+                gw_rot_raw = (
+                    0.6 * heading_error
+                    + self.crosstrack_kp * cross_track_signed
+                )
+                gw_rot = float(np.clip(gw_rot_raw, -0.3, 0.3))
+            elif arc_past_junction_mm > 10.0:
+                gw_trans = float(min(5.0, d_rem * 0.1))
+                gw_rot_raw = (
+                    self.heading_kp * heading_error
+                    + 0.2 * cross_track_signed
+                )
+                gw_rot = float(np.clip(gw_rot_raw, -0.2, 0.2))
+            else:
+                gw_trans = float(min(5.0, d_rem * 0.1))
+                gw_rot_raw = (
+                    self.heading_kp * heading_error
+                    + self.crosstrack_kp * cross_track_signed
+                )
+                gw_rot = float(np.clip(gw_rot_raw, -1.5, 1.5))
+
+        # Expose diagnostics for env-level STEP logging
+        self._last_heading_error = float(heading_error)
+        self._last_cross_track = float(cross_track_signed)
+        self._last_arc_past_junction = float(arc_past_junction_mm)
 
         # ---- Add noise for trajectory diversity ----
         gw_trans += rng.normal(0, abs(gw_trans) * self.noise_std_frac)
         gw_rot += rng.normal(0, max(abs(gw_rot), 0.1) * self.noise_std_frac)
-        gw_trans = max(gw_trans, 0.0)  # never retract
+        # No blanket "never retract" clamp — Phase 1 intentionally retracts.
+        # Phase 2 produces gw_trans >= 1.0 before noise, so it stays positive
+        # under the small noise_std_frac=0.1 perturbation.
 
         # ---- Catheter follows guidewire ----
         cath_trans = gw_trans * self.catheter_follow_ratio

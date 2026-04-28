@@ -106,6 +106,56 @@ class SofaBeamAdapter(Simulation):
         self._sofa.Simulation.reset(self.root)
         self._update_properties()
 
+    def restore_checkpoint(self, state_dict: dict, settle_steps: int = 50) -> None:
+        """Restore SOFA controller + DOF state from a saved snapshot.
+
+        Expected keys in ``state_dict``:
+          - xtip: (n_devices,) insertion lengths per device
+          - rotation_instrument: (n_devices,) rotations per device
+          - index_first_node: scalar int, active beam node index
+          - dof_positions: (n_nodes, 7) beam-node positions (xyz + quaternion)
+
+        Order matters: ``Sofa.Simulation.reset`` clears solver/velocity state
+        and reverts DataFields to their scene-construction values. We do that
+        first so the subsequent assignments are the sole source of truth.
+        Then assign xtip / rotationInstrument / indexFirstNode / DOFs.position
+        and run ``settle_steps`` animate calls so the solver reconverges
+        contact forces on the restored configuration.
+
+        **This must be called AFTER eve.Env.reset's start.reset() step**, not
+        during intervention.reset — because InsertionPoint.start.reset()
+        unconditionally runs intervention.reset_devices() which zeroes every
+        field this method sets. See BenchEnv5.reset() for the driver.
+        """
+        if self._sofa is None or self.root is None:
+            raise RuntimeError(
+                "restore_checkpoint called before simulation.reset() has "
+                "built the SOFA scene."
+            )
+        ic = self._instruments_combined
+        self._sofa.Simulation.reset(self.root)
+
+        ic.m_ircontroller.xtip.value = np.asarray(state_dict["xtip"])
+        # Zero out rotationInstrument instead of restoring the saved value.
+        # Diagnosis in RL_IMPROV_7 §7 Fix 6: the saved rotation accumulated
+        # during the collection episode was target-specific (spanning
+        # 0-342° across clusters). Restoring it forces the wire into a
+        # tip orientation aimed at the *original* target's daughter branch.
+        # Heuristic's first forward push then jams the wire into the
+        # wrong daughter → fold-stall within ~30 steps. Zeroing gives
+        # the policy/heuristic a neutral orientation to command from
+        # scratch. The wire's physical body DOFs are still restored, so
+        # the spatial path through the aorta is preserved.
+        saved_rot = np.asarray(state_dict["rotation_instrument"])
+        ic.m_ircontroller.rotationInstrument.value = np.zeros_like(saved_rot)
+        ic.m_ircontroller.indexFirstNode.value = int(state_dict["index_first_node"])
+        ic.DOFs.position.value = np.asarray(state_dict["dof_positions"])
+
+        for _ in range(max(0, int(settle_steps))):
+            self._sofa.Simulation.animate(self.root, self.root.dt.value)
+
+        self._update_properties()
+
     def reset(
         self,
         insertion_point,
@@ -116,6 +166,7 @@ class SofaBeamAdapter(Simulation):
         coords_low: Optional[Tuple[float, float, float]] = None,
         vessel_visual_path: Optional[str] = None,
         seed: int = None,
+        checkpoint: Optional[dict] = None,
     ):
         if seed is not None:
             self._rng = np.random.default_rng(seed)
@@ -170,6 +221,17 @@ class SofaBeamAdapter(Simulation):
             self.simulation_error = False
             self.logger.debug("Sofa Initialized")
         self._update_properties()
+        # NOTE: checkpoint kwarg is accepted for API compatibility but the
+        # actual restore is invoked from BenchEnv5.reset() AFTER eve.Env's
+        # start.reset() runs, because InsertionPoint.start.reset calls
+        # intervention.reset_devices() and would otherwise immediately wipe
+        # anything we restore here. See RL_IMPROV_7_CHANGES.md §7 Fix 5.
+        if checkpoint is not None:
+            self.logger.debug(
+                "SofaBeamAdapter.reset received checkpoint=... but will NOT "
+                "apply it here — BenchEnv5.reset() drives restore after "
+                "start.reset() has run."
+            )
 
     def _update_properties(self) -> None:
         tracking = self._instruments_combined.DOFs.position.value[:, 0:3][::-1]

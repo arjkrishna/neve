@@ -209,13 +209,20 @@ class LocalGuidance(Observation):
 
         # Features 8-10: distance and direction to nearest wrong-branch bifurcation
         # Features 11-13: distance and direction to nearest correct-path bifurcation
+        # RL_IMPROV_7 §7 Fix 18: switched feature 11 from Euclidean-to-interior-marker
+        # to ARCLENGTH-along-path-to-next-correct-entry. The Euclidean version was
+        # misleading — it picked up trunk markers and made "near entry" mean "near
+        # any path point", not "approaching a daughter". Wrong-entry distance has
+        # no clean arclength version (path doesn't go through wrong daughters), so
+        # feature 8 is zeroed; the agent should infer wrong-direction from the
+        # correct-entry direction features alone.
         if self._path_context is not None:
-            d_wrong = self._path_context.get_dist_to_closest_wrong_entry()
-            wrong_coords = self._path_context.get_closest_wrong_entry_coords()
-            d_correct = self._path_context.get_dist_to_next_correct_entry()
+            d_wrong = 0.0  # zeroed; no meaningful arclength for wrong daughter
+            wrong_coords = tip_vessel.copy()
+            d_correct = self._path_context.get_arclength_to_next_correct_entry()
             correct_coords = self._path_context.get_closest_correct_entry_coords()
         else:
-            d_wrong = _MAX_BIFURC_DIST_MM
+            d_wrong = 0.0
             wrong_coords = tip_vessel.copy()
             d_correct = _MAX_BIFURC_DIST_MM
             correct_coords = tip_vessel.copy()

@@ -208,6 +208,16 @@ if __name__ == "__main__":
         default=None,
         help="Path to save heatup episodes to (for reuse)",
     )
+    parser.add_argument(
+        "--checkpoint_dir",
+        type=str,
+        default=None,
+        help=(
+            "Directory of SOFA-state .npz checkpoints (from "
+            "collect_sofa_checkpoints.py). If set, every training episode "
+            "resets to a random checkpoint's state instead of zero insertion."
+        ),
+    )
     args = parser.parse_args()
 
     trainer_device = torch.device(args.device)
@@ -308,6 +318,20 @@ if __name__ == "__main__":
             stage2_steps=args.curriculum_stage2,
         )
         print(f"Action curriculum enabled: Stage1={args.curriculum_stage1}, Stage2={args.curriculum_stage2}")
+
+    # Wrap with per-episode SOFA-state restore if requested. Goes outside
+    # the curriculum wrapper so the curriculum sees the restored-state env.
+    if args.checkpoint_dir:
+        from util.checkpoint_restore import CheckpointRestoreWrapper
+        env_train = CheckpointRestoreWrapper(
+            env_train,
+            checkpoint_dir=args.checkpoint_dir,
+            rng_seed=42,
+        )
+        print(
+            f"Checkpoint restore enabled: {len(env_train.checkpoint_files)} "
+            f".npz files in {args.checkpoint_dir}"
+        )
 
     intervention_eval = DualDeviceNav()
     env_eval = EnvClass(

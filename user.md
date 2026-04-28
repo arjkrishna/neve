@@ -146,3 +146,170 @@ Heuristic improvement (harder):
 Pre-bifurcation rotation — When d_corr < threshold (approaching a bifurcation), compute the rotation needed to align the device with the correct branch direction and apply it. The CenterlineFollowerHeuristic.get_action() already has cross-track + tangent alignment, but it uses the projected segment on the path — which at a bifurcation might be ambiguous depending on which side of the junction the projection falls on.
 
 The highest-leverage fix is #1 (retraction direction) — it's one character and would eliminate a large fraction of those 396 early aborts. Want me to apply 1 + 2 + 3 now?
+
+
+------------------------------------------------------
+
+
+
+Confirmed — you're right to suspect it. In pid 578 ep 7:
+
+242 of 539 off-branch debug steps (45%) had reward > -0.101 → arclength progress was strictly positive while on_br=0.
+Several steps had positive net reward while off-branch (e.g. step 190: +0.024, step 191: +0.044) — the arc-progress term overcame the combined −0.1 wrong-branch + −0.001 step penalty.
+And look at the off_br counter trajectory across the 14 off-branch INFO samples:
+
+
+step:   200  250  300  350  400  450  500  550  600  650  700  800  850  900
+off_br:  4    8   10   10    1    3    8    5    1    2    1    6    5    5
+The counter keeps resetting and re-accumulating — meaning on_br is flipping back to 1 repeatedly, which is why OFF_BRANCH_GRACE_STEPS=20 never triggered. The tip is being alternately classified as on/off within tens of steps while insertion stays at ~490mm.
+
+Two plausible explanations, both consistent with what you're seeing:
+
+False-negative branch classification: PathProjectionCache.is_on_correct_branch() uses a KD-tree over all branch centerline points and picks the nearest branch. Near bif2, the two daughter branches (e.g. LCCA & RCCA proximal segments, or LVA & LCCA) can be within millimeters of each other. Tiny tip position jitter flips the nearest-branch winner. When the flip says "wrong," on_br=0 fires, but the tip is still geometrically close to the correct polyline → arclength progression continues normally.
+
+Genuine parallel wrong-branch traversal: the wrong daughter branch is nearly parallel to the correct one near bif2, so even with true off-branch state, the projection onto the correct polyline slides forward.
+
+Distinguishing them would mean logging cross_track_dist alongside on_br (when cross_track is small, flip is suspicious). The KD-tree flip-flopping shown above strongly points at #1. This matches the P3 concern in RL_IMPROV_4_CHANGES.md lines 458–481 ("branch interior points" fix — store points 10–15mm into each daughter branch to disambiguate junction-neighbor points).
+
+
+Smoking gun. Look at the wrong_pt and corr_pt columns — they're literally identical at every sample:
+
+Steps 200–250: both = (18.6, 13.6, 383.2) (bif2 junction)
+Steps 300–1000: both = (-0.6, 24.5, 416.1) (bif2 distal daughter junction)
+That's the P3 degenerate-junction problem documented in RL_IMPROV_4_CHANGES.md:458-481 — PathProjectionCache._build_entry_points() stores the same 3D junction coordinate in both _wrong_branch_entries and _correct_branch_entries (because a bifurcation connects to both correct AND wrong branches). So the direction features the agent sees are identical for "avoid this way" and "go this way."
+
+But more telling: look at the on_br flip pattern while tip is stationary:
+
+step	insert	on_br	off_br	d_corr
+300	485.4	0	10	7.0
+350	488.0	0	10	5.7
+400	493.8	0	1	4.8
+600	494.0	0	1	4.6
+700	493.5	0	1	4.6
+750	491.7	1	0	5.2
+800	488.9	0	6	5.0
+950	492.3	1	0	5.0
+Tip is parked at ~490mm, 4–7mm from the junction, and on_br is toggling between 0 and 1 every few tens of steps despite essentially no position change. The off_br counter keeps resetting because the KD-tree classification flips — that's why OFF_BRANCH_GRACE_STEPS=20 never fires.
+
+Mechanism: PathProjectionCache.is_on_correct_branch() does kdtree.query(tip) over all branch centerline points, takes the nearest, and asks if that branch is in path_branch_set. When the tip is near a junction, tiny vessel-CS coordinate jitter flips which daughter's nearest centerline point wins by micrometers.
+
+So your assertion holds: the arclength reward should not pay out while genuinely off-branch — but the detector is falsely classifying bif2-adjacent states as off-branch, so the reward is legitimately accruing for a tip that's essentially still on the correct path. The flip-flop also explains why the wrong-branch timeout never fires on these deep-stuck episodes (counter keeps resetting).
+
+Fix direction matches what RL_IMPROV_4_CHANGES.md §P3 already proposed: store interior points 10–15mm into each branch along its centerline, not the shared junction coordinate, so the KD-tree has disambiguated entries near junctions. That change would also fix the degenerate wrong_pt == corr_pt observation feature.
+
+--------------------------------
+
+the §4 fix did not actually address the KD-tree flip-flop.
+
+Looking at the code I wrote:
+
+_build_branch_index() at pathcontext.py:203-227 is unchanged. It still stuffs branch.coordinates (all centerline points, including the junction-proximal segments that are within mm of each other across branches) into _all_branch_coords → _branch_kdtree. This is the KD-tree that is_on_correct_branch() queries.
+My §4 fix only touched _build_entry_points() (the list of "entry" points stored in _wrong_branch_entries / _correct_branch_entries). Those lists are used only for observation features 8–13 (dist_to_wrong_entry, wrong_entry_dir_{x,z}, etc.), never by the classifier.
+So §4 fixed obs-feature degeneracy (wrong_pt == corr_pt), not KD-tree flip-flop. The hysteresis (§7 Fix 2) masks the flip-flop by debouncing the output but doesn't fix the underlying ambiguous classification — that's why pid 160 ep 2 still showed multiple WRONG_BRANCH_ENTRY_PENALTY hits during bif2 oscillation, and why the 1000-step oscillators persist (each off-branch stretch stays under 50 steps due to true raw flips at the junction).
+
+The actual KD-tree fix is to disambiguate the tree itself. Cleanest option: in _build_branch_index(), exclude centerline points within ~15 mm of any branching_point.coordinates — then the KD-tree contains only unambiguous interior points, and tip.query() returns a branch that matches the tip's true corridor. Near the junction all candidates are ~15 mm away, so the nearest-neighbor still picks the branch whose interior vector the tip is aligned with.
+
+Alternative: use per-branch polyline projection (perpendicular distance) instead of nearest-point-on-any-centerline — more robust but heavier refactor.
+
+Want me to apply the exclusion-based fix? Hysteresis + the real KD-tree fix together should cut the 1000-step oscillators significantly.
+
+
+
+
+
+
+
+Option 2 (per-branch polyline projection) is better. Option 1 is less code but has corner cases; Option 2 is correct by construction and reuses an existing utility.
+
+Option 1 (exclusion) — the catches
+Short branches break. Any branch < ~30 mm loses all its points from the KD-tree → effectively becomes invisible to the classifier. A daughter branch that's only 20 mm long before its next bifurcation has only ~5 mm of "interior" left after excluding 15 mm at each end. Brittle.
+Tip at the junction — all remaining KD-tree points are ≥ 15 mm away, by definition. The nearest-neighbor is still ambiguous because the tip now sits equidistant from multiple branches' first non-excluded points. Option 1 pushes the ambiguity zone outward instead of eliminating it.
+Magic number. The 15 mm threshold is a tuning knob. Too small → still ambiguous, too large → short branches vanish. No principled way to pick it.
+Option 2 (perpendicular distance to each branch's polyline)
+Geometrically correct: for each branch, project tip onto its centerline polyline, take the perpendicular (cross-track) distance, pick the branch with the smallest one.
+At the junction point, the two daughter polylines diverge in different directions, so perpendicular distance to each is a well-defined, continuous function of tip position. Tiny tip jitter doesn't flip the winner.
+Reuses existing code. eve/util/polyline.py already has vectorized project_onto_polyline(point, polyline, cumlen) that returns cross_track_dist. The PathProjectionCache already uses it for the correct-path projection.
+Compute cost: ~10 branches × ~100 segments each = ~1000 vectorized segment projections per call. Well under a millisecond; negligible vs SOFA step time.
+Sketch
+
+def _build_branch_index(self) -> None:
+    # Replace: self._branch_kdtree = cKDTree(all_coords)
+    # With: precompute each branch's cumlen for fast polyline projection
+    self._branch_polylines = [b.coordinates for b in vessel_tree.branches]
+    self._branch_cumlens = [compute_cumulative_arclength(p) if len(p) >= 2 else np.zeros(1)
+                            for p in self._branch_polylines]
+    self._branches_tuple = vessel_tree.branches
+
+def get_nearest_branch(self):
+    if self._nearest_branch is None:
+        tip = self.get_tip_vessel_cs()
+        best_d, best_i = float("inf"), 0
+        for i, (poly, cumlen) in enumerate(zip(self._branch_polylines, self._branch_cumlens)):
+            if len(poly) < 2: continue
+            r = project_onto_polyline(tip, poly, cumlen)
+            if r.cross_track_dist < best_d:
+                best_d, best_i = r.cross_track_dist, i
+        self._nearest_branch = self._branches_tuple[best_i]
+    return self._nearest_branch
+About 20 lines of code total, drops the KD-tree and scipy dependency for this method, gives a mathematically sound answer, and stacks nicely with hysteresis (which now reacts to a cleaner raw signal).
+
+Want me to apply this?
+
+
+Pattern confirmed — the flip-flop is happening at BIF1, not bif2. Look at wrong_pt=(12.7,-26.0,67.3) and corr_pt=(30.3,-19.0,68.7) — both at z≈68mm which is bif1 coordinate range. Insertion bounces 55–75mm throughout (not ~490 like the bif2 oscillators we saw before).
+
+What happened in this episode:
+
+Restore placed wire at ~380mm (bif2 zone), but with target of a different branch than the checkpoint was captured for. So tip was already in the wrong daughter from step 1.
+Heuristic retracted wire full speed (~6mm/step × 50 steps) from 380mm down to 64mm — all the way back through bif2 and the trunk, now sitting at bif1.
+At bif1, same flip-flop pattern: off_br counter climbs to 22, 28, 30 then resets to 0 as stable flips back True. Never hits 50. Never fires timeout. Episode runs full 1000.
+Evidence rows:
+
+
+step  50: on_br=0  off_br=22   (approaching timeout)
+step 100: on_br=1  off_br=0    (flipped back — counter reset)
+step 150: on_br=0  off_br=12   (off again)
+step 200: on_br=0  off_br=28   (approaching timeout)
+step 250: on_br=0  off_br=10   (counter reset happened between 200-250)
+...
+Hysteresis helps but the raw KD-tree signal is still noisy enough at junctions to flip the stable state through the 5-step debouncer every ~100 steps. Applying Option 2 now.
+
+------------------------------------
+
+
+The formula
+Let:
+
+axis = normalize(tracking[0] - tracking[k]) — wire's long axis at the tip (spanning ~10 mm, using k ≈ 5 beam nodes of spacing)
+curv_vec = (tracking[0] - tracking[k]) - (tracking[k] - tracking[2k]) — discrete second-derivative of the wire position: the J-tip's curvature direction. Perpendicular-ish to axis.
+tangent — path tangent at the wire's projection onto the correct path (already computed in current code)
+Then:
+
+# Project onto plane perpendicular to the rotation axis
+curv_perp = curv_vec - dot(curv_vec, axis) * axis
+tangent_perp = tangent - dot(tangent, axis) * axis
+
+# Fallback: when J-tip curvature is tiny (straight wire section), no
+# rotation can steer anything. Return 0.
+if |curv_perp| < 0.1 mm or |tangent_perp| < 1e-3:
+    heading_error = 0.0
+else:
+    curv_perp /= |curv_perp|
+    tangent_perp /= |tangent_perp|
+    cos_ang = dot(curv_perp, tangent_perp)
+    sin_ang = dot(axis, cross(curv_perp, tangent_perp))  # signed-about-axis
+    heading_error = atan2(sin_ang, cos_ang)  # in [-π, π]
+This is the angle (in radians) by which rotating the base around axis aligns the J-tip's curvature direction with where the path wants to go.
+
+Apply the same projection to cross_track_signed:
+
+# offset_vec: tip's lateral offset from correct centerline (already computed)
+offset_perp = offset_vec - dot(offset_vec, axis) * axis
+cross_track_signed = dot(axis, cross(curv_perp, offset_perp_hat))  # signed
+— or keep its current gain small; the main lever is heading_error.
+
+
+---------------------------------------------
+
+
+Possible next experiments: (a) narrow Phase 2 clamp back to ±0.5 or ±0.3 for small heading errors (keep ±1.5 only when |heading_err|>0.5), (b) add a "commit lock" — once on correct branch at d_corr<15, disable rotation for N steps to let the wire finalize the entry.

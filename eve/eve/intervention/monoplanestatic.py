@@ -146,6 +146,11 @@ class MonoPlaneStatic(SimulatedIntervention):
         self.vessel_tree.reset(episode_number, vessel_seed)
         ip_pos = self.vessel_tree.insertion.position
         ip_dir = self.vessel_tree.insertion.direction
+        # restore_checkpoint is no longer forwarded to simulation.reset()
+        # because eve.Env.reset's start.reset() step (InsertionPoint) would
+        # zero the wire immediately afterwards via reset_devices(). The
+        # restore is now driven from BenchEnv5.reset() AFTER super().reset
+        # finishes. See RL_IMPROV_7_CHANGES.md §7 Fix 5.
         self.simulation.reset(
             insertion_point=ip_pos,
             insertion_direction=ip_dir,

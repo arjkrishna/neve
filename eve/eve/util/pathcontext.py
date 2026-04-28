@@ -28,6 +28,50 @@ def _return_none():
     return None
 
 
+def _branch_interior_point(branch, junction_coord, offset_mm=15.0):
+    """Walk ``offset_mm`` along ``branch.coordinates`` starting from the point
+    nearest ``junction_coord``, in the direction that moves away from the
+    junction. Returns the interpolated 3D point; falls back to the far
+    endpoint if the branch is shorter than ``offset_mm``.
+
+    Used to disambiguate wrong-branch vs correct-branch entries at
+    bifurcation junctions: storing the shared junction coordinate in both
+    lists (old behavior) made direction features 8-13 of LocalGuidance
+    degenerate. Storing an interior point per connected branch makes
+    ``wrong_entry_dir != correct_entry_dir`` at every bifurcation.
+    """
+    coords = branch.coordinates
+    if len(coords) < 2:
+        return coords[0] if len(coords) == 1 else np.asarray(junction_coord)
+
+    dists = np.linalg.norm(coords - junction_coord, axis=1)
+    i_start = int(np.argmin(dists))
+
+    # Choose direction that takes the first step further from the junction.
+    direction = None
+    for cand in (+1, -1):
+        i_next = i_start + cand
+        if 0 <= i_next < len(coords):
+            if np.linalg.norm(coords[i_next] - junction_coord) > dists[i_start]:
+                direction = cand
+                break
+    if direction is None:
+        direction = +1 if i_start < len(coords) - 1 else -1
+
+    accumulated = 0.0
+    i = i_start
+    while 0 <= i + direction < len(coords):
+        seg = coords[i + direction] - coords[i]
+        seg_len = float(np.linalg.norm(seg))
+        if accumulated + seg_len >= offset_mm:
+            remaining = offset_mm - accumulated
+            t = remaining / seg_len if seg_len > 1e-8 else 0.0
+            return coords[i] + t * seg
+        accumulated += seg_len
+        i += direction
+    return coords[i]
+
+
 class PathProjectionCache:
     """Caches polyline projection and tip_vessel_cs once per env step.
 
@@ -39,9 +83,15 @@ class PathProjectionCache:
     # Tell eve ConfigHandler to skip this class (not needed for config saving)
     _eve_skip_config = True
 
-    def __init__(self, pathfinder, intervention) -> None:
+    def __init__(
+        self,
+        pathfinder,
+        intervention,
+        on_branch_flip_threshold: int = 5,
+    ) -> None:
         self.pathfinder = pathfinder
         self.intervention = intervention
+        self._on_branch_flip_threshold = on_branch_flip_threshold
 
         # Path geometry (set on reset)
         self._polyline = np.empty((0, 3))
@@ -49,14 +99,32 @@ class PathProjectionCache:
         self._total_length = 0.0
 
         # Branch index (built at reset)
-        self._all_branch_coords = np.empty((0, 3))
-        self._branch_id_array = np.empty(0, dtype=np.int32)
+        # RL_IMPROV_7 §7 Fix 10: replaced KD-tree over all-branch centerline
+        # points with per-branch polyline perpendicular-distance projection.
+        # The KD-tree produced noisy classifications near bifurcation
+        # junctions (proximal segments of adjacent branches are within mm),
+        # flipping the nearest-branch winner with tiny tip jitter. The
+        # polyline projection is geometrically stable: even AT a junction,
+        # each branch's polyline diverges in a different direction, so
+        # perpendicular distance to each is well-defined and continuous.
         self._branches_tuple = ()
-        self._branch_kdtree = None
+        self._branch_polylines = ()
+        self._branch_cumlens = ()
 
         # Branch entry points (built at reset)
         self._wrong_branch_entries = np.empty((0, 3))
         self._correct_branch_entries = np.empty((0, 3))
+
+        # Junction arclengths along the planned path (each junction's nearest
+        # path-point arclength). Used by heuristic for arclength-based d_corr.
+        # Independent from the inside-point arrays above which are kept as-is
+        # for reward computation.
+        self._path_junction_arclengths = np.empty(0)
+
+        # Cross-step hysteresis state for is_on_correct_branch() —
+        # persists across invalidate() calls; reset only in reset().
+        self._stable_on_branch = None       # current debounced classification
+        self._pending_flip_count = 0         # consecutive raw disagreements
 
         # Per-step cache (typing removed for Python 3.8 compat)
         self._tip_vessel_cs = None
@@ -84,6 +152,10 @@ class PathProjectionCache:
             self._total_length = float(self._cumlen[-1])
         self._build_branch_index()
         self._build_entry_points()
+        # Reset hysteresis state per episode so a new vessel/path starts
+        # with a fresh branch-membership evaluation.
+        self._stable_on_branch = None
+        self._pending_flip_count = 0
         self.invalidate()
 
     def invalidate(self) -> None:
@@ -142,45 +214,61 @@ class PathProjectionCache:
     # ------------------------------------------------------------------
 
     def _build_branch_index(self) -> None:
-        """Precompute branch lookup from all branch coordinates."""
+        """Precompute per-branch polylines + cumulative arclengths for
+        perpendicular-distance nearest-branch classification.
+
+        Each branch has its own centerline polyline. At query time,
+        project the tip onto each polyline separately and pick the branch
+        with the smallest perpendicular (cross-track) distance. Unlike
+        the previous KD-tree approach, the winner is stable near
+        bifurcation junctions because polylines diverge in distinct
+        directions from the junction.
+        """
         vessel_tree = self.intervention.vessel_tree
         if vessel_tree.branches is None or len(vessel_tree.branches) == 0:
-            self._branch_kdtree = None
-            self._all_branch_coords = np.empty((0, 3))
-            self._branch_id_array = np.empty(0, dtype=np.int32)
             self._branches_tuple = ()
+            self._branch_polylines = ()
+            self._branch_cumlens = ()
             return
 
-        all_coords = []
-        branch_ids = []
-        for i, branch in enumerate(vessel_tree.branches):
-            all_coords.append(branch.coordinates)
-            branch_ids.extend([i] * len(branch.coordinates))
+        polylines = []
+        cumlens = []
+        for branch in vessel_tree.branches:
+            coords = np.asarray(branch.coordinates)
+            polylines.append(coords)
+            if len(coords) >= 2:
+                cumlens.append(compute_cumulative_arclength(coords))
+            else:
+                cumlens.append(np.zeros(max(1, len(coords))))
 
-        self._all_branch_coords = np.concatenate(all_coords, axis=0)
-        self._branch_id_array = np.array(branch_ids, dtype=np.int32)
-        self._branches_tuple = vessel_tree.branches
-
-        try:
-            from scipy.spatial import cKDTree
-            self._branch_kdtree = cKDTree(self._all_branch_coords)
-        except ImportError:
-            self._branch_kdtree = None
+        self._branches_tuple = tuple(vessel_tree.branches)
+        self._branch_polylines = tuple(polylines)
+        self._branch_cumlens = tuple(cumlens)
 
     def _build_entry_points(self) -> None:
-        """Precompute wrong-branch and correct-branch bifurcation points."""
+        """Precompute branch-interior points (one per connected branch per
+        junction), classified by whether that branch is in the correct path.
+
+        Per RL_IMPROV_7 §4: storing the shared junction coordinate in both
+        wrong/correct lists made features 9-10 ≡ 12-13 in LocalGuidance
+        (degenerate direction features). Storing one interior point per
+        connected branch, 15 mm into the branch from the junction,
+        disambiguates wrong vs correct direction at every bifurcation.
+        """
         vessel_tree = self.intervention.vessel_tree
         path_set = self.pathfinder.path_branch_set
 
         wrong_entries = []
         correct_entries = []
         for bp in vessel_tree.branching_points:
-            has_wrong = any(b not in path_set for b in bp.connections)
-            has_correct = any(b in path_set for b in bp.connections)
-            if has_wrong:
-                wrong_entries.append(bp.coordinates)
-            if has_correct:
-                correct_entries.append(bp.coordinates)
+            for branch in bp.connections:
+                interior = _branch_interior_point(
+                    branch, bp.coordinates, offset_mm=15.0
+                )
+                if branch in path_set:
+                    correct_entries.append(interior)
+                else:
+                    wrong_entries.append(interior)
 
         self._wrong_branch_entries = (
             np.array(wrong_entries) if wrong_entries else np.empty((0, 3))
@@ -189,28 +277,80 @@ class PathProjectionCache:
             np.array(correct_entries) if correct_entries else np.empty((0, 3))
         )
 
-    def get_nearest_branch(self):
-        """Return the nearest Branch to the tip, computing once per step."""
-        if self._nearest_branch is None:
-            tip = self.get_tip_vessel_cs()
-            if self._branch_kdtree is not None:
-                _, idx = self._branch_kdtree.query(tip)
-            elif len(self._all_branch_coords) > 0:
-                dists = np.linalg.norm(self._all_branch_coords - tip, axis=1)
+        # Precompute arclength of each branching point ON the planned path.
+        # Heuristic uses this for arclength-based d_corr (distance along the
+        # path to the next junction the wire must thread). A junction is
+        # considered "on path" if there is a path point within 5 mm of it.
+        junction_arclengths = []
+        if len(self._polyline) > 1 and len(self._cumlen) > 0:
+            for bp in vessel_tree.branching_points:
+                bp_xyz = np.asarray(bp.coordinates, dtype=float)
+                dists = np.linalg.norm(self._polyline - bp_xyz, axis=1)
                 idx = int(np.argmin(dists))
-            else:
+                if dists[idx] < 5.0:
+                    junction_arclengths.append(float(self._cumlen[idx]))
+        self._path_junction_arclengths = (
+            np.array(sorted(junction_arclengths))
+            if junction_arclengths
+            else np.empty(0)
+        )
+
+    def get_nearest_branch(self):
+        """Return the branch with the smallest perpendicular distance from
+        the tip to its centerline polyline. Computed once per step."""
+        if self._nearest_branch is None:
+            if not self._branches_tuple:
                 return None
-            self._nearest_branch = self._branches_tuple[self._branch_id_array[idx]]
+            tip = self.get_tip_vessel_cs()
+            best_dist = float("inf")
+            best_idx = 0
+            for i, (poly, cumlen) in enumerate(
+                zip(self._branch_polylines, self._branch_cumlens)
+            ):
+                if len(poly) < 2:
+                    continue
+                r = project_onto_polyline(tip, poly, cumlen)
+                if r.cross_track_dist < best_dist:
+                    best_dist = r.cross_track_dist
+                    best_idx = i
+            self._nearest_branch = self._branches_tuple[best_idx]
         return self._nearest_branch
 
     def is_on_correct_branch(self) -> bool:
-        """Return True if the nearest branch is on the correct path."""
+        """Return the debounced branch-membership classification.
+
+        The raw KD-tree nearest-branch lookup flips between on/off on every
+        step when the tip is within a few mm of a bifurcation junction —
+        see RL_IMPROV_7_CHANGES.md §3. To prevent that noise from resetting
+        `env5.py`'s off-branch counter and making `wrong_branch_timeout`
+        unreachable, this method applies a simple debounce: the reported
+        state only flips after ``_on_branch_flip_threshold`` *consecutive*
+        raw disagreements; a single agreeing step resets the counter.
+
+        The raw signal is still computed every step (required for the
+        projection cache semantics), but the *returned* value is the
+        debounced one.
+        """
         if self._is_on_correct_branch is None:
             branch = self.get_nearest_branch()
             if branch is not None:
-                self._is_on_correct_branch = self.pathfinder.is_branch_on_path(branch)
+                raw = bool(self.pathfinder.is_branch_on_path(branch))
             else:
-                self._is_on_correct_branch = True  # default on-path if no branches
+                raw = True  # default on-path if no branches
+
+            if self._stable_on_branch is None:
+                # First query of the episode — seed the debouncer.
+                self._stable_on_branch = raw
+                self._pending_flip_count = 0
+            elif raw != self._stable_on_branch:
+                self._pending_flip_count += 1
+                if self._pending_flip_count >= self._on_branch_flip_threshold:
+                    self._stable_on_branch = raw
+                    self._pending_flip_count = 0
+            else:
+                self._pending_flip_count = 0
+
+            self._is_on_correct_branch = self._stable_on_branch
         return self._is_on_correct_branch
 
     def _compute_wrong_entry(self) -> None:
@@ -250,10 +390,99 @@ class PathProjectionCache:
         return self._closest_wrong_entry_coords
 
     def get_dist_to_next_correct_entry(self) -> float:
-        """Euclidean distance from tip to nearest correct-path bifurcation."""
+        """DEPRECATED — Euclidean distance from tip to nearest correct-path
+        interior marker (15 mm into a correct daughter at any path junction).
+        This metric was misleading because it includes trunk markers, so
+        small d_corr could just mean "tip near upper trunk", not "tip near
+        a daughter entry". Use ``get_arclength_to_next_correct_entry()`` and
+        ``get_arclength_past_last_junction()`` instead. Kept for backward
+        compatibility; no caller as of RL_IMPROV_7 §7 Fix 18."""
         if self._dist_to_correct_entry is None:
             self._compute_correct_entry()
         return self._dist_to_correct_entry
+
+    def get_arclength_to_next_correct_entry(self) -> float:
+        """Arclength along planned path from tip projection to next forward
+        junction the path threads. Used by the heuristic; intentionally
+        independent of the Euclidean inside-point d_corr above which is
+        consumed by LocalGuidance / reward.
+
+        Returns ``float('inf')`` when there is no junction ahead (tip is past
+        the last bifurcation) or no junctions were detected on the path —
+        callers should treat this as "no entry zone applies; act normally"
+        rather than "we're at the entry". Returning 0.0 here would make a
+        ``d_corr < threshold`` check fire for the entire post-junction
+        trajectory and freeze the wire in slow-mode all the way to the
+        target.
+        """
+        if len(self._path_junction_arclengths) == 0:
+            return float("inf")
+        proj = self.get_projection()
+        ahead = self._path_junction_arclengths[
+            self._path_junction_arclengths > proj.s
+        ]
+        if len(ahead) == 0:
+            return float("inf")
+        return float(ahead[0] - proj.s)
+
+    def get_arclength_past_last_junction(self) -> float:
+        """Arclength from the most recent junction at or behind the tip's
+        projection. Mirror of `get_arclength_to_next_correct_entry()` for
+        the backward direction. Returns 0.0 if no junction is yet behind
+        the tip (i.e. wire hasn't crossed bif1 yet) or if no junctions are
+        detected on the path.
+
+        Used by the heuristic to detect "wire has entered a daughter past
+        the second-entry threshold" (arc_past > 10 mm) and by env5 to fire
+        the +1 CORRECT_ENTRY_REWARD once per junction crossing.
+        """
+        if len(self._path_junction_arclengths) == 0:
+            return 0.0
+        proj = self.get_projection()
+        behind = self._path_junction_arclengths[
+            self._path_junction_arclengths <= proj.s
+        ]
+        if len(behind) == 0:
+            return 0.0
+        return float(proj.s - behind[-1])
+
+    def get_nearest_named_branch_idx(self) -> int:
+        """Index 0-3 of the NAMED supra-aortic daughter (LCCA, LVA, RCCA,
+        RVA in vessel-tree-branch order if their names appear in branches)
+        whose centerline polyline the tip is currently nearest to (perp.
+        distance). Returns -1 if no named daughter is identifiable or if
+        the nearest branch is some other (trunk/bridge/sub-) curve.
+
+        Used purely for diagnostic logging (which daughter is the wire
+        committing to right now).
+        """
+        if not self._branches_tuple:
+            return -1
+        # Build name→idx map once per process; cheap.
+        if not hasattr(self, "_named_indices"):
+            named_targets = ("LCCA", "LVA", "RCCA", "RVA")
+            mapping = {}
+            for i, br in enumerate(self._branches_tuple):
+                name = getattr(br, "name", "") or ""
+                for t in named_targets:
+                    if t in name:
+                        mapping[i] = t
+                        break
+            self._named_indices = mapping
+        if not self._named_indices:
+            return -1
+        tip = self.get_tip_vessel_cs()
+        best_idx, best_dist = -1, float("inf")
+        for i, _name in self._named_indices.items():
+            poly = self._branch_polylines[i]
+            cumlen = self._branch_cumlens[i]
+            if len(poly) < 2:
+                continue
+            r = project_onto_polyline(tip, poly, cumlen)
+            if r.cross_track_dist < best_dist:
+                best_dist = r.cross_track_dist
+                best_idx = i
+        return best_idx
 
     def get_closest_correct_entry_coords(self) -> np.ndarray:
         """3D vessel-CS coordinates of nearest correct-path bifurcation."""
