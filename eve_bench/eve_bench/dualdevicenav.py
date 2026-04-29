@@ -18,6 +18,7 @@ class DualDeviceNav(eve.intervention.MonoPlaneStatic):
         self,
         stop_device_at_tree_end: bool = True,
         normalize_action: bool = False,
+        insertion_z: float = None,
     ) -> None:
 
         mesh = os.path.join(DATA_DIR, "vessel_architecture_collision.obj")
@@ -26,12 +27,70 @@ class DualDeviceNav(eve.intervention.MonoPlaneStatic):
         centerline_folder_path = os.path.join(DATA_DIR, "Centrelines_comb")
         branches = load_branches(centerline_folder_path)
 
-        insertion = [65.0, -5.0, 35.0]
+        # RL_IMPROV_8 §16 wire-history A/B test: optionally anchor the wire
+        # high in the trunk (near bif2) instead of at the femoral entry,
+        # eliminating the curvature/torsion the wire accumulates while
+        # threading 380 mm of arch.
+        #
+        # ``branches[0]`` is NOT the trunk — load_branches() returns the
+        # numbered files Centerline curve (N).mrk in number order, with
+        # all paren-less files (LCCA, LVA, RCCA, RVA) collapsed to "key 0"
+        # in unstable filesystem order. The actual trunk in this dataset
+        # is "Centerline curve (2)" with z-range [79.4, 392.0]. Look up
+        # the trunk by selecting the longest-span branch whose z-range
+        # contains the requested insertion_z; this is robust to load order.
+        if insertion_z is not None:
+            best_branch = None
+            best_span = -1.0
+            for br in branches:
+                z = br.coordinates[:, 2]
+                z_lo, z_hi = float(z.min()), float(z.max())
+                if z_lo <= insertion_z <= z_hi:
+                    span = z_hi - z_lo
+                    if span > best_span:
+                        best_span = span
+                        best_branch = br
+            if best_branch is None:
+                raise ValueError(
+                    f"insertion_z={insertion_z} is not within the vessel-CS z "
+                    f"range of any centerline branch."
+                )
+
+            # Branch (2) (the trunk) has 363 control points over 313 mm =
+            # 0.86 mm spacing, so direct nearest-point lookup lands within
+            # ~0.4 mm of the requested z. No interpolation needed.
+            coords = best_branch.coordinates
+            z_vals = coords[:, 2]
+            idx = int(np.argmin(np.abs(z_vals - insertion_z)))
+            insertion = coords[idx].tolist()
+            # Tangent: use neighbour direction. Need an adjacent point to
+            # form a delta — pick whichever neighbour exists.
+            if idx + 1 < len(coords):
+                tangent = coords[idx + 1] - coords[idx]
+            else:
+                tangent = coords[idx] - coords[idx - 1]
+            # Tangent must point toward higher z (away from femoral, toward
+            # bif2). Branch (2) is stored with descending z, so adjacent-
+            # point delta has z<0; flip it.
+            if tangent[2] < 0:
+                tangent = -tangent
+            tangent = tangent / np.linalg.norm(tangent)
+            insertion_direction = tangent.tolist()
+            print(
+                f"DualDeviceNav: insertion_z={insertion_z} | branch='{best_branch.name}' "
+                f"z=[{float(z_vals.min()):.1f},{float(z_vals.max()):.1f}] | "
+                f"coords[{idx}/{len(coords)}]="
+                f"({insertion[0]:.2f},{insertion[1]:.2f},{insertion[2]:.2f}) "
+                f"direction=({insertion_direction[0]:.3f},{insertion_direction[1]:.3f},{insertion_direction[2]:.3f})"
+            )
+        else:
+            insertion = [65.0, -5.0, 35.0]
+            insertion_direction = [-1.0, 0.0, 1.0]
 
         vessel_tree = eve.intervention.vesseltree.FromMesh(
             mesh,
             insertion,
-            [-1.0, 0.0, 1.0],
+            insertion_direction,
             branch_list=branches,
             rotation_yzx_deg=[90, -90, 0],
             scaling_xyz=[1.0, 1.0, 1.0],

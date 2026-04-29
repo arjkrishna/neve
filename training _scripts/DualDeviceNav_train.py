@@ -218,7 +218,25 @@ if __name__ == "__main__":
             "resets to a random checkpoint's state instead of zero insertion."
         ),
     )
+    parser.add_argument(
+        "--insertion_z",
+        type=float,
+        default=None,
+        help=(
+            "If set, override the femoral insertion point. Wire is anchored "
+            "at the trunk centerline point with vessel-CS z closest to this "
+            "value. RL_IMPROV_8 §16 wire-history A/B test: try ~345 (about "
+            "30-40 mm short of bif2). Mutually exclusive with --checkpoint_dir."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.checkpoint_dir and args.insertion_z is not None:
+        raise SystemExit(
+            "--checkpoint_dir and --insertion_z are mutually exclusive: "
+            "checkpoint restore replaces the entire wire state, while "
+            "anchoring high in the trunk is a clean alternative."
+        )
 
     trainer_device = torch.device(args.device)
     n_worker = args.n_worker
@@ -305,7 +323,7 @@ if __name__ == "__main__":
     #   - rotation_yzx_deg = [90, -90, 0]  (line 36)
     #   - fluoroscopy_rot_zx = [20, 5]     (line 82)
     # These match the preprocessing in the original DualDeviceNav data (model 0105)
-    intervention = DualDeviceNav()
+    intervention = DualDeviceNav(insertion_z=args.insertion_z)
     env_train_unwrapped = EnvClass(intervention=intervention, mode="train", visualisation=False)
     env_train = env_train_unwrapped  # May be wrapped below
 
@@ -333,7 +351,7 @@ if __name__ == "__main__":
             f".npz files in {args.checkpoint_dir}"
         )
 
-    intervention_eval = DualDeviceNav()
+    intervention_eval = DualDeviceNav(insertion_z=args.insertion_z)
     env_eval = EnvClass(
         intervention=intervention_eval, mode="eval", visualisation=False
     )
