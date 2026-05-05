@@ -68,6 +68,10 @@ RE_STEP = re.compile(
     r"d_corr_arc=([\d.infa]+) \| arc_past=([\d.\-]+) \| nearest_named=(\w+) \| "
     r"entries_passed=(\d+) \| tip3d=\(([\d.\-]+),([\d.\-]+),([\d.\-]+)\)"
 )
+# RL_IMPROV_8: separate regex for new fields. Optional — old logs won't match.
+RE_STEP_NEW = re.compile(
+    r"on_path=(\d).*?d_corr_3d=([\d.infa]+) \| arc_past_d=([\d.\-]+).*?daughters_passed=(\d+)"
+)
 
 
 def parse_worker(path, pid):

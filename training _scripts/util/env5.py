@@ -270,6 +270,20 @@ class BenchEnv5(eve.Env):
         # Detector state reset
         self._heuristic_mode = bool(options and options.get("heuristic_mode", False))
         self._heuristic_abort_reason = None
+
+        # RL_IMPROV_8: stash the target branch tag (LCCA/LVA/RCCA/RVA) for
+        # snapshot bucketing and STEP-log diagnostics. The schedule passes
+        # `target_branch="Centerline curve - LCCA.mrk"` (etc.) via options;
+        # extract the short tag. Falls back to "unknown" if not provided
+        # (e.g. plain training without an explicit schedule).
+        self._target_branch_short = "unknown"
+        if options is not None:
+            tb_full = options.get("target_branch")
+            if isinstance(tb_full, str):
+                for tag in ("LCCA", "LVA", "RCCA", "RVA"):
+                    if tag in tb_full:
+                        self._target_branch_short = tag
+                        break
         self._off_branch_steps = 0
         self._fold_stall_count = 0
         self._prev_tip_s = 0.0
@@ -333,9 +347,11 @@ class BenchEnv5(eve.Env):
         try:
             self._path_context.invalidate()  # ensure projection is fresh
             proj_s = self._path_context.get_projection().s
-            for j_arc in self._path_context._path_junction_arclengths:
+            # RL_IMPROV_8: pre-populate from daughter-only arclengths to
+            # match the +1 reward gate.
+            for j_arc in self._path_context._path_daughter_arclengths:
                 if j_arc <= proj_s - 10.0:
-                    # wire is at least 10 mm past this junction at start
+                    # wire is at least 10 mm past this daughter at start
                     self._correct_entries_seen.add(float(j_arc))
         except Exception:
             pass
@@ -357,6 +373,7 @@ class BenchEnv5(eve.Env):
         self._step_logger.info(
             f"EPISODE_START | ep={self._episode_count} | global_steps={self._step_count} | "
             f"wall_time={time.time():.6f} | pid={os.getpid()}{target_str}{ins_str}"
+            f" | target_branch={self._target_branch_short}"
         )
         sys.stderr.flush()
 
@@ -441,12 +458,24 @@ class BenchEnv5(eve.Env):
                     self._heuristic_abort("wire_fold_stall", info)
                 truncated = True
 
-        # ---- Detector: wrong_branch (both modes) ----
-        # -1 on entry, -0.1 per step while off-branch.
-        # After OFF_BRANCH_GRACE_STEPS → truncate + failure penalty.
-        on_correct_branch = self._path_context.is_on_correct_branch()
+        # ---- State-machine update (RL_IMPROV_8 v2) ----
+        # Drives _current_branch_idx and _on_planned_path from this step's
+        # projection. Must run before is_on_correct_path() / is_on_correct_branch()
+        # so those queries see the fresh state. The projection cache was
+        # populated during super().step() by ArcLengthProgress + LocalGuidance.
+        try:
+            self._path_context.update_branch_state()
+        except Exception as e:
+            self._step_logger.warning(f"update_branch_state failed: {e}")
+
+        # ---- Detector: wrong_path (RL_IMPROV_8 v2 — state machine) ----
+        # is_on_correct_path now reads the state-machine flag _on_planned_path
+        # which was set with radius-aware tolerance + 10 mm arclength
+        # commit hysteresis on junction crossings — no in-lumen flicker.
+        on_correct_path = self._path_context.is_on_correct_path()
+        on_correct_branch = self._path_context.is_on_correct_branch()  # legacy log
         if not terminated and not truncated:
-            if not on_correct_branch:
+            if not on_correct_path:
                 self._off_branch_steps += 1
                 if self._off_branch_steps == 1:
                     reward += WRONG_BRANCH_ENTRY_PENALTY
@@ -459,23 +488,23 @@ class BenchEnv5(eve.Env):
             else:
                 self._off_branch_steps = 0
 
-        # ---- +1 reward on correct daughter entry (RL_IMPROV_7 §7 Fix 18) ----
-        # Once per junction per episode: when the tip's projection on the
-        # planned path is at least 10 mm past the most-recent junction (the
-        # "second entry point"), award +1 the FIRST time. Encourages the
-        # heuristic-seeded policy to actually commit into a daughter rather
-        # than hover at bif2.
-        if not terminated and not truncated and on_correct_branch:
+        # ---- +1 reward on correct daughter entry (RL_IMPROV_8) ----
+        # Switched from _path_junction_arclengths (every junction within 5 mm
+        # of the path) to _path_daughter_arclengths (real-fork junctions only).
+        # Eliminates spurious +1s for crossing internal trunk-trunk junctions.
+        # Once per daughter per episode: when the tip's projection is at
+        # least 10 mm past the most-recent daughter entry, award +1.
+        if not terminated and not truncated and on_correct_path:
             try:
-                arc_past = self._path_context.get_arclength_past_last_junction()
+                arc_past = self._path_context.get_arclength_past_last_daughter_entry()
                 if arc_past >= 10.0:
-                    junctions_arr = self._path_context._path_junction_arclengths
+                    daughters_arr = self._path_context._path_daughter_arclengths
                     proj_s = self._path_context.get_projection().s
-                    behind = junctions_arr[junctions_arr <= proj_s]
+                    behind = daughters_arr[daughters_arr <= proj_s]
                     if len(behind) > 0:
-                        current_junction_s = float(behind[-1])
-                        if current_junction_s not in self._correct_entries_seen:
-                            self._correct_entries_seen.add(current_junction_s)
+                        current_daughter_s = float(behind[-1])
+                        if current_daughter_s not in self._correct_entries_seen:
+                            self._correct_entries_seen.add(current_daughter_s)
                             reward += CORRECT_ENTRY_REWARD
             except Exception:
                 pass
@@ -531,18 +560,45 @@ class BenchEnv5(eve.Env):
 
             # Shared fields (both modes)
             _obr = f"{int(on_correct_branch)}"
+            _opath = f"{int(on_correct_path)}"  # RL_IMPROV_8 — stricter
             _off = self._off_branch_steps
             _fold = f"{self._fold_stall_count}/{FOLD_STALL_STEPS}"
             # Replaced Euclidean d_corr/d_wrong + interior-marker coords
             # (Fix 18) with arclength-based metrics that actually measure
             # progress along the planned path.
-            _dca = "?"        # arclength to next correct junction
-            _arc_past = "?"   # arclength past most-recent junction (≥10 = inside daughter)
+            _dca = "?"        # arclength to next correct junction (legacy)
+            _arc_past = "?"   # arclength past most-recent junction (legacy)
+            _d3d = "?"        # RL_IMPROV_8: 3D Euclidean dist to next daughter
+            _drouted = "?"    # RL_IMPROV_8 v2: graph-routed dist (handles sister branches)
+            _arc_past_d = "?" # RL_IMPROV_8: arclength past most-recent daughter
             _entries = len(self._correct_entries_seen)
+            _daughters_passed = "?"  # alias of _entries under daughter-only gate
             try:
                 dca_val = self._path_context.get_arclength_to_next_correct_entry()
                 _dca = "inf" if dca_val == float("inf") else f"{dca_val:.1f}"
                 _arc_past = f"{self._path_context.get_arclength_past_last_junction():.1f}"
+            except Exception:
+                pass
+            try:
+                d3d_val = self._path_context.get_3d_dist_to_next_daughter_entry()
+                _d3d = "inf" if d3d_val == float("inf") else f"{d3d_val:.1f}"
+                drt_val = self._path_context.get_routed_d_corr_to_next_daughter_entry()
+                _drouted = "inf" if drt_val == float("inf") else f"{drt_val:.1f}"
+                _arc_past_d = f"{self._path_context.get_arclength_past_last_daughter_entry():.1f}"
+                _daughters_passed = str(_entries)
+            except Exception:
+                pass
+            # RL_IMPROV_8 v2 state-machine diagnostics
+            _cur_branch = "?"
+            _local_r = "?"
+            _local_tol = "?"
+            try:
+                cb_idx = self._path_context._current_branch_idx
+                if cb_idx is not None and cb_idx < len(self._path_context._branches_tuple):
+                    name = getattr(self._path_context._branches_tuple[cb_idx], "name", "")
+                    _cur_branch = str(name)[:40]  # truncate long mrk names
+                _local_r = f"{self._path_context.get_local_radius():.1f}"
+                _local_tol = f"{self._path_context.get_local_tolerance():.1f}"
             except Exception:
                 pass
 
@@ -554,7 +610,11 @@ class BenchEnv5(eve.Env):
                     _mask = ",".join(self.intervention.last_mask_reasons)
                 except Exception:
                     pass
-                heur_str = f" | heur=1 | abort={_abort} | mask={_mask}"
+                _phase = str(getattr(self, "_heur_rva_phase", "default"))
+                heur_str = (
+                    f" | heur=1 | abort={_abort} | mask={_mask}"
+                    f" | phase={_phase}"
+                )
 
             # Extra diagnostics: tip3d position and current rotation_instrument
             _tip = "?"
@@ -574,10 +634,13 @@ class BenchEnv5(eve.Env):
 
             _nearest = str(getattr(self, "_heur_nearest_named", "?"))
             shared_str = (
-                f" | on_br={_obr} | off_br={_off}"
+                f" | on_br={_obr} | on_path={_opath} | off_br={_off}"
                 f" | fold={_fold}"
                 f" | d_corr_arc={_dca} | arc_past={_arc_past}"
+                f" | d_corr_3d={_d3d} | d_corr_routed={_drouted} | arc_past_d={_arc_past_d}"
+                f" | cur_branch={_cur_branch} | local_r={_local_r} | tol={_local_tol}"
                 f" | nearest_named={_nearest} | entries_passed={_entries}"
+                f" | daughters_passed={_daughters_passed}"
                 f" | tip3d={_tip} | rot_inst={_rots}"
             )
 
@@ -617,4 +680,62 @@ class BenchEnv5(eve.Env):
             except Exception:
                 pass
 
+        # ---- End-of-episode snapshot (RL_IMPROV_8) ----
+        # Gated by SNAPSHOT_MODE env var (none|mesh|centerlines). Saves a
+        # PNG of the vessel + wire state at the moment the episode ends —
+        # success, fold-stall, wrong-branch timeout, vessel-end, max-steps,
+        # or sim error. Defensive: never raises; never affects rl flow.
+        if (terminated or truncated) and \
+                os.environ.get("SNAPSHOT_MODE", "none").lower() not in ("", "none", "off", "false", "0"):
+            try:
+                from util.snapshot import save_snapshot
+                reason = self._resolve_termination_reason(terminated, truncated)
+                save_snapshot(
+                    self,
+                    episode=self._episode_count,
+                    ep_step=self._episode_step_count,
+                    reason=reason,
+                    reward=float(self._episode_total_reward),
+                )
+            except Exception as e:
+                self._step_logger.warning(f"snapshot failed: {e}")
+
         return obs, reward, terminated, truncated, info
+
+    def _resolve_termination_reason(self, terminated: bool, truncated: bool) -> str:
+        """Map env state into a single short label for snapshot subdirs.
+
+        Priority order matches the order checks fire in step(). Heuristic
+        aborts already carry an explicit reason via _heuristic_abort_reason
+        so we honour that first.
+        """
+        if terminated:
+            return "success"
+        if self._heuristic_abort_reason:
+            return str(self._heuristic_abort_reason)
+        try:
+            if self._fold_stall_count >= FOLD_STALL_STEPS:
+                return "wire_fold_stall"
+        except Exception:
+            pass
+        try:
+            if self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS:
+                return "wrong_branch_timeout"
+        except Exception:
+            pass
+        try:
+            if getattr(self._vessel_end_trunc, "truncated", False):
+                return "vessel_end"
+        except Exception:
+            pass
+        try:
+            if getattr(self._sim_error_trunc, "truncated", False):
+                return "sim_error"
+        except Exception:
+            pass
+        try:
+            if getattr(self._max_steps_trunc, "truncated", False):
+                return "max_steps"
+        except Exception:
+            pass
+        return "unknown_truncation"

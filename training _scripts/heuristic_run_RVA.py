@@ -1,17 +1,17 @@
-"""Heuristic-only run for the §16 high-insertion-point A/B test.
+"""Heuristic-only run targeting RVA daughter ONLY.
 
-Runs N parallel heuristic episodes (no SAC training, no eval, no replay
-buffer push) and exits. Logs land in
-``<RESULTS_FOLDER>/<name>/diagnostics/logs_subprocesses/worker_<pid>.log``
-so the existing ``analyze_run28_branches.py`` can compute the
-(80, 55, 395) wedge rate without any changes.
+One of four per-daughter runners (RVA / LVA / RCCA / RVA) used to
+prototype daughter-specific heuristic policies WITHOUT touching the
+shared observation / reward code that the eventual RL agent consumes.
 
-Pass ``--insertion_z`` to anchor the wire high in the trunk
-(RL_IMPROV_8 §16). Omit it to run from the femoral entry baseline.
+Differences from the generic ``heuristic_only_run.py``:
+  - ``TARGET_BRANCHES`` is a single-element list (RVA only).
+  - Custom policy / controller for this daughter is plugged in via the
+    ``HEURISTIC_FACTORY`` block below — keep changes confined here.
 
 Example (from inside the SOFA container):
-    python3 /opt/eve_training/training_scripts/heuristic_only_run.py \\
-        --env_version 5 -n env5_rl8_highinsert_50ep \\
+    python3 /opt/eve_training/training_scripts/heuristic_run_RVA.py \\
+        --env_version 5 -n env5_rl8_RVA_50ep \\
         --insertion_z 345 --episodes 50 -nw 16
 """
 
@@ -25,6 +25,7 @@ import torch.multiprocessing as mp
 
 from util.env5 import BenchEnv5
 from util.heuristic_policy import HeuristicActionFunctionFactory
+from util.heuristic_policy_rva import RVAHeuristicActionFunctionFactory
 from util.agent import BenchAgentSynchron
 from util.util import get_result_checkpoint_config_and_log_path
 from eve_bench import DualDeviceNav
@@ -39,19 +40,33 @@ RESULTS_FOLDER = os.path.join(
 )
 
 
+# ----- Per-daughter target ---------------------------------------------------
+DAUGHTER_TAG = "RVA"
 TARGET_BRANCHES = [
-    "Centerline curve - LCCA.mrk",
-    "Centerline curve - LVA.mrk",
-    "Centerline curve - RCCA.mrk",
-    "Centerline curve - RVA.mrk",
+    f"Centerline curve - {DAUGHTER_TAG}.mrk",
 ]
+
+
+def _build_heuristic_factory(args):
+    """RVA-specific heuristic factory.
+
+    Uses ``RVAHeuristicActionFunctionFactory`` which adds phase-aware
+    overrides at the trunk-top junction (drive past with -z biased twist)
+    and the LCCA-junction (slower deliberate push with +z biased twist
+    to lodge the J-tip against bridge (11)'s wall and thread into RVA).
+    """
+    return RVAHeuristicActionFunctionFactory(
+        noise_std=0.0,
+        normalize_output=True,
+    )
 
 
 def build_episode_schedule(n_episodes, branches, base_seed=42):
     """Branch-balanced, deterministically-shuffled (seed, options) tuples.
 
-    Always sets ``heuristic_mode=True`` so env5's wrong-branch / fold
-    detectors fire (matches training-time heuristic seeding).
+    With a single-element ``branches`` list every episode gets the same
+    ``target_branch``. ``heuristic_mode=True`` so env5's wrong-branch /
+    fold detectors fire (matches training-time heuristic seeding).
     """
     rng = np.random.default_rng(base_seed)
     schedule = []
@@ -67,10 +82,7 @@ def build_episode_schedule(n_episodes, branches, base_seed=42):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            "Heuristic-only parallel run (no SAC training). "
-            "Use with --insertion_z for the §16 high-insertion A/B test."
-        )
+        description=f"Heuristic-only parallel run, target={DAUGHTER_TAG} only."
     )
     parser.add_argument(
         "-n", "--name", type=str, required=True,
@@ -82,7 +94,7 @@ def main():
     )
     parser.add_argument(
         "--episodes", type=int, default=50,
-        help="Total heuristic episodes across all workers.",
+        help=f"Total {DAUGHTER_TAG}-target heuristic episodes across all workers.",
     )
     parser.add_argument(
         "-d", "--device", type=str, default="cuda:0",
@@ -107,11 +119,8 @@ def main():
         default="none",
         choices=["none", "mesh", "centerlines"],
         help=(
-            "End-of-episode snapshot backend. 'mesh' renders the vessel "
-            "surface mesh + wires (heavier, prettier); 'centerlines' "
-            "renders branch centerlines + wires (faster, clearer for "
-            "branch-wedge diagnosis). PNGs land under "
-            "<diagnostics>/snapshots/<reason>/."
+            "End-of-episode snapshot backend. PNGs land under "
+            "<diagnostics>/snapshots/<target>/<reason>/."
         ),
     )
     args = parser.parse_args()
@@ -129,15 +138,12 @@ def main():
         all_results_folder=RESULTS_FOLDER, name=args.name, create_diagnostics=True
     )
 
-    # Workers inherit STEP_LOG_DIR via os.environ at spawn time. Must be set
-    # BEFORE BenchAgentSynchron creates worker processes.
     if diagnostics_folder is not None:
         logs_subprocesses = os.path.join(diagnostics_folder, "logs_subprocesses")
         os.makedirs(logs_subprocesses, exist_ok=True)
         os.environ["STEP_LOG_DIR"] = logs_subprocesses
         print(f"Set STEP_LOG_DIR={logs_subprocesses}", flush=True)
 
-    # Snapshot config — also inherited by workers via os.environ.
     if args.snapshots != "none" and diagnostics_folder is not None:
         snapshots_dir = os.path.join(diagnostics_folder, "snapshots")
         os.makedirs(snapshots_dir, exist_ok=True)
@@ -151,8 +157,9 @@ def main():
         os.environ.pop("SNAPSHOT_MODE", None)
 
     print(
-        f"Run: {args.name} | episodes={args.episodes} | workers={args.n_worker} | "
-        f"insertion_z={args.insertion_z} | snapshots={args.snapshots}",
+        f"Run: {args.name} | daughter={DAUGHTER_TAG} | episodes={args.episodes} "
+        f"| workers={args.n_worker} | insertion_z={args.insertion_z} | "
+        f"snapshots={args.snapshots}",
         flush=True,
     )
 
@@ -165,10 +172,6 @@ def main():
         intervention=intervention_eval, mode="eval", visualisation=False
     )
 
-    # BenchAgentSynchron requires a SAC model + replay buffer, but neither
-    # is exercised: heuristic_seed(push_to_buffer=False) skips the push,
-    # and we never call .update() / .explore(). Use the smallest viable
-    # network config to keep memory low.
     agent = BenchAgentSynchron(
         trainer_device=torch.device(args.device),
         worker_device=torch.device("cpu"),
@@ -191,22 +194,13 @@ def main():
         diagnostics_config=None,
     )
 
-    factory = HeuristicActionFunctionFactory(
-        noise_std=0.0,
-        normalize_output=True,
-    )
+    factory = _build_heuristic_factory(args)
 
     schedule = build_episode_schedule(
         args.episodes, TARGET_BRANCHES, args.base_seed
     )
-    branch_counts = {
-        b.split(" - ")[-1].replace(".mrk", ""): sum(
-            1 for _, o in schedule if o["target_branch"] == b
-        )
-        for b in TARGET_BRANCHES
-    }
     print(
-        f"Schedule: {len(schedule)} episodes -> per-branch={branch_counts}",
+        f"Schedule: {len(schedule)} episodes, all targeting {DAUGHTER_TAG}",
         flush=True,
     )
 
@@ -236,7 +230,10 @@ def main():
         flush=True,
     )
     if diagnostics_folder is not None:
-        print(f"Worker logs: {os.path.join(diagnostics_folder, 'logs_subprocesses')}", flush=True)
+        print(
+            f"Worker logs: {os.path.join(diagnostics_folder, 'logs_subprocesses')}",
+            flush=True,
+        )
 
     agent.close()
 

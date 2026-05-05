@@ -91,15 +91,20 @@ class HeuristicActionFunction:
             self.heuristic.reset()
             self._needs_reset = False
 
-        # Check branch membership from the shared path cache (same source as guidance[7])
+        # Check path membership from the shared path cache. RL_IMPROV_8 v2:
+        # use is_on_correct_path() (cross-track + nearest-branch + on-path-mask)
+        # so the off-path retract handler also fires when the wire is on the
+        # trunk branch but laterally off the planned polyline (the arch
+        # wedge case). Was reverted in v3/v4 due to thrashing on in-lumen
+        # drift, but restored as the user's original intent.
         base_env = getattr(self.env, 'unwrapped', self.env)
-        on_correct_branch = True
+        on_correct_path = True
         try:
-            on_correct_branch = base_env._path_context.is_on_correct_branch()
+            on_correct_path = base_env._path_context.is_on_correct_path()
         except Exception:
             pass
 
-        if not on_correct_branch:
+        if not on_correct_path:
             # Always-negative retraction: pull back toward bifurcation
             gw_trans = float(self._rng.uniform(-10.0, -1.0))
             cath_trans = gw_trans * self.heuristic.catheter_follow_ratio
@@ -114,17 +119,22 @@ class HeuristicActionFunction:
             # produced our only success (pid=350 ep=2).
             fold_count = getattr(base_env, "_fold_stall_count", 0)
             force_translate = fold_count > 5
-            # Pull arclength-based metrics for the heuristic's regime decisions:
-            #   d_corr_mm        — arclength along path to NEXT junction.
-            #   arc_past_mm      — arclength past the MOST-RECENT junction
-            #                      (used to detect "inside daughter past
-            #                      second entry zone"; Fix 18).
+            # RL_IMPROV_8 v2 (restored): heuristic regime metrics use the
+            # graph-routed d_corr (accounts for sister-branch detours) +
+            # daughter-only arclength. The routed version reports an
+            # honestly large d_corr when the wire is in a wrong sister
+            # branch (must retrace through bifurcations to reach the
+            # actual ostium); arclength projection would misleadingly
+            # report a near-zero value just because the projection lands
+            # on a junction's arclength, even when the tip is far away.
+            #   d_corr_mm     — graph-routed dist to NEXT daughter entry
+            #   arc_past_mm   — arclength past most-recent DAUGHTER entry
             try:
                 d_corr_mm = float(
-                    base_env._path_context.get_arclength_to_next_correct_entry()
+                    base_env._path_context.get_routed_d_corr_to_next_daughter_entry()
                 )
                 arc_past_mm = float(
-                    base_env._path_context.get_arclength_past_last_junction()
+                    base_env._path_context.get_arclength_past_last_daughter_entry()
                 )
             except Exception:
                 d_corr_mm = float("inf")

@@ -219,7 +219,13 @@ class LocalGuidance(Observation):
         if self._path_context is not None:
             d_wrong = 0.0  # zeroed; no meaningful arclength for wrong daughter
             wrong_coords = tip_vessel.copy()
-            d_correct = self._path_context.get_arclength_to_next_correct_entry()
+            # RL_IMPROV_8 v2: switched feature 11 to graph-routed d_corr,
+            # which accounts for sister-branch detours. When the wire is
+            # in a parallel sister branch, the routed metric reports the
+            # actual centerline-traversal distance the wire must retrace
+            # to reach the next daughter — not the misleadingly small 3D
+            # Euclidean.
+            d_correct = self._path_context.get_routed_d_corr_to_next_daughter_entry()
             correct_coords = self._path_context.get_closest_correct_entry_coords()
         else:
             d_wrong = 0.0

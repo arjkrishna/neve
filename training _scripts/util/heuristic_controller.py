@@ -210,23 +210,22 @@ class CenterlineFollowerHeuristic:
             self._phase1_steps += 1
         else:
             # Phase 2: continuous blend of translation + rotation. THREE
-            # regimes (RL_IMPROV_7 §7 Fix 18):
-            #   NEAR correct entry (d_corr_arc < 10mm): precision threading.
+            # regimes. RL_IMPROV_8: d_corr_mm and arc_past_junction_mm now
+            # carry NEW semantics — d_corr_mm is 3D Euclidean distance to
+            # the next daughter entry coord (not arclength projection),
+            # and arc_past_junction_mm is arclength past the most-recent
+            # DAUGHTER entry (not every junction). Same threshold values,
+            # tighter physical meaning.
+            #   NEAR daughter entry (d_corr_3d < 10mm): precision threading.
             #     gw_trans = 2 mm/s, gw_rot ∈ [-0.3, +0.3] with gain 0.6.
-            #   INSIDE daughter past entry (arc_past_junction > 10mm):
+            #   INSIDE daughter past entry (arc_past_daughter > 10mm):
             #     gw_trans = min(5, 0.1*d_rem),
             #     gw_rot ∈ [-0.2, +0.2] with HIGHER crosstrack weight (0.2)
-            #     so wire re-centers on daughter centerline (the missing
-            #     piece that caused near-success episodes to slide past
-            #     target by 5-10 mm laterally).
+            #     so wire re-centers on daughter centerline.
             #   DEFAULT (trunk, between junctions, before bif1): full
             #     rotation authority for big course corrections.
             #     gw_trans = min(5, 0.1*d_rem),
             #     gw_rot ∈ [-1.5, +1.5] with crosstrack weight 0.05.
-            #     Note: the new heading_err formula returns small values
-            #     when wire is aligned with path, so the ±1.5 clamp will
-            #     rarely fire in the trunk (unlike run 26's J-curvature
-            #     formula which pegged at ±1.5 in 70-80% of trunk steps).
             if d_corr_mm < 10.0:
                 gw_trans = 2.0
                 gw_rot_raw = (
