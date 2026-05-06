@@ -267,6 +267,19 @@ class BenchEnv5(eve.Env):
         self._last_step_time = time.time()
         self._prev_inserted = [0.0, 0.0]
 
+        # Capture seed for reproducibility (used by heuristic_policy to
+        # derive its own deterministic per-episode RNG, and logged in
+        # EPISODE_START so post-hoc analysis can match log entries to
+        # the schedule's (seed, options) tuples).
+        self._reset_seed = seed
+
+        # RVA-checkpoint trigger state (RL_IMPROV_8 §25). Reset per
+        # episode; flips True the first step where the wire's projection
+        # arclength crosses rva_jn_arc, at which point we save a SOFA
+        # state checkpoint to RVA_CHECKPOINT_DIR.
+        self._rva_jn_arc = None
+        self._crossed_rva_jn = False
+
         # Detector state reset
         self._heuristic_mode = bool(options and options.get("heuristic_mode", False))
         self._heuristic_abort_reason = None
@@ -370,10 +383,13 @@ class BenchEnv5(eve.Env):
                 ins_str = f" | inserted=[{il[0]:.2f},{il[1]:.2f}]"
         except Exception:
             pass
+        seed_str = (
+            f" | seed={self._reset_seed}" if self._reset_seed is not None else ""
+        )
         self._step_logger.info(
             f"EPISODE_START | ep={self._episode_count} | global_steps={self._step_count} | "
             f"wall_time={time.time():.6f} | pid={os.getpid()}{target_str}{ins_str}"
-            f" | target_branch={self._target_branch_short}"
+            f" | target_branch={self._target_branch_short}{seed_str}"
         )
         sys.stderr.flush()
 
@@ -468,6 +484,28 @@ class BenchEnv5(eve.Env):
         except Exception as e:
             self._step_logger.warning(f"update_branch_state failed: {e}")
 
+        # ---- RVA-arclength SOFA checkpoint capture (RL_IMPROV_8 §25) ----
+        # Save SOFA state the first step where the wire's projection
+        # arclength crosses rva_jn_arc — gives us a fixture set for fast
+        # Phase C iteration via SOFA-state restore. Gated by RVA_CHECKPOINT_DIR
+        # env var; no-op when unset.
+        rva_ckpt_dir = os.environ.get("RVA_CHECKPOINT_DIR")
+        if rva_ckpt_dir and not self._crossed_rva_jn:
+            try:
+                if self._rva_jn_arc is None:
+                    junctions = self._path_context.get_path_junctions()
+                    for arc, prev_n, next_n in junctions:
+                        if "(11)" in prev_n and "RVA" in next_n:
+                            self._rva_jn_arc = float(arc)
+                            break
+                if self._rva_jn_arc is not None:
+                    proj_s = float(self._path_context.get_projection().s)
+                    if proj_s >= self._rva_jn_arc:
+                        self._save_rva_checkpoint(rva_ckpt_dir, proj_s)
+                        self._crossed_rva_jn = True
+            except Exception as e:
+                self._step_logger.warning(f"rva_checkpoint failed: {e}")
+
         # ---- Detector: wrong_path (RL_IMPROV_8 v2 — state machine) ----
         # is_on_correct_path now reads the state-machine flag _on_planned_path
         # which was set with radius-aware tolerance + 10 mm arclength
@@ -523,12 +561,11 @@ class BenchEnv5(eve.Env):
         # INFO every step for first 30 steps of each episode (diagnosing
         # post-restore bif2 steering), then every 50 steps afterwards or on
         # terminal/truncation.
-        is_info_step = (
-            self._episode_step_count <= 30
-            or self._episode_step_count % 50 == 0
-            or terminated
-            or truncated
-        )
+        # Full per-step diagnostic logging (RL_IMPROV_8 — debug-level
+        # detail for analyzing closed-loop / branch-transition dynamics).
+        # Was: every 50 steps. Cost: ~14× more log lines per run, but
+        # enables exact step-by-step tracing without missing transitions.
+        is_info_step = True
 
         if is_info_step:
             # SOFA info
@@ -701,6 +738,79 @@ class BenchEnv5(eve.Env):
                 self._step_logger.warning(f"snapshot failed: {e}")
 
         return obs, reward, terminated, truncated, info
+
+    def _save_rva_checkpoint(self, out_dir: str, proj_s: float) -> None:
+        """Capture SOFA controller + DOF state at the moment wire's
+        projection arclength first crosses rva_jn_arc. Mirrors the
+        capture mechanism in collect_sofa_checkpoints.py — saves an
+        .npz with SOFA controller state + tracking3d, plus a .json
+        sidecar with metadata for restore.
+        """
+        try:
+            import numpy as np
+            os.makedirs(out_dir, exist_ok=True)
+            sim = self.intervention.simulation
+            ic = sim._instruments_combined
+            state = {
+                "xtip": np.array(ic.m_ircontroller.xtip.value, copy=True),
+                "rotation_instrument": np.array(
+                    ic.m_ircontroller.rotationInstrument.value, copy=True
+                ),
+                "index_first_node": np.array(
+                    ic.m_ircontroller.indexFirstNode.value, copy=True
+                ),
+                "dof_positions": np.array(ic.DOFs.position.value, copy=True),
+                "tracking3d": np.array(
+                    self.intervention.fluoroscopy.tracking3d, copy=True
+                ),
+            }
+            target_coords = None
+            try:
+                target_coords = list(
+                    np.array(
+                        self.intervention.target.coordinates3d, copy=True
+                    ).flatten().astype(float)
+                )
+            except Exception:
+                pass
+            pid = os.getpid()
+            base = (
+                f"rva_ckpt_pid{pid}_ep{self._episode_count:04d}"
+                f"_step{self._episode_step_count:04d}"
+            )
+            npz_path = os.path.join(out_dir, base + ".npz")
+            json_path = os.path.join(out_dir, base + ".json")
+            np.savez(npz_path, **state)
+            inserted_lengths = None
+            try:
+                inserted_lengths = [
+                    float(x) for x in self.intervention.device_lengths_inserted
+                ]
+            except Exception:
+                pass
+            meta = {
+                "pid": pid,
+                "episode_idx": self._episode_count,
+                "step_idx": self._episode_step_count,
+                "target_branch": self._target_branch_short,
+                "target_coordinates3d": target_coords,
+                "inserted_lengths": inserted_lengths,
+                "proj_s_at_capture": float(proj_s),
+                "rva_jn_arc": float(self._rva_jn_arc),
+                "reset_seed": self._reset_seed,
+                "wall_time": time.time(),
+            }
+            import json as _json
+            with open(json_path, "w") as f:
+                _json.dump(meta, f, indent=2)
+            self._step_logger.info(
+                f"RVA_CHECKPOINT | ep={self._episode_count} | "
+                f"ep_step={self._episode_step_count} | pid={pid} | "
+                f"proj_s={proj_s:.2f} | rva_jn_arc={self._rva_jn_arc:.2f} | "
+                f"file={base}.npz"
+            )
+        except Exception as e:
+            self._step_logger.warning(f"_save_rva_checkpoint exception: {e}")
 
     def _resolve_termination_reason(self, terminated: bool, truncated: bool) -> str:
         """Map env state into a single short label for snapshot subdirs.

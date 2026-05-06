@@ -144,6 +144,15 @@ def main():
         os.environ["STEP_LOG_DIR"] = logs_subprocesses
         print(f"Set STEP_LOG_DIR={logs_subprocesses}", flush=True)
 
+    # RL_IMPROV_8 §25: enable RVA-arclength SOFA checkpoint capture.
+    # env5 reads RVA_CHECKPOINT_DIR; saves SOFA state the first step where
+    # the wire's projection arclength crosses rva_jn_arc, in each episode.
+    if diagnostics_folder is not None:
+        rva_ckpt_dir = os.path.join(diagnostics_folder, "rva_checkpoints")
+        os.makedirs(rva_ckpt_dir, exist_ok=True)
+        os.environ["RVA_CHECKPOINT_DIR"] = rva_ckpt_dir
+        print(f"Set RVA_CHECKPOINT_DIR={rva_ckpt_dir}", flush=True)
+
     if args.snapshots != "none" and diagnostics_folder is not None:
         snapshots_dir = os.path.join(diagnostics_folder, "snapshots")
         os.makedirs(snapshots_dir, exist_ok=True)
@@ -199,6 +208,26 @@ def main():
     schedule = build_episode_schedule(
         args.episodes, TARGET_BRANCHES, args.base_seed
     )
+
+    # Save the schedule manifest so post-hoc analysis can match log
+    # entries (which include seed= in EPISODE_START) back to the
+    # (seed, options) tuples and identify which seeds reached RVA.
+    if diagnostics_folder is not None:
+        import json as _json
+        manifest = {
+            "base_seed": int(args.base_seed),
+            "n_episodes": len(schedule),
+            "target_branches": TARGET_BRANCHES,
+            "schedule": [
+                {"schedule_idx": i, "seed": int(seed), "options": opts}
+                for i, (seed, opts) in enumerate(schedule)
+            ],
+        }
+        manifest_path = os.path.join(diagnostics_folder, "schedule.json")
+        with open(manifest_path, "w") as f:
+            _json.dump(manifest, f, indent=2)
+        print(f"Saved schedule manifest to {manifest_path}", flush=True)
+
     print(
         f"Schedule: {len(schedule)} episodes, all targeting {DAUGHTER_TAG}",
         flush=True,

@@ -89,6 +89,24 @@ class HeuristicActionFunction:
         # so pathfinder.path_points_vessel_cs is current.
         if self._needs_reset:
             self.heuristic.reset()
+            # RL_IMPROV_8 §25: deterministic per-(worker, episode) RNG.
+            # Was unseeded → different runs of same code/schedule produced
+            # different trajectories due to random-noise variance. Seeding
+            # from the env's reset_seed (if available) makes runs
+            # reproducible, enabling Strategy 2/3 (cherry-picked seeds for
+            # Phase C testing).
+            try:
+                import os as _os
+                base_env = getattr(self.env, "unwrapped", self.env)
+                ep_seed = getattr(base_env, "_reset_seed", None)
+                pid = _os.getpid()
+                if ep_seed is not None:
+                    seed_val = int(ep_seed) ^ pid
+                else:
+                    seed_val = pid
+                self._rng = np.random.default_rng(seed_val & 0x7fffffff)
+            except Exception:
+                pass
             self._needs_reset = False
 
         # Check path membership from the shared path cache. RL_IMPROV_8 v2:

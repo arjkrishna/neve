@@ -559,6 +559,89 @@ MSYS_NO_PATHCONV=1 docker run --name env5_rl8_pathaware_50ep --gpus all \
   not just a more honest distance metric. Defer until pathfinder-fixed
   failure modes are exhausted.
 
+- **Heuristic-RNG seeding for reproducibility** — `heuristic_policy.py`
+  uses `np.random.default_rng()` (unseeded) per worker. Same code +
+  same schedule seed produces different trajectories per run. Need to
+  seed `self._rng` per-worker per-episode (e.g. derived from
+  `hash((base_seed, worker_id, ep_id))`) before any policy comparison
+  is statistically meaningful with N=50 samples.
+
+- **Phase C — IMPLEMENTED §27.** Earlier deferred-section design
+  options below are kept for historical reference. Current
+  implementation: cavity transit (gw_trans=3, dynamic tangent at s+5)
+  + in-daughter advance (gw_trans=2, dynamic tangent at s+5), original
+  sign convention. Validation pending v2cfg-500-instrumented run +
+  Strategy 1/2 testing per §25.
+
+  **Trigger.** Wire's projection arclength `s ≥ rva_jn_arc` (past the
+  bridge → daughter junction; wire is now physically inside the target
+  daughter). Cached at first call via
+  `_find_junction_arc(junctions, "(11)", "RVA")`.
+
+  **Failure mode it would address.** Wires that successfully reach RVA
+  (~43/50 in v8) stall at the daughter ENTRANCE — tip oscillates near
+  vessel-CS `(15-19, 64-66, 412-416)` for 300+ steps without advancing
+  along the daughter centerline toward the target ~50 mm further at
+  `(32, 72, 473)`. RVA's centerline tangent rotates from `+y` to `+z`
+  over the first 10 mm; the J-curl needs continuous reorientation as
+  the wire pushes through the entry turn. Default heuristic's
+  `heading_err` measures wire long-axis vs path tangent, but doesn't
+  see the J-curl orientation in the perpendicular plane.
+
+  **Target options.**
+  
+  1. **Fixed `+z`** (matches v2 simplicity; degenerate-but-non-destructive
+     when wire long-axis is also `+z` inside the daughter). Effect would
+     be limited to gw_trans modulation, similar to Phase A/B.
+  
+  2. **Dynamic planned-path tangent at `s + lookahead`**. RVA's tangent
+     rotates from `+y` to `+z` over 10 mm so the lookahead naturally
+     gives a smooth target progression. Issue observed in v3-v5: the
+     closed-loop sign convention required validation. Would also need
+     a strategy for the entry-turn rotation: too-small lookahead leaves
+     the wire reactive to its current state; too-large lookahead pulls
+     the J-curl too far ahead before the body has caught up.
+
+        Re-add Phase C with original sign (not flipped) and FIXED target = +z (not dynamic) to match the rest of v8's style. This is degenerate inside RVA's daughter (long-axis is mostly +z too, after entering RVA), so Phase C will mostly modulate gw_trans (slow advance through narrow daughter). Won't actively steer, but gives more time for the wire to advance via natural curvature.
+
+          Or with care, try Phase C with dynamic target inside the daughter — Phase C inside RVA is the ONE place where dynamic target should be unambiguously beneficial because RVA's tangent rotates from +y to +z over 10 mm and there's only one direction (the daughter's centerline) — no junction ambiguity.
+
+          Want me to add Phase C with the safer fixed +z first?
+  
+  3. **Position-vector toward target** instead of path tangent.
+     `target = (target_pos - tip_pos) / norm` — orients J-curl toward
+     where the wire needs to end up, not where it currently is or
+     where the path tells it to go. Loses the path-following property
+     but gets a robustly-non-degenerate target when wire and target
+     differ by >5 mm.
+  
+  4. **Daughter-centerline reattach** — explicit retract-then-advance
+     maneuver. When stuck (Δs < 1 mm over N steps inside the daughter),
+     command `gw_trans = -3` for a few steps, then re-attempt forward
+     push. Doesn't rely on closed-loop rotation at all.
+
+  **gw_trans options.** Slow (1.5–2 mm/s, RVA daughter is narrow) vs.
+  default (5 mm/s, gives the body more push to commit through the
+  entry turn). v3 used 2 mm/s.
+
+  **Lookahead options.** v3-v5 tried 5 mm. Larger (10-20 mm) would
+  smooth the tangent shifts further into the daughter; smaller (1-2 mm)
+  would track the local tangent more reactively. Under-explored.
+
+  **Extent of Phase C window.** Currently considered: from `rva_jn_arc`
+  to end of path (~all of RVA's 156 mm). Alternative: only the first
+  ~30 mm of the daughter (the entry-turn region where geometry curves
+  most), then revert to default heuristic for the long straight portion.
+
+  **Sign of closed-loop output.** Empirical evidence from v6/v7 confirms
+  the original right-hand-rule sign IS correct (negation regressed).
+  Any future Phase C must use original sign.
+
+  **Validation prerequisite.** Cannot meaningfully iterate Phase C
+  designs without (a) heuristic-RNG seeding and (b) N ≥ 200 episodes
+  per condition. Otherwise stochastic noise dominates the signal of any
+  Phase C variant.
+
 ---
 
 ## 12. A/B Run #1 — Path-Aware v1 / v2 (Uniform Cross-Track Tolerance)
@@ -924,6 +1007,672 @@ survives, but no PNGs save). With `--snapshots none`, no mount needed.
 
 ---
 
+## 17. Per-Daughter Heuristic Runners
+
+### Context
+
+The §15 v5 state-machine run still produced 0/50 successes. To prototype
+daughter-specific policies without contaminating the shared
+observation/reward code (which a future RL agent will need to consume
+uniformly), we split the runner into four per-daughter scripts that
+filter targets to one daughter only.
+
+### Fix
+
+**Files (new):**
+- [training _scripts/heuristic_run_LCCA.py](training _scripts/heuristic_run_LCCA.py)
+- [training _scripts/heuristic_run_LVA.py](training _scripts/heuristic_run_LVA.py)
+- [training _scripts/heuristic_run_RCCA.py](training _scripts/heuristic_run_RCCA.py)
+- [training _scripts/heuristic_run_RVA.py](training _scripts/heuristic_run_RVA.py)
+
+Each is structurally identical to `heuristic_only_run.py` except:
+- `TARGET_BRANCHES` is a single-element list (one daughter only)
+- `DAUGHTER_TAG` constant
+- A `_build_heuristic_factory(args)` hook — single function to slot in
+  daughter-specific policy/factory when one is built. Default returns
+  the shared `HeuristicActionFunctionFactory`.
+
+This is the customization surface: per-daughter policy work happens
+inside `_build_heuristic_factory` and a sibling `heuristic_policy_<tag>.py`
+file. Observation, reward, action space, env5, controller, etc. stay
+shared and untouched.
+
+---
+
+## 18. Bug-A Fix Re-Introduced — On-Path Mask Check in `is_on_correct_path()`
+
+### Context
+
+In v5 the state machine reduced `is_on_correct_path()` to
+`return self._on_planned_path` — the state-machine flag IS the answer.
+But forensic analysis of failure episodes (pid=312 ep=1 baseline run,
+trace at `user copy.md` Section 1.a) revealed a deeper bug: **the state
+machine commits `_current_branch_idx = (0).mrk` via the trunk-top
+junction crossing without checking that the wire's lateral position is
+on the path-used segment of (0)**. The wedge cluster at vessel-CS
+`(18, 37, 375)` sits on (0)'s OFF-path lower indices 0–20 (the path
+uses only indices 22–30 of `(0).mrk` for non-LCCA targets), and was
+misclassified as on-path. State machine flickers cur_branch between
+`(0).mrk` and LCCA daughter at the LCCA-junction zone, producing many
+−1 wrong-branch-entry penalties that drained reward without ever
+accumulating 50 consecutive off-path steps to fire `wrong_branch_timeout`.
+
+### Reason
+
+The v1 plan's `_branch_on_path_masks` (per-branch boolean mask over
+centerline indices marking which points are on the planned path within
+3 mm) was already built at episode reset, but v2 dropped its consumer
+check thinking the state machine would handle it implicitly. It
+doesn't — the state machine commits to a branch via arclength, not by
+verifying the tip is on the path-used SEGMENT of that branch.
+
+### Fix
+
+**File:** [eve/eve/util/pathcontext.py](eve/eve/util/pathcontext.py)
+
+Re-introduced the v1 plan's check (c) as a guard layered on top of the
+state-machine flag:
+
+```python
+def is_on_correct_path(self) -> bool:
+    if self._is_on_correct_path is not None:
+        return self._is_on_correct_path
+    result = bool(self._on_planned_path)
+    if result:
+        result = self._tip_on_path_used_segment()  # mask check
+    self._is_on_correct_path = result
+    return result
+
+def _tip_on_path_used_segment(self) -> bool:
+    """Tip's nearest centerline index on _current_branch_idx must be
+    True in that branch's on-path mask. Fails open when mask is empty
+    or branch index out of range — avoids false negatives when the
+    precompute has nothing to say."""
+    ...
+```
+
+Also extended `update_branch_state()` to flip `_on_planned_path = False`
+when the mask check fails (keeps state machine consistent so subsequent
+steps see a coherent off-path state). Off-path → on-path return now
+also requires the mask check to pass before re-anchoring.
+
+### Effect
+
+For the wedge tip at `(18, 37, 375)`: the state machine commits to
+`(0).mrk` (cross-track to its centerline ~0 mm), but
+`_branch_on_path_masks[(0)][nearest_index_at_z=375]` is False (only
+indices 22–30 are True for non-LCCA targets). `is_on_correct_path`
+returns False → off-path counter accumulates → `wrong_branch_timeout`
+fires within ~50 steps instead of running the full 600.
+
+---
+
+## 19. Junction-Crossing Detector Hysteresis Fix
+
+### Context
+
+After bug-A was added, traces of v3 runs showed the fix wasn't actually
+firing — the state machine stayed pinned to `trunk(2).mrk` for entire
+episodes, never transitioning to `(0)` or `(11)` even though wire
+physically traversed those branches. Distribution comparison:
+
+| branch | this run | baseline (2026-05-03) |
+|---|---|---|
+| trunk(2) | 1736 | 1792 |
+| (0) | **9** | **81** |
+| (18) | **0** | 51 |
+| LCCA | 7 | 45 |
+| (11) | 2 | 8 |
+
+90 % reduction in branch transitions. State machine wasn't moving.
+
+### Reason
+
+The forward-junction-crossing condition required the projection
+arclength `s` to LEAP from `<j_arc - 10` to `>= j_arc + 10` in a single
+step — a 20 mm jump in one tick. Normal advance is ~0.5 mm/step, so
+this is unreachable.
+
+```python
+# OLD (impossible 20 mm leap):
+if self._prev_proj_s < j_arc - COMMIT_HYSTERESIS_MM \
+        and s >= j_arc + COMMIT_HYSTERESIS_MM:
+    self._current_branch_idx = next_idx
+```
+
+### Fix
+
+**File:** [eve/eve/util/pathcontext.py](eve/eve/util/pathcontext.py)
+[`update_branch_state`](eve/eve/util/pathcontext.py)
+
+```python
+# NEW (one-sided commit with hysteresis dead-band):
+if s >= j_arc + COMMIT_HYSTERESIS_MM \
+        and self._current_branch_idx == prev_idx:
+    self._current_branch_idx = next_idx
+elif s < j_arc - COMMIT_HYSTERESIS_MM \
+        and self._current_branch_idx == next_idx:
+    self._current_branch_idx = prev_idx
+```
+
+Hysteresis is the COMMITMENT distance, not a leap requirement. Fires
+naturally as the wire advances. The 20 mm dead-band on the opposite
+side prevents bouncing without genuine retraction.
+
+### Effect (verified in v8 run)
+
+Branch transitions restored to roughly baseline rates. State machine
+correctly threads `trunk(2) → (0) → (11) → RVA` for episodes that
+physically traverse that route. Bug-A's mask check now actually
+engages because the state machine is doing its upstream job.
+
+---
+
+## 20. Bif2 Topology Visualization
+
+### Context
+
+Debugging the wedge geometry required precise 3D mental models of how
+trunk-top, LCCA-junction, RCCA-RVA-junction, and LVA-junction relate
+spatially. Reading raw centerline JSON and computing distances by hand
+is slow and error-prone.
+
+### Fix
+
+**File (new):** [plot_bif2_topology.py](plot_bif2_topology.py)
+
+Standalone matplotlib renderer. Produces two PNGs:
+
+- `bif2_topology.png` — full arch view (femoral entry → daughter tips)
+  with all 25 centerlines visible, key branches color-coded.
+- `bif2_topology_zoom.png` — bif2 close-up (z ≥ 360 mm) with the four
+  junction nodes annotated in their vessel-CS coords, the empirical
+  wedge centroid marked, and the bridge-(11) i=0→1 sharp upturn
+  highlighted.
+
+Color coding:
+
+| element | color | meaning |
+|---|---|---|
+| trunk(2) | blue | femoral → trunk-top |
+| (0) lower subarc i=0..21 | purple | OFF-path for non-LCCA targets |
+| (0) upper subarc i=22..30 | green | on-path trunk-top → LCCA-jn |
+| (11) bridge i=0..34 | red | LCCA-jn → RCCA/RVA-jn |
+| (11) i=0→1 segment | bright red | sharp Δz=+12.5 mm upturn |
+| (18) bridge | cyan | trunk-top → LVA-jn |
+| LCCA / LVA / RCCA / RVA | brown / pink / orange / olive | daughters |
+| ★ yellow star | — | empirical wedge centroid (18, 37, 375) |
+| dashed grey (zoom) | — | wedge → LCCA-jn vector (~21.9 mm) |
+
+Key geometric facts surfaced by the renderer:
+
+- All three trifurcation nodes live in a tight `(20–48, 16–34, 385–430)`
+  vessel-CS region.
+- (0).mrk has TWO physical sub-arcs joined at LCCA-jn (indices 21–22
+  duplicate at the join). For non-LCCA targets only the upper subarc
+  (i=22..30) is on-path; lower subarc (i=0..20) is off-path.
+- Bridge (11)'s very first segment has Δz=+12.5 mm — a near-vertical
+  upturn right at LCCA-jn before the bridge curves laterally toward
+  the daughter ostium.
+
+---
+
+## 21. Per-Path Helpers — `get_path_junctions()` + `get_planned_path_tangent_at()`
+
+### Context
+
+Per-daughter policies (e.g. `heuristic_policy_rva.py`) need to know
+where junctions sit along the planned-path arclength axis (so phase
+windows can be defined relative to them) and what direction the path
+tangent points at any given arclength (so closed-loop targets can be
+data-driven instead of hand-coded).
+
+### Fix
+
+**File:** [eve/eve/util/pathcontext.py](eve/eve/util/pathcontext.py)
+
+Two new public methods on `PathProjectionCache`:
+
+```python
+def get_path_junctions(self) -> List[Tuple[float, str, str]]:
+    """Ordered list of (arclength, prev_branch_name, next_branch_name)
+    for each on-path junction the planned polyline threads. Used by
+    per-daughter heuristic policies to schedule phase activations
+    along the planned path's arclength axis (more robust than
+    Euclidean tip-to-junction-node distance, which misfires when the
+    wire's lateral transit is offset from the node)."""
+```
+
+```python
+def get_planned_path_tangent_at(self, s: float,
+                                 lookahead_mm: float = 0.0) -> np.ndarray:
+    """Unit tangent of the planned polyline at arclength
+    s + lookahead_mm. Look-ahead lets the policy aim for "where the
+    wire is going" so SOFA torsional propagation has time to land
+    before the wire arrives at the kink. Zero vector if degenerate."""
+```
+
+Both built from `_path_branch_sequence_with_junctions` (already
+populated by `_build_path_branch_sequence`); cost ~O(N) per call where
+N = number of junctions (typically 3–4 for an RVA path).
+
+---
+
+## 22. RVA-Specific Heuristic Policy
+
+### Context
+
+The §17 per-daughter runners need a per-daughter policy. We started
+with RVA because it has the longest path (trunk → bridge → RVA-jn → RVA
+all the way to target), the most failure modes documented, and shares
+its trunk-top + LCCA-jn approach with RCCA targets.
+
+### Fix
+
+**File (new):** [training _scripts/util/heuristic_policy_rva.py](training _scripts/util/heuristic_policy_rva.py)
+
+Subclasses `HeuristicActionFunction` and overrides `__call__()` to add
+phase-aware actions in two arclength-defined windows around the
+trunk-top and LCCA-jn junctions. Falls through to the parent's
+centerline-following heuristic outside those windows.
+
+**Phase definitions (final v8 — exact v2 strategy):**
+
+| phase | window (mm of arclength) | gw_trans | target |
+|---|---|---|---|
+| trunk_top | `[trunk_top_arc − 30, trunk_top_arc + 10]` | 10 mm/s | fixed `−z` |
+| lcca_jn | `[lcca_jn_arc − 15, lcca_jn_arc + 30]` | 1.5 mm/s | fixed `+z` |
+| default | else | parent heuristic | parent heuristic |
+
+Closed-loop rotation: each step reads `tracking[0..2]` (first three
+beam-node positions on the wire), computes:
+- `t̂ = (p0 − p2) / ‖·‖` — local long-axis at tip
+- `bend = (p0 + p2 − 2·p1) ⊥ t̂` — discrete 2nd-derivative direction at p1, projected
+- `target_⊥ = target − (target·t̂)·t̂` — phase target projected
+- `gw_rot = sign((bend × target_⊥) · t̂) × angle` — clipped to [−1.5, +1.5]
+
+Both fixed targets (`±z`) are degenerate vs the wire's local long-axis
+(which is approximately `±z` during trunk climb and bridge climb), so
+the closed-loop typically returns near-zero rotation. Phase A and
+Phase B in this configuration effectively just modulate `gw_trans`
+speed; the wire's natural torsion + heuristic noise drive the actual
+junction crossings.
+
+Per-episode caching of `_trunk_top_arc` (junction `(2)→(0)`) and
+`_lcca_jn_arc` (junction `(0)→(11)`) at first call via
+`_find_junction_arc()` lookup over `pathcontext.get_path_junctions()`.
+
+**File (modified):** [training _scripts/heuristic_run_RVA.py](training _scripts/heuristic_run_RVA.py)
+points `_build_heuristic_factory()` at `RVAHeuristicActionFunctionFactory`.
+
+**File (modified):** [training _scripts/util/env5.py](training _scripts/util/env5.py)
+STEP log gains `phase=` field via `getattr(self, "_heur_rva_phase", "default")`.
+
+### Iteration history
+
+A long sequence of attempted variants was explored before settling on
+the v8/v2-equivalent baseline:
+
+| variant | Phase A target | Phase B target | Phase C | sign | result |
+|---|---|---|---|---|---|
+| v2 | fixed `−z` | fixed `+z` | none | original | 28/50 reach RVA (stochastic) |
+| v3 | fixed `−z` | fixed `+z` | dynamic | original | 2/50 reach RVA |
+| v4 | dynamic | dynamic | dynamic | original | 0/50 — wires steered into (18) |
+| v5 | fixed `−z` | dynamic | dynamic | original | 0/50 — wires wedged at LCCA-jn |
+| v6 | fixed `−z` | dynamic | dynamic | **flipped** | 0/50 — wires up into LCCA early |
+| v7 | fixed `−z` | dynamic (lookahead=1) | dynamic | flipped | 0/50 — same regression |
+| **v8** | fixed `−z` | fixed `+z` | none | original | 43/48 reach RVA (stochastic) |
+
+Findings driving the iterations:
+
+- **Dynamic targets in Phase A are catastrophic.** v4's dynamic Phase A
+  caused abrupt target flip at trunk-top; closed-loop with short
+  lookahead produced erratic rotation that steered every wire into
+  branch (18) (LVA bridge). All 50 episodes off-path within 150 steps.
+- **Sign convention IS the original right-hand-rule.** v6/v7 with
+  flipped sign produced same wires-into-(18) failure even with
+  fixed `−z` Phase A — the small residual rotations from non-perfectly-
+  degenerate targets accumulated to push the J-curl wrong way.
+- **v8 ≡ v2 in policy code; differences are pure stochasticity.** Same
+  code, same seeds — different SOFA/heuristic-noise realizations
+  produce 28/50 vs 43/50. Without RNG seeding, single 50-ep runs are
+  noisy ±15 episodes around the underlying success rate.
+- **v3 added Phase C without changing Phase A/B; result was 2/50.**
+  Cross-run noise dominates; we can't conclude Phase C is responsible
+  for the regression.
+
+Reverted to v8 = exact v2 strategy as the known-stable baseline.
+
+---
+
+## 23. Per-Step Full Diagnostic Logging
+
+### Context
+
+Tracing closed-loop dynamics, branch transitions, and phase activations
+at the moments wires made wrong decisions required step-by-step logs.
+The default `is_info_step` predicate only emitted FULL STEP lines (with
+`tip3d`, `cur_branch`, `phase`, `cmd_action`, `on_path`, etc.) on the
+first 30 steps + every 50th step + termination — about 7 % of total
+steps. Brief lines for the rest only had `reward, cum_reward, step_time`.
+
+This made cross-step diagnosis lossy: when a wire transitioned
+`cur_branch=(0) → LCCA → (0)` between steps 250 and 300, the trace
+lost the actual transition point.
+
+### Fix
+
+**File:** [training _scripts/util/env5.py](training _scripts/util/env5.py)
+
+```python
+# was: full info every 50 steps
+is_info_step = (
+    self._episode_step_count <= 30
+    or self._episode_step_count % 50 == 0
+    or terminated or truncated
+)
+
+# now: full info EVERY step
+is_info_step = True
+```
+
+### Cost
+
+- ~14× more log lines per episode (~600 full lines vs ~42 previously)
+- Run log size ~150 MB total vs ~10 MB at every-50-step (50 episodes)
+- Slight per-step I/O overhead (negligible vs SOFA solver time)
+
+### Benefit
+
+Every step has the diagnostic record needed to diagnose:
+- Closed-loop `gw_rot` per step (validate sign convention, magnitude)
+- `cur_branch` transitions in real time (validate state-machine commits)
+- `fold` counter accumulation
+- `phase` activation windows
+- `on_path` flicker (validate radius-aware tolerance)
+
+Required to make any per-step debugging actually faithful to the data.
+
+---
+
+## 24. Run Log — v8 / v2cfg-500ep
+
+### v8 (exact v2 strategy revert, 50 episodes)
+
+- Container: `env5_rl8_RVA_phasev8_50ep`
+- 50 episodes, 758 s, 0 successes
+- Snapshot reasons: 47 max_steps, 1 fold-stall, (2 unaccounted)
+- cur_branch: trunk(2)=1621, RVA=209, (11)=123, (17)=103, (0)=32, LCCA=5, (18)=2, RCCA=1
+- Phase activations: default=1843, lcca_jn=104, trunk_top=65
+- **43/48 episodes reached cur_branch=RVA** (highest of all runs)
+- Reward range: −63 to **−8.1** (best so far)
+
+Ep-index breakdown:
+
+| ep | reach RVA |
+|---|---|
+| 1 | 16/16 |
+| 2 | 14/16 |
+| 3 | 13/16 |
+| 4+ | 0/16 (only 1 ep ran) |
+
+### Stochasticity caveat
+
+v2 (initial run) and v8 (re-run with identical code) differ purely by
+SOFA/heuristic-noise realization, yet:
+
+- v2 had 28/50 reach RVA
+- v8 had 43/50 reach RVA
+
+Same code → ±15 episode swing. Without seeding the heuristic RNG (which
+is currently `np.random.default_rng()` unseeded per worker), individual
+50-ep runs are not statistically distinguishable from each other. To
+get tight enough comparison for policy iterations, either:
+
+1. Seed the heuristic RNG (per-worker per-episode) for reproducibility, or
+2. Run N ≥ 200 episodes per condition for tight CI.
+
+### v2cfg-500ep (currently running)
+
+Launched after enabling per-step diagnostic logging (§23) to gather a
+larger sample under the v2 strategy. Container:
+`env5_rl8_RVA_v2cfg_500ep`. Expected ~2 hr runtime, ~150 MB total log
+output.
+
+---
+
+## 25. Reproducibility + SOFA-Restore Instrumentation
+
+### Context
+
+The v2cfg-500ep run revealed huge cross-run noise floor (28/50 vs 43/50
+on identical code) due to unseeded heuristic RNG. To make Phase C
+testing tractable we needed:
+
+1. **Reproducible runs** — same seed → same trajectory.
+2. **A way to test Phase C only on the relevant subset** (the ~24 % of
+   episodes that actually reach RVA daughter), instead of paying full
+   500-episode cost per Phase C variant.
+
+### Fix
+
+**File:** [training _scripts/util/heuristic_policy.py](training _scripts/util/heuristic_policy.py)
+
+Heuristic RNG is now seeded deterministically per `(reset_seed XOR
+worker_pid)` on each episode reset. The reset seed is the per-episode
+seed from the schedule, captured by env5's reset method. Same seed +
+same worker → same noise stream → same trajectory.
+
+**File:** [training _scripts/util/env5.py](training _scripts/util/env5.py)
+
+- `self._reset_seed = seed` captured in `reset()`.
+- `EPISODE_START` log line gains `seed=N` field.
+- New `_save_rva_checkpoint()` method saves SOFA controller state
+  + tracking3d to `.npz` and metadata to `.json` when wire's
+  projection arclength first crosses `rva_jn_arc`. Same shape as
+  `collect_sofa_checkpoints.py` saves, so existing
+  `checkpoint_restore.py` wrapper consumes the captures directly.
+- Trigger gated by `RVA_CHECKPOINT_DIR` env var; no-op when unset.
+
+**File:** [training _scripts/heuristic_run_RVA.py](training _scripts/heuristic_run_RVA.py)
+
+- Sets `RVA_CHECKPOINT_DIR=$DIAGNOSTICS/rva_checkpoints/` before worker
+  spawn.
+- Saves `schedule.json` manifest with full `(seed, options)` list to
+  `$DIAGNOSTICS/schedule.json` for post-hoc seed recovery.
+
+### Strategy fallback ladder for Phase C iteration
+
+After running v2cfg-500 with full instrumentation, three independent
+strategies are available:
+
+- **Strategy 1 — SOFA checkpoint restore.** For each Phase C variant,
+  restore from each `.npz` capture and run forward only ~300 steps.
+  Skips the entire trunk → bridge traversal each iteration.
+  Caveat: capture trigger fires at `s >= rva_jn_arc` so some captures
+  are at pre-cavity (wire still in bridge), some inside the merged
+  cavity. Filter via `.json` metadata's `tip3d` z-value.
+- **Strategy 2 — Cherry-picked seeds.** Parse `schedule.json`, filter
+  for seeds whose checkpoint metadata shows RVA entry, build a custom
+  ~117-episode schedule, run with Phase C variant. Reproducible thanks
+  to RNG seeding.
+- **Strategy 3 — Full re-run.** Same as Strategy 2 but with all 500
+  seeds; useful when verifying overall success rate vs subset.
+
+### File index entries
+
+| File | Change |
+|---|---|
+| `training _scripts/util/heuristic_policy.py` | Heuristic RNG seeded from `(reset_seed XOR worker_pid)` for reproducibility |
+| `training _scripts/util/env5.py` (additional) | Captures `_reset_seed` in `reset()`; logs `seed=` in EPISODE_START; adds `_save_rva_checkpoint()` triggered when projection first crosses `rva_jn_arc` |
+| `training _scripts/heuristic_run_RVA.py` (additional) | Saves `schedule.json` manifest; sets `RVA_CHECKPOINT_DIR` env var |
+
+---
+
+## 26. RVA-Junction Mesh Inspection — Critical Geometric Finding
+
+### Context
+
+After analyzing v2cfg-500 logs and finding that ep=3 vs ep=6 episodes
+of the same pids diverged sharply at the bridge-end / RVA-jn (ep=3
+flickered cur_branch RVA → RCCA, ep=6 stayed on RVA), we needed to
+verify the geometry at the trifurcation. Centerline data alone wasn't
+enough — the centerlines say "three branches converge at vessel-CS
+`(-0.35, 24, 416)`" but don't show the lumen shape there.
+
+### Fix
+
+**File (new):** [inspect_rva_jn_mesh.py](inspect_rva_jn_mesh.py)
+
+Standalone pyvista script that loads `vessel_architecture_visual.obj`
+and slices it at vessel-CS z planes through the junction region
+(`z = 408..425 mm`). For each slice, segments connected lumen regions
+and computes equivalent radius from convex-hull area.
+
+### Critical finding — the "RVA-jn" is a MERGED CAVITY
+
+| z (vessel-CS) | # lumen regions | merged cavity radius |
+|---|---|---|
+| 408 | 2 separate | (bridge & approach) |
+| 410 | 2 separate | (bridge & RCCA approach) |
+| **412–417** | **1 single cavity** | **~12 mm radius** ← merged |
+| 418+ | 2 separate (RVA + RCCA) | 7–9 mm each |
+
+At z=412–417 the bridge end, RVA opening, and RCCA opening are all
+part of ONE big open cavity of ~12 mm radius (~24 mm diameter). The
+wire's tip entering this cavity has 5+ mm of free space to drift in
+any direction before reaching the narrow daughter openings above
+(z>418).
+
+### Where the daughters separate
+
+```
+z=418: RVA centroid (+3.3, +21.9), RCCA centroid (-6.9, +38.0)
+z=420: RVA centroid (+1.4, +21.7), RCCA centroid (-8.0, +38.2)
+z=422: RVA centroid (-1.3, +22.1), RCCA centroid (-10.5, +37.9)
+```
+
+The discriminating axis is **`x`** (RVA stays near `x=+3..-1`, RCCA
+goes to `x=-8..-10`) AND **`y`** (RVA at `y=22`, RCCA at `y=38`).
+Both daughters extend `+y` from the cavity but RCCA goes much further.
+
+### Tangent direction discrimination
+
+```
+RVA first-segment tangent:  (-0.33, +0.87, -0.37)  -- mostly +y
+RCCA first-segment tangent: (-0.81, -0.12, +0.58)  -- mostly -x +z
+```
+
+**The y-axis component is the cleanest discriminator** — RVA has +0.87,
+RCCA has −0.12. A closed-loop target equal to RVA's local tangent
+would naturally bias the J-curl toward `+y` within the cavity, picking
+RVA over RCCA.
+
+### RCCA narrowing
+
+```
+RCCA[0..7] equivalent radii:
+  12.2 → 8.3 → 8.0 → 7.7 → 7.2 → 6.5 → 5.5 → 3.0 mm
+```
+
+In 6 mm of arclength, RCCA narrows 4×. RVA stays ~12 mm radius for
+its first 10 mm (still inside the merged cavity by z). This explains
+why wires that flicker into RCCA also fail to recover — RCCA's narrow
+lumen catches them quickly.
+
+### Implications validated by ep=3 vs ep=6 trace
+
+For pid=160 (representative):
+- **ep=3** at first-RVA-commit: tip=(17.9, 66.1, **412.7**) — INSIDE cavity
+- **ep=6** at first-RVA-commit: tip=(16.1, 66.3, **409.6**) — pre-cavity
+- After commit: ep=3 flickered to RCCA at step 233 (gw_trans collapsed
+  to 0.5 mm/s due to projection past last junction → small d_rem); ep=6
+  kept gw_trans=4-5 and advanced 10 mm into RVA before slowing.
+
+The **two failure modes** at the junction:
+
+1. **Cavity drift** — Wire enters 12-mm cavity with free space; J-curl
+   orientation determines daughter; small noise can flip the choice.
+2. **Heuristic gw_trans collapse** — Once projection arclength is past
+   `rva_jn_arc`, `d_rem` shrinks → default heuristic slows `gw_trans`
+   to ~0.5 mm/s. Wire stalls before enough lateral motion to commit.
+
+---
+
+## 27. Phase C Implementation (mesh-validated)
+
+### Context
+
+After §26's mesh findings, Phase C was redesigned and re-implemented
+in `heuristic_policy_rva.py`.
+
+### Fix
+
+**File:** [training _scripts/util/heuristic_policy_rva.py](training _scripts/util/heuristic_policy_rva.py)
+
+Phase C activates when wire's projection arclength `s >= rva_jn_arc - 5`.
+Two sub-regimes:
+
+| Sub-regime | trigger | gw_trans | target |
+|---|---|---|---|
+| `rva_cavity` | `s ∈ [rva_jn_arc − 5, rva_jn_arc + 5]` | 3 mm/s | `path_tangent_at(s + 5)` (≈ RVA tangent at cavity entry, +y dominant) |
+| `rva_daughter` | `s > rva_jn_arc + 5` | 2 mm/s | `path_tangent_at(s + 5)` (follows RVA's curving centerline) |
+
+Constants:
+```python
+PHASE_C_ARC_BEFORE = 5.0
+PHASE_C_CAVITY_GW_TRANS = 3.0
+PHASE_C_DAUGHTER_GW_TRANS = 2.0
+PHASE_C_LOOKAHEAD_MM = 5.0
+```
+
+Closed-loop sign convention: original right-hand rule (validated
+against v6/v7 regression). NOT flipped.
+
+`_maybe_cache_junctions()` now caches `_rva_jn_arc` via
+`_find_junction_arc(junctions, "(11)", "RVA")` at first call.
+
+`_detect_phase()` priority order: Phase C (if `s >= rva_jn_arc - 5`)
+→ Phase A (trunk-top window) → Phase B (LCCA-jn window) → default.
+
+`__call__()` action computation: when phase is `rva_cavity` or
+`rva_daughter`, dynamic target = `path_context.get_planned_path_tangent_at(s + 5)`.
+
+### What's different from earlier Phase C attempts
+
+- v3 used target = dynamic tangent at `s + 5` for the entire daughter
+  (single regime, gw_trans=2). Failed because Phase A/B had been added
+  but their interactions weren't well-tuned, and we hadn't validated
+  the sign convention.
+- v4-v7 tried to fix earlier issues with various target schemes (sign
+  flips, different lookaheads) — all regressed because each change
+  broke a working part.
+- v8 reverted to Phase A/B fixed `±z` (degenerate, harmless) and no
+  Phase C — this gave a stable known baseline (28-43/50 reach RVA
+  stochastically).
+- **§27 Phase C** layers ONLY on top of the v8 baseline — Phase A/B
+  unchanged, and only Phase C is new. The cavity-vs-daughter sub-regime
+  split + dynamic tangent + original sign is the culmination of all
+  the analysis (mesh inspection + ep=3 vs ep=6 step-by-step diff).
+
+### Validation prerequisite (per §25)
+
+To distinguish Phase C signal from cross-run noise, evaluation requires
+either:
+- Heuristic RNG seeding (now in place per §25) + ≥200 episode runs, or
+- SOFA checkpoint restore from §25's RVA-entry captures (tests Phase C
+  on the ~24 % of episodes that actually reach RVA — expensive part
+  was upstream traversal).
+
+### File index entries
+
+| File | Change |
+|---|---|
+| `training _scripts/util/heuristic_policy_rva.py` (Phase C addition) | New constants `PHASE_C_*`; `_rva_jn_arc` cached; `_detect_phase` adds `rva_cavity` and `rva_daughter` sub-phases; action path uses dynamic tangent target with original sign |
+| `inspect_rva_jn_mesh.py` | **New** — pyvista mesh-inspection script; confirms merged cavity at z=412-417, daughter centroids at z>=418, RCCA narrowing curve |
+
+---
+
 ## File Index
 
 | File | Change Type | Purpose |
@@ -941,4 +1690,14 @@ survives, but no PNGs save). With `--snapshots none`, no mount needed.
 | `test_routed_dcorr.py` | **New** | §9 — smoke test for graph-routed d_corr at 7 representative tip positions |
 | `analyze_rl8_highinsert.py` | **New** | §3, §4 — re-analysis of env5_rl8_highinsert_50ep using run-28 methodology, with 3D-Euclidean ostium distances and full `entries_gained` crosstabs |
 | `analyze_rva_traj.py` | **New** | §3 — trajectory trace for RVA "near-success" episodes; demonstrates the LVA-route shortcut via the basilar-merger shared endpoint |
+| `training _scripts/heuristic_run_LCCA.py` | **New** | §17 — per-daughter runner, LCCA-only target schedule |
+| `training _scripts/heuristic_run_LVA.py` | **New** | §17 — per-daughter runner, LVA-only target schedule |
+| `training _scripts/heuristic_run_RCCA.py` | **New** | §17 — per-daughter runner, RCCA-only target schedule |
+| `training _scripts/heuristic_run_RVA.py` | **New** | §17 — per-daughter runner, RVA-only target schedule. §22 — wires `_build_heuristic_factory` to `RVAHeuristicActionFunctionFactory` |
+| `training _scripts/util/heuristic_policy_rva.py` | **New** | §22 — RVA-target heuristic with arclength-window phase override (Phase A trunk-top fixed `−z`, Phase B LCCA-jn fixed `+z`); closed-loop tip-bend rotation algorithm; cached `_trunk_top_arc` and `_lcca_jn_arc` from `pathcontext.get_path_junctions()` |
+| `eve/eve/util/pathcontext.py` (additional) | Modified | §18 — `_tip_on_path_used_segment()` mask check re-introduced into `is_on_correct_path()`; mask check also gates `update_branch_state()` on-path/off-path transitions. §19 — junction-crossing detector hysteresis fixed (one-sided commit, was 20 mm leap). §21 — `get_path_junctions()` and `get_planned_path_tangent_at(s, lookahead_mm)` accessors |
+| `training _scripts/util/env5.py` (additional) | Modified | §22 — STEP log adds `phase=` field via `getattr` fallback. §23 — `is_info_step = True` (full per-step diagnostic logging) |
+| `plot_bif2_topology.py` | **New** | §20 — standalone matplotlib renderer producing `bif2_topology.png` (full arch view) and `bif2_topology_zoom.png` (bif2 close-up with junction annotations) |
+| `bif2_topology.png` / `bif2_topology_zoom.png` | **New artifacts** | §20 — visual reference for the geometry-debugging conversations |
+| `user copy.md` | **User-provided** | Snapshot-classification analysis with specific failure-episode IDs (RCCA/RVA MS, LCCA FS/MS, LVA FS/MS) — drove §18 bug-A re-introduction |
 | `RL_IMPROV_8_CHANGES.md` | **New** | This document |

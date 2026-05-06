@@ -1,92 +1,75 @@
-"""RVA-specific heuristic policy with junction-orientation control.
+"""RVA-specific heuristic policy — v2 (Phase A/B) + refined Phase C.
 
-Strategy (RL_IMPROV_8 RVA experiment):
-  Phase A — Trunk-top crossing: at trunk-top junction (47, 34, 392) the
-            three branches {trunk(2), (0), (18)} meet. Branch (18) is the
-            LVA bridge that climbs up (+z) into the LVA approach; branch
-            (0) is the bridge from trunk-top DOWN to the LCCA-junction at
-            (23, 16, 385). For RCCA/RVA targets we need (0), so we want
-            the wire's J-tip oriented toward -z when crossing trunk-top
-            (so it doesn't get caught against (18)'s wall).
+  Phase A — Trunk-top crossing: gw_trans=10 mm/s, window
+            [trunk_top_arc - 30, trunk_top_arc + 10], target FIXED -z
+            (degenerate, just modulates speed).
 
-  Phase B — LCCA-junction post-crossing: at LCCA-jn the three branches
-            {(0), (11), LCCA} meet. Branch (11) (the bridge to RCCA/RVA
-            ostium) climbs UP (+z) — the path's first segment jumps
-            Δz=+12.5 mm from i=0 to i=1. We want the J-tip oriented
-            toward +z right after crossing the junction so it lodges
-            against the (11) wall and threads into the bridge.
+  Phase B — LCCA-junction crossing: gw_trans=1.5 mm/s, window
+            [lcca_jn_arc - 15, lcca_jn_arc + 30], target FIXED +z
+            (degenerate, just modulates speed).
 
-  Phase C — In-daughter advance: once the wire's projection arclength
-            crosses the bridge → RVA junction (rva_jn_arc), we're past
-            the last branching choice and inside the target daughter.
-            The daughter's centerline tangent rotates continuously
-            (RVA's first 10 mm sweeps from +y to +z); a single fixed
-            target like Phase A/B can't track it. Phase C samples the
-            local planned-path tangent at (s + 5 mm) every step, so the
-            J-curl is always oriented toward where the wire is heading
-            next. Slow gw_trans (2 mm/s) gives torsion time to land in
-            the narrow daughter lumen. Active all the way to target.
+  Phase C — RVA-jn cavity transit + in-daughter advance:
+    Sub-regime "rva_cavity"   (s in [rva_jn_arc - 5, rva_jn_arc + 5]):
+        gw_trans = 3 mm/s. Target = planned-path tangent at (s + 5),
+        which equals RVA's first-segment direction (~(-0.33, +0.87, -0.37))
+        at the cavity entry. The +y dominant component discriminates
+        RVA from RCCA (RCCA has -y component) — closed-loop biases
+        the J-curl toward RVA's opening within the merged cavity.
+    Sub-regime "rva_daughter" (s > rva_jn_arc + 5):
+        gw_trans = 2 mm/s. Target = local RVA tangent at (s + 5),
+        following the daughter's curving centerline.
 
-Phase activation by **arclength along the planned path** (not Euclidean
-distance to junction nodes). The arclength windows are wide and run
-mostly BEFORE each junction to give the wire time for SOFA torsional
-propagation to actually rotate the J-tip — single-step rotation
-commands don't measurably reorient the tip through ~140 mm of
-inserted shaft.
-
-Closed-loop tip-bend feedback:
-  Each step reads the wire's first 3 tracking points (tracking[0..2]) to
-  estimate:
-    - Local long axis at tip:   t_hat = (tracking[0] - tracking[2]) / norm
-    - Current bend direction:   discrete 2nd-derivative b = p0 + p2 - 2 p1,
-                                projected onto plane perpendicular to t_hat
-  Desired bend direction is the target (+z or -z) projected into the same
-  perpendicular plane. The signed angle from current bend to desired
-  bend, taken about t_hat, gives gw_rot magnitude AND sign.
-
-Translation is kept low (2 mm/s for trunk-top, 1.5 mm/s for LCCA-jn)
-during phase mode so the wire body doesn't advance faster than torsion
-can propagate to the J-tip — fold-stall is the failure mode when the
-body races ahead of an unrotated tip.
+  Mesh inspection (RL_IMPROV_8 §26) revealed the "RVA-jn" is a 5 mm
+  tall, ~12 mm radius MERGED CAVITY where bridge(11), RVA, and RCCA
+  share open lumen. Wire's J-curl orientation in the cavity decides
+  which daughter it commits to. Phase C's dynamic tangent target
+  exploits the +y vs -y discrimination cleanly.
 """
 import numpy as np
 
 from .heuristic_policy import HeuristicActionFunction
 
 
-# Arclength windows (mm) relative to each junction's planned-path arclength.
-# Negative = before the junction (lead-in for pre-rotation), positive = past.
-# Wider lead-in than follow-through: most of the rotation work needs to
-# finish BEFORE the wire arrives at the kink.
+# Arclength windows (v2 strategy — best result observed: 28/50 reached RVA)
 PHASE_A_ARC_BEFORE = 30.0   # start phase A 30 mm before trunk-top
 PHASE_A_ARC_AFTER = 10.0    # extend 10 mm past trunk-top
 PHASE_B_ARC_BEFORE = 15.0   # start phase B 15 mm before LCCA-jn
-PHASE_B_ARC_AFTER = 30.0    # extend 30 mm past LCCA-jn (longer so tip
-                             # has time to commit into bridge (11))
+PHASE_B_ARC_AFTER = 30.0    # extend 30 mm past LCCA-jn
 
-# Phase A — fast confident push past trunk-top, target tip bend toward -z.
-# Trunk-top is a gentle transition (trunk(2) → (0) descent), not a sharp
-# turn — speed avoids getting caught on (18)'s wall.
+# Phase A — fast confident push past trunk-top with fixed -z target
+# (degenerate vs +z long-axis, so closed-loop usually returns ~0 rotation).
 PHASE_A_GW_TRANS = 10.0
 PHASE_A_TARGET_DIR = np.array([0.0, 0.0, -1.0])
 
-# Phase B — slow deliberate push at/past LCCA-jn, target tip bend toward
-# +z. This IS the sharp ~100° turn (Δz=+12.5 mm at i=0→1 of bridge
-# (11)); slow enough that torsion propagates and J-tip reorients
-# before the wire body arrives at the kink.
+# Phase B — slow deliberate push at/past LCCA-jn with fixed +z target
+# (degenerate vs ascending long-axis at the LCCA-jn region).
 PHASE_B_GW_TRANS = 1.5
 PHASE_B_TARGET_DIR = np.array([0.0, 0.0, +1.0])
 
-# Phase C — in-daughter advance. Activated once projection arclength is
-# past the bridge → daughter junction; runs all the way to target.
-# Target direction is DYNAMIC: sampled from the planned-path tangent at
-# (s + LOOKAHEAD) so the J-curl is oriented toward where the wire is
-# heading next, not where it currently sits. As the daughter centerline
-# curves through its initial 60° turn (RVA's tangent rotates from +y to
-# +z over ~10 mm of arclength), the target rotates continuously and the
-# closed-loop rotation drives the J-curl to follow.
-PHASE_C_GW_TRANS = 2.0
-PHASE_C_LOOKAHEAD_MM = 5.0
+# Phase C — RVA-jn cavity transit + in-daughter advance
+# (RL_IMPROV_8 §26 — designed from mesh inspection findings: the "RVA-jn"
+# is a 5 mm tall, ~12 mm radius MERGED CAVITY where bridge(11)/RVA/RCCA
+# share open lumen. Wire's J-curl orientation in the cavity decides
+# RVA vs RCCA. RVA's first-segment tangent has +y dominant component
+# while RCCA's tangent has strong -x and -y — they discriminate cleanly
+# along the y axis. Dynamic tangent target with original sign exploits
+# this discrimination naturally.)
+#
+# Two sub-regimes:
+#   (a) Cavity transit (s in [rva_jn_arc - 5, rva_jn_arc + 5]):
+#       Wire is approaching or in the merged cavity. Closed-loop biases
+#       J-curl toward RVA's local tangent (+y dominant). gw_trans=3 mm/s
+#       — keep wire moving so it doesn't dwell in cavity (heuristic's
+#       d_rem-based slowdown otherwise drops gw_trans to 0.5 mm/s here).
+#   (b) In-daughter advance (s > rva_jn_arc + 5):
+#       Wire is committed to RVA proper. Slower gw_trans=2 mm/s for the
+#       narrowing daughter lumen. Closed-loop continues to follow the
+#       daughter's curving centerline.
+PHASE_C_ARC_BEFORE = 5.0    # start Phase C 5 mm before RVA-jn (cavity entry)
+PHASE_C_CAVITY_GW_TRANS = 3.0  # cavity transit speed
+PHASE_C_DAUGHTER_GW_TRANS = 2.0  # in-daughter speed
+PHASE_C_LOOKAHEAD_MM = 5.0  # tangent at (s + 5) — gives ~RVA[1]'s direction
+                             # at cavity entry, RVA[2-3] at cavity center.
 
 # Rotation control gains
 GW_ROT_GAIN = 1.0    # rad-per-radian (proportional)
@@ -180,9 +163,8 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
         self._trunk_top_arc = _find_junction_arc(junctions, "(2)", "(0)")
         # LCCA-jn: prev=(0), next=(11)
         self._lcca_jn_arc = _find_junction_arc(junctions, "(0)", "(11)")
-        # RVA-jn: prev=(11), next=RVA daughter
+        # RVA-jn: prev=(11), next=RVA daughter (Phase C trigger anchor)
         self._rva_jn_arc = _find_junction_arc(junctions, "(11)", "RVA")
-        # Publish to env for one-shot diagnostics on the first INFO line.
         try:
             base_env._heur_rva_trunk_top_arc = (
                 float(self._trunk_top_arc) if self._trunk_top_arc else -1.0
@@ -202,10 +184,15 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
             s = float(base_env._path_context.get_projection().s)
         except Exception:
             return "default"
-        # Phase C takes priority: once past the bridge → daughter junction,
-        # we're inside RVA and want continuous tangent-follow until target.
-        if self._rva_jn_arc is not None and s >= self._rva_jn_arc:
-            return "in_daughter"
+        # Phase C takes priority: once approaching/past the RVA-jn we're
+        # navigating the merged cavity + RVA daughter and need dynamic
+        # tangent steering all the way through.
+        if (self._rva_jn_arc is not None
+                and s >= self._rva_jn_arc - PHASE_C_ARC_BEFORE):
+            # Sub-regime split: cavity transit vs in-daughter
+            if s < self._rva_jn_arc + 5.0:
+                return "rva_cavity"
+            return "rva_daughter"
         if (self._trunk_top_arc is not None
                 and (self._trunk_top_arc - PHASE_A_ARC_BEFORE)
                 <= s
@@ -260,20 +247,31 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
             self._needs_reset = False
 
         tracking_vcs = self._tracking_in_vessel_cs(base_env)
+        # Phase A target = fixed -z, Phase B target = fixed +z (both
+        # degenerate vs +z long-axis — closed-loop returns ~0 rotation,
+        # phases just modulate gw_trans). Phase C uses dynamic
+        # planned-path tangent (RVA's first-segment tangent +y dominant
+        # discriminates RVA from RCCA in the merged cavity at the
+        # trifurcation; in-daughter target follows RVA's curving
+        # centerline).
         if phase == "trunk_top":
             gw_trans = PHASE_A_GW_TRANS
             target = PHASE_A_TARGET_DIR
         elif phase == "lcca_jn":
             gw_trans = PHASE_B_GW_TRANS
             target = PHASE_B_TARGET_DIR
-        else:  # phase == "in_daughter"
-            gw_trans = PHASE_C_GW_TRANS
+        else:  # phase in {"rva_cavity", "rva_daughter"}
+            if phase == "rva_cavity":
+                gw_trans = PHASE_C_CAVITY_GW_TRANS
+            else:
+                gw_trans = PHASE_C_DAUGHTER_GW_TRANS
             try:
                 pc = base_env._path_context
                 s = float(pc.get_projection().s)
-                target = pc.get_planned_path_tangent_at(s, PHASE_C_LOOKAHEAD_MM)
+                target = pc.get_planned_path_tangent_at(
+                    s, PHASE_C_LOOKAHEAD_MM
+                )
                 if float(np.linalg.norm(target)) < 1e-6:
-                    # Tangent unavailable — skip rotation override this step.
                     target = np.zeros(3)
             except Exception:
                 target = np.zeros(3)

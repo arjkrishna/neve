@@ -313,3 +313,90 @@ cross_track_signed = dot(axis, cross(curv_perp, offset_perp_hat))  # signed
 
 
 Possible next experiments: (a) narrow Phase 2 clamp back to ±0.5 or ±0.3 for small heading errors (keep ±1.5 only when |heading_err|>0.5), (b) add a "commit lock" — once on correct branch at d_corr<15, disable rotation for N steps to let the wire finalize the entry.
+
+
+
+---------------------------------------------------------
+
+
+Phase C — Full Design Option Space
+Trigger condition
+Single option (validated): activate when wire's projection arclength s ≥ rva_jn_arc (past the bridge → RVA junction).
+
+rva_jn_arc cached at first call via _find_junction_arc(junctions, "(11)", "RVA") over pathcontext.get_path_junctions().
+
+Target direction (the main design choice)
+Option 1: Fixed +z (matches v2 simplicity).
+
+Pro: degenerate vs wire's +z long-axis inside RVA → closed-loop returns ~0 → harmless
+Pro: behaves like Phase A/B in v8
+Con: provides no actual tip-orientation signal; only modulates gw_trans
+Option 2: Dynamic planned-path tangent at s + lookahead.
+
+target = pathcontext.get_planned_path_tangent_at(s, lookahead_mm)
+Pro: tracks RVA's continuously-curving centerline (sweeps +y → +z over first 10 mm)
+Con: closed-loop sign convention validated as right-hand-rule (+gw_rot = CCW around +t̂); needs original sign (NOT flipped). The flipped-sign experiments (v6/v7) confirm.
+Con: small lookahead gives reactive control; large lookahead anticipates better but pulls J-curl ahead before body catches up.
+Sub-option 2a: lookahead = 1 mm — track tangent very locally
+Sub-option 2b: lookahead = 5 mm — what was used in v3
+Sub-option 2c: lookahead = 10 mm — half of the daughter-entry-turn distance
+Sub-option 2d: lookahead = 20 mm — past the entry turn entirely
+Option 3: Position-vector toward target.
+
+target = (target_pos - tip_pos) / norm
+Pro: orients J-curl toward the goal directly; non-degenerate when wire and target differ in position
+Pro: doesn't need path tangent at all — works regardless of pathfinder
+Con: ignores path topology — could try to push tip toward target through a vessel wall
+Con: assumes target_pos is reachable in straight-line direction from tip, which fails inside curved daughters
+Option 4: Daughter-centerline normal (axis perpendicular to the daughter's local tangent, pointing into the lumen).
+
+target = lumen_axis_at(s)
+Pro: explicit "stay centered in the daughter" signal
+Con: requires daughter-radius lookup; data exists (_branch_radii) but not implemented for path-aware targets
+gw_trans speed
+Option A: Slow (1.5 mm/s) — matches Phase B; gives torsion time to propagate; safest in narrow daughter
+
+Option B: Medium (2.0 mm/s) — was used in v3
+
+Option C: Default (5 mm/s) — gives the wire body more push to commit through the entry turn; risks fold
+
+Option D: Variable — min(5, 0.1 * d_remaining_to_target) — slows down as target approaches (matches default heuristic regime)
+
+Window extent
+Option α: Full daughter (s ∈ [rva_jn_arc, total_length]) — Phase C active until end of episode
+
+Option β: Entry-turn region only (s ∈ [rva_jn_arc, rva_jn_arc + 30]) — only the 30 mm where RVA's tangent rotates +y → +z; revert to default heuristic for the long straight portion afterward
+
+Option γ: Entry + middle (s ∈ [rva_jn_arc, rva_jn_arc + 100]) — covers the entry plus most of the daughter's length, leaving only the final approach to default
+
+Stagnation/recovery sub-policy
+Independent of target/speed — for the 125 episodes (~25 %) that reach RVA but stall at entrance:
+
+Sub-policy A: Off-path detection — if d_corr_routed > X mm after entering Phase C, treat as off-path and let default retract handler take over
+
+Sub-policy B: Stagnation retract — if Δs < 1 mm over 20 consecutive steps, command gw_trans = -3 for 5 steps, then resume forward
+
+Sub-policy C: Wiggle — if stalled, alternate gw_rot = ±1.5 for a few steps (sweep J-curl orientation) while keeping gw_trans minimal
+
+Sub-policy D: None — let the wire stall to truncation
+
+Sign convention (validated, not optional)
+gw_rot = +sign((bend × target) · t̂) × angle — right-hand rule, ORIGINAL sign. Flipped sign caused v6/v7 regressions.
+
+Combinatorial space
+If we treat each axis as independent:
+
+4 target options × 4 lookahead sub-options (Option 2 only) = effectively ~7 target variants
+4 gw_trans options
+3 window options
+4 stagnation sub-policies
+That's ~7 × 4 × 3 × 4 = 336 combinations. Most aren't worth testing. The interesting subset is small:
+
+candidate	target	gw_trans	window	stagnation
+C-fixed	Fixed +z (degenerate)	2 mm/s	full	none
+C-dyn5	Dynamic, lookahead=5	2 mm/s	full	none
+C-dyn1	Dynamic, lookahead=1	2 mm/s	full	none
+C-dyn10	Dynamic, lookahead=10	2 mm/s	full	none
+C-target	Position-vector to target	2 mm/s	full	none
+C-recover	Dynamic, lookahead=5	variable D	full	sub-policy B
+C-narrow	Dynamic, lookahead=5	2 mm/s	β (30 mm)	none
