@@ -280,6 +280,14 @@ class BenchEnv5(eve.Env):
         self._rva_jn_arc = None
         self._crossed_rva_jn = False
 
+        # Phase C variant ID (RL_IMPROV_8 §28 / Plan v3). The
+        # heuristic_policy_rva.RVAHeuristicActionFunction reads this to
+        # dispatch among C0-C8 strategies. Stored on env so the action
+        # function can read it without modifying its own factory layer.
+        self._phase_c_variant = (
+            options.get("phase_c_variant") if options else None
+        ) or "C2"  # default = current production (dynamic, lookahead=5)
+
         # Detector state reset
         self._heuristic_mode = bool(options and options.get("heuristic_mode", False))
         self._heuristic_abort_reason = None
@@ -386,10 +394,14 @@ class BenchEnv5(eve.Env):
         seed_str = (
             f" | seed={self._reset_seed}" if self._reset_seed is not None else ""
         )
+        variant_str = (
+            f" | phase_c_variant={self._phase_c_variant}"
+            if self._phase_c_variant else ""
+        )
         self._step_logger.info(
             f"EPISODE_START | ep={self._episode_count} | global_steps={self._step_count} | "
             f"wall_time={time.time():.6f} | pid={os.getpid()}{target_str}{ins_str}"
-            f" | target_branch={self._target_branch_short}{seed_str}"
+            f" | target_branch={self._target_branch_short}{seed_str}{variant_str}"
         )
         sys.stderr.flush()
 
@@ -515,14 +527,29 @@ class BenchEnv5(eve.Env):
         if not terminated and not truncated:
             if not on_correct_path:
                 self._off_branch_steps += 1
-                if self._off_branch_steps == 1:
-                    reward += WRONG_BRANCH_ENTRY_PENALTY
-                else:
-                    reward += WRONG_BRANCH_STEP_PENALTY
-                if self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS:
-                    if self._heuristic_mode:
-                        self._heuristic_abort("wrong_branch_timeout", info)
-                    truncated = True
+                # Per-daughter policies can set _heur_suppress_wrong_branch
+                # to True when they're intentionally driving the wire while
+                # it's off-path (e.g., LVA's Phase C override in the LCCA-
+                # LVA convergence region where cur_branch flickers to (19)
+                # but the wire is genuinely advancing along LVA daughter).
+                # When suppressed: NO penalty, NO truncation. The wire is
+                # navigating correctly; closest-centerline classification
+                # is just unreliable in convergence regions.
+                suppress = bool(getattr(self, "_heur_suppress_wrong_branch", False))
+                if not suppress:
+                    # 3-step grace: cur_branch can flicker between the on-path
+                    # and a sister branch every step due to closest-centerline
+                    # jitter. Steps 1-2: no penalty. Step 3: entry penalty
+                    # (once). Step 4+: per-step penalty. Timeout still fires
+                    # at 50 consecutive off-path steps.
+                    if self._off_branch_steps == 3:
+                        reward += WRONG_BRANCH_ENTRY_PENALTY
+                    elif self._off_branch_steps > 3:
+                        reward += WRONG_BRANCH_STEP_PENALTY
+                    if self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS:
+                        if self._heuristic_mode:
+                            self._heuristic_abort("wrong_branch_timeout", info)
+                        truncated = True
             else:
                 self._off_branch_steps = 0
 
@@ -829,7 +856,12 @@ class BenchEnv5(eve.Env):
         except Exception:
             pass
         try:
-            if self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS:
+            # Honor the suppression flag here too — if a per-daughter policy
+            # was intentionally driving the wire off-path inside a daughter
+            # region (e.g., LVA's Phase C override), don't mis-categorize the
+            # episode as wrong_branch_timeout. Treat as max_steps instead.
+            if (self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS
+                    and not getattr(self, "_heur_suppress_wrong_branch", False)):
                 return "wrong_branch_timeout"
         except Exception:
             pass

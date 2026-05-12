@@ -25,6 +25,7 @@ import torch.multiprocessing as mp
 
 from util.env5 import BenchEnv5
 from util.heuristic_policy import HeuristicActionFunctionFactory
+from util.heuristic_policy_lva import LVAHeuristicActionFunctionFactory
 from util.agent import BenchAgentSynchron
 from util.util import get_result_checkpoint_config_and_log_path
 from eve_bench import DualDeviceNav
@@ -46,15 +47,15 @@ TARGET_BRANCHES = [
 ]
 
 
-def _build_heuristic_factory(args) -> HeuristicActionFunctionFactory:
-    """Per-daughter heuristic factory hook.
+def _build_heuristic_factory(args):
+    """LVA-specific heuristic factory.
 
-    Edit THIS function to slot in a daughter-specific controller (e.g. an
-    LVA-junction-aware approach for LVA / RCCA / RVA, or an LVA-bridge-
-    threading variant for LVA). Default for now is the shared factory so
-    runs are reproducible against the generic baseline.
+    Phase C only: dynamic_tangent target at the (18)→LVA daughter
+    junction. No Phase A / B — default centerline-follower handles
+    the trunk → (18) bridge crossing naturally (wire's ascent up
+    trunk(2) past trunk-top delivers it into branch (18)).
     """
-    return HeuristicActionFunctionFactory(
+    return LVAHeuristicActionFunctionFactory(
         noise_std=0.0,
         normalize_output=True,
     )

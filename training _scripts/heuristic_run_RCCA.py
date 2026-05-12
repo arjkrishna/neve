@@ -25,6 +25,7 @@ import torch.multiprocessing as mp
 
 from util.env5 import BenchEnv5
 from util.heuristic_policy import HeuristicActionFunctionFactory
+from util.heuristic_policy_rcca import RCCAHeuristicActionFunctionFactory
 from util.agent import BenchAgentSynchron
 from util.util import get_result_checkpoint_config_and_log_path
 from eve_bench import DualDeviceNav
@@ -46,15 +47,15 @@ TARGET_BRANCHES = [
 ]
 
 
-def _build_heuristic_factory(args) -> HeuristicActionFunctionFactory:
-    """Per-daughter heuristic factory hook.
+def _build_heuristic_factory(args):
+    """RCCA-specific heuristic factory.
 
-    Edit THIS function to slot in a daughter-specific controller (e.g. an
-    RCCA-junction-aware approach for RCCA / RCCA / RVA, or an LVA-bridge-
-    threading variant for LVA). Default for now is the shared factory so
-    runs are reproducible against the generic baseline.
+    Uses ``RCCAHeuristicActionFunctionFactory`` — exact mirror of RVA's
+    Phase A/B/C structure with the daughter-junction token swapped from
+    "(11)→RVA" to "(11)→RCCA". Phase C variant defaults to "C2" (dynamic
+    tangent, lookahead=5) per env5._phase_c_variant default.
     """
-    return HeuristicActionFunctionFactory(
+    return RCCAHeuristicActionFunctionFactory(
         noise_std=0.0,
         normalize_output=True,
     )

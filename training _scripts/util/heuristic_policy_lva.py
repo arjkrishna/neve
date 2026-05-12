@@ -1,23 +1,26 @@
-"""RVA-specific heuristic policy — v2 (Phase A/B) + Phase C variant grid.
+"""LVA-specific heuristic policy — Phase C only.
 
-  Phase A — Trunk-top crossing: gw_trans=10 mm/s, window
-            [trunk_top_arc - 30, trunk_top_arc + 10], target FIXED -z
-            (degenerate, just modulates speed).
+LVA target is the easiest daughter to reach geometrically. Wire's
+natural ascent up trunk(2) past trunk-top delivers it into branch (18)
+(the LVA bridge) without any active steering — this is the same
+"deflection into (18)" failure mode we observed in ~10-30% of
+RVA/RCCA/LCCA episodes, used INTENTIONALLY here. So:
 
-  Phase B — LCCA-junction crossing: gw_trans=1.5 mm/s, window
-            [lcca_jn_arc - 15, lcca_jn_arc + 30], target FIXED +z
-            (degenerate, just modulates speed).
+  Phase A — DISABLED. The default centerline-follower already drives
+            the wire up trunk and into the (18) bridge at trunk-top.
+            Adding active Phase A risks fighting that natural ascent.
 
-  Phase C — RVA-jn cavity transit + in-daughter advance.
-    Variant ID is read from ``base_env._phase_c_variant`` (set in env5.reset
-    from options['phase_c_variant']). Defaults to "C2" (current production)
-    if not set. The 9 variants for the factorial grid test (Plan v3) are
-    defined in PHASE_C_VARIANTS below.
+  Phase B — DOES NOT EXIST. LVA path has no intermediate junction
+            analogous to RVA's (0)→(11) bridge crossing. The path is
+            simply trunk(2) → (18) → LVA, two junctions total.
 
-  Mesh inspection (RL_IMPROV_8 §26) revealed the "RVA-jn" is a 5 mm
-  tall, ~12 mm radius MERGED CAVITY where bridge(11), RVA, and RCCA
-  share open lumen. Wire's J-curl orientation in the cavity decides
-  which daughter it commits to.
+  Phase C — LVA daughter entry + in-daughter advance. Variant ID is
+            read from ``base_env._phase_c_variant`` (default "C2" =
+            dynamic_tangent at s+5). Mirror of RVA's Phase C structure
+            with daughter junction token swapped to (18)→LVA.
+
+Junction tokens cached:
+  _lva_jn_arc = arc of (18)→LVA   [Phase C anchor]
 """
 import numpy as np
 
@@ -25,13 +28,17 @@ from .heuristic_policy import HeuristicActionFunction
 
 
 # ============================================================================
-# Phase A / B (unchanged from v8)
+# Phase A — trunk-to-(18) bridge crossing (= entire window before LVA daughter)
 # ============================================================================
-PHASE_A_ARC_BEFORE = 30.0
-PHASE_A_ARC_AFTER = 10.0
+# Anchored at lva_jn (the (18)→LVA junction). Window = [lva_jn-30, lva_jn]
+# covers trunk-top + (18) bridge transit. Target = +z, degenerate vs wire's
+# ascending long axis → closed-loop returns ~0 rotation, phase just keeps
+# gw_trans high (10 mm/s) so wire ascends confidently through the bridge.
+PHASE_A_ARC_BEFORE = 30.0     # window starts 30 mm before lva_jn
 PHASE_A_GW_TRANS = 10.0
-PHASE_A_TARGET_DIR = np.array([0.0, 0.0, -1.0])
+PHASE_A_TARGET_DIR = np.array([0.0, 0.0, +1.0])
 
+# Phase B does not exist for LVA.
 PHASE_B_ARC_BEFORE = 15.0
 PHASE_B_ARC_AFTER = 30.0
 PHASE_B_GW_TRANS = 1.5
@@ -231,86 +238,62 @@ def _phase_c_target(base_env, variant_cfg, s):
 # ============================================================================
 # Action function class
 # ============================================================================
-class RVAHeuristicActionFunction(HeuristicActionFunction):
-    """RVA-target heuristic with arclength-based phase override at the
-    trunk-top, LCCA-jn, and RVA-jn crossings. Phase C variant ID is read
-    from ``base_env._phase_c_variant`` (default "C2")."""
+class LVAHeuristicActionFunction(HeuristicActionFunction):
+    """LVA-target heuristic — Phase C only. Default centerline-follower
+    handles the trunk → (18) crossing (no Phase A needed; natural ascent
+    delivers wire into LVA bridge). Phase C variant ID is read from
+    ``base_env._phase_c_variant`` (default "C2")."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Cached at first reset (when planned path is built).
-        self._trunk_top_arc = None
-        self._lcca_jn_arc = None
-        self._rva_jn_arc = None
+        self._lva_jn_arc = None
         # C8 stagnation tracking
         self._proj_s_history = []  # rolling window of last N proj.s values
         self._stagnation_retract_remaining = 0
 
     def reset(self):
         super().reset()
-        # Reset per-episode state. Junction arcs are re-cached lazily
-        # when _maybe_cache_junctions is called next; clear here so a
-        # different env-with-different-target reuses the same factory
-        # cleanly.
-        self._trunk_top_arc = None
-        self._lcca_jn_arc = None
-        self._rva_jn_arc = None
+        # Reset per-episode state. Junction arc is re-cached lazily
+        # when _maybe_cache_junctions is called next.
+        self._lva_jn_arc = None
         self._proj_s_history = []
         self._stagnation_retract_remaining = 0
 
     def _maybe_cache_junctions(self, base_env):
-        if (self._trunk_top_arc is not None
-                and self._lcca_jn_arc is not None
-                and self._rva_jn_arc is not None):
+        if self._lva_jn_arc is not None:
             return
         try:
             junctions = base_env._path_context.get_path_junctions()
         except Exception:
             return
-        self._trunk_top_arc = _find_junction_arc(junctions, "(2)", "(0)")
-        self._lcca_jn_arc = _find_junction_arc(junctions, "(0)", "(11)")
-        self._rva_jn_arc = _find_junction_arc(junctions, "(11)", "RVA")
+        self._lva_jn_arc = _find_junction_arc(junctions, "(18)", "LVA")
         try:
-            base_env._heur_rva_trunk_top_arc = (
-                float(self._trunk_top_arc) if self._trunk_top_arc else -1.0
-            )
-            base_env._heur_rva_lcca_jn_arc = (
-                float(self._lcca_jn_arc) if self._lcca_jn_arc else -1.0
-            )
-            base_env._heur_rva_rva_jn_arc = (
-                float(self._rva_jn_arc) if self._rva_jn_arc else -1.0
+            base_env._heur_lva_jn_arc = (
+                float(self._lva_jn_arc) if self._lva_jn_arc else -1.0
             )
         except Exception:
             pass
 
     def _detect_phase(self, base_env, variant_cfg) -> str:
-        """Determine which phase fires this step. Phase C only fires if the
-        variant's trigger_before is not None (C0 disables Phase C)."""
+        """Determine which phase fires this step.
+        Phase A: trunk-top + (18) bridge crossing (window [lva_jn-30, lva_jn])
+        Phase C: inside LVA daughter (s > lva_jn) — daughter sub-regime only
+        Else: default heuristic (= upstream of Phase A window)."""
         self._maybe_cache_junctions(base_env)
         try:
             s = float(base_env._path_context.get_projection().s)
         except Exception:
             return "default"
-        # Phase C (variant-gated)
+        if self._lva_jn_arc is None:
+            return "default"
+        # Phase C — inside LVA daughter (variant-gated)
         c_before = variant_cfg.get("trigger_before")
-        if (c_before is not None
-                and self._rva_jn_arc is not None
-                and s >= self._rva_jn_arc - c_before):
-            if s < self._rva_jn_arc + 5.0:
-                return "rva_cavity"
-            return "rva_daughter"
-        # Phase A
-        if (self._trunk_top_arc is not None
-                and (self._trunk_top_arc - PHASE_A_ARC_BEFORE)
-                <= s
-                <= (self._trunk_top_arc + PHASE_A_ARC_AFTER)):
+        if c_before is not None and s > self._lva_jn_arc:
+            return "lva_daughter"
+        # Phase A — trunk-to-(18) bridge crossing (window before lva_jn)
+        if (self._lva_jn_arc - PHASE_A_ARC_BEFORE) <= s <= self._lva_jn_arc:
             return "trunk_top"
-        # Phase B
-        if (self._lcca_jn_arc is not None
-                and (self._lcca_jn_arc - PHASE_B_ARC_BEFORE)
-                <= s
-                <= (self._lcca_jn_arc + PHASE_B_ARC_AFTER)):
-            return "lcca_jn"
         return "default"
 
     def _tracking_in_vessel_cs(self, base_env):
@@ -356,13 +339,42 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
         except Exception:
             pass
 
+        # LVA-specific: keep firing Phase C even when off-path, IF the wire's
+        # projection arclength is past the LVA-jn (= inside the daughter).
+        # This bypasses the default off-path retract handler that was
+        # hammering wires backward every time cur_branch flickered to (19)
+        # in the LCCA-LVA convergence region. Wire stays in Phase C with
+        # dynamic_tangent target; body-shape physics decides tip motion.
+        # Also sets `_heur_suppress_wrong_branch=True` on env so env5's
+        # wrong_branch_timeout doesn't fire while the wire is intentionally
+        # off-path in this override region.
         phase = "default"
+        suppress_wbt = False
         if on_correct_path:
             phase = self._detect_phase(base_env, variant_cfg)
+        else:
+            try:
+                s_now = float(base_env._path_context.get_projection().s)
+                if (self._lva_jn_arc is not None
+                        and s_now > self._lva_jn_arc):
+                    c_before = variant_cfg.get("trigger_before")
+                    if c_before is not None:
+                        phase = "lva_daughter"
+                        suppress_wbt = True
+            except Exception:
+                pass
+        try:
+            base_env._heur_suppress_wrong_branch = suppress_wbt
+        except Exception:
+            pass
 
         try:
+            base_env._heur_lva_phase = phase
+            base_env._heur_lva_variant = variant_id
+            # env5 STEP-log writer reads `_heur_rva_phase` for the
+            # phase= field; mirror LVA phase there too so logs show
+            # the active phase regardless of which factory is in use.
             base_env._heur_rva_phase = phase
-            base_env._heur_rva_variant = variant_id
         except Exception:
             pass
 
@@ -377,17 +389,14 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
 
         # ---- Action selection by phase ----
         if phase == "trunk_top":
+            # Phase A: degenerate +z target, gw_trans=10. Closed-loop
+            # returns ~0 rotation (target parallel to wire's long axis);
+            # phase just keeps the wire ascending fast through the
+            # trunk → (18) bridge crossing.
             gw_trans = PHASE_A_GW_TRANS
             target = PHASE_A_TARGET_DIR
-        elif phase == "lcca_jn":
-            gw_trans = PHASE_B_GW_TRANS
-            target = PHASE_B_TARGET_DIR
-        else:  # phase in {"rva_cavity", "rva_daughter"}
-            # gw_trans by sub-regime
-            if phase == "rva_cavity":
-                gw_trans = variant_cfg["cavity_gw_trans"]
-            else:
-                gw_trans = variant_cfg["daughter_gw_trans"]
+        else:  # phase == "lva_daughter" (Phase C — only inside LVA daughter)
+            gw_trans = variant_cfg["daughter_gw_trans"]
 
             # Stagnation retract (C8 only)
             if variant_cfg.get("stagnation") == "retract":
@@ -408,10 +417,10 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
         gw_rot = _compute_rotation_to_target(tracking_vcs, target)
 
         try:
-            base_env._heur_rva_target_z = float(target[2])
-            base_env._heur_rva_target_x = float(target[0])
-            base_env._heur_rva_target_y = float(target[1])
-            base_env._heur_rva_gw_rot = float(gw_rot)
+            base_env._heur_lva_target_z = float(target[2])
+            base_env._heur_lva_target_x = float(target[0])
+            base_env._heur_lva_target_y = float(target[1])
+            base_env._heur_lva_gw_rot = float(gw_rot)
         except Exception:
             pass
 
@@ -430,15 +439,15 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
         return action.astype(np.float32)
 
 
-class RVAHeuristicActionFunctionFactory:
-    """Pickleable factory for RVAHeuristicActionFunction."""
+class LVAHeuristicActionFunctionFactory:
+    """Pickleable factory for LVAHeuristicActionFunction."""
 
     def __init__(self, noise_std: float = 0.0, normalize_output: bool = True):
         self.noise_std = noise_std
         self.normalize_output = normalize_output
 
-    def create(self, env) -> RVAHeuristicActionFunction:
-        return RVAHeuristicActionFunction(
+    def create(self, env) -> LVAHeuristicActionFunction:
+        return LVAHeuristicActionFunction(
             env=env,
             noise_std=self.noise_std,
             normalize_output=self.normalize_output,

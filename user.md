@@ -319,7 +319,7 @@ Possible next experiments: (a) narrow Phase 2 clamp back to ±0.5 or ±0.3 for s
 ---------------------------------------------------------
 
 
-Phase C — Full Design Option Space
+# Phase C — Full Design Option Space
 Trigger condition
 Single option (validated): activate when wire's projection arclength s ≥ rva_jn_arc (past the bridge → RVA junction).
 
@@ -400,3 +400,416 @@ C-dyn10	Dynamic, lookahead=10	2 mm/s	full	none
 C-target	Position-vector to target	2 mm/s	full	none
 C-recover	Dynamic, lookahead=5	variable D	full	sub-policy B
 C-narrow	Dynamic, lookahead=5	2 mm/s	β (30 mm)	none
+-----------------------
+ 
+ What happened before Phase C existed (v8 / v2cfg-500 / v2cfg-500-inst):
+ what all changed for Phase C apart from new run files? what file were we running for before for RVA with only Phase A and Phase B; want to run that same 500 sepsode episode and store episode as npz for heuristic training ; success counts as threading into RVA daughter (around 25 - 30 %)
+
+ Analyse rewards 
+
+
+ revert snapshot 
+
+
+ -----------------------------------------------
+
+# Can you explore SOFA code to explore if there is a better way to restore saved checkpoints; right now it feels like it tries to recreate the scene with save DOFs for the wires ; what if we can save the whole scene as it is ; like a saved video game checkpoint ; what if space is not an issue.
+
+Investigation results — verified directly inside the running container
+SOFA Python API has NO native full-scene serialization. Confirmed from inside the container:
+
+
+Sofa.Simulation methods: animate, animateNSteps, init, initTextures, initVisual,
+                         load, print, reset, unload, updateVisual
+No WriteState / ReadState / exportXML / serialize / snapshot. The compiled bindings just don't expose it. So a "save the whole scene like a video game" via SOFA's own API isn't available — would require a custom C++ plugin.
+
+However, the current checkpoint is far thinner than it could be. A MechanicalObject (the wire's DOFs container) exposes these state DataFields:
+
+field	currently saved?	meaning
+position	✅ (as dof_positions)	xyz + quaternion per beam node
+velocity	❌	per-node linear+angular velocity
+force	❌	currently-applied force per node
+free_position	❌	predicted position before constraint solve
+free_velocity	❌	predicted velocity before constraints
+derivX	❌	acceleration / dx-per-dt
+externalForce	❌	externally-applied force vector
+We're saving 1 of 7+ state fields per MechanicalObject. Then sofabeamadapter.py:136 calls Sofa.Simulation.reset(self.root) which explicitly zeroes velocity/force, and the 50-step "settle" loop tries to reconverge from rest. That settle re-derives a contact manifold from scratch — sometimes it converges to a different local minimum than the one that was saved. This is exactly the wrong-location bug.
+
+Worse: sofabeamadapter.py:139-150 deliberately zeroes the saved rotation_instrument (per a prior RL_IMPROV_7 fix). So even the wire's J-tip orientation that committed it toward the right daughter is intentionally erased on restore.
+
+What's also gone but unrecoverable via Python:
+
+BeamAdapter plugin internals (per-beam interpolation frames, strain) — not in factory accessible scope
+LCP solver cached lambdas / impulses
+Broad/narrow-phase contact pairs (BruteForceBroadPhase rebuilds these every step anyway)
+Practical proposal — "fuller save" without writing a C++ plugin:
+
+Save 6 more arrays per checkpoint: velocity, force, externalForce, free_position, free_velocity, derivX from ic.DOFs.
+On restore: skip Simulation.reset() if checkpoint has the new fields, OR call reset then assign all 7 fields directly (overwriting the zeros).
+Restore rotation_instrument instead of zeroing it (revert RL_IMPROV_7 §7 Fix 6 — accept that this re-introduces the prior issue, since now we're testing a stronger restore).
+Reduce settle_steps to 1-3 (or 0) — with velocities preserved the solver shouldn't need to reconverge from rest.
+That should catch >80% of the missing physics state. The remaining gap (BeamAdapter internal state) would only matter for very long-lasting strain memory effects which probably aren't the dominant cause of the 36% wrong-location problem.
+
+Want me to implement steps 1-4 and re-test? Note this only matters for future Strategy 1 runs — the currently-running paired Phase C grid (full traversal, no restore) doesn't depend on it.
+
+
+----------------------------------
+
+# ok out of this last run that ran 4500 episodes ; find the seeds that ran with max steps for atleast 6 out of 9 runs and were in RVA daughter ; analyse why the variants all failed then looking at the episodes log; give a deep dive looking at tll the details of the step log
+
+
+Deep dive: why all 9 variants fail on seed=1455355984 (target deep RVA at z=496.9)
+The "26.4 mm ceiling" is a metric reset, not a wall
+Looking at C2 step 331→332 (the supposed peak):
+
+
+s=331 | tip=(15.3, 77.1, 419.0) | arc_d=26.3 | d3=1.8
+s=332 | tip=(15.4, 77.3, 419.2) | arc_d=0.0  | d3=inf  ← tip moved 0.2mm, metric reset
+The wire's projection arclength crossed an internal RVA bifurcation (RVA splits at z≈422 into RVA-main and branch(17)). After the crossing, arc_past_d measures from the new junction → resets to 0; d_corr_3d returns inf because no further daughter entries exist on the planned path.
+
+So the 26.4 mm value seen across ALL seeds and variants is just the arclength from bridge(11)→RVA junction to the first internal RVA junction. Wires DO go past it; the metric just zeros out.
+
+The actual stall is at z≈420-424, the internal RVA bifurcation
+Tracking C2 tip3d directly:
+
+step 305: (14, 72.5, 419) — first at peak position
+step 305-331: oscillates around (15, 73-77, 418-419) — only 4 mm of y-progress in 26 steps
+step 332-349: drifts to (14.5, 80, 423.6) — now AT the internal bifurcation
+step 350+: alternates between cur_branch=RVA.mrk and cur_branch=CC(17).mrk for the next 250 steps — wire deflects into branch(17) at every forward push, gets retracted, re-enters RVA, deflects again
+This is the real failure: the wire is stuck at z≈420-424 oscillating between RVA-main and the (17) sister branch.
+
+How each variant fails differently
+C0 (no Phase C, default heuristic, R=-115): After bridge crossing, default centerline-follower takes over. Default uses heading-error + cross-track corrections that aren't tuned for the merged-cavity geometry. The wire spends 100+ steps off-path → ~115 of cumulative penalty. Worst variant.
+
+C1 (fixed +y, R=-20.6, BEST): alternating ±1.5 gw_rot every 2-3 steps (saturated commands; the closed-loop rotation always wants to drive the J-tip toward +y). This gives a steady "snake-charm" wagging motion. Wire body advances slowly but consistently, spends minimal time off-path. Doesn't go further than C2 (max=25.7 vs C2's 26.3) but accumulates fewer penalties.
+
+C2/C3/C4/C6/C7 (dynamic tangent, R=-64 to -74): target = path tangent at s+lookahead. Near the internal junction, the planned-path tangent swings wildly (it's interpolating across a junction). gw_rot output oscillates with high frequency:
+
+
+C2 steps 308-313: gw_rot = +0.05, +0.11, +0.06, +0.03, +0.10, +0.05
+Wire body can't follow high-frequency rotation commands; it drifts off-axis. More off-path episodes than C1.
+
+C5 (position_to_target, R=-62): target = (target − tip).normalized(). Tip at (15, 75, 420), target at (28, 69, 497) → direction ≈ (+0.16, -0.07, +0.98). Mostly +z. But RVA's local centerline at this point curls in the -x, +y plane. The closed-loop tries to rotate J-tip toward +z (which would push wire through vessel wall). Wire fights wall → more off-path.
+
+C8 (dynamic + stagnation retract, R=-7.6, but FAILS DIFFERENTLY):
+
+Steps 305-325: same as C2, wire wedged near 26 mm
+Stagnation detector (Δs<1mm over 20 steps) fires → commands gw_trans=-3 for 5 steps
+This works as designed — wire retracts back into bridge(11)
+BUT: wire can't re-thread the daughter. By step 400 tip is at (12, 56, 419), off_br=8 (off-path for 8 consecutive steps), cur=branch(17)
+For remaining 200 steps, oscillates in/out of bridge(11) cavity
+Lower magnitude reward only because it's not stuck on the wrong-branch retract loop — it's just stuck farther back
+The retract IS achieving its design goal (escape stagnation) but Phase C has no machinery to recover the prior J-tip orientation on a re-entry attempt. The retract throws away progress without a recovery plan.
+
+Why ALL variants share the same failure
+The wire is stuck at the internal RVA bifurcation (z≈422). All 9 variants — including the C0 default — share these traits:
+
+No phase logic for the internal junction. Phase C only knows about the bridge(11)→RVA junction (rva_jn_arc). After 26 mm in RVA, the wire is at a second daughter junction that no Phase recognizes. The variant config gets the same dynamic_tangent target it had 5 mm ago, but the geometric situation has changed (sister branch entry).
+
+Routed-d_corr returns inf after the metric reset. The heuristic regime selector (default heuristic) loses its near-junction signal, falls back to plain centerline-following, which can't handle the bifurcation.
+
+No coordinated J-tip reorientation. At a bifurcation, the wire body needs to be deliberately twisted to commit to one sub-branch. None of the variants are designed for this second commit. They all try to follow the centerline the same way they did in the proximal RVA segment.
+
+Off-path retract handler thrashes. Once wire enters branch(17), is_on_correct_path() returns False → handler commands gw_trans = uniform(-10, -1). Wire pulls back ~5 mm into RVA, on-path again, heuristic pushes forward → deflects into (17) again. Repeats indefinitely.
+
+Concrete diagnosis
+The current implementation treats RVA as a single curve. The actual mesh has:
+
+bridge(11) → "merged cavity" at z≈412-417 (Phase C handles this)
+RVA proximal segment z=417→422 (~26mm of arclength, default-heuristic territory)
+Internal RVA bifurcation at z≈422 (no logic exists)
+RVA distal segment z=422→440+ (toward target at z=497)
+To get past 26 mm, we need either:
+
+Phase D: same machinery as Phase C but anchored at the internal junction's arclength — explicit J-tip reorientation while crossing it.
+Path-context fix: include the internal junction in _path_daughter_arclengths so Phase C's daughter_gw_trans extends through it (not just the first 5mm past rva_jn_arc).
+Routed-d_corr fix: don't return inf past the last daughter junction; return Euclidean distance to target instead, so the heuristic has a useful signal in the deep daughter.
+The 14 seeds with ≥6 max-steps failures all share this same internal-bifurcation pattern. The closer the target is to the deep RVA (z≥440), the more likely all variants fail.
+
+--------------------------------------
+
+
+# Both points well taken — Euclidean shaping was the wrong call (LCCA/LVA/RCCA/RVA daughters all converge in z, so a wire deep in the wrong daughter is Euclideanly close with zero reachability), and the LVA reward numbers in the analysis predate the wbt-suppression + reward-grace patches (those landed during the LVA v2 500-ep run, not before it, so the run's mix of grace-on/grace-off steps is muddled).
+
+Given path-following is the right reward axis, the concrete fixes that fit that frame:
+
+Gate ArcLengthProgress on is_on_correct_path(). Currently the +0.01/mm fires off the polyline projection arclength, so an arch-wedged wire whose projection drifts forward still earns shaping. Zero out the progress term when is_on_correct_path()==False so only on-path forward motion is rewarded. Off-path lateral penalty stays on.
+
+Boost the progress factor. 0.01/mm × ~120 mm of path = +1.2 max shaping across a successful episode. Step penalty (−0.001 × ~300 steps) = −0.3. That's a thin margin — explains why on-path successes can land near zero. Bumping progress_factor to 0.03–0.05 gives the path-following signal real weight versus the step penalty floor, without needing any new reward term.
+
+Re-run LVA 500-ep clean. All three daughters now use the same env5 (grace + suppression). Re-running LVA 500-ep with the current code gives a fair reward distribution to compare with the post-fix RVA/RCCA numbers; only then can we decide whether the LVA reward shap
+
+# SUCCESS band overlaps FAIL bands: best LVA NEAR-MISS could outscore worst LVA SUCCESS. Policy gradient noise.
+Entry +1 rewards dominate the signal: an episode that just touched the (0)→(11) junction gets +1, then runs 500 steps in a wedge for −15 net. Compared to a SUCCESS at +4: differ by only ~19. Entry rewards are not aligned with "is this episode good?"
+No progress-to-target shaping: distance-to-target is not in reward. A wire 5 mm from target for 100 steps earns nothing more than a wire 200 mm away.
+RL applicability — step-level (TD / Actor-Critic) view
+Per-step reward distribution:
+
+Mostly −0.01 per step (base time penalty)
+−0.1 per step when off-path (after 3-step grace)
++1.0 at daughter entry crossings (sparse, ~3 per success)
++3.0 at terminal (sparse, ~3-19% of episodes)
+Small arc_progress reward proportional to forward motion on path
+TD bootstrap problems:
+
+The +1 entry signal is the dominant gradient. Agent will learn to cross entries — fine for shallow targets but doesn't help for navigating deep daughters past arc=25-40mm.
+−0.1 off-path penalty is "noise" in LVA's (19) region where it's geometrically correct but classified wrong. Without the LVA-specific suppression flag, off-path penalty mis-trains the policy.
+Long episodes (600 steps) with sparse signal: TD with γ=0.99 has effective horizon ~100 steps — terminal +3 propagates back to step 500 but barely reaches step 1. The agent can't link "reached target" to "exited trunk-top correctly" via Bellman.
+# Recommended reward changes for RL training
+Critical (must-have):
+Dense distance-to-target shaping:
+
+reward += k * (prev_dist_to_target - cur_dist_to_target)  # k≈0.5
+This converts the sparse +3 terminal into a continuous gradient pointing at target. The agent gets +reward for closing in, even mid-trajectory. Standard potential-based shaping → policy-invariant per Ng et al. 1999.
+
+Increase terminal success reward to +20 or +30:
+Current +3 gets drowned by accumulated −50 step penalties. The terminal needs to dominate. Even in worst case (600 step episode in cavity), a true success should net positive return.
+
+Remove or reduce off-path STEP penalty (keep entry/timeout):
+The −0.1/step for being off-path creates a wrong signal in geometrically valid cases (LVA's (19) extension). Either:
+
+Generalize the _heur_suppress_wrong_branch flag to env5 logic (no step penalty when projection arc is past target arclength)
+Remove step penalty entirely; keep only the +/-1 entry penalty + timeout
+# Useful (nice-to-have):
+Per-step on-path bonus:
+
+## if on_correct_path: reward += 0.02
+Counterbalances time penalty when wire is correctly navigating.
+
+Wider success radius (5 mm → 7-8 mm):
+Wire's J-tip mechanics put a hard floor on tip-to-centerline distance (~4-5 mm). Tightening success below this threshold guarantees some near-misses can never succeed — that's an environment ceiling, not a policy failure.
+
+## Wedge-mode penalty:
+Detect "wire stationary for N steps" → small penalty (e.g., −0.05/step). Currently a wedged wire still gets the time penalty but no extra signal. With wedge detection, the policy can learn to recover.
+
+## Curriculum on target depth:
+Currently targets are uniformly sampled along the daughter's length. Easier-to-reach shallow targets get success while deep targets are unreachable. Sampling biased toward shallow early in training would build a stronger "navigate-to-daughter-mouth" foundation.
+
+Specific to the heuristic
+The +1 daughter-entry rewards are great signal for "did the wire choose right at this junction" but fire too easily (wire briefly touches LCCA daughter then deflects away → still gets +1). Should they require sustained cur_branch=daughter for N steps?
+Phase A/B/C's success on RCCA/RVA correlates with junction crossing, not target reaching. Reward currently rewards both equally per step — RL would learn the cheaper option (cross more junctions).
+Bottom-line for RL
+Current reward structure is good for heuristic comparison (different policies on same env produce comparable returns) but weak for RL training:
+
+Too sparse (only 4-5 reward events per success)
+Variance within outcome categories overlaps inter-category differences
+No directional shaping toward target
+A SAC-trained agent on this reward would likely converge to "cross junctions and stop" — not "navigate to target". Adding distance-to-target shaping reward is the single most impactful change.
+
+
+-----------------------
+
+# then we should use the same state machine / code to formulate rewards ; also make heuristic behaviour with rewards consistent
+
+Agreed — the heuristic and reward currently disagree on what counts as "wire is making valid progress", and that mismatch is exactly why LVA successes net negative. Concrete unification:
+
+Single source of truth — extend path_branch_idx_set with a per-target path_extension_set. Branches that are geometrically/functionally the continuation of the planned path but aren't in the planner's polyline (the (19)-after-LVA case is the canonical example). Built at episode reset from a small per-daughter table:
+
+LVA target → extension = {(19)} (deep LVA continuation)
+RVA / RCCA / LCCA targets → extension = {} (no equivalent)
+This set is the shared truth used by all three consumers:
+
+is_on_correct_path() in pathcontext — returns True if _current_branch_idx ∈ (path_branch_idx_set ∪ path_extension_set). The state-machine logic stays as-is; only the membership-check union changes.
+env5 wrong-branch penalty + timeout — falls out for free, since both penalty (if not on_correct_path) and timeout already key off is_on_correct_path(). The _heur_suppress_wrong_branch flag becomes deletable.
+ArcLengthProgress reward — when _current_branch_idx is in the extension (not the strict planned path), project onto THAT branch's centerline and reward forward motion along it (instead of the saturated planned-path polyline projection that today gives 0). When in the strict planned path, behave as today.
+What this gets us:
+
+Heuristic stops needing the suppression hack — the wire is genuinely on-path by the new definition.
+LVA-target wires advancing through (19) earn +0.01/mm of forward motion along (19)'s centerline, not 0. A wire that walks 30 mm of (19) earns +0.3 of shaping instead of accruing the (currently-being-fixed) penalty stream.
+Wedged-off-path wires (different code, in some sister branch not on the route) still get no progress and still get penalized, because they're outside the union.
+Heuristic phase selection becomes "look at _current_branch_idx and decide what to do" — same data the reward sees, no possibility of disagreement.
+Implementation surface (small):
+
+pathcontext: add path_extension_set field, lookup table indexed by target name, build at reset, union into is_on_correct_path(). Add helper get_progress_polyline_and_cumlen() returning either planned-path polyline or current-branch polyline based on state-machine.
+arclengthprogress: replace direct get_projection() with the helper, so the projection axis follows the state machine.
+env5: delete _heur_suppress_wrong_branch reads (both penalty block and _resolve_termination_reason()).
+heuristic_policy_lva: delete the suppression-flag write and the off-path override branch; the _detect_phase lva_daughter regime now fires naturally via is_on_correct_path()==True when wire is in (19).
+Want me to draft this as a plan doc for review before changing code, or just apply it directly?
+
+
+
+
+-------
+
+
+Critical (5)
+A1 — LVA suppression silences penalties but doesn't generate reward (already known). [heuristic_policy_lva.py:357-369](training _scripts/util/heuristic_policy_lva.py#L357-L369) + [env5.py:538-548](training _scripts/util/env5.py#L538-L548) + arclengthprogress.py:99-109. Suppression makes (19) penalty-free but proj.s is pinned, so forward (19) motion still pays 0 progress. Unification plan fixes this.
+
+A2 — +1 daughter-entry reward gate doesn't align with heuristic Phase-C trigger. [env5.py:566-573](training _scripts/util/env5.py#L566-L573) requires arc_past_last_daughter >= 10.0. Heuristic Phase C triggers at s >= jn_arc - 5 and "in-daughter" sub-regime at s > jn_arc + 5 ([heuristic_policy_rva.py:296-301](training _scripts/util/heuristic_policy_rva.py#L296-L301)). 10 mm dead zone: heuristic is doing the "right thing" with no reward signal.
+
+B1 — Agent observation has no absolute arclength, no junction-arc, no count-of-bifurcations-passed. localguidance.py:179-180,318-326 only exposes normalized d_rem (feature 0) and a clipped dist_to_bifurc (feature 6). Two episodes with the same d_rem_norm=0.4 can be in totally different phases (LVA path ≠ RVA path length). Agent literally cannot replicate "fire Phase C at s >= rva_jn_arc - 5."
+
+B2 — Heuristic computes J-tip bend from 3D tracking points; agent gets 2D Tracking2D. [heuristic_policy_rva.py:158-188](training _scripts/util/heuristic_policy_rva.py#L158-L188) uses bend = p0 + p2 - 2*p1 with full vessel-CS coords. [env5.py:114](training _scripts/util/env5.py#L114) constructs Tracking2D(n_points=5) — image-plane projection, y-axis dropped. The agent cannot reproduce the closed-loop rotation calculation from its observation.
+
+B3 — None of _heur_rva_phase / _heur_*_jn_arc / _heur_suppress_wrong_branch are in the observation. They're stashed on base_env for STEP-log diagnostics only ([env5.py:677,864](training _scripts/util/env5.py#L677)). The single best summary of state at a bifurcation is invisible to the agent.
+
+Moderate (6)
+C1 — LCCA hard-codes Phase C parameters; ignores _phase_c_variant. [heuristic_policy_lcca.py:377-393](training _scripts/util/heuristic_policy_lcca.py#L377-L393) doesn't read the env's variant ID, has no PHASE_C_VARIANTS dict. RVA / RCCA / LVA all do. Factorial grid silently skips LCCA.
+
+D1 — Heuristic and +1 reward use different "what counts as a junction" sets. Trunk-top crossing (2)→(0) has no off-path branches on the LVA route → filtered out of _path_daughter_arclengths (pathcontext.py:625-637) → no +1 reward there. But heuristic Phase-A milestone is exactly that crossing ([heuristic_policy_lva.py:294-296](training _scripts/util/heuristic_policy_lva.py#L294-L296)). Disagreement on what's a "meaningful event".
+
+A4 — is_on_correct_path() applies the on-path-mask; ArcLengthProgress uses raw get_projection(). Same wire state, two different verdicts: heuristic sees off-path (stops steering), reward sees a valid projection (keeps shaping).
+
+B4 — LCCA Phase B position-vector uses 3D target.coordinates3d; agent's Target2D is the 2D image projection. Partial signal access — y-axis component of the position-vector is dropped.
+
+B5 — Lookahead tangent: agent gets tangent at s; heuristic uses s + 5 (C2 default). Tangent at curvature regions differs measurably; agent has no way to "look ahead" the way C2/C4 do.
+
+D2 — COMMIT_HYSTERESIS_MM = 10.0 is fixed but bridges like (19) are short. ~13 mm bridges + 10 mm commit threshold ≈ wire commits to the next branch almost immediately. Per-junction adaptation would be safer.
+
+Cosmetic (3)
+C2 (mislabeled docstrings: RCCA/LVA say "RVA daughter"), C4 (LCCA/RCCA/LVA all write to _heur_rva_phase to fool the STEP-log writer), E2 (curriculum stage 2 multiplies cath_trans by 0.1 only when collecting demos — distorts heuristic-mode trajectories vs inference).
+
+What this changes for the plan
+The unification I sketched fixes A1, A4, D1 — the heuristic/reward/state-machine disagreement triad. But B1/B2/B3 are a separate, equally critical problem: even with reward signal aligned, the agent literally can't see the state variables the heuristic uses to decide its action. Imitation learning will plateau because the policy class isn't expressive enough given the input.
+
+Proposed expanded scope:
+
+Reward unification (path_extension_set + state-machine-driven progress projection). Fixes A1, A4, partial D1. ~80 LOC.
+Observation enrichment in LocalGuidance — add features: proj.s/total_length, arc_to_next_daughter/100, arc_past_last_daughter/100, 3-or-4-dim one-hot phase indicator, plus the heuristic's bend_hat projected to 2D as 2 extra features. Fixes B1, B2, B3. ~30 LOC, expands obs from N to N+8 features (will require retraining from scratch).
+Reward trigger alignment — move +1 daughter-entry from arc_past >= 10 to s >= jn_arc - 5 (matching Phase-C onset) OR change the heuristic. Fixes A2. ~5 LOC.
+LCCA variant dispatch — copy RVA's PHASE_C_VARIANTS table into LCCA. Fixes C1. ~50 LOC.
+Items 1+3+4 are local and safe. Item 2 is more invasive (obs shape change → retraining). Want me to draft a phased plan, or pick a subset to do first?
+
+
+------------------------
+
+
+
+# Assuming I will do all this unification as much as I can ; should I consider training separate RL model for each daughter or one for all ; what are the pros and cons ; elaborate in detail
+
+Both options are viable; the right answer depends on what you optimize for. Concrete trade-offs grounded in this codebase:
+
+Shared model (one policy, target-conditioned via Target2D obs)
+Pros
+1. Shared trunk-traversal experience. Looking at the heuristic logs, ~50-65% of every episode is trunk(2) ascent up to z≈380 — identical physics, identical "correct" action (push gw forward with minor rotation corrections) regardless of which daughter the target is in. A shared model accumulates 4× the data for this dominant sub-task. Per-daughter models each have to learn it independently from 1× data.
+
+2. Cross-daughter signal generalizes. Bif2 geometry-knowledge ("the bridge entries are at these specific x-y positions in vessel-CS") transfers across daughters. An RVA failure pattern (wedge in cavity) is the same physical event as the LCCA/RCCA/LVA wedge cluster — a shared model can treat it as one "don't do this" pattern with 4× the negative examples.
+
+3. Better curriculum tools available. With one buffer you can balance success-rate-by-target via weighted sampling, and you can use shared hindsight-experience-replay-style relabeling ("this trajectory hit LCCA, treat it as a positive example for the LCCA-target distribution").
+
+4. Single artifact at deployment. New target locations within the same vessel tree become a runtime config change, not a retraining job.
+
+5. Robustness to distribution shift. If the target sampler at deployment is broader than the train distribution (e.g., interim mid-daughter targets), a target-conditional model has a chance; per-daughter models silently break.
+
+Cons
+1. Class imbalance is severe. Empirical: heuristic produces 19% LVA / 2.9% RCCA / 1.4% LCCA / 0.6% RVA successes. Without reweighting, ~19/24 of successful demos are LVA. Naïve SAC training will pull the policy toward "behave like LVA-agent" for every target — the worst possible failure mode for the hard daughters.
+
+2. Phase B / Phase C are genuinely different policies. RVA needs dynamic_tangent + RVA-aimed steering at bif2. LCCA needs position-vector at lcca_jn + 25 mm. LVA needs no active steering (let trunk-ascent physics deliver wire to (18)). RCCA mirrors RVA. A shared network has to learn 4 distinct conditional sub-policies given target_state as the discriminator. Whether your SAC actor has enough capacity to learn this is empirical — current network width may or may not suffice.
+
+3. Reward magnitude varies 3-4× across daughters (LVA path ≈ 140 mm shaping max, LCCA path ≈ 60 mm). Critic has to learn a wider Q-value range. Solvable with reward normalization, but worth being aware of.
+
+4. Per-daughter regression hard to detect. A training run that improves average reward by 20% might actually be: LVA +40%, RVA −60%. You only catch this with per-target metric logging — easy to forget.
+
+5. Single point of failure during training. If RVA learning destabilizes the shared model, LVA inference also degrades. Per-daughter models isolate failures.
+
+Per-daughter models (4 separate policies, each conditioned on a fixed target)
+Pros
+1. No class imbalance. Each model sees only its target's demos and only its target's training experiences. RVA model isn't pulled toward LVA behavior.
+
+2. Dedicated capacity. The whole network is allocated to one steering strategy. RVA's Phase B can be learned more sharply because the model isn't allocating weights for LVA's "no steering" regime.
+
+3. Per-daughter hyperparam tuning. RVA likely wants higher exploration noise during training (harder problem); LVA can have lower noise. Reward shaping factors, action curriculum stages, demo seeding ratios — all tunable per daughter without trade-offs.
+
+4. Trivially parallelizable. 4 models × 4 workers on 1 GPU each = 4× wall-clock speedup if you have the hardware. Today your single training run uses 1 GPU.
+
+5. Debugging is local. When RCCA stops converging, you don't have to wonder whether it was caused by an LVA-targeted reward shaping change.
+
+Cons
+1. 4× compute and storage. Independent of how you parallelize, the total compute is 4× — each model retrains the trunk traversal from scratch.
+
+2. Per-daughter trunk-traversal sample inefficiency. The agent that knows "push up trunk" generalizes; 4 agents each have to discover this independently. You're discarding the obvious data-sharing opportunity.
+
+3. Maintenance overhead. 4 training runs, 4 hyperparam configs, 4 deployments, 4 checkpoints, 4 evaluation pipelines.
+
+4. No transfer to new targets. If a 5th target (or an intermediate target along the route) is needed later, you train from scratch.
+
+5. Inconsistent action distributions. 4 policies trained with different randomness will produce slightly different "default" actions for indistinguishable trunk states. At deployment in scripted procedures (where the target might change mid-procedure), this could matter.
+
+Hybrid — shared backbone, per-daughter head
+Worth considering as a middle ground. Concrete shape for this codebase:
+
+One feature extractor (taking tracking, last_action, guidance from obs) → shared embedding.
+4 small policy heads, one per daughter. At inference, route based on target_state (categorical: which daughter is the target on).
+Critic: also per-head, or one shared critic that consumes target as input.
+Pros: shares trunk-traversal feature learning. Per-daughter head can specialize Phase B/C. Capacity isn't over-allocated to easy daughters.
+Cons: implementation complexity in SAC; need to modify the eve_rl actor/critic. Routing requires reliable "which daughter is this target on" inference at every step (you have this — daughter identity is stable per episode).
+
+Concrete recommendation for this codebase
+Given:
+
+Heuristic success rates are wildly imbalanced (30× spread).
+Phase B/C policies differ substantively per daughter.
+You have heuristic seeding infrastructure already per-daughter.
+You don't yet have any trained RL model — the current state is pure heuristic.
+Suggest starting with per-daughter models for the first generation of RL training, for three reasons:
+
+Sample-efficiency from heuristic seeding is the dominant factor at this stage. Each per-daughter heuristic is producing genuine demonstrations of the right Phase B/C. A per-daughter agent ingests pure on-policy demos, no mixing. A shared agent ingests 19× more LVA demos than RVA demos and the seeding asymmetry compounds.
+
+You'll have 4 baseline numbers. When you compare to a future shared-model experiment, you have ground-truth per-daughter ceilings. Without per-daughter baselines you can't tell if a "70% overall" shared model is actually 100% on LVA and 40% on the others.
+
+The trunk-traversal share is overstated. Each daughter's heuristic injects ~250-400 trunk-traversal trajectory steps × 500 episodes = ~150k steps of trunk experience per model. That's plenty for the trunk sub-policy. The marginal benefit of 4× = 600k is small once you're past the data-density elbow.
+
+After per-daughter models converge (or plateau), THEN run the shared-model experiment with the per-daughter buffers as initialization (multi-task fine-tuning). That experiment answers the interesting research question: "does the shared representation help generalize?", with per-daughter ceilings already in hand.
+
+Decision-making heuristic
+If by the end of training each per-daughter model achieves >40% success rate and the per-daughter heuristics share <30% of their Phase B/C action distributions (measurable from the logs), the case for keeping them separate is strong.
+
+If success rates plateau much lower across all daughters AND the failure modes are similar (e.g., all of them fail because of bif2 cavity dynamics), the case for sharing flips — the underlying problem is structural and you're not getting separable benefit from separate training.
+
+# "1. Class imbalance is severe. Empirical: heuristic produces 19% LVA / 2.9% RCCA / 1.4% LCCA / 0.6% RVA successes. Without reweighting, ~19/24 of successful demos are LVA. Naïve SAC training will pull the policy toward "behave like LVA-agent" for every target — the worst possible failure mode for the hard daughters. 2. Phase B / Phase C are genuinely different policies. RVA needs dynamic_tangent + RVA-aimed steering at bif2. LCCA needs position-vector at lcca_jn + 25 mm. LVA needs no active steering (let trunk-ascent physics deliver wire to (18)). RCCA mirrors RVA. A shared network has to learn 4 distinct conditional sub-policies given target_state as the discriminator. Whether your SAC actor has enough capacity to learn this is empirical — current network width may or may not suffice." ----> Can these be solved by HER / PER applied to replay buffer
+Mostly yes for Con #1, no for Con #2. They're different problems and need different fixes.
+
+PER vs class imbalance — strong yes
+A successful RVA terminal transition has reward +3, but the critic has barely seen any RVA successes so its value estimate is near 0. TD-error for that transition is huge (~3 vs ~0). PER samples it ~5-10× more often than its 0.6% natural frequency. Effective gradient contribution from RVA successes becomes proportional to learning signal (TD-error), not episode frequency. That directly attacks the "policy behaves like LVA-agent for every target" failure mode — rare-but-informative transitions get the gradient mass they deserve.
+
+Concretely for this codebase:
+
+Without PER: 1 RVA success per ~160 LVA episodes in the buffer. Gradient is 99% LVA-flavored.
+With PER (TD-error-prioritized): RVA terminal transitions sample ~5-10×. Now ~5% of the gradient comes from RVA successes. Still imbalanced but no longer catastrophically so.
+Caveats:
+
+PER amplifies high-TD-error failures too. Pre-unification this was bad (the LVA-(19) flicker created artificial high-TD spikes from spurious penalties). Post-unification (penalties suppressed when on extension, shaping aligned), the residual high-TD events are genuine learning signal — PER + clean rewards is a much stronger combination than PER alone.
+PER has annealing-bias (β) and learning-rate-sensitivity considerations — not free, but well-understood.
+HER vs class imbalance — partial yes, with a structural caveat
+HER converts "failed to reach goal G" trajectories into "successfully reached achieved-state G'". This works for near-miss failures but not for structurally wrong-path failures.
+
+For this codebase, two failure modes dominate:
+
+Near-miss in daughter (wire reached daughter centerline, didn't go deep enough): HER relabels target to whatever centerline point the wire achieved at its deepest. Suddenly a 250-step "failure" becomes a 250-step success demo. Strong yes for these.
+Bif2 trunk wedge (wire never reaches any daughter centerline, stuck at z≈395 in the cavity): HER would relabel target to the wedge position. But the wedge isn't on any daughter centerline, so relabeling teaches the policy "drive to bif2 cavity" — which is anti-pedagogical. Skip these.
+So HER's utility depends on the failure-mode mix per daughter:
+
+daughter	near-miss-in-daughter %	bif2-wedge %	HER yield
+LVA	27% reach × ~60% near-miss within ≈ 16%	50%	medium
+LCCA	91.7% reach × ~95% near-miss ≈ 87%	~5%	huge — almost every failure is HER-relabelable
+RCCA	33.7% reach × ~50% near-miss ≈ 17%	55%	medium
+RVA	33% reach × ~50% near-miss ≈ 16%	47%	medium
+This is actually a fascinating asymmetry: HER would dramatically benefit LCCA (its 1.4% success becomes effectively 80%+ after relabeling). And it would help RVA/RCCA/LVA modestly. So HER doesn't equalize the imbalance — it amplifies easier-to-relabel daughters. Combined with PER it ends up roughly balanced anyway because PER then re-prioritizes the still-rare bif2-wedge experiences.
+
+Implementation cost: HER requires (a) a goal-conditional critic — you already have it, target_state is in obs — and (b) replay-buffer relabeling logic. Need to check if eve_rl's vanillaepisode.py or vanillashared.py supports goal-relabeling. If not, ~100 LOC of wrapper.
+
+A critical constraint for HER here: only relabel to achieved states that are on a daughter centerline (not any 3D point in the vessel). Otherwise you teach "drive to wedge cluster".
+
+Neither solves Con #2 (capacity)
+PER and HER are sample-efficiency techniques. They don't add network capacity. If the SAC actor is too narrow to encode 4 distinct conditional sub-policies, no amount of clever sampling fixes that.
+
+But "capacity bottleneck" is probably not the actual binding constraint at standard hyperparams. A 3-layer MLP of width 256-512 can comfortably encode dozens of conditional sub-policies if the input adequately discriminates between them — and target_state (the 2D image-plane target position) is a clean discriminator across all 4 daughter targets.
+
+The bigger threat from Con #2 is optimization not capacity: gradient averaging in mini-batches biases the policy toward the majority-target's "correct action". This is the same disease as Con #1, just framed as a gradient problem instead of a sampling problem. PER fixes both framings simultaneously because high-TD minority transitions become dominant in the gradient.
+
+Cheaper alternative to PER+HER: per-target replay buffers
+Worth mentioning because it requires zero TD-error machinery: maintain 4 replay buffers (LCCA/LVA/RCCA/RVA), sample equally from each per gradient step (16 transitions = 4 from each buffer). Guaranteed balance. No PER β tuning, no HER relabeling logic, no goal-conditioning complications.
+
+Pros over PER: trivial implementation, no hyperparam sensitivity, no annealing-bias concerns.
+Cons vs PER: doesn't upweight high-TD-error transitions within a target; just balances across targets. Within-target diversity (e.g., LVA's 92 successes vs 392 failures) is still natural-frequency-sampled.
+
+Recommended stack for the shared-model path
+If you do want to attempt one-shared-model, the strongest combination would be:
+
+Per-target replay buffer balancing (4 buffers, equal sampling) — fixes cross-daughter imbalance trivially.
+PER within each buffer — fixes intra-daughter (success-vs-failure) imbalance.
+HER with daughter-centerline-restricted relabeling — multiplies near-miss episodes into synthetic successes, especially valuable for LCCA's 91% reach.
+Conservative target_state encoding — make sure the network's input layer can disambiguate targets clearly (consider augmenting with a 4-dim one-hot daughter indicator alongside the 2D coordinates, so the network doesn't have to discover the discrete target identity from the continuous coordinates).
+This stack neutralizes most of Con #1 and side-steps Con #2 entirely by making the daughter identity highly observable.
+
+My standing recommendation, though, is still per-daughter models for the first training cycle — debugging is dramatically simpler, the engineering surface is smaller, and you get clean baselines for the shared-model experiment afterward. PER+HER+per-target-buffers is the right setup once you have a working per-daughter baseline to compare against.

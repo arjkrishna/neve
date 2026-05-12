@@ -74,7 +74,13 @@ class CheckpointRestoreWrapper(gym.Wrapper):
                 f"Checkpoint {self.checkpoint_files[0]} missing keys: {missing}"
             )
 
-    def _pick_index(self, seed: Optional[int]) -> int:
+    def _pick_index(self, seed: Optional[int],
+                    explicit_id: Optional[int] = None) -> int:
+        # Plan v3: schedule may pass `options["checkpoint_id"]` to pick
+        # a SPECIFIC checkpoint deterministically (factorial grid testing).
+        # Falls back to seed-based random pick otherwise.
+        if explicit_id is not None:
+            return int(explicit_id) % len(self.checkpoint_files)
         if seed is not None:
             # Per-episode, per-worker reproducible: unique seeds from the
             # schedule produce unique checkpoint picks.
@@ -90,11 +96,13 @@ class CheckpointRestoreWrapper(gym.Wrapper):
         options = dict(options) if options else {}
         # Only inject if caller didn't already supply a checkpoint.
         if "restore_checkpoint" not in options:
-            idx = self._pick_index(seed)
+            explicit_id = options.get("checkpoint_id")
+            idx = self._pick_index(seed, explicit_id=explicit_id)
             path = self.checkpoint_files[idx]
             with np.load(path) as data:
                 options["restore_checkpoint"] = {k: np.array(data[k]) for k in data.files}
             options["_restore_checkpoint_file"] = os.path.basename(path)
+            options["_restore_checkpoint_idx"] = int(idx)
         return self.env.reset(seed=seed, options=options)
 
     # Forward everything else untouched (gym.Wrapper does this by default).

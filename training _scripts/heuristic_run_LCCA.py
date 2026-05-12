@@ -25,6 +25,7 @@ import torch.multiprocessing as mp
 
 from util.env5 import BenchEnv5
 from util.heuristic_policy import HeuristicActionFunctionFactory
+from util.heuristic_policy_lcca import LCCAHeuristicActionFunctionFactory
 from util.agent import BenchAgentSynchron
 from util.util import get_result_checkpoint_config_and_log_path
 from eve_bench import DualDeviceNav
@@ -46,15 +47,17 @@ TARGET_BRANCHES = [
 ]
 
 
-def _build_heuristic_factory(args) -> HeuristicActionFunctionFactory:
-    """Per-daughter heuristic factory hook.
+def _build_heuristic_factory(args):
+    """LCCA-specific heuristic factory.
 
-    Edit THIS function to slot in a daughter-specific controller (e.g. an
-    LCCA-junction-aware approach for LCCA / RCCA / RVA, or an LVA-bridge-
-    threading variant for LVA). Default for now is the shared factory so
-    runs are reproducible against the generic baseline.
+    Uses ``LCCAHeuristicActionFunctionFactory`` which adds phase-aware
+    overrides at the trunk-top, LCCA-bridge entry (0)->(19), and LCCA
+    daughter entry (19)->LCCA. Phase B uses dynamic-tangent target
+    (mirror of the v6-style steering that empirically deflected wires
+    INTO LCCA at 80% rate when targeting RVA — here the LCCA-aimed
+    tangent + original sign drive the wire INTO LCCA on purpose).
     """
-    return HeuristicActionFunctionFactory(
+    return LCCAHeuristicActionFunctionFactory(
         noise_std=0.0,
         normalize_output=True,
     )

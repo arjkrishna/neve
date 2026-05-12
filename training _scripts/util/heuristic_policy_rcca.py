@@ -1,23 +1,24 @@
-"""RVA-specific heuristic policy — v2 (Phase A/B) + Phase C variant grid.
+"""RCCA-specific heuristic policy — exact mirror of RVA's policy with
+the daughter-junction token swapped from RVA to RCCA. Path topology
+is identical to RVA up to the bif2 cavity; only the daughter the
+planned path commits to differs.
 
   Phase A — Trunk-top crossing: gw_trans=10 mm/s, window
             [trunk_top_arc - 30, trunk_top_arc + 10], target FIXED -z
-            (degenerate, just modulates speed).
+            (degenerate, just modulates speed). Identical to RVA.
 
   Phase B — LCCA-junction crossing: gw_trans=1.5 mm/s, window
             [lcca_jn_arc - 15, lcca_jn_arc + 30], target FIXED +z
-            (degenerate, just modulates speed).
+            (degenerate, just modulates speed). Identical to RVA.
 
-  Phase C — RVA-jn cavity transit + in-daughter advance.
-    Variant ID is read from ``base_env._phase_c_variant`` (set in env5.reset
-    from options['phase_c_variant']). Defaults to "C2" (current production)
-    if not set. The 9 variants for the factorial grid test (Plan v3) are
-    defined in PHASE_C_VARIANTS below.
-
-  Mesh inspection (RL_IMPROV_8 §26) revealed the "RVA-jn" is a 5 mm
-  tall, ~12 mm radius MERGED CAVITY where bridge(11), RVA, and RCCA
-  share open lumen. Wire's J-curl orientation in the cavity decides
-  which daughter it commits to.
+  Phase C — RCCA-jn cavity transit + in-daughter advance.
+    Variant ID is read from ``base_env._phase_c_variant`` (set in
+    env5.reset from options['phase_c_variant']). Defaults to "C2"
+    (current production) if not set. The 9 variants for the factorial
+    grid test (Plan v3) are defined in PHASE_C_VARIANTS below.
+    `dynamic_tangent` target adapts naturally to whichever daughter is
+    on the planned path — for an RCCA target, the planned-path tangent
+    at s+5 points along RCCA's first-segment direction.
 """
 import numpy as np
 
@@ -231,9 +232,9 @@ def _phase_c_target(base_env, variant_cfg, s):
 # ============================================================================
 # Action function class
 # ============================================================================
-class RVAHeuristicActionFunction(HeuristicActionFunction):
-    """RVA-target heuristic with arclength-based phase override at the
-    trunk-top, LCCA-jn, and RVA-jn crossings. Phase C variant ID is read
+class RCCAHeuristicActionFunction(HeuristicActionFunction):
+    """RCCA-target heuristic with arclength-based phase override at the
+    trunk-top, LCCA-jn, and RCCA-jn crossings. Phase C variant ID is read
     from ``base_env._phase_c_variant`` (default "C2")."""
 
     def __init__(self, *args, **kwargs):
@@ -241,7 +242,7 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
         # Cached at first reset (when planned path is built).
         self._trunk_top_arc = None
         self._lcca_jn_arc = None
-        self._rva_jn_arc = None
+        self._rcca_jn_arc = None
         # C8 stagnation tracking
         self._proj_s_history = []  # rolling window of last N proj.s values
         self._stagnation_retract_remaining = 0
@@ -254,14 +255,14 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
         # cleanly.
         self._trunk_top_arc = None
         self._lcca_jn_arc = None
-        self._rva_jn_arc = None
+        self._rcca_jn_arc = None
         self._proj_s_history = []
         self._stagnation_retract_remaining = 0
 
     def _maybe_cache_junctions(self, base_env):
         if (self._trunk_top_arc is not None
                 and self._lcca_jn_arc is not None
-                and self._rva_jn_arc is not None):
+                and self._rcca_jn_arc is not None):
             return
         try:
             junctions = base_env._path_context.get_path_junctions()
@@ -269,16 +270,16 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
             return
         self._trunk_top_arc = _find_junction_arc(junctions, "(2)", "(0)")
         self._lcca_jn_arc = _find_junction_arc(junctions, "(0)", "(11)")
-        self._rva_jn_arc = _find_junction_arc(junctions, "(11)", "RVA")
+        self._rcca_jn_arc = _find_junction_arc(junctions, "(11)", "RCCA")
         try:
-            base_env._heur_rva_trunk_top_arc = (
+            base_env._heur_rcca_trunk_top_arc = (
                 float(self._trunk_top_arc) if self._trunk_top_arc else -1.0
             )
-            base_env._heur_rva_lcca_jn_arc = (
+            base_env._heur_rcca_lcca_jn_arc = (
                 float(self._lcca_jn_arc) if self._lcca_jn_arc else -1.0
             )
-            base_env._heur_rva_rva_jn_arc = (
-                float(self._rva_jn_arc) if self._rva_jn_arc else -1.0
+            base_env._heur_rcca_rcca_jn_arc = (
+                float(self._rcca_jn_arc) if self._rcca_jn_arc else -1.0
             )
         except Exception:
             pass
@@ -294,11 +295,11 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
         # Phase C (variant-gated)
         c_before = variant_cfg.get("trigger_before")
         if (c_before is not None
-                and self._rva_jn_arc is not None
-                and s >= self._rva_jn_arc - c_before):
-            if s < self._rva_jn_arc + 5.0:
-                return "rva_cavity"
-            return "rva_daughter"
+                and self._rcca_jn_arc is not None
+                and s >= self._rcca_jn_arc - c_before):
+            if s < self._rcca_jn_arc + 5.0:
+                return "rcca_cavity"
+            return "rcca_daughter"
         # Phase A
         if (self._trunk_top_arc is not None
                 and (self._trunk_top_arc - PHASE_A_ARC_BEFORE)
@@ -361,8 +362,12 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
             phase = self._detect_phase(base_env, variant_cfg)
 
         try:
+            base_env._heur_rcca_phase = phase
+            base_env._heur_rcca_variant = variant_id
+            # env5 STEP-log writer reads `_heur_rva_phase` for the
+            # phase= field; mirror RCCA phase there too so logs are
+            # informative regardless of which factory is in use.
             base_env._heur_rva_phase = phase
-            base_env._heur_rva_variant = variant_id
         except Exception:
             pass
 
@@ -382,9 +387,9 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
         elif phase == "lcca_jn":
             gw_trans = PHASE_B_GW_TRANS
             target = PHASE_B_TARGET_DIR
-        else:  # phase in {"rva_cavity", "rva_daughter"}
+        else:  # phase in {"rcca_cavity", "rcca_daughter"}
             # gw_trans by sub-regime
-            if phase == "rva_cavity":
+            if phase == "rcca_cavity":
                 gw_trans = variant_cfg["cavity_gw_trans"]
             else:
                 gw_trans = variant_cfg["daughter_gw_trans"]
@@ -408,10 +413,10 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
         gw_rot = _compute_rotation_to_target(tracking_vcs, target)
 
         try:
-            base_env._heur_rva_target_z = float(target[2])
-            base_env._heur_rva_target_x = float(target[0])
-            base_env._heur_rva_target_y = float(target[1])
-            base_env._heur_rva_gw_rot = float(gw_rot)
+            base_env._heur_rcca_target_z = float(target[2])
+            base_env._heur_rcca_target_x = float(target[0])
+            base_env._heur_rcca_target_y = float(target[1])
+            base_env._heur_rcca_gw_rot = float(gw_rot)
         except Exception:
             pass
 
@@ -430,15 +435,15 @@ class RVAHeuristicActionFunction(HeuristicActionFunction):
         return action.astype(np.float32)
 
 
-class RVAHeuristicActionFunctionFactory:
-    """Pickleable factory for RVAHeuristicActionFunction."""
+class RCCAHeuristicActionFunctionFactory:
+    """Pickleable factory for RCCAHeuristicActionFunction."""
 
     def __init__(self, noise_std: float = 0.0, normalize_output: bool = True):
         self.noise_std = noise_std
         self.normalize_output = normalize_output
 
-    def create(self, env) -> RVAHeuristicActionFunction:
-        return RVAHeuristicActionFunction(
+    def create(self, env) -> RCCAHeuristicActionFunction:
+        return RCCAHeuristicActionFunction(
             env=env,
             noise_std=self.noise_std,
             normalize_output=self.normalize_output,
