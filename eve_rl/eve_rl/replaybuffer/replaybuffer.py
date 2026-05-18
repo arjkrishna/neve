@@ -68,6 +68,12 @@ class EpisodeReplay:
     def __len__(self):
         return len(self.actions)
 
+    def to_replay(self):
+        # Already the replay form — idempotent. The shared-buffer handle's
+        # push() calls episode.to_replay() before queueing; this lets a
+        # cache-loaded EpisodeReplay be pushed the same as a live Episode.
+        return self
+
 
 class Batch(NamedTuple):
     obs: torch.Tensor
@@ -75,6 +81,14 @@ class Batch(NamedTuple):
     rewards: torch.Tensor
     terminals: torch.Tensor
     padding_mask: torch.Tensor = None
+    # Plan v7 — Prioritized Experience Replay. Both default None, so
+    # uniform episode/step batches are unaffected (SAC guards on
+    # `is_weights is not None`). `is_weights` are per-sample IS-correction
+    # weights (multiply the loss); `indices` are the buffer leaf indices
+    # of the sampled transitions (the trainer sends them back so the
+    # buffer can refresh those transitions' priorities).
+    is_weights: torch.Tensor = None
+    indices: torch.Tensor = None
 
     def to(self, device: torch.device, non_blocking=False):
         obs = self.obs.to(
@@ -105,7 +119,21 @@ class Batch(NamedTuple):
             ).share_memory_()
         else:
             padding_mask = None
-        return Batch(obs, actions, rewards, terminals, padding_mask)
+        if self.is_weights is not None:
+            is_weights = self.is_weights.to(
+                device,
+                dtype=torch.float32,
+                non_blocking=non_blocking,
+            ).share_memory_()
+        else:
+            is_weights = None
+        # `indices` stay on CPU as a long tensor — they never enter the
+        # network; the trainer uses them only to address buffer slots
+        # when sending priority updates back.
+        return Batch(
+            obs, actions, rewards, terminals, padding_mask,
+            is_weights, self.indices,
+        )
 
 
 class ReplayBuffer(EveRLObject, ABC):

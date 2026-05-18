@@ -2085,3 +2085,72 @@ Independent of which RL architecture path is chosen, the unification work in §3
 4. **Observation enrichment (§34a)** — 30 LOC; changes obs shape, gates downstream RL training.
 5. **Pick RL architecture** — per-daughter (recommended for first cycle) or shared with PER+HER+per-target-buffers.
 6. **Train RL** — first per-daughter models on top of heuristic seeds; iterate.
+7. **Fuller SOFA checkpoint restore (§38)** — only relevant if Strategy 1 (state-restore factorial grid) is revived.
+
+## 38. Deferred — Fuller SOFA Checkpoint Restore ("Save the Whole Scene")
+
+User question (referenced in [user.md](user.md) lines 416-453): "Can you explore SOFA code to explore if there is a better way to restore saved checkpoints? Right now it feels like it tries to recreate the scene with saved DOFs for the wires; what if we can save the whole scene as it is, like a saved video game checkpoint?"
+
+### Why this matters
+
+Strategy 1 from §28 (SOFA checkpoint restore for factorial Phase-C grid) had a **36% wrong-location failure rate** — restored wires landed in RCCA wedge, LCCA-jn floor, or internal LCCA junction instead of the saved RVA-junction position. That killed the strategy and forced the slower Strategy 2 (paired 500 seeds × 9 variants from femoral = 4500 episodes, ~16 hours). If state-restore could be made reliable, the factorial grid would complete in ~2-3 hours instead.
+
+### Investigation results — verified directly inside the running container
+
+**SOFA Python API has NO native full-scene serialization.** Confirmed from inside the container:
+
+```
+Sofa.Simulation methods: animate, animateNSteps, init, initTextures, initVisual,
+                         load, print, reset, unload, updateVisual
+```
+
+No `WriteState` / `ReadState` / `exportXML` / `serialize` / `snapshot`. The compiled bindings just don't expose it. A "save the whole scene like a video game" via SOFA's own API isn't available — would require a custom C++ plugin.
+
+**The current checkpoint is far thinner than it could be.** A MechanicalObject (the wire's DOFs container) exposes these state DataFields, only one of which we currently save:
+
+| field | currently saved? | meaning |
+|---|---|---|
+| `position` | ✅ (as `dof_positions`) | xyz + quaternion per beam node |
+| `velocity` | ❌ | per-node linear + angular velocity |
+| `force` | ❌ | currently-applied force per node |
+| `free_position` | ❌ | predicted position before constraint solve |
+| `free_velocity` | ❌ | predicted velocity before constraints |
+| `derivX` | ❌ | acceleration / dx-per-dt |
+| `externalForce` | ❌ | externally-applied force vector |
+
+We save 1 of 7+ state fields per MechanicalObject. Then [sofabeamadapter.py:136](eve/eve/intervention/simulation/sofabeamadapter.py#L136) calls `Sofa.Simulation.reset(self.root)` which **explicitly zeroes velocity / force**, and the 50-step "settle" loop tries to reconverge from rest. That settle re-derives a contact manifold from scratch — sometimes it converges to a different local minimum than the one that was saved. **This is exactly the wrong-location bug.**
+
+Worse: [sofabeamadapter.py:139-150](eve/eve/intervention/simulation/sofabeamadapter.py#L139-L150) deliberately zeroes the saved `rotation_instrument` (per RL_IMPROV_7 §7 Fix 6). So even the wire's J-tip orientation — the thing that committed it toward the right daughter — is intentionally erased on restore.
+
+### What's gone and unrecoverable via Python (would need C++ plugin work)
+
+- BeamAdapter plugin internals (per-beam interpolation frames, strain history) — not in factory-accessible scope.
+- LCP solver cached lambdas / impulses.
+- Broad/narrow-phase contact pairs (BruteForceBroadPhase rebuilds these every step anyway, so probably not load-bearing).
+
+### Proposed fix — "fuller save" without writing a C++ plugin
+
+1. **Save 6 more arrays per checkpoint:** `velocity`, `force`, `externalForce`, `free_position`, `free_velocity`, `derivX` from `ic.DOFs`. Modify `_save_rva_checkpoint()` in [env5.py](training _scripts/util/env5.py) (the §25 instrumentation) to grab them.
+2. **On restore: assign all 7 fields directly** instead of letting `Simulation.reset` zero them. Either skip the reset entirely (if checkpoint has the new fields) or call reset then overwrite all 7. Modify `restore_checkpoint()` in [sofabeamadapter.py:109-157](eve/eve/intervention/simulation/sofabeamadapter.py#L109-L157).
+3. **Restore `rotation_instrument` instead of zeroing it** — revert the RL_IMPROV_7 §7 Fix 6 line at [sofabeamadapter.py:149-150](eve/eve/intervention/simulation/sofabeamadapter.py#L149-L150). The prior fix was needed because *without* preserved velocities the rotation aimed the wire at the original target's daughter without any forward-motion context, causing fold-stall. With velocities preserved, the rotation should be consistent with the wire's momentum and the wrong-daughter aim shouldn't compound.
+4. **Reduce `settle_steps` from 50 to 1-3 (or 0)** — with velocities preserved the solver shouldn't need to reconverge from rest. Most of the 50-step settle loop is precisely the "re-derive contact manifold" that introduces drift to wrong locations.
+
+### Expected impact
+
+Should catch >80% of the missing physics state. The remaining gap (BeamAdapter internal state) would only matter for long-lasting strain memory effects, which probably aren't the dominant cause of the 36% wrong-location problem (geometric SOFA solver reconverence is the dominant suspect, and that's what 1-4 directly address).
+
+### Implementation surface
+
+| File | Change |
+|---|---|
+| [training _scripts/util/env5.py](training _scripts/util/env5.py) | Extend `_save_rva_checkpoint()` (§25) to also save `velocity`, `force`, `externalForce`, `free_position`, `free_velocity`, `derivX`. ~10 LOC. |
+| [eve/eve/intervention/simulation/sofabeamadapter.py](eve/eve/intervention/simulation/sofabeamadapter.py#L109-L157) | `restore_checkpoint()`: assign 7 fields not 1; restore `rotation_instrument` (no longer zero); drop or shrink `settle_steps`. ~15 LOC. |
+| [training _scripts/util/checkpoint_restore.py](training _scripts/util/checkpoint_restore.py) | Ensure CheckpointRestoreWrapper passes the new fields through. ~5 LOC. |
+
+### Verification
+
+Re-run the §28 Strategy 1 smoke test (5 checkpoints × 9 variants = 45 episodes) and measure wrong-location rate. Target: <10% (down from 36%). If achieved, the factorial Phase-C grid becomes viable again and can be run as originally designed in ~2-3 hours.
+
+### Status
+
+**Deferred** — only relevant if Strategy 1 (state-restore factorial grid) is revived. Strategy 2 (full femoral traversal, paired comparison) is what's actually being used today, and §28's 500-seeds × 9-variants run completed with 0 successes, suggesting Phase-C steering choice isn't the bottleneck for the bif2-wedge problem and the grid may not be the right next experiment anyway.

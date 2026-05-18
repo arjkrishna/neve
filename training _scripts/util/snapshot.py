@@ -337,7 +337,7 @@ def _classify_target_branch(env) -> str:
     return getattr(env, "_target_branch_short", "unknown") or "unknown"
 
 
-def save_snapshot(env, episode, ep_step, reason, reward) -> Optional[str]:
+def save_snapshot(env, episode, ep_step, reason, reward, phase=None) -> Optional[str]:
     """Render and save an end-of-episode snapshot.
 
     Mode and output dir are read from environment variables so the
@@ -347,8 +347,15 @@ def save_snapshot(env, episode, ep_step, reason, reward) -> Optional[str]:
       SNAPSHOT_MODE  = "mesh" | "centerlines" | "none" (default none)
       SNAPSHOT_DIR   = output directory (default ./snapshots under CWD)
 
-    Output path is bucketed by target branch + termination reason:
-      ``${SNAPSHOT_DIR}/<target_branch>/<reason>/ep<N>_pid<P>_step<S>_<reason>.png``
+    Output path is bucketed by training phase + target branch + reason:
+      ``${SNAPSHOT_DIR}/<phase>/<target_branch>/<reason>/ep<N>_pid<P>_step<S>_R<reward>_<reason>.png``
+
+    ``phase`` is one of ``seed`` / ``eval`` / ``explore`` (Plan v5 — lets
+    prune_training_snapshots.py keep all seed+eval snapshots and only the
+    10-best/10-worst per 100 explore episodes). When None, no phase
+    sub-bucket is inserted (legacy heuristic-only-run layout). The episode
+    reward is encoded in the filename (``R<+/-><value>``) so the pruner
+    can rank without opening the PNGs.
 
     Returns the path written, or None if disabled / errored.
     """
@@ -359,14 +366,20 @@ def save_snapshot(env, episode, ep_step, reason, reward) -> Optional[str]:
     base_dir = os.environ.get("SNAPSHOT_DIR") or os.path.join(os.getcwd(), "snapshots")
     sub = reason if reason else "unknown"
     target_branch = _classify_target_branch(env)
-    out_dir = os.path.join(base_dir, target_branch, sub)
+    if phase:
+        out_dir = os.path.join(base_dir, str(phase), target_branch, sub)
+    else:
+        out_dir = os.path.join(base_dir, target_branch, sub)
 
     try:
         _ensure_dir(out_dir)
     except Exception:
         return None
 
-    fname = f"ep{episode:03d}_pid{os.getpid()}_step{ep_step}_{sub}.png"
+    fname = (
+        f"ep{episode:03d}_pid{os.getpid()}_step{ep_step}"
+        f"_R{reward:+.2f}_{sub}.png"
+    )
     out_path = os.path.join(out_dir, fname)
 
     try:

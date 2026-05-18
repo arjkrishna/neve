@@ -141,6 +141,11 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         stochastic_eval: bool = False,
         ff_only: bool = False,
         diagnostics_config: dict = None,
+        replay_mode: str = "episode",
+        per: bool = False,
+        per_alpha: float = 0.6,
+        per_beta_start: float = 0.4,
+        per_beta_steps: float = 2e7,
     ):
 
         obs_dict = env_train.observation_space.sample()
@@ -222,9 +227,33 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
             stochastic_eval=stochastic_eval,
         )
 
-        replay_buffer = eve_rl.replaybuffer.VanillaEpisodeShared(
-            replay_buffer_size, batch_size, trainer_device
-        )
+        # Plan v6 — replay-mode selects the buffer class.
+        #   "episode" — VanillaEpisodeShared: stores whole episodes, sample()
+        #     returns padded sequences (the buffer for the LSTM-embedder
+        #     setup; capacity counted in episodes).
+        #   "step"    — VanillaStepShared: stores individual (s,a,r,s',done)
+        #     transitions, sample() returns random transition batches
+        #     (canonical step-SAC; capacity counted in transitions).
+        # Plan v7 — `per` is an orthogonal switch on step mode: when set,
+        #   the uniform VanillaStepShared is swapped for PERVanillaStepShared
+        #   (proportional sampling + IS weights). PER is step-only.
+        if replay_mode == "step" and per:
+            replay_buffer = eve_rl.replaybuffer.PERVanillaStepShared(
+                replay_buffer_size,
+                batch_size,
+                trainer_device,
+                alpha=per_alpha,
+                beta_start=per_beta_start,
+                beta_steps=per_beta_steps,
+            )
+        elif replay_mode == "step":
+            replay_buffer = eve_rl.replaybuffer.VanillaStepShared(
+                replay_buffer_size, batch_size, trainer_device
+            )
+        else:
+            replay_buffer = eve_rl.replaybuffer.VanillaEpisodeShared(
+                replay_buffer_size, batch_size, trainer_device
+            )
 
         super().__init__(
             algo,

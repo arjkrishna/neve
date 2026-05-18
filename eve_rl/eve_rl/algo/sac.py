@@ -180,6 +180,9 @@ class SAC(Algo):
 
         # DIAGNOSTICS: Store metrics from last update for logging
         self.last_metrics: Dict[str, float] = {}
+        # Plan v7 (PER): per-sample |TD| from the most recent update(), fed
+        # back to a PER buffer's update_priorities(). None for uniform runs.
+        self.last_td_errors = None
         
         # DIAGNOSTICS: NaN/Inf sentinel counters
         self._nonfinite_q_loss_count = 0
@@ -220,8 +223,14 @@ class SAC(Algo):
         return action * self.action_scaling
 
     def update(self, batch: Batch) -> Tuple[float, float, float]:
-        (all_states, actions, rewards, dones, padding_mask) = batch
-        # actions /= self.action_scaling
+        # Plan v7 — `Batch` is a 7-field NamedTuple (PER added `is_weights`
+        # and `indices`); access by name, not a positional 5-unpack.
+        all_states = batch.obs
+        actions = batch.actions
+        rewards = batch.rewards
+        dones = batch.terminals
+        padding_mask = batch.padding_mask
+        is_weights = batch.is_weights
 
         all_states = all_states.to(dtype=torch.float32, device=self.device)
         actions = actions.to(dtype=torch.float32, device=self.device)
@@ -230,6 +239,13 @@ class SAC(Algo):
 
         if padding_mask is not None:
             padding_mask = padding_mask.to(dtype=torch.float32, device=self.device)
+        # PER importance-sampling weights — per-sample, broadcast as (B,1,1).
+        # None for uniform episode/step batches → all loss paths fall back
+        # to the plain `.mean()` and behave exactly as before.
+        if is_weights is not None:
+            is_weights = is_weights.to(
+                dtype=torch.float32, device=self.device
+            ).view(-1, 1, 1)
 
         seq_length = actions.shape[1]
         states = torch.narrow(all_states, dim=1, start=0, length=seq_length)
@@ -239,13 +255,22 @@ class SAC(Algo):
             all_states, rewards, dones, padding_mask, seq_length
         )
 
-        # q1 update
-        q1_loss = self._update_q1(actions, padding_mask, states, expected_q)
+        # q1 update — also returns per-sample |TD| for PER priority refresh
+        q1_loss, td_errors = self._update_q1(
+            actions, padding_mask, states, expected_q, is_weights
+        )
 
         # q2 update
-        q2_loss = self._update_q2(actions, padding_mask, states, expected_q)
+        q2_loss = self._update_q2(
+            actions, padding_mask, states, expected_q, is_weights
+        )
 
-        log_pi, policy_loss = self._update_policy(padding_mask, states)
+        log_pi, policy_loss = self._update_policy(padding_mask, states, is_weights)
+
+        # Plan v7 — stash the per-sample |TD| (numpy, CPU) so the agent loop
+        # can feed it back to a PER buffer via update_priorities(). Harmless
+        # for uniform buffers (they simply never read it).
+        self.last_td_errors = td_errors
 
         self.model.update_target_q(self.tau)
 
@@ -324,7 +349,7 @@ class SAC(Algo):
         self.alpha = self.model.log_alpha.exp()
         return alpha_loss
 
-    def _update_policy(self, padding_mask, states):
+    def _update_policy(self, padding_mask, states, is_weights=None):
         new_actions, log_pi = self._get_update_action(states)
         q1 = self.model.q1(states, new_actions)
         q2 = self.model.q2(states, new_actions)
@@ -334,7 +359,13 @@ class SAC(Algo):
             min_q *= padding_mask
             log_pi *= padding_mask
 
-        policy_loss = (self.alpha * log_pi - min_q).mean()
+        # PER: per-sample IS weighting of the policy objective. Guarded —
+        # uniform batches (is_weights is None) use the plain mean as before.
+        per_sample_loss = self.alpha * log_pi - min_q
+        if is_weights is not None:
+            policy_loss = (is_weights * per_sample_loss).mean()
+        else:
+            policy_loss = per_sample_loss.mean()
 
         self.model.policy_optimizer.zero_grad()
         policy_loss.backward()
@@ -348,11 +379,17 @@ class SAC(Algo):
             self.model.policy_scheduler.step()
         return log_pi, policy_loss
 
-    def _update_q2(self, actions, padding_mask, states, expected_q):
+    def _update_q2(self, actions, padding_mask, states, expected_q, is_weights=None):
         curr_q2 = self.model.q2(states, actions)
         if padding_mask is not None:
             curr_q2 *= padding_mask
-        q2_loss = F.mse_loss(curr_q2, expected_q.detach())
+        # PER: IS-weighted MSE — `reduction='none'` then per-sample weight,
+        # then mean. Guarded — uniform batches keep the plain mse_loss.
+        if is_weights is not None:
+            td = curr_q2 - expected_q.detach()
+            q2_loss = (is_weights * td.pow(2)).mean()
+        else:
+            q2_loss = F.mse_loss(curr_q2, expected_q.detach())
 
         self.model.q2_optimizer.zero_grad()
         q2_loss.backward()
@@ -364,11 +401,22 @@ class SAC(Algo):
             self.model.q2_scheduler.step()
         return q2_loss
 
-    def _update_q1(self, actions, padding_mask, states, expected_q):
+    def _update_q1(self, actions, padding_mask, states, expected_q, is_weights=None):
         curr_q1 = self.model.q1(states, actions)
         if padding_mask is not None:
             curr_q1 *= padding_mask
-        q1_loss = F.mse_loss(curr_q1, expected_q.detach())
+        # PER: IS-weighted MSE + per-sample |TD| extraction. The per-sample
+        # TD magnitude is what the buffer needs to refresh priorities.
+        td = curr_q1 - expected_q.detach()
+        if is_weights is not None:
+            q1_loss = (is_weights * td.pow(2)).mean()
+        else:
+            q1_loss = F.mse_loss(curr_q1, expected_q.detach())
+        # |TD| per sample — average over any sequence/extra dims so the
+        # result is one scalar per buffer transition. Detached, CPU numpy.
+        td_errors = (
+            td.detach().abs().view(curr_q1.shape[0], -1).mean(dim=1).cpu().numpy()
+        )
 
         self.model.q1_optimizer.zero_grad()
         q1_loss.backward()
@@ -378,7 +426,7 @@ class SAC(Algo):
         self.model.q1_optimizer.step()
         if self.model.q1_scheduler:
             self.model.q1_scheduler.step()
-        return q1_loss
+        return q1_loss, td_errors
 
     def _get_expected_q(self, all_states, rewards, dones, padding_mask, seq_length):
         next_actions, next_log_pi = self._get_update_action(all_states)

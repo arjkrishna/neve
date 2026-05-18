@@ -432,6 +432,19 @@ class Single(SingleEvalOnly, Agent):
             results.append(result)
             n_steps += 1
 
+            # Plan v7 (PER): feed fresh per-sample |TD| back so the buffer
+            # can refresh the sampled transitions' priorities. Guarded —
+            # uniform buffers have no `update_priorities` and `batch.indices`
+            # is None, so this is a no-op for episode/step-uniform runs.
+            if (
+                batch.indices is not None
+                and getattr(self.algo, "last_td_errors", None) is not None
+                and hasattr(self.replay_buffer, "update_priorities")
+            ):
+                self.replay_buffer.update_priorities(
+                    batch.indices, self.algo.last_td_errors
+                )
+
             # Log diagnostics after each gradient step
             if self.diagnostics is not None:
                 self.diagnostics.log_losses(
@@ -472,7 +485,13 @@ class Single(SingleEvalOnly, Agent):
             self.logger.debug("_log_batch_samples: diagnostics is None, skipping")
             return
 
-        (all_states, actions, rewards, dones, padding_mask) = batch
+        # `batch` is a 7-field NamedTuple (PER added is_weights/indices);
+        # access by name rather than a positional 5-unpack.
+        all_states = batch.obs
+        actions = batch.actions
+        rewards = batch.rewards
+        dones = batch.terminals
+        padding_mask = batch.padding_mask
 
         # Log batch shape info for debugging (only first time)
         if self.step_counter.update <= 100:

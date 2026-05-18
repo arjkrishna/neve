@@ -3,3 +3,5 @@ from .vanillastep import VanillaStep
 from .vanillaepisode import VanillaEpisode
 from .vanillashared import VanillaStepShared, VanillaEpisodeShared
 from .vanillashared import VanillaSharedBase as ReplayBufferShared
+from .pervanillastep import PERVanillaStep, SumTree
+from .pervanillashared import PERVanillaStepShared, PERVanillaSharedBase

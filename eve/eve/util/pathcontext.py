@@ -203,11 +203,8 @@ class PathProjectionCache:
         #   _on_planned_path: True while wire is on the planned route.
         #     Flips to False when cross-track exceeds local-radius-aware
         #     tolerance; flips back True on cross-track return.
-        #   _prev_proj_s: arclength on _polyline at end of previous step.
-        #     Used to detect forward / backward junction crossings.
         self._current_branch_idx = None
         self._on_planned_path = True
-        self._prev_proj_s = 0.0
 
         # Episode-precomputed path topology:
         #   _branch_radii: tuple of per-branch per-point radii arrays.
@@ -228,6 +225,40 @@ class PathProjectionCache:
         self._path_branch_sequence = []
         self._path_branch_sequence_with_junctions = []
         self._junction_off_path_candidates = {}
+
+        # RL_IMPROV_8 §39 (Plan v5) — off-path drift shaping + state-machine
+        # daughter-commit events.
+        #   _divergence_wrong_branch_arc: wire's projection arclength on the
+        #     wrong branch at the moment the state machine flipped off-path.
+        #     get_off_path_arc_since_divergence() returns
+        #     current_arc - _divergence_wrong_branch_arc.
+        #   _divergence_wrong_branch_idx: which wrong branch the divergence
+        #     was captured on (so we can detect "wire committed to another
+        #     wrong branch" and reset the baseline).
+        #   _daughter_commit_events: per-step queue of (j_arc, +1|-1)
+        #     emitted by update_branch_state() when the state machine
+        #     commits at a daughter fork. Drained by env5 once per step.
+        #   _committed_forks: per-episode latched list of junction arcs
+        #     that have already emitted a commit event. Prevents re-fires.
+        self._divergence_wrong_branch_arc = 0.0
+        self._divergence_wrong_branch_idx = None
+        self._daughter_commit_events = []
+        self._committed_forks = []
+
+        # Plan v5 (Tier 1) — Markov-completing state exposed in LocalGuidance.
+        #   _trunk_branch_idx: cached at reset from _path_branch_sequence[0].
+        #     LocalGuidance feature: is_in_trunk = (current_branch == trunk).
+        #   _target_daughter_branch_idx: cached at reset from
+        #     _path_branch_sequence[-1]. The path's terminal branch IS the
+        #     target daughter. Feature: is_on_target_daughter.
+        #   _n_correct_commits / _n_wrong_commits: counters incremented in
+        #     _maybe_emit_daughter_commit. Per-episode totals exposed as
+        #     normalized features so the agent knows what it has and
+        #     hasn't accomplished at each daughter fork.
+        self._trunk_branch_idx = None
+        self._target_daughter_branch_idx = None
+        self._n_correct_commits = 0
+        self._n_wrong_commits = 0
 
         # Per-step cache (typing removed for Python 3.8 compat)
         self._tip_vessel_cs = None
@@ -270,11 +301,25 @@ class PathProjectionCache:
         # starts True; the very first update_branch_state() call will flip
         # it False if the actual tip happens to be cross-track-far.
         self._on_planned_path = True
-        self._prev_proj_s = 0.0
         if self._path_branch_sequence:
             self._current_branch_idx = self._path_branch_sequence[0][2]
         else:
             self._current_branch_idx = None
+        # Plan v5 — reset divergence tracking and per-episode commit latch.
+        self._divergence_wrong_branch_arc = 0.0
+        self._divergence_wrong_branch_idx = None
+        self._committed_forks = []
+        # Plan v5 (Tier 1) — reset commit counters per episode; cache the
+        # trunk and target-daughter branch indices once the path-branch
+        # sequence is built (first segment = trunk, last segment = target).
+        self._n_correct_commits = 0
+        self._n_wrong_commits = 0
+        if self._path_branch_sequence:
+            self._trunk_branch_idx = self._path_branch_sequence[0][2]
+            self._target_daughter_branch_idx = self._path_branch_sequence[-1][2]
+        else:
+            self._trunk_branch_idx = None
+            self._target_daughter_branch_idx = None
         self.invalidate()
 
     def invalidate(self) -> None:
@@ -288,6 +333,8 @@ class PathProjectionCache:
         self._dist_to_correct_entry = None
         self._closest_wrong_entry_coords = None
         self._closest_correct_entry_coords = None
+        # Plan v5 — per-step event queue drained by env5 once per step.
+        self._daughter_commit_events = []
 
     @property
     def polyline(self) -> np.ndarray:
@@ -967,6 +1014,9 @@ class PathProjectionCache:
                 if (s >= j_arc + COMMIT_HYSTERESIS_MM
                         and self._current_branch_idx == prev_idx):
                     self._current_branch_idx = next_idx
+                    # Plan v5 — correct-daughter commit. Emit +1 if this
+                    # junction is a real daughter fork.
+                    self._maybe_emit_daughter_commit(j_arc, +1)
                 elif (s < j_arc - COMMIT_HYSTERESIS_MM
                         and self._current_branch_idx == next_idx):
                     self._current_branch_idx = prev_idx
@@ -974,6 +1024,16 @@ class PathProjectionCache:
             if ct > tol:
                 self._on_planned_path = False
                 self._current_branch_idx = self._pick_off_path_branch(s)
+                self._capture_divergence_point(s)
+                # Plan v5 — wrong-daughter commit + deterministic rejoin
+                # anchor (item 15, Option C). Emit -1 if this happened at a
+                # real daughter fork; pin _last_on_path_arclen to the
+                # nearest daughter junction so the routed-d_corr fallback
+                # is a function of current geometry, not episode history.
+                j_arc = self._nearest_daughter_junction_arc(s)
+                if j_arc is not None:
+                    self._last_on_path_arclen = j_arc
+                    self._maybe_emit_daughter_commit(j_arc, -1)
             # BUG-A fix: also flip off-path if tip is on the off-path
             # section of a shared branch (e.g. (0).mrk lower indices for
             # non-LCCA targets). This keeps the state machine consistent
@@ -981,6 +1041,13 @@ class PathProjectionCache:
             elif not self._tip_on_path_used_segment():
                 self._on_planned_path = False
                 self._current_branch_idx = self._pick_off_path_branch(s)
+                self._capture_divergence_point(s)
+                # Plan v5 (item 15, Option C) — same deterministic rejoin
+                # anchor as the cross-track off-path branch above.
+                j_arc = self._nearest_daughter_junction_arc(s)
+                if j_arc is not None:
+                    self._last_on_path_arclen = j_arc
+                    self._maybe_emit_daughter_commit(j_arc, -1)
         else:
             # On-path return: cross-track within tolerance AND tip is on the
             # path-used segment of the branch implied by the current arclength.
@@ -991,13 +1058,99 @@ class PathProjectionCache:
                 self._current_branch_idx = candidate_idx
                 if self._tip_on_path_used_segment():
                     self._on_planned_path = True
-                    # keep candidate_idx
+                    # keep candidate_idx; clear divergence (wire back on-path)
+                    self._divergence_wrong_branch_arc = 0.0
+                    self._divergence_wrong_branch_idx = None
                 else:
                     # mask says off-path despite low cross-track → revert
                     self._current_branch_idx = prev_idx
-            # else: stay in current off-path branch
+            # else: stay in current off-path branch. If state machine has
+            # committed to a NEW off-path branch (different from divergence
+            # capture), reset baseline so off-path arc tracks the most
+            # recent committed branch (don't try to project tip onto an
+            # old wrong-branch polyline the tip has left).
+            elif (self._divergence_wrong_branch_idx is not None
+                    and self._current_branch_idx != self._divergence_wrong_branch_idx):
+                self._capture_divergence_point(s)
 
-        self._prev_proj_s = s
+    # ------------------------------------------------------------------
+    # Plan v5 helpers — daughter-commit events + off-path divergence
+    # ------------------------------------------------------------------
+    def _maybe_emit_daughter_commit(self, j_arc: float, sign: int) -> None:
+        """Append a (junction_arc, +1|-1) event to _daughter_commit_events
+        if ``j_arc`` is a real daughter fork (in _path_daughter_arclengths)
+        and not already latched this episode.
+
+        ``sign``:
+          +1 = wire committed to the on-path branch at this fork (correct).
+          -1 = wire committed to an off-path branch at this fork (wrong).
+        """
+        if len(self._path_daughter_arclengths) == 0:
+            return
+        if not bool(np.any(
+            np.isclose(self._path_daughter_arclengths, j_arc, atol=1e-3)
+        )):
+            return
+        for latched in self._committed_forks:
+            if abs(latched - j_arc) < 1e-3:
+                return
+        self._committed_forks.append(float(j_arc))
+        self._daughter_commit_events.append((float(j_arc), int(sign)))
+        # Plan v5 (Tier 1) — count for LocalGuidance features.
+        if sign > 0:
+            self._n_correct_commits += 1
+        elif sign < 0:
+            self._n_wrong_commits += 1
+
+    def _nearest_daughter_junction_arc(self, s: float):
+        """Return the arclength of the daughter junction nearest to s,
+        or None if no daughter junctions exist. Used by update_branch_state
+        when emitting wrong-commit -1 events on cross-track off-path.
+        """
+        if len(self._path_daughter_arclengths) == 0:
+            return None
+        idx = int(np.argmin(np.abs(self._path_daughter_arclengths - s)))
+        return float(self._path_daughter_arclengths[idx])
+
+    def _capture_divergence_point(self, s: float) -> None:
+        """Record the wire's arclength on its current wrong branch at the
+        moment of divergence. The progress reward later reads this via
+        get_off_path_arc_since_divergence() to penalize continued drift.
+        """
+        if (self._current_branch_idx is None
+                or self._current_branch_idx >= len(self._branch_polylines)):
+            self._divergence_wrong_branch_arc = 0.0
+            self._divergence_wrong_branch_idx = None
+            return
+        coords = self._branch_polylines[self._current_branch_idx]
+        cum = self._branch_cumlens[self._current_branch_idx]
+        if len(coords) < 2:
+            self._divergence_wrong_branch_arc = 0.0
+        else:
+            tip = self.get_tip_vessel_cs()
+            r = project_onto_polyline(tip, coords, cum)
+            self._divergence_wrong_branch_arc = float(r.s)
+        self._divergence_wrong_branch_idx = self._current_branch_idx
+
+    def get_off_path_arc_since_divergence(self) -> float:
+        """Plan v5 — arc distance the wire has traveled along its current
+        wrong branch since the state machine flipped off-path. Returns 0.0
+        if currently on-path or no divergence baseline was captured. Used
+        by ArcLengthProgress as the magnitude of negative off-path shaping.
+        """
+        if self._on_planned_path:
+            return 0.0
+        if (self._current_branch_idx is None
+                or self._current_branch_idx >= len(self._branch_polylines)
+                or self._divergence_wrong_branch_idx is None):
+            return 0.0
+        coords = self._branch_polylines[self._current_branch_idx]
+        cum = self._branch_cumlens[self._current_branch_idx]
+        if len(coords) < 2:
+            return 0.0
+        tip = self.get_tip_vessel_cs()
+        r = project_onto_polyline(tip, coords, cum)
+        return max(0.0, float(r.s) - self._divergence_wrong_branch_arc)
 
     def get_routed_d_corr_to_next_daughter_entry(self) -> float:
         """RL_IMPROV_8 v2: graph-route distance from tip to next daughter

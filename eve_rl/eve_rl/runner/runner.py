@@ -284,12 +284,18 @@ class Runner(EveRLObject):
             explore_steps_limit or self.step_counter.exploration + explore_steps
         )
         while self.step_counter.exploration < explore_steps_limit:
-            # Total experience = heatup + exploration (both contribute to replay buffer)
-            total_experience_steps = (
-                self.step_counter.heatup + self.step_counter.exploration
-            )
+            # Update budget tracks EXPLORATION steps only. Heatup and
+            # heuristic-seeding steps fill the replay buffer but must NOT
+            # obligate catch-up updates. heuristic_seed() increments the
+            # `heatup` counter, so folding heatup into this formula handed
+            # the very first update() call a ~150k-step backlog (with
+            # update_step=0) — run all at once on a static buffer, which
+            # diverges the SAC critic. Exploration-driven gives clean ~1:1
+            # interleaving: one update per new explore step, fresh data
+            # every cycle. The heatup/seed transitions still train — they
+            # live in the buffer and PER samples them throughout.
             update_steps = (
-                total_experience_steps * update_steps_per_explore_step
+                self.step_counter.exploration * update_steps_per_explore_step
                 - self.step_counter.update
             )
             result = self.agent.explore_and_update(

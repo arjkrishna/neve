@@ -1,8 +1,13 @@
 """Compact local guidance observation for path-aware navigation.
 
-Provides a 14-dimensional observation vector encoding the agent's
+Provides a 28-dimensional observation vector encoding the agent's
 relationship to the known correct path, replacing the much larger
 Centerlines2D observation (154+ dims).
+
+RL_IMPROV_9 cleanup: the old features 8-10 (wrong-branch entry distance
++ direction) were removed — they were permanently zero (wrong daughters
+have no arclength on the planned path; the wrong-entry coords degenerated
+to the tip). Features 11-30 renumbered down by 3 → 8-27.
 
 Features:
     0:  d_rem_norm          - remaining arclength / total length  [0, 1]
@@ -13,12 +18,34 @@ Features:
     5:  curvature_ahead     - max curvature in next 20mm of path  [0, ~1]
     6:  dist_to_bifurc      - arclength to next branching point (mm, clipped)  [0, 1]
     7:  on_correct_branch   - 1 if tip is on a path branch, 0 otherwise  {0, 1}
-    8:  dist_wrong_entry    - distance to nearest wrong-branch bifurcation (clipped)  [0, 1]
-    9:  wrong_entry_dir_x   - x-component of unit vector toward nearest wrong entry  [-1, 1]
-    10: wrong_entry_dir_z   - z-component of unit vector toward nearest wrong entry  [-1, 1]
-    11: dist_correct_entry  - distance to nearest correct-path bifurcation (clipped)  [0, 1]
-    12: correct_entry_dir_x - x-component of unit vector toward nearest correct entry  [-1, 1]
-    13: correct_entry_dir_z - z-component of unit vector toward nearest correct entry  [-1, 1]
+    8:  dist_correct_entry  - graph-routed distance to next correct daughter entry  [0, 1]
+    9:  correct_entry_dir_x - x-component of unit vector toward next correct entry  [-1, 1]
+    10: correct_entry_dir_z - z-component of unit vector toward next correct entry  [-1, 1]
+
+    Plan v5 — observation enrichment for RCCA-only RL (§32 audit B1/B2/B3):
+    11: arc_to_next_daughter_norm   - arclength to next DAUGHTER fork (mm, clipped 100, /100)  [0, 1]
+    12: arc_past_last_daughter_norm - arclength past most-recent daughter fork (mm, clipped 100, /100)  [0, 1]
+    13: phase_default        - heuristic phase one-hot: default                              {0, 1}
+    14: phase_trunk_top      - heuristic phase one-hot: Phase A (trunk-top crossing)         {0, 1}
+    15: phase_bridge         - heuristic phase one-hot: Phase B (lcca_jn / bridge entry)     {0, 1}
+    16: phase_daughter       - heuristic phase one-hot: Phase C (cavity / daughter in-route) {0, 1}
+    17: bend_hat_x_2d        - J-tip bend direction, x-component in tracking3d 2D            [-1, 1]
+    18: bend_hat_z_2d        - J-tip bend direction, z-component in tracking3d 2D            [-1, 1]
+
+    Plan v5 (Tier 1) — Markov-completing features for step-wise RL:
+    19: off_arc_since_divergence_norm - distance wire has drifted along
+                                        wrong branch since divergence
+                                        (mm, clipped 50, /50)                                [0, 1]
+    20: off_branch_steps_norm         - consecutive off-path steps / 50
+                                        (= fraction toward wrong_branch_timeout)             [0, 1]
+    21: fold_stall_count_norm         - consecutive fold-stall steps / 20                    [0, 1]
+    22: episode_step_norm             - episode_step / max_steps (=age toward MaxSteps)      [0, 1]
+    23: forks_correct_norm            - n_correct_daughter_commits / 3                       [0, 1]
+    24: forks_wrong_norm              - n_wrong_daughter_commits / 3                         [0, 1]
+    25: is_in_trunk                   - 1 if state-machine _current_branch == trunk          {0, 1}
+    26: is_on_target_daughter         - 1 if state-machine _current_branch == target daughter {0, 1}
+    27: is_in_a_wrong_branch          - 1 if state-machine reports off-path (not in path set) {0, 1}
+    (Note: bridges / intermediate path segments → all 3 categorical = 0)
 """
 
 import numpy as np
@@ -40,6 +67,80 @@ _MAX_CROSS_TRACK_MM = 50.0
 _MAX_BIFURC_DIST_MM = 200.0
 _LOOKAHEAD_MM = 20.0
 _ON_PATH_THRESHOLD_MM = 5.0
+# Plan v5 — clip for arc-to/past-daughter features
+_MAX_DAUGHTER_ARC_MM = 100.0
+# Plan v5 (Tier 1) — clip for off-arc-since-divergence feature
+_MAX_OFF_ARC_MM = 50.0
+# Per-daughter env5 maxima for counter normalization (must match env5 constants)
+_OFF_BRANCH_TIMEOUT_STEPS = 50.0    # env5.py OFF_BRANCH_GRACE_STEPS
+_FOLD_STALL_TIMEOUT_STEPS = 20.0    # env5.py FOLD_STALL_STEPS
+_MAX_DAUGHTER_FORKS = 3.0           # max daughter forks per RCCA-style route
+
+
+def _phase_to_onehot(phase: str) -> tuple:
+    """Map a heuristic phase string to a 4-dim one-hot vector
+    (default, trunk_top=A, bridge=B, daughter=C). Used for LocalGuidance
+    features 13-16.
+
+    Phase strings written by per-daughter policies:
+      RVA  : default, trunk_top, lcca_jn (B), rva_cavity / rva_daughter (C)
+      RCCA : default, trunk_top, lcca_jn (B), rcca_cavity / rcca_daughter (C)
+      LCCA : default, trunk_top, lcca_bridge (B), lcca_daughter (C)
+      LVA  : default, trunk_top, lva_daughter (C)  (no Phase B)
+    """
+    if not phase or phase == "default":
+        return (1.0, 0.0, 0.0, 0.0)
+    p = phase.lower()
+    if p == "trunk_top":
+        return (0.0, 1.0, 0.0, 0.0)
+    # Phase B markers — bridge / jn-entry tokens
+    if ("_jn" in p) or ("bridge" in p):
+        return (0.0, 0.0, 1.0, 0.0)
+    # Phase C markers — cavity / daughter in-route tokens
+    if ("cavity" in p) or ("daughter" in p):
+        return (0.0, 0.0, 0.0, 1.0)
+    return (1.0, 0.0, 0.0, 0.0)
+
+
+def _compute_bend_hat_2d(fluoro) -> tuple:
+    """J-tip bend direction projected to (x, z) image plane.
+
+    Mirrors the heuristic's closed-loop rotation algorithm
+    (_compute_rotation_to_target in heuristic_policy_*.py): uses the
+    first 3 tracked points (tip, tip-1, tip-2) and computes the
+    second-difference vector ``p0 + p2 - 2*p1`` projected perpendicular
+    to the tangent. Returns (bx, bz) unit vector in tracking3d 2D, or
+    (0, 0) if undefined.
+    """
+    tracking = fluoro.tracking3d
+    if tracking is None or len(tracking) < 3:
+        return 0.0, 0.0
+    rzx = fluoro.image_rot_zx
+    center = fluoro.image_center
+    try:
+        p0 = tracking3d_to_vessel_cs(tracking[0], rzx, center)
+        p1 = tracking3d_to_vessel_cs(tracking[1], rzx, center)
+        p2 = tracking3d_to_vessel_cs(tracking[2], rzx, center)
+    except Exception:
+        return 0.0, 0.0
+    t_vec = p0 - p2
+    t_norm = float(np.linalg.norm(t_vec))
+    if t_norm < 1e-6:
+        return 0.0, 0.0
+    t_hat = t_vec / t_norm
+    bend_raw = p0 + p2 - 2.0 * p1
+    bend = bend_raw - float(np.dot(bend_raw, t_hat)) * t_hat
+    b_norm = float(np.linalg.norm(bend))
+    if b_norm < 1e-3:
+        return 0.0, 0.0
+    bend_hat = bend / b_norm
+    # Project to tracking3d 2D (x, z) — same convention as path tangent_2d
+    bend_t = vessel_cs_to_tracking3d(bend_hat, rzx, (0.0, 0.0, 0.0), None)
+    bx, bz = float(bend_t[0]), float(bend_t[2])
+    n = (bx * bx + bz * bz) ** 0.5
+    if n < 1e-8:
+        return 0.0, 0.0
+    return bx / n, bz / n
 
 
 def _entry_direction(
@@ -67,7 +168,7 @@ def _entry_direction(
 
 
 class LocalGuidance(Observation):
-    """Compact 14-dim observation encoding the agent's state relative to the path.
+    """Compact 28-dim observation encoding the agent's state relative to the path.
 
     Args:
         intervention: The intervention object.
@@ -103,19 +204,20 @@ class LocalGuidance(Observation):
         self._total_length: float = 0.0
         self._bifurc_arclengths: np.ndarray = np.empty(0)
 
-        self.obs = np.zeros(14, dtype=np.float32)
+        self.obs = np.zeros(28, dtype=np.float32)
 
     @property
     def space(self) -> gym.spaces.Box:
         low = np.array(
-            # 0       1      2     3     4     5    6    7    8     9    10    11    12    13
-            [0.0,   0.0,  -1.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 0.0, -1.0, -1.0],
+            # 0    1     2     3     4    5    6    7    8     9     10
+            [0.0, 0.0, -1.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.0,
+             # 11  12   13   14   15   16   17    18
+             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.0,
+             # 19  20   21   22   23   24   25   26   27
+             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             dtype=np.float32,
         )
-        high = np.array(
-            [1.0,   1.0,   1.0,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0,  1.0,  1.0, 1.0,  1.0,  1.0],
-            dtype=np.float32,
-        )
+        high = np.ones(28, dtype=np.float32)
         return gym.spaces.Box(low=low, high=high, dtype=np.float32)
 
     def reset(self, episode_nr: int = 0) -> None:
@@ -132,7 +234,7 @@ class LocalGuidance(Observation):
             self._curvature = np.empty(0)
             self._total_length = 0.0
             self._bifurc_arclengths = np.empty(0)
-            self.obs = np.zeros(14, dtype=np.float32)
+            self.obs = np.zeros(28, dtype=np.float32)
             return
 
         self._cumlen = compute_cumulative_arclength(self._polyline)
@@ -160,7 +262,7 @@ class LocalGuidance(Observation):
 
     def step(self) -> None:
         if self._total_length < 1e-6:
-            self.obs = np.zeros(14, dtype=np.float32)
+            self.obs = np.zeros(28, dtype=np.float32)
             return
 
         fluoro = self.intervention.fluoroscopy
@@ -207,52 +309,136 @@ class LocalGuidance(Observation):
             nearest = find_nearest_branch_to_point(tip_vessel, self.intervention.vessel_tree)
             on_path = 1.0 if self.pathfinder.is_branch_on_path(nearest) else 0.0
 
-        # Features 8-10: distance and direction to nearest wrong-branch bifurcation
-        # Features 11-13: distance and direction to nearest correct-path bifurcation
-        # RL_IMPROV_7 §7 Fix 18: switched feature 11 from Euclidean-to-interior-marker
-        # to ARCLENGTH-along-path-to-next-correct-entry. The Euclidean version was
-        # misleading — it picked up trunk markers and made "near entry" mean "near
-        # any path point", not "approaching a daughter". Wrong-entry distance has
-        # no clean arclength version (path doesn't go through wrong daughters), so
-        # feature 8 is zeroed; the agent should infer wrong-direction from the
-        # correct-entry direction features alone.
+        # Features 8-10: graph-routed distance + direction to the next
+        # correct-path daughter entry. RL_IMPROV_9 cleanup removed the old
+        # features 8-10 (wrong-branch entry distance + direction) — they
+        # were permanently zero. RL_IMPROV_8 v2: routed d_corr accounts for
+        # sister-branch detours; reports the real centerline-traversal
+        # distance the wire must retrace to reach the next daughter.
         if self._path_context is not None:
-            d_wrong = 0.0  # zeroed; no meaningful arclength for wrong daughter
-            wrong_coords = tip_vessel.copy()
-            # RL_IMPROV_8 v2: switched feature 11 to graph-routed d_corr,
-            # which accounts for sister-branch detours. When the wire is
-            # in a parallel sister branch, the routed metric reports the
-            # actual centerline-traversal distance the wire must retrace
-            # to reach the next daughter — not the misleadingly small 3D
-            # Euclidean.
             d_correct = self._path_context.get_routed_d_corr_to_next_daughter_entry()
             correct_coords = self._path_context.get_closest_correct_entry_coords()
         else:
-            d_wrong = 0.0
-            wrong_coords = tip_vessel.copy()
             d_correct = _MAX_BIFURC_DIST_MM
             correct_coords = tip_vessel.copy()
 
         rot_zx = fluoro.image_rot_zx
-        wrong_dir_x, wrong_dir_z = _entry_direction(tip_vessel, wrong_coords, d_wrong, rot_zx)
-        correct_dir_x, correct_dir_z = _entry_direction(tip_vessel, correct_coords, d_correct, rot_zx)
+        correct_dir_x, correct_dir_z = _entry_direction(
+            tip_vessel, correct_coords, d_correct, rot_zx
+        )
+
+        # ----------------------------------------------------------------
+        # Plan v5 — observation enrichment (features 11-18)
+        # ----------------------------------------------------------------
+        # Features 11-12: arclength to / past daughter forks (clipped, normalized)
+        arc_to_next = float("inf")
+        arc_past_last = 0.0
+        if self._path_context is not None:
+            try:
+                arc_to_next = self._path_context.get_arclength_to_next_daughter_entry()
+            except Exception:
+                pass
+            try:
+                arc_past_last = self._path_context.get_arclength_past_last_daughter_entry()
+            except Exception:
+                pass
+        # ∞ → 1.0; finite → clip to MAX and normalize.
+        if arc_to_next == float("inf"):
+            arc_to_next_norm = 1.0
+        else:
+            arc_to_next_norm = float(min(arc_to_next, _MAX_DAUGHTER_ARC_MM) / _MAX_DAUGHTER_ARC_MM)
+        arc_past_norm = float(min(arc_past_last, _MAX_DAUGHTER_ARC_MM) / _MAX_DAUGHTER_ARC_MM)
+
+        # Features 13-16: heuristic phase one-hot (default / A / B / C).
+        # Env5 mirrors `_heur_rva_phase` from the env to intervention at
+        # the start of each step() so LocalGuidance (which holds an
+        # intervention reference) can read it. Falls back to "default".
+        phase_str = getattr(self.intervention, "_heur_rva_phase", "default")
+        ph_def, ph_A, ph_B, ph_C = _phase_to_onehot(str(phase_str))
+
+        # Features 17-18: J-tip bend direction in tracking 2D.
+        bend_x, bend_z = _compute_bend_hat_2d(fluoro)
+
+        # ----------------------------------------------------------------
+        # Plan v5 (Tier 1) — Markov-completing features (19-27)
+        # ----------------------------------------------------------------
+        # Feature 19: off-arc since divergence (mm clipped 50, /50).
+        off_arc_norm = 0.0
+        if self._path_context is not None:
+            try:
+                off_arc = self._path_context.get_off_path_arc_since_divergence()
+                off_arc_norm = float(min(max(off_arc, 0.0), _MAX_OFF_ARC_MM) / _MAX_OFF_ARC_MM)
+            except Exception:
+                pass
+
+        # Features 20-22: env-level counters mirrored by env5.step.
+        off_steps = float(getattr(self.intervention, "_env_off_branch_steps", 0))
+        fold_steps = float(getattr(self.intervention, "_env_fold_stall_count", 0))
+        ep_step = float(getattr(self.intervention, "_env_episode_step", 0))
+        ep_max = float(getattr(self.intervention, "_env_max_steps", 600))
+        off_branch_norm = float(min(off_steps / _OFF_BRANCH_TIMEOUT_STEPS, 1.0))
+        fold_stall_norm = float(min(fold_steps / _FOLD_STALL_TIMEOUT_STEPS, 1.0))
+        episode_step_norm = float(min(ep_step / max(ep_max, 1.0), 1.0))
+
+        # Features 23-24: per-episode daughter-fork commit counters.
+        n_correct = 0
+        n_wrong = 0
+        if self._path_context is not None:
+            n_correct = int(getattr(self._path_context, "_n_correct_commits", 0))
+            n_wrong = int(getattr(self._path_context, "_n_wrong_commits", 0))
+        forks_correct_norm = float(min(n_correct / _MAX_DAUGHTER_FORKS, 1.0))
+        forks_wrong_norm = float(min(n_wrong / _MAX_DAUGHTER_FORKS, 1.0))
+
+        # Features 25-27: 3-dim branch categorical (mutually exclusive).
+        # is_in_trunk: current branch == cached trunk branch idx
+        # is_on_target_daughter: current branch == cached target daughter idx
+        # is_in_a_wrong_branch: state machine reports off-path
+        # (Bridges / intermediate path segments fall through as 0,0,0.)
+        is_in_trunk = 0.0
+        is_on_target_daughter = 0.0
+        is_in_a_wrong_branch = 0.0
+        if self._path_context is not None:
+            cur_idx = self._path_context._current_branch_idx
+            trunk_idx = getattr(self._path_context, "_trunk_branch_idx", None)
+            target_idx = getattr(self._path_context, "_target_daughter_branch_idx", None)
+            on_planned = bool(getattr(self._path_context, "_on_planned_path", True))
+            if not on_planned:
+                is_in_a_wrong_branch = 1.0
+            elif cur_idx is not None and trunk_idx is not None and cur_idx == trunk_idx:
+                is_in_trunk = 1.0
+            elif cur_idx is not None and target_idx is not None and cur_idx == target_idx:
+                is_on_target_daughter = 1.0
 
         self.obs = np.array(
             [
-                d_rem_norm,                                              # [0, 1]
-                cross_track / _MAX_CROSS_TRACK_MM,                      # [0, 1]
-                tangent_2d[0],                                           # [-1, 1]
-                tangent_2d[1],                                           # [-1, 1]
-                heading_error / np.pi,                                   # [-1, 1]
-                curvature_ahead / 10.0,                                  # [0, ~1]
-                dist_to_bifurc / _MAX_BIFURC_DIST_MM,                   # [0, 1]
-                on_path,                                                  # {0, 1}
-                min(d_wrong, _MAX_BIFURC_DIST_MM) / _MAX_BIFURC_DIST_MM, # [0, 1]
-                wrong_dir_x,                                             # [-1, 1]
-                wrong_dir_z,                                             # [-1, 1]
-                min(d_correct, _MAX_BIFURC_DIST_MM) / _MAX_BIFURC_DIST_MM, # [0, 1]
-                correct_dir_x,                                           # [-1, 1]
-                correct_dir_z,                                           # [-1, 1]
+                d_rem_norm,                                              # 0  [0,1]
+                cross_track / _MAX_CROSS_TRACK_MM,                       # 1  [0,1]
+                tangent_2d[0],                                           # 2  [-1,1]
+                tangent_2d[1],                                           # 3  [-1,1]
+                heading_error / np.pi,                                   # 4  [-1,1]
+                curvature_ahead / 10.0,                                  # 5  [0,~1]
+                dist_to_bifurc / _MAX_BIFURC_DIST_MM,                    # 6  [0,1]
+                on_path,                                                 # 7  {0,1}
+                min(d_correct, _MAX_BIFURC_DIST_MM) / _MAX_BIFURC_DIST_MM,# 8  [0,1] dist_correct_entry
+                correct_dir_x,                                           # 9  [-1,1]
+                correct_dir_z,                                           # 10 [-1,1]
+                arc_to_next_norm,                                        # 11 [0,1]
+                arc_past_norm,                                           # 12 [0,1]
+                ph_def,                                                  # 13 {0,1} phase default
+                ph_A,                                                    # 14 {0,1} phase trunk_top (A)
+                ph_B,                                                    # 15 {0,1} phase bridge (B)
+                ph_C,                                                    # 16 {0,1} phase daughter (C)
+                bend_x,                                                  # 17 [-1,1] bend_hat 2D x
+                bend_z,                                                  # 18 [-1,1] bend_hat 2D z
+                off_arc_norm,                                            # 19 [0,1] off_arc_since_divergence
+                off_branch_norm,                                         # 20 [0,1] off_branch_steps_norm
+                fold_stall_norm,                                         # 21 [0,1] fold_stall_count_norm
+                episode_step_norm,                                       # 22 [0,1] episode_step_norm
+                forks_correct_norm,                                      # 23 [0,1] forks_correct_norm
+                forks_wrong_norm,                                        # 24 [0,1] forks_wrong_norm
+                is_in_trunk,                                             # 25 {0,1} is_in_trunk
+                is_on_target_daughter,                                   # 26 {0,1} is_on_target_daughter
+                is_in_a_wrong_branch,                                    # 27 {0,1} is_in_a_wrong_branch
             ],
             dtype=np.float32,
         )

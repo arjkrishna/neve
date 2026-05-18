@@ -58,11 +58,18 @@ class ArcLengthProgress(Reward):
         self._cumlen: np.ndarray = np.empty(0)
         self._total_length: float = 0.0
         self._prev_d_rem: float = 0.0
+        # Plan v5 — per-step delta tracking of off-path arc since divergence.
+        # Off-path reward = -progress_factor * (off_arc_now - prev_off_arc).
+        # Going deeper off-path: Δ > 0 → r < 0 (penalty).
+        # Retracting toward divergence point: Δ < 0 → r > 0 (reward,
+        #   symmetric with on-path forward motion).
+        self._prev_off_arc: float = 0.0
 
         self.reward = 0.0
 
     def reset(self, episode_nr: int = 0) -> None:
         self.reward = 0.0
+        self._prev_off_arc = 0.0  # Plan v5 — per-episode reset
 
         if self._path_context is not None:
             # Refresh cache (idempotent — may already be reset by LocalGuidance)
@@ -97,16 +104,37 @@ class ArcLengthProgress(Reward):
 
         if self._path_context is not None:
             result = self._path_context.get_projection()
+            on_path = self._path_context.is_on_correct_path()
         else:
             tip_vessel_cs = self._get_tip_vessel_cs()
             result = project_onto_polyline(
                 tip_vessel_cs, self._polyline, self._cumlen
             )
+            on_path = True  # fallback (env4 compat); no on-path check
 
         d_rem_curr = self._total_length - result.s
 
-        # Progress reward: positive when moving toward target
-        r_progress = self.progress_factor * (self._prev_d_rem - d_rem_curr)
+        # Plan v5 — progress reward is on-path-aware AND symmetric:
+        #   On-path: +progress_factor * forward Δs along planned polyline.
+        #     (Backward motion on-path naturally goes negative via Δd_rem.)
+        #   Off-path: -progress_factor * Δ(off_path_arc_since_divergence).
+        #     Going deeper off-path → negative reward.
+        #     Retracting toward divergence point → POSITIVE reward
+        #     (symmetric to on-path forward motion; matches the heuristic's
+        #     "retract when off-path" implicit objective).
+        # _prev_d_rem is updated unconditionally so the next on-path step
+        # has a correct delta when wire returns to path.
+        if on_path:
+            r_progress = self.progress_factor * (self._prev_d_rem - d_rem_curr)
+            # Reset off-arc baseline so a subsequent off-path transition
+            # captures a fresh baseline from the new divergence point.
+            self._prev_off_arc = 0.0
+        elif self._path_context is not None:
+            off_arc_now = self._path_context.get_off_path_arc_since_divergence()
+            r_progress = -self.progress_factor * (off_arc_now - self._prev_off_arc)
+            self._prev_off_arc = off_arc_now
+        else:
+            r_progress = 0.0
 
         # Lateral penalty: penalise straying from the path centerline
         r_lateral = -self.lateral_penalty_factor * result.cross_track_dist

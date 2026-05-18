@@ -16,7 +16,13 @@ class VanillaStep(ReplayBuffer):
         return self._batch_size
 
     def push(self, episode: Episode):
-        for i in range(len(episode) - 1):
+        # An episode with N actions has N transitions (i = 0..N-1).
+        # flat_obs holds N+1 entries (reset state + one per step), so
+        # flat_obs[i:i+2] is valid for the final i = N-1 too. The old
+        # `range(len(episode) - 1)` dropped transition N-1 — the terminal
+        # one, carrying the done flag and the terminal reward — so iterate
+        # the full range.
+        for i in range(len(episode)):
             if len(self.buffer) < self.capacity:
                 self.buffer.append(None)
             episode_np = (
