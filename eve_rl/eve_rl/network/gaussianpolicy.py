@@ -1,6 +1,7 @@
 from typing import Optional, Tuple
 import logging
 import torch
+from torch.distributions import Normal
 
 from .component import Component, ComponentDummy
 from .network import Network
@@ -51,6 +52,28 @@ class GaussianPolicy(Network):
         mean, log_std = self.body.forward_play(head_out)
         log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
         return mean, log_std
+
+    def log_prob(
+        self, obs_batch: torch.Tensor, action_batch: torch.Tensor,
+        epsilon: float = 1e-6,
+    ) -> torch.Tensor:
+        """Plan v8 (AWAC) — log-probability of an ARBITRARY given action
+        (the SAC path only log-probs its own fresh sample inline). The
+        action is a tanh-squashed value in (-1, 1); invert the squash with
+        atanh, score the pre-squash z under N(mean, std), then apply the
+        tanh change-of-variables correction. Summed over the action dim,
+        keepdim — same convention as SAC's `_get_update_action`."""
+        mean, log_std = self.forward(obs_batch)
+        std = log_std.exp()
+        a = torch.clamp(action_batch, -1.0 + epsilon, 1.0 - epsilon)
+        z = 0.5 * (torch.log1p(a) - torch.log1p(-a))  # atanh(a)
+        log_prob = Normal(mean, std).log_prob(z) - torch.log(1 - a.pow(2) + epsilon)
+        # Plan v8 fix — clamp the summed log-prob. An arbitrary buffer action
+        # can sit many sigma from a collapsed policy mean → log_prob → -1e18
+        # → the AWAC BC loss explodes. The floor bounds the worst-case
+        # per-sample loss (SAC never hits this — it only scores its own
+        # fresh sample, which is O(1) sigma from the mean by construction).
+        return log_prob.sum(-1, keepdim=True).clamp(min=-20.0)
 
     def reset(self) -> None:
         ...

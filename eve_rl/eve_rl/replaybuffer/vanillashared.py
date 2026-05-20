@@ -142,7 +142,10 @@ class VanillaSharedBase(ReplayBuffer):
 
 
 class VanillaStepShared(VanillaSharedBase):
-    def __init__(self, capacity, batch_size, sample_device: torch.device):
+    def __init__(
+        self, capacity, batch_size, sample_device: torch.device,
+        balanced_fraction: float = 0.0,
+    ):
         super().__init__(
             mp.SimpleQueue(),
             mp.SimpleQueue(),
@@ -155,6 +158,9 @@ class VanillaStepShared(VanillaSharedBase):
         )
         self.capacity = capacity
         self.sample_device = sample_device
+        # Plan v8 — balanced two-stream sampling toggle, forwarded to the
+        # internal VanillaStep created in the subprocess.
+        self.balanced_fraction = balanced_fraction
         # Pass shared_update_step explicitly so it's inherited by subprocess
         # (not pickled as part of self which would get None from __getstate__)
         self._process = mp.Process(
@@ -167,7 +173,10 @@ class VanillaStepShared(VanillaSharedBase):
         """Entry point for subprocess - receives shared_update_step as argument."""
         # Store the shared Value that was passed (inherited, not pickled)
         self._shared_update_step = shared_update_step
-        internal_replay_buffer = VanillaStep(self.capacity, self._batch_size)
+        internal_replay_buffer = VanillaStep(
+            self.capacity, self._batch_size,
+            balanced_fraction=self.balanced_fraction,
+        )
         self.loop(internal_replay_buffer)
 
     def loop(self, internal_replay_buffer: ReplayBuffer):
@@ -225,7 +234,7 @@ class VanillaStepShared(VanillaSharedBase):
                     elif task[0] == "load_buffer":
                         path = task[1]
                         from eve_rl.util.experience_cache import load_episodes_npz
-                        episodes_list, pos = load_episodes_npz(path)
+                        episodes_list, pos, _ = load_episodes_npz(path)
                         internal_replay_buffer.import_all(episodes_list, pos)
                         self._result_queue.put(len(episodes_list))
                         logger.info(f"LOAD_BUFFER: loaded {len(episodes_list)} episodes from {path}")

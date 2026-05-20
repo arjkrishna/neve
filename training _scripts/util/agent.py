@@ -146,6 +146,12 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         per_alpha: float = 0.6,
         per_beta_start: float = 0.4,
         per_beta_steps: float = 2e7,
+        grad_clip: float = 0.0,
+        algo: str = "sac",
+        awac_lambda: float = 3.0,
+        demo_priority_bonus: float = 0.0,
+        priority_mode: str = "td",
+        balanced_fraction: float = 0.0,
     ):
 
         obs_dict = env_train.observation_space.sample()
@@ -225,6 +231,9 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
             gamma=gamma,
             reward_scaling=reward_scaling,
             stochastic_eval=stochastic_eval,
+            grad_clip=grad_clip,
+            algo=algo,
+            awac_lambda=awac_lambda,
         )
 
         # Plan v6 — replay-mode selects the buffer class.
@@ -245,10 +254,14 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
                 alpha=per_alpha,
                 beta_start=per_beta_start,
                 beta_steps=per_beta_steps,
+                demo_priority_bonus=demo_priority_bonus,
+                priority_mode=priority_mode,
+                balanced_fraction=balanced_fraction,
             )
         elif replay_mode == "step":
             replay_buffer = eve_rl.replaybuffer.VanillaStepShared(
-                replay_buffer_size, batch_size, trainer_device
+                replay_buffer_size, batch_size, trainer_device,
+                balanced_fraction=balanced_fraction,
             )
         else:
             replay_buffer = eve_rl.replaybuffer.VanillaEpisodeShared(

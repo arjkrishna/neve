@@ -827,25 +827,187 @@ functional gain once the formula is fixed. The shared counter is kept.
 
 ---
 
+## 16. Step-RL Stabilization Suite — CLI-Gated Strategies (Plan v8)
+
+### Context
+
+The first RCCA step-SAC + PER run diverged twice (`q1_loss → 3×10⁸`,
+`grad_norm → 434k`) even with the §15 fix in place → a genuine SAC critic
+instability (no gradient clipping; PER amplification; Q-overestimation on
+mostly-failure explore data). Plan v8 adds the full set of stabilization
+strategies as **independent CLI flags** so step-RL variants can be A/B
+compared. Every flag defaults off / neutral → omitting them all reproduces
+current step-SAC behavior byte-for-byte.
+
+### Knob matrix
+
+| Flag | Strategy |
+|---|---|
+| `--grad_clip <norm>` | gradient clipping, critic + policy |
+| `--update_per_explore_step <float>` | configurable update:explore ratio |
+| `--demo_priority_bonus <eps_D>` | DQfD-style demo priority protection |
+| `--priority_mode {td,return,outcome}` | return/outcome-prioritized replay |
+| `--balanced_fraction <f>` | balanced two-stream sampling |
+| `--algo {sac,awac}` | AWAC advantage-weighted policy update |
+
+### Gradient clipping — `--grad_clip`
+
+[sac.py](eve_rl/eve_rl/algo/sac.py) — `SAC.__init__` gains `grad_clip` (0 = off). In
+`_update_q1` / `_update_q2` / `_update_policy`, after the diagnostic
+`compute_grad_norm` (so the logged norm stays the *pre-clip* value) and
+before `optimizer.step()`, `torch.nn.utils.clip_grad_norm_` is applied to
+`model.q1` / `q2` / `policy`.
+
+### Configurable update ratio — `--update_per_explore_step`
+
+[DualDeviceNav_train.py](training%20_scripts/DualDeviceNav_train.py) — when given, overrides the
+replay-mode-conditional `update_per_explore_step` (step=1.0, episode=1/20).
+
+### EpisodeReplay quality metadata + cache persistence
+
+[replaybuffer.py](eve_rl/eve_rl/replaybuffer/replaybuffer.py) — `EpisodeReplay` gains trailing
+optional `is_demo` / `episode_return` / `reached_target_daughter`;
+`Episode.to_replay()` populates the latter two from `episode_reward` and
+`infos[-1]`. [experience_cache.py](eve_rl/eve_rl/util/experience_cache.py) — `save_episodes_npz`
+takes an optional per-episode `metadata` list, persisted as `meta_*` arrays;
+`load_episodes_npz` now returns a **3-tuple** `(episodes, position, metadata)`
+(`metadata=None` for pre-v8 caches). Callers updated: vanillashared.py
+`load_buffer`, DualDeviceNav_train.py heuristic + heatup cache loaders.
+
+### DQfD demo protection — `--demo_priority_bonus`
+
+[pervanillastep.py](eve_rl/eve_rl/replaybuffer/pervanillastep.py) — `PERVanillaStep` gains a
+per-slot `is_demo` array; demo transitions store priority
+`(|td| + ε + ε_D)^α`, with the bonus re-applied in `update_priorities` so
+they keep a permanent floor. The heuristic-cache loader blanket-tags
+`is_demo=True` (robust even on pre-v8 caches that lack metadata).
+
+### priority_mode — `--priority_mode {td,return,outcome}`
+
+[pervanillastep.py](eve_rl/eve_rl/replaybuffer/pervanillastep.py) — `_initial_priority`:
+`td` (running max, current behavior), `return`
+(`max(episode_return − _RETURN_FLOOR, ε)`), `outcome` (`_OUTCOME_HIGH` if
+`reached_target_daughter` else `_OUTCOME_LOW`). `return`/`outcome` fix
+priorities at push → `update_priorities` is a no-op for them.
+
+### Balanced two-stream sampling — `--balanced_fraction`
+
+[pervanillastep.py](eve_rl/eve_rl/replaybuffer/pervanillastep.py) — a second `clean_tree`
+sum-tree over reached-target transitions; `sample()` draws `round(f·B)`
+leaves from it, the rest from the full tree (helper `_draw`; per-stream IS
+weights). [vanillastep.py](eve_rl/eve_rl/replaybuffer/vanillastep.py) — `is_clean` array +
+uniform clean-subset draw for the non-PER step buffer. `f=0` = off.
+
+### AWAC — `--algo {sac,awac}`
+
+[gaussianpolicy.py](eve_rl/eve_rl/network/gaussianpolicy.py) — new `log_prob(obs, action)`
+scoring an arbitrary stored action (atanh + tanh Jacobian). [sac.py](eve_rl/eve_rl/algo/sac.py)
+— `_update_policy` AWAC branch: `A = min_q(s, a_buffer) − min_q(s, π(s))`;
+`policy_loss = −(exp(A/λ).clamp(20) · log_prob(s, a_buffer)).mean()`;
+advantage detached, critic update unchanged.
+
+### Threading + validation
+
+[agent.py](training%20_scripts/util/agent.py) threads all six params to SAC + the
+buffers; [pervanillashared.py](eve_rl/eve_rl/replaybuffer/pervanillashared.py) /
+[vanillashared.py](eve_rl/eve_rl/replaybuffer/vanillashared.py) forward them to the
+subprocess buffers. [DualDeviceNav_train.py](training%20_scripts/DualDeviceNav_train.py)
+adds the CLI args + guards: `--demo_priority_bonus` / `--priority_mode` /
+`--balanced_fraction` require step mode; demo-bonus and non-`td`
+priority_mode require `--per`. [launch_rcca_train.sh](launch_rcca_train.sh) adds
+`--grad_clip 10.0` to the recommended step baseline — set from the
+observed episode-run gradient distribution (healthy `grad_norm_q1` mean
+~3-9 / max ~74-120; explosion ~4000-6600), so the clip is inert in the
+healthy regime and a hard brake during a burst. (`1.0` would clip every
+healthy update too.)
+
+### Verification done
+
+All 10 modified files compile. Unit tests (numpy-only): experience_cache
+metadata round-trip + pre-v8 backward-compat; PERVanillaStep `outcome` /
+`return` / demo-bonus priority ordering + balanced-stream `_draw` returns
+only clean transitions.
+
+---
+
+## 17. MDP-Grounding Fix — Failure Truncations Terminate the Bootstrap
+
+### Context — four RL runs, four divergences
+
+Every RL run diverged: step+PER → `q1_mean` +1,287; step+PER+grad_clip →
++91 (slower); step+PER+grad_clip+AWAC → −122,625; episode-RL also diverged.
+The §16 stabilization suite (grad clipping, AWAC, PER variants) only changed
+the *speed* and *sign* of the blow-up — none stopped it.
+
+### Root cause
+
+The critic's Bellman target is `expected_q = r + (1−done)·γ·Q(s')`. The
+recursion must bottom out at terminal states (`done=True` → no bootstrap)
+or the value function is ungrounded — self-referential, satisfied by
+infinitely many value assignments.
+
+`batch_samples` evidence: TargetReached steps (reward +3) → `done=True`
+(3/3); **failure-truncation steps (reward −5…−12) → `done=False` (0/13)**.
+env5's `step()` returned `terminated=False` for `wrong_branch_timeout` /
+`wire_fold_stall` / `vessel_end` / `sim_error` / `max_steps` — only
+`truncated=True` — and the buffer's `done` is `episode.terminals`.
+
+So **~98% of episodes end in failure-truncation, none of which ground the
+value function** — they bootstrap `−5 + γ·Q(s_N)` off `s_N`, the final
+observation of a failed episode, which is never the start of a real
+transition. The value function was ~99.6% self-referential bootstrap (only
+the ~0.4% TargetReached terminals grounded it). With no terminal anchor,
+SAC's `max`-biased overestimation runs to +∞ and AWAC's `min(q1,q2)`-biased
+underestimation runs to −∞ — same ungrounded cause, opposite sign. This is
+why grad-clip / PER / AWAC / episode-vs-step *all* diverged: none of them
+change the MDP grounding.
+
+### Fix — env
+
+[env5.py](training%20_scripts/util/env5.py) `step()` — at the end, after the
+`FailureTruncationPenalty` block (which gates on `not terminated`, so the
+−5 still applies): `if truncated: terminated = True`. A truncated episode
+is an absorbing failure state — the task is unrecoverable — so its value
+*is* the accumulated penalty; the critic must stop bootstrapping off it.
+Now every episode-end (≈98% failure, ≈2% success) grounds the value
+function within one episode-length.
+
+### Fix — caches
+
+The saved `rcca_heuristic_cache.npz` (100 ep) and `rcca_heatup_cache_20.npz`
+(20 ep) were generated pre-fix → their failure episodes carry
+`terminals[-1]=False` and would seed the buffer ungrounded. Post-processed
+both npz in place (originals → `*.npz.orig`): set the last transition's
+`terminal=True` for every episode — 96/100 and 17/20 flipped False→True
+(the rest were already TargetReached terminals). Rewards untouched — the
+−5/−12 penalties were already in the cached rewards; only the `done` flag
+changed.
+
+---
+
 ## File Index
 
 | File | Change |
 |---|---|
 | [eve/eve/reward/arclengthprogress.py](eve/eve/reward/arclengthprogress.py) | §1 — `r_progress` gated on `is_on_correct_path()`; off-path = symmetric per-step `Δoff_arc` shaping; new `_prev_off_arc` field |
 | [eve/eve/util/pathcontext.py](eve/eve/util/pathcontext.py) | §2 — `_daughter_commit_events`, `_committed_forks`, `_divergence_wrong_branch_arc/idx`; methods `_maybe_emit_daughter_commit`, `_nearest_daughter_junction_arc`, `_capture_divergence_point`, `get_off_path_arc_since_divergence`. §4 — `_trunk_branch_idx`, `_target_daughter_branch_idx`, `_n_correct_commits`, `_n_wrong_commits`. §6 — Option C `_last_on_path_arclen` deterministic pinning in `update_branch_state()`; deleted dead write-only field `_prev_proj_s` |
-| [training _scripts/util/env5.py](training _scripts/util/env5.py) | §2 — drain `_daughter_commit_events`, per-episode flags into `info`. §3 — delete wrong-branch penalty cascade + grace; delete unused constants. §4 — mirror `_heur_rva_phase` + counters onto `intervention`. §5 — `Tracking2D(10, 15)`, `Memory` 2-frame stack, `InsertionLengths` 5th obs key. §11 — `default_target_branch` ctor param + reset() injection. §12 — `_reached_target_daughter` latch + `info`; phase-bucketed snapshot call |
+| [training _scripts/util/env5.py](training _scripts/util/env5.py) | §2 — drain `_daughter_commit_events`, per-episode flags into `info`. §3 — delete wrong-branch penalty cascade + grace; delete unused constants. §4 — mirror `_heur_rva_phase` + counters onto `intervention`. §5 — `Tracking2D(10, 15)`, `Memory` 2-frame stack, `InsertionLengths` 5th obs key. §11 — `default_target_branch` ctor param + reset() injection. §12 — `_reached_target_daughter` latch + `info`; phase-bucketed snapshot call. §17 — MDP-grounding fix: `step()` sets `terminated=True` for any truncation (failure states are absorbing → critic stops bootstrapping off them) |
 | [eve/eve/observation/localguidance.py](eve/eve/observation/localguidance.py) | §4 — obs 14 → 28 (enriched to 31, then dead features 8-10 removed + renumbered); features 8-27; helpers `_phase_to_onehot`, `_compute_bend_hat_2d`; `space` bounds + degenerate-path `np.zeros` updated |
 | [training _scripts/util/snapshot.py](training _scripts/util/snapshot.py) | §12 — `save_snapshot` gains `phase` param (seed/eval/explore sub-bucket); reward encoded in PNG filename |
-| [training _scripts/DualDeviceNav_train.py](training _scripts/DualDeviceNav_train.py) | §7 — body refactored into `main(args)`; CLI flags `--target_branches`, `--heuristic_factory`, `--seeding_success`; per-daughter seeding filter. §11 — `default_tb` / `env_kwargs` → `default_target_branch` passed to env5 `env_train` + `env_eval`. §12 — `clean_thread` filter uses `reached_target_daughter`; `--snapshots` flag + `SNAPSHOT_MODE/DIR` pre-spawn export. §13 — `--replay_mode` flag; mode-conditional `replay_buffer_size`/`batch_size`/`update_per_explore_step` locals; `replay_mode` passed to `BenchAgentSynchron`. §14 — `--per` / `--per_alpha` / `--per_beta_start` flags; PER-with-episode `ValueError` guard; `per_beta_steps = TRAINING_STEPS`; flags threaded to agent + `custom_parameters` |
-| [training _scripts/util/agent.py](training _scripts/util/agent.py) | §13 — `BenchAgentSynchron` gains `replay_mode` param; selects `VanillaStepShared` vs `VanillaEpisodeShared`. §14 — `per`/`per_alpha`/`per_beta_start`/`per_beta_steps` params; `PERVanillaStepShared` selected when `step and per` |
-| [eve_rl/eve_rl/replaybuffer/vanillastep.py](eve_rl/eve_rl/replaybuffer/vanillastep.py) | §13 — `push` off-by-one fixed (`range(len(episode))`) — captures the terminal transition |
-| [eve_rl/eve_rl/replaybuffer/pervanillastep.py](eve_rl/eve_rl/replaybuffer/pervanillastep.py) | §14 — **New.** `SumTree` + `PERVanillaStep` — proportional priority sampling, IS weights, `update_priorities` |
-| [eve_rl/eve_rl/replaybuffer/pervanillashared.py](eve_rl/eve_rl/replaybuffer/pervanillashared.py) | §14 — **New.** `PERVanillaStepShared` + `PERVanillaSharedBase` — subprocess wrapper + `_priority_update_queue` |
-| [eve_rl/eve_rl/replaybuffer/replaybuffer.py](eve_rl/eve_rl/replaybuffer/replaybuffer.py) | §14 — `Batch` += trailing optional `is_weights` / `indices`; `Batch.to()` moves them |
+| [training _scripts/DualDeviceNav_train.py](training _scripts/DualDeviceNav_train.py) | §7 — body refactored into `main(args)`; CLI flags `--target_branches`, `--heuristic_factory`, `--seeding_success`; per-daughter seeding filter. §11 — `default_tb` / `env_kwargs` → `default_target_branch` passed to env5 `env_train` + `env_eval`. §12 — `clean_thread` filter uses `reached_target_daughter`; `--snapshots` flag + `SNAPSHOT_MODE/DIR` pre-spawn export. §13 — `--replay_mode` flag; mode-conditional `replay_buffer_size`/`batch_size`/`update_per_explore_step` locals; `replay_mode` passed to `BenchAgentSynchron`. §14 — `--per` / `--per_alpha` / `--per_beta_start` flags; PER-with-episode `ValueError` guard; `per_beta_steps = TRAINING_STEPS`; flags threaded to agent + `custom_parameters`. §16 — `--grad_clip` / `--update_per_explore_step` / `--demo_priority_bonus` / `--priority_mode` / `--balanced_fraction` / `--algo` / `--awac_lambda` flags + step/PER guards; `is_demo` tagging on heuristic-cache load; 3-tuple `load_episodes_npz` unpacking; cache-save `metadata` |
+| [training _scripts/util/agent.py](training _scripts/util/agent.py) | §13 — `BenchAgentSynchron` gains `replay_mode` param; selects `VanillaStepShared` vs `VanillaEpisodeShared`. §14 — `per`/`per_alpha`/`per_beta_start`/`per_beta_steps` params; `PERVanillaStepShared` selected when `step and per`. §16 — `grad_clip`/`algo`/`awac_lambda`/`demo_priority_bonus`/`priority_mode`/`balanced_fraction` params threaded to SAC + buffers |
+| [eve_rl/eve_rl/replaybuffer/vanillastep.py](eve_rl/eve_rl/replaybuffer/vanillastep.py) | §13 — `push` off-by-one fixed (`range(len(episode))`) — captures the terminal transition. §16 — `balanced_fraction` + `is_clean` array; balanced two-stream `sample()` |
+| [eve_rl/eve_rl/replaybuffer/pervanillastep.py](eve_rl/eve_rl/replaybuffer/pervanillastep.py) | §14 — **New.** `SumTree` + `PERVanillaStep` — proportional priority sampling, IS weights, `update_priorities`. §16 — `demo_priority_bonus` / `priority_mode` / `balanced_fraction`; `is_demo`/`is_clean`/`episode_returns` arrays; `clean_tree`; `_initial_priority`, `_draw` |
+| [eve_rl/eve_rl/replaybuffer/pervanillashared.py](eve_rl/eve_rl/replaybuffer/pervanillashared.py) | §14 — **New.** `PERVanillaStepShared` + `PERVanillaSharedBase` — subprocess wrapper + `_priority_update_queue`. §16 — `demo_priority_bonus`/`priority_mode`/`balanced_fraction` forwarded to the subprocess `PERVanillaStep` |
+| [eve_rl/eve_rl/replaybuffer/vanillashared.py](eve_rl/eve_rl/replaybuffer/vanillashared.py) | §16 — `VanillaStepShared` `balanced_fraction` forwarded to the subprocess `VanillaStep`; `load_buffer` 3-tuple `load_episodes_npz` unpacking |
+| [eve_rl/eve_rl/replaybuffer/replaybuffer.py](eve_rl/eve_rl/replaybuffer/replaybuffer.py) | §14 — `Batch` += trailing optional `is_weights` / `indices`; `Batch.to()` moves them. §16 — `EpisodeReplay` += `is_demo`/`episode_return`/`reached_target_daughter`; `Episode.to_replay()` populates from `infos[-1]` |
 | [eve_rl/eve_rl/replaybuffer/__init__.py](eve_rl/eve_rl/replaybuffer/__init__.py) | §14 — export `PERVanillaStep`, `SumTree`, `PERVanillaStepShared`, `PERVanillaSharedBase` |
-| [eve_rl/eve_rl/algo/sac.py](eve_rl/eve_rl/algo/sac.py) | §14 — name-based `Batch` access; IS-weighted Q/policy losses (guarded); per-sample `|TD|` extracted + stashed in `last_td_errors` |
+| [eve_rl/eve_rl/util/experience_cache.py](eve_rl/eve_rl/util/experience_cache.py) | §16 — `save_episodes_npz` optional per-episode `metadata`; `load_episodes_npz` returns 3-tuple `(episodes, position, metadata)` |
+| [eve_rl/eve_rl/algo/sac.py](eve_rl/eve_rl/algo/sac.py) | §14 — name-based `Batch` access; IS-weighted Q/policy losses (guarded); per-sample `|TD|` extracted + stashed in `last_td_errors`. §16 — `grad_clip`/`algo`/`awac_lambda` params; `clip_grad_norm_` in the 3 update helpers; `_update_policy` AWAC advantage-weighted branch |
+| [eve_rl/eve_rl/network/gaussianpolicy.py](eve_rl/eve_rl/network/gaussianpolicy.py) | §16 — new `log_prob(obs, action)` — log-prob of an arbitrary stored action (AWAC) |
 | [eve_rl/eve_rl/agent/single.py](eve_rl/eve_rl/agent/single.py) | §14 — post-update `update_priorities(batch.indices, algo.last_td_errors)` (guarded); `_log_batch_samples` name-based `Batch` access |
 | [eve_rl/eve_rl/runner/runner.py](eve_rl/eve_rl/runner/runner.py) | §15 — update budget driven by `exploration` steps only (was `heatup + exploration`); heatup/seeding no longer front-loads a ~150k-update catch-up block that diverged the critic |
-| [launch_rcca_train.sh](launch_rcca_train.sh) | §9 — **New.** RCCA-only SAC docker launcher. §11 — `--save_heuristic_cache` added. §12 — `--min_success_rate 0.40`, `--snapshots mesh`. §13 — `--replay_mode step --hidden 256 256 --embedder_layers 0`. §14 — `--per` |
+| [launch_rcca_train.sh](launch_rcca_train.sh) | §9 — **New.** RCCA-only SAC docker launcher. §11 — `--save_heuristic_cache` added. §12 — `--min_success_rate 0.40`, `--snapshots mesh`. §13 — `--replay_mode step --hidden 256 256 --embedder_layers 0`. §14 — `--per`. §16 — `--grad_clip 10.0` |
+| [launch_rcca_train_ep.sh](launch_rcca_train_ep.sh) | **New.** Episode-RL variant launcher — episode-mode defaults (no `--replay_mode step`/`--per`/`--hidden`/`--embedder_layers`/`--learning_rate`), loads `rcca_heuristic_cache.npz` + 20-episode `rcca_heatup_cache_20.npz` |
 | [prune_training_snapshots.py](prune_training_snapshots.py) | §12 — **New.** Snapshot keep-policy pruner (all seed+eval, 10-best/10-worst per 100 explore) |
 | `RL_IMPROV_9_CHANGES.md` | This document |

@@ -907,6 +907,20 @@ class BenchEnv5(eve.Env):
         except Exception:
             pass
 
+        # MDP-grounding fix — a truncated episode (wrong_branch_timeout,
+        # wire_fold_stall, vessel_end, sim_error, max_steps) is an absorbing
+        # FAILURE state: the task is unrecoverable, so its value IS the
+        # accumulated penalty and nothing after. Mark it `terminated` so the
+        # replay buffer stores done=True and the SAC/AWAC critic STOPS
+        # bootstrapping `+ gamma*Q(s_next)` off it. Without this, ~98% of
+        # episode-ends (all failures) leave the value function ungrounded —
+        # a self-referential bootstrap with no terminal anchor — and the
+        # critic diverges (SAC -> +inf, AWAC -> -inf). Done AFTER the -5
+        # FailureTruncationPenalty block (which gates on `not terminated`),
+        # so the penalty still applies.
+        if truncated:
+            terminated = True
+
         return obs, reward, terminated, truncated, info
 
     def _save_rva_checkpoint(self, out_dir: str, proj_s: float) -> None:

@@ -153,6 +153,37 @@ def main(args):
         print(f"[Plan v7] PER enabled — alpha={args.per_alpha}, "
               f"beta_start={args.per_beta_start}, beta_steps={per_beta_steps:.0f}")
 
+    # Plan v8 — stabilization-suite knobs. --update_per_explore_step
+    # overrides the replay-mode default; the PER-buffer knobs
+    # (demo_priority_bonus / priority_mode / balanced_fraction) are
+    # step-only and need PER (except balanced_fraction, which also works on
+    # the uniform step buffer).
+    if args.update_per_explore_step is not None:
+        update_per_explore_step = args.update_per_explore_step
+        print(f"[Plan v8] update_per_explore_step overridden = "
+              f"{update_per_explore_step}")
+    if args.replay_mode != "step":
+        if args.demo_priority_bonus > 0 or args.priority_mode != "td" \
+                or args.balanced_fraction > 0:
+            raise ValueError(
+                "--demo_priority_bonus / --priority_mode / --balanced_fraction "
+                "require --replay_mode step."
+            )
+    if (args.demo_priority_bonus > 0 or args.priority_mode != "td") and not args.per:
+        raise ValueError(
+            "--demo_priority_bonus and --priority_mode != td require --per."
+        )
+    if args.grad_clip > 0:
+        print(f"[Plan v8] gradient clipping enabled — max-norm {args.grad_clip}")
+    if args.algo == "awac":
+        print(f"[Plan v8] algo=AWAC — awac_lambda={args.awac_lambda}")
+    if args.balanced_fraction > 0:
+        print(f"[Plan v8] balanced two-stream sampling — "
+              f"clean fraction {args.balanced_fraction}")
+    if args.priority_mode != "td" or args.demo_priority_bonus > 0:
+        print(f"[Plan v8] PER priority_mode={args.priority_mode}, "
+              f"demo_priority_bonus={args.demo_priority_bonus}")
+
     # Select environment class based on version
     if env_version == 5:
         EnvClass = BenchEnv5
@@ -185,6 +216,12 @@ def main(args):
         "per": args.per,
         "per_alpha": args.per_alpha,
         "per_beta_start": args.per_beta_start,
+        "grad_clip": args.grad_clip,
+        "algo": args.algo,
+        "awac_lambda": args.awac_lambda,
+        "demo_priority_bonus": args.demo_priority_bonus,
+        "priority_mode": args.priority_mode,
+        "balanced_fraction": args.balanced_fraction,
     }
 
     (
@@ -319,6 +356,12 @@ def main(args):
         per_alpha=args.per_alpha,
         per_beta_start=args.per_beta_start,
         per_beta_steps=per_beta_steps,
+        grad_clip=args.grad_clip,
+        algo=args.algo,
+        awac_lambda=args.awac_lambda,
+        demo_priority_bonus=args.demo_priority_bonus,
+        priority_mode=args.priority_mode,
+        balanced_fraction=args.balanced_fraction,
     )
 
     # Save config from unwrapped env (ActionCurriculumWrapper has no save_config)
@@ -354,15 +397,27 @@ def main(args):
         # Try to load from cache first
         if args.heuristic_cache_file and os.path.isfile(args.heuristic_cache_file):
             print(f"Loading heuristic cache from {args.heuristic_cache_file}...")
-            episodes_tuples, _ = load_episodes_npz(args.heuristic_cache_file)
+            episodes_tuples, _, cache_meta = load_episodes_npz(
+                args.heuristic_cache_file
+            )
             n_pushed = 0
-            for ep_tuple in episodes_tuples:
+            for i, ep_tuple in enumerate(episodes_tuples):
                 flat_obs, actions, rewards, terminals = ep_tuple
+                # Plan v8 — every heuristic-cache episode IS a demo (blanket
+                # tag, robust even if the npz predates the metadata format).
+                # reached_target_daughter / episode_return come from the
+                # per-episode metadata when present, else default.
+                m = cache_meta[i] if cache_meta is not None else {}
                 replay_ep = EpisodeReplay(
                     flat_obs=list(flat_obs),
                     actions=list(actions),
                     rewards=list(rewards),
                     terminals=list(terminals),
+                    is_demo=True,
+                    episode_return=float(m.get("episode_return", 0.0)),
+                    reached_target_daughter=bool(
+                        m.get("reached_target_daughter", False)
+                    ),
                 )
                 agent.replay_buffer.push(replay_ep)
                 n_pushed += 1
@@ -496,9 +551,13 @@ def main(args):
                   f"{len(sampled_failures)} failures = {len(to_push)} episodes "
                   f"({100*n_success/len(to_push):.1f}% success rate)")
 
-            # Save cache — saves the final selected set, not all attempts
+            # Save cache — saves the final selected set, not all attempts.
+            # Plan v8 — also persist per-episode quality metadata so a
+            # cache-loaded run carries the signals the stabilization-suite
+            # samplers need (clean-thread flag, return; all are demos).
             if args.save_heuristic_cache and to_push:
                 episodes_to_save = []
+                cache_metadata = []
                 for ep in to_push:
                     episodes_to_save.append((
                         np.array(ep.flat_obs),
@@ -506,8 +565,19 @@ def main(args):
                         np.array(ep.rewards),
                         np.array(ep.terminals),
                     ))
+                    ep_info = ep.infos[-1] if getattr(ep, "infos", None) else {}
+                    cache_metadata.append({
+                        "episode_return": float(getattr(ep, "episode_reward", 0.0)),
+                        "reached_target_daughter": bool(
+                            ep_info.get("reached_target_daughter", False)
+                        ),
+                        "is_demo": True,
+                    })
                 os.makedirs(os.path.dirname(args.save_heuristic_cache) or ".", exist_ok=True)
-                save_episodes_npz(args.save_heuristic_cache, episodes_to_save)
+                save_episodes_npz(
+                    args.save_heuristic_cache, episodes_to_save,
+                    metadata=cache_metadata,
+                )
                 print(f"Saved heuristic cache to {args.save_heuristic_cache}")
 
     # Load heatup cache if provided (skips heatup phase)
@@ -517,15 +587,23 @@ def main(args):
         from eve_rl.util.experience_cache import load_episodes_npz
 
         print(f"Loading heatup cache from {args.heatup_cache_file}...")
-        episodes_tuples, _ = load_episodes_npz(args.heatup_cache_file)
+        episodes_tuples, _, heatup_meta = load_episodes_npz(args.heatup_cache_file)
         n_pushed = 0
-        for ep_tuple in episodes_tuples:
+        for i, ep_tuple in enumerate(episodes_tuples):
             flat_obs, actions, rewards, terminals = ep_tuple
+            # Heatup episodes are random-action — NOT demos. Carry quality
+            # metadata when present (a few heatup episodes reach the target).
+            m = heatup_meta[i] if heatup_meta is not None else {}
             replay_ep = EpisodeReplay(
                 flat_obs=list(flat_obs),
                 actions=list(actions),
                 rewards=list(rewards),
                 terminals=list(terminals),
+                is_demo=False,
+                episode_return=float(m.get("episode_return", 0.0)),
+                reached_target_daughter=bool(
+                    m.get("reached_target_daughter", False)
+                ),
             )
             agent.replay_buffer.push(replay_ep)
             n_pushed += 1
@@ -535,6 +613,22 @@ def main(args):
     # Determine heatup cache save path (only if not loading from cache)
     heatup_cache_save = args.save_heatup_cache if not args.heatup_cache_file else None
 
+    # Warm-start gate — pretraining only makes sense with a seed buffer to
+    # pretrain on. Require BOTH the heuristic and heatup caches loaded;
+    # otherwise zero it out (no seed data → nothing to warm-start from).
+    pretrain_updates = args.pretrain_updates
+    both_caches = (
+        args.heuristic_cache_file and os.path.isfile(args.heuristic_cache_file)
+        and args.heatup_cache_file and os.path.isfile(args.heatup_cache_file)
+    )
+    if pretrain_updates > 0 and not both_caches:
+        print("[Plan v8] --pretrain_updates ignored — warm-start needs BOTH "
+              "--heuristic_cache_file and --heatup_cache_file loaded.")
+        pretrain_updates = 0
+    elif pretrain_updates > 0:
+        print(f"[Plan v8] warm-start: {pretrain_updates} pretraining updates "
+              f"on the seeded buffer before exploration.")
+
     reward, success = runner.training_run(
         heatup_steps_effective,
         TRAINING_STEPS,
@@ -543,6 +637,7 @@ def main(args):
         update_per_explore_step,
         eval_seeds=EVAL_SEEDS,
         heatup_cache_save_path=heatup_cache_save,
+        pretrain_updates=pretrain_updates,
     )
     agent.close()
 
@@ -763,6 +858,93 @@ if __name__ == "__main__":
         help=(
             "PER initial IS-correction exponent; annealed linearly to 1.0 "
             "over TRAINING_STEPS sample() calls."
+        ),
+    )
+    # Plan v8 — step-RL stabilization-suite knobs. All default to off /
+    # neutral, so omitting them reproduces current step-SAC behavior.
+    parser.add_argument(
+        "--grad_clip",
+        type=float,
+        default=0.0,
+        help=(
+            "Plan v8 — max global grad-norm for critic + policy "
+            "(torch clip_grad_norm_). 0 = off. The prime divergence fix — "
+            "the first step-RL run had grad_norm run unbounded to ~434k."
+        ),
+    )
+    parser.add_argument(
+        "--update_per_explore_step",
+        type=float,
+        default=None,
+        help=(
+            "Plan v8 — override the update:explore-step ratio (else the "
+            "replay-mode default: step=1.0, episode=1/20). Lower (0.25-0.5) "
+            "= fewer gradient steps per explore step."
+        ),
+    )
+    parser.add_argument(
+        "--demo_priority_bonus",
+        type=float,
+        default=0.0,
+        help=(
+            "Plan v8 (DQfD) — additive PER priority bonus for heuristic-"
+            "seeded (demo) transitions, re-applied on every priority update "
+            "so demos keep a floor and are never starved. 0 = off. Step+PER."
+        ),
+    )
+    parser.add_argument(
+        "--priority_mode",
+        type=str,
+        default="td",
+        choices=["td", "return", "outcome"],
+        help=(
+            "Plan v8 — PER priority source. 'td' (default) = |TD|-error. "
+            "'return' = episode return (fixed at push). 'outcome' = high/low "
+            "by reached_target_daughter (fixed at push; robust to the "
+            "deferred +-1 reward bug). Step+PER only."
+        ),
+    )
+    parser.add_argument(
+        "--balanced_fraction",
+        type=float,
+        default=0.0,
+        help=(
+            "Plan v8 — fraction of each batch drawn from a 'clean' stream "
+            "(transitions from episodes that reached the target daughter). "
+            "0 = off. Step mode (PER or uniform)."
+        ),
+    )
+    parser.add_argument(
+        "--algo",
+        type=str,
+        default="sac",
+        choices=["sac", "awac"],
+        help=(
+            "Plan v8 — RL algorithm. 'sac' (default) or 'awac' (Advantage-"
+            "Weighted Actor-Critic — advantage-weighted policy update, more "
+            "stable on demo-seeded buffers)."
+        ),
+    )
+    parser.add_argument(
+        "--awac_lambda",
+        type=float,
+        default=3.0,
+        help=(
+            "Plan v8 — AWAC advantage temperature (only used with --algo "
+            "awac). exp(A/lambda); lambda~3-10 spreads advantages, lambda=1 "
+            "saturates the weight clamp for any A>3."
+        ),
+    )
+    parser.add_argument(
+        "--pretrain_updates",
+        type=int,
+        default=0,
+        help=(
+            "Warm-start — number of gradient updates on the seeded buffer "
+            "BEFORE exploration begins, so the first explore episodes run a "
+            "demo-informed policy rather than a random net. 0 = off. Only "
+            "applied when BOTH --heuristic_cache_file and --heatup_cache_file "
+            "are loaded (otherwise there is no seed buffer to pretrain on)."
         ),
     )
     parser.add_argument(

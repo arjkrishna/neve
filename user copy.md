@@ -96,3 +96,97 @@ The one tradeoff to not get wrong: you can't train only on clean/positive episod
 One caveat specific to us: "positive reward" is a noisy filter right now because of the deferred ±1 daughter-commit bug — episode return is partly corrupted. The robust quality signal is the reached_target_daughter flag (did it thread RCCA), not raw return. Any clean-episode stream should key off that.
 
 My recommendation: the immediate diagnostic stays the PER-off baseline (cleanly tells us if PER is the amplifier). If we then want a better sampler, balanced two-stream sampling keyed on reached_target_daughter is the cheap high-value move; AWAC is the principled upgrade if we're willing to change the algorithm. Which direction do you want to explore — or should I let the current run keep going and we decide after the baseline comparison?
+
+
+--------------
+
+
+
+The step-RL stabilization suite is in, all six strategies gated by independent CLI flags. Every flag defaults off/neutral, so omitting them reproduces current step-SAC byte-for-byte.
+
+Flag	What it does
+--grad_clip <norm>	clip_grad_norm_ on critic+policy (the prime divergence fix — grad ran unbounded to 434k)
+--update_per_explore_step <f>	overrides the update:explore ratio
+--demo_priority_bonus <ε_D>	DQfD — heuristic transitions keep a permanent PER priority floor
+--priority_mode {td,return,outcome}	PER priority source: TD-error / episode-return / clean-thread
+--balanced_fraction <f>	two-stream sampling — a fixed batch fraction from "clean" episodes
+--algo {sac,awac}	AWAC advantage-weighted policy update
+Files modified (10): sac.py (grad clip + AWAC branch), gaussianpolicy.py (log_prob), replaybuffer.py (EpisodeReplay quality fields), pervanillastep.py + vanillastep.py (priority modes, balanced sampling, demo bonus), pervanillashared.py + vanillashared.py (param threading), experience_cache.py (metadata persistence), agent.py + DualDeviceNav_train.py (CLI args + wiring). launch_rcca_train.sh gets --grad_clip 1.0.
+
+Verified: all 10 files compile; unit tests pass — experience-cache metadata round-trip + pre-v8 backward-compat, and PERVanillaStep outcome/return/demo-bonus priority ordering + balanced clean-stream draw.
+
+Documented: RL_IMPROV_9_CHANGES.md §16 + File Index; plan file Plan v8 marked implemented.
+
+One caveat carried forward: the existing rcca_heuristic_cache.npz predates the metadata format, so --balanced_fraction/--priority_mode on cache demos need the cache regenerated (the loader still blanket-tags is_demo=True, so --demo_priority_bonus works regardless). Phase-2 docker smoke tests (--grad_clip 1.0, --algo awac, --balanced_fraction 0.3) are the next validation step when you want to launch.
+
+
+------------
+
+
+# Plan(RAS2):
+
+ok , now we have indentified a stable setup, now we need to capitalize on it and improv bigly;
+
+First we indentified previously a couple of bugs in our reward setup ; we need to fix it and to improve it further we need to make a few more modifications ; right now all our RLs come with a standard step penalty that means they are getting 0.001 for every step at the beginning and also at RCCA daughter and (11) when they are much closer to the target which sometimes encourages agent to be slow at the start and remain close since there is no much cross_track penalty and .001 penalty for 600 steps doesn't count to much so we need reformulation where they are getting 0.007 (closer to start) - 0.002 (closer to (11)) penalty, 0.007 penalty in (0) (past bifurcation), no penalty in (11) , 0.005 step reward in RCCA and 0.007 step penalty in RVA ; right now +1/-1 are awards at making right decision at every point, for each juncton make it -0.05 (that they can get again and again, when theaded wrongly) / +1 (once per fork per episode) so that they are not afraid and encouraged to explore to go for +1 ; obviously we will be running new heusristics / heatup for our new setup , for heuristics we will be aiming for 100 successful episodes (so for 100 succ. it will be running probably upto 400/450 heusistic episodes) as AWAC closely mirrors heuristic and we will be starting a little before and outside (11) (SOFA restore), one question I had, we will be running heuristics from z= 345 as we are now but during RL we would be using SOFA restore just outside (11), would we append the saved steps and reward from that episode and continue this episode forward and q1 mean would reflect expected reward from the start point and saved heuristic steps but optimized steps after the start point (within daughters) because this would be ideal.  The other question I had can we also implement one of these:
+1. Balanced two-stream sampling (cheap, high value) 
+2. DQfD-style demo protection 
+3. Return/outcome-prioritized replay 
+within AWAC to optimize success further faster , I think 1 is best within AWAC.
+
+Read below all text with regards to what's written up to make the plan:
+
+## Rewards
+
+The reward bug: _committed_forks is a single shared latch keyed only by j_arc (pathcontext.py:1094-1098). The first event at a fork — whichever sign — latches it, so the other sign can never fire. A wire that goes RVA (−1) then corrects into RCCA gets only the −1; one that goes RCCA (+1) then dips RVA gets only the +1.
+→ Fix: latch per (j_arc, sign) instead of per j_arc, so each fork can emit one +1 and one −1 independently.
+
+The success definition: seeding success = episode finishes with the wire inside the RCCA daughter — RVA detours along the way are fine. The current filter is reached_target_daughter AND NOT received_wrong_daughter:
+
+reached_target_daughter is an ever-touched latch, not a final-state check.
+NOT received_wrong_daughter wrongly disqualifies legitimate RVA-detour-then-RCCA episodes. → Fix: seeding success = wire's final _current_branch_idx == target_daughter at episode end. Drop the received_wrong_daughter exclusion.
+These are two separate concerns: fix #1 repairs the ±1 reward signal; fix #2 repairs the seeding filter label.
+
+This run's buffer is being built with both defects, so it should be restarted. Shall I stop the container now, implement both fixes, and relaunch? (Pausing the monitoring loop pending your go-ahead.)
+
+## SOFA RESTORE
+
+Investigation results — verified directly inside the running container
+SOFA Python API has NO native full-scene serialization. Confirmed from inside the container:
+
+
+Sofa.Simulation methods: animate, animateNSteps, init, initTextures, initVisual,
+                         load, print, reset, unload, updateVisual
+No WriteState / ReadState / exportXML / serialize / snapshot. The compiled bindings just don't expose it. So a "save the whole scene like a video game" via SOFA's own API isn't available — would require a custom C++ plugin.
+
+However, the current checkpoint is far thinner than it could be. A MechanicalObject (the wire's DOFs container) exposes these state DataFields:
+
+field	currently saved?	meaning
+position	✅ (as dof_positions)	xyz + quaternion per beam node
+velocity	❌	per-node linear+angular velocity
+force	❌	currently-applied force per node
+free_position	❌	predicted position before constraint solve
+free_velocity	❌	predicted velocity before constraints
+derivX	❌	acceleration / dx-per-dt
+externalForce	❌	externally-applied force vector
+We're saving 1 of 7+ state fields per MechanicalObject. Then sofabeamadapter.py:136 calls Sofa.Simulation.reset(self.root) which explicitly zeroes velocity/force, and the 50-step "settle" loop tries to reconverge from rest. That settle re-derives a contact manifold from scratch — sometimes it converges to a different local minimum than the one that was saved. This is exactly the wrong-location bug.
+
+Worse: sofabeamadapter.py:139-150 deliberately zeroes the saved rotation_instrument (per a prior RL_IMPROV_7 fix). So even the wire's J-tip orientation that committed it toward the right daughter is intentionally erased on restore.
+
+What's also gone but unrecoverable via Python:
+
+BeamAdapter plugin internals (per-beam interpolation frames, strain) — not in factory accessible scope
+LCP solver cached lambdas / impulses
+Broad/narrow-phase contact pairs (BruteForceBroadPhase rebuilds these every step anyway)
+Practical proposal — "fuller save" without writing a C++ plugin:
+
+Save 6 more arrays per checkpoint: velocity, force, externalForce, free_position, free_velocity, derivX from ic.DOFs.
+On restore: skip Simulation.reset() if checkpoint has the new fields, OR call reset then assign all 7 fields directly (overwriting the zeros).
+Restore rotation_instrument instead of zeroing it (revert RL_IMPROV_7 §7 Fix 6 — accept that this re-introduces the prior issue, since now we're testing a stronger restore).
+Reduce settle_steps to 1-3 (or 0) — with velocities preserved the solver shouldn't need to reconverge from rest.
+That should catch >80% of the missing physics state. The remaining gap (BeamAdapter internal state) would only matter for very long-lasting strain memory effects which probably aren't the dominant cause of the 36% wrong-location problem.
+
+## Further optimization within AWAC
+
+Balanced two-stream sampling (cheap, high value) — keep a separate stream of "clean" episodes (reached the RCCA daughter / near-positive return) and draw a fixed fraction of every batch (e.g. 25–50%) from it, the rest from the general buffer. Directly does what you're asking, and it's a small change.
+DQfD-style demo protection — give the heuristic-seeded transitions a permanent priority bonus so they don't get starved as PER drifts toward explore data (the gap I flagged earlier). Bolts onto the existing PER.
+Return/outcome-prioritized replay — replace TD-priority with episode-return priority. More stable than PER, but can over-imitate.

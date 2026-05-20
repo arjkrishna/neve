@@ -52,7 +52,17 @@ class Episode:
         self.episode_reward += reward
 
     def to_replay(self):
-        return EpisodeReplay(self.flat_obs, self.actions, self.rewards, self.terminals)
+        # Plan v8 — carry episode-level quality flags into the buffer form.
+        # `infos` itself is dropped (too heavy), but the last step's info
+        # holds the per-episode latches the env5 state machine sets.
+        reached = False
+        if self.infos:
+            reached = bool(self.infos[-1].get("reached_target_daughter", False))
+        return EpisodeReplay(
+            self.flat_obs, self.actions, self.rewards, self.terminals,
+            episode_return=float(self.episode_reward),
+            reached_target_daughter=reached,
+        )
 
     def __len__(self):
         return len(self.actions)
@@ -64,6 +74,15 @@ class EpisodeReplay:
     actions: List[np.ndarray]
     rewards: List[float]
     terminals: List[bool]
+    # Plan v8 — episode-level quality metadata for the stabilization-suite
+    # samplers. Trailing defaults → backward-compatible; `to_replay()` on an
+    # EpisodeReplay returns self with these preserved.
+    #   is_demo                : heuristic-seeded (DQfD priority bonus)
+    #   episode_return         : sum of rewards (return-prioritized replay)
+    #   reached_target_daughter: clean-thread flag (balanced sampling / outcome)
+    is_demo: bool = False
+    episode_return: float = 0.0
+    reached_target_daughter: bool = False
 
     def __len__(self):
         return len(self.actions)

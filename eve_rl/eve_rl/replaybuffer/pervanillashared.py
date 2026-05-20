@@ -62,6 +62,9 @@ class PERVanillaStepShared(VanillaStepShared):
         beta_start: float = 0.4,
         beta_steps: float = 2e7,
         epsilon: float = 1e-6,
+        demo_priority_bonus: float = 0.0,
+        priority_mode: str = "td",
+        balanced_fraction: float = 0.0,
     ):
         # NB: deliberately do NOT call VanillaStepShared.__init__ — it would
         # start the subprocess before the priority queue exists. Replicate
@@ -83,6 +86,11 @@ class PERVanillaStepShared(VanillaStepShared):
         self.beta_start = beta_start
         self.beta_steps = beta_steps
         self.epsilon = epsilon
+        # Plan v8 — stabilization-suite knobs forwarded to the internal
+        # PERVanillaStep created in the subprocess.
+        self.demo_priority_bonus = demo_priority_bonus
+        self.priority_mode = priority_mode
+        self.balanced_fraction = balanced_fraction
         # Third queue — trainer → subprocess priority updates. Created
         # before spawn so the subprocess inherits it.
         self._priority_update_queue = mp.SimpleQueue()
@@ -98,6 +106,9 @@ class PERVanillaStepShared(VanillaStepShared):
             self.capacity, self._batch_size,
             alpha=self.alpha, beta_start=self.beta_start,
             beta_steps=self.beta_steps, epsilon=self.epsilon,
+            demo_priority_bonus=self.demo_priority_bonus,
+            priority_mode=self.priority_mode,
+            balanced_fraction=self.balanced_fraction,
         )
         self.loop(internal_replay_buffer)
 

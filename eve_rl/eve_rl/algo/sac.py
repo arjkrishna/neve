@@ -156,6 +156,9 @@ class SAC(Algo):
         action_scaling: float = 1,
         exploration_action_noise: float = 0.25,
         stochastic_eval: bool = False,
+        grad_clip: float = 0.0,
+        algo: str = "sac",
+        awac_lambda: float = 3.0,
     ):
         self.logger = logging.getLogger(self.__module__)
         # HYPERPARAMETERS
@@ -163,6 +166,14 @@ class SAC(Algo):
         self.gamma = gamma
         self.tau = tau
         self.exploration_action_noise = exploration_action_noise
+        # Plan v8 — stabilization knobs.
+        #   grad_clip   : max global grad-norm for critic+policy (0 = off).
+        #   algo        : "sac" (default) or "awac" (advantage-weighted
+        #                 policy update — stable on demo-seeded buffers).
+        #   awac_lambda : AWAC advantage temperature.
+        self.grad_clip = grad_clip
+        self.algo = algo
+        self.awac_lambda = awac_lambda
         # Model
         self.model = model
 
@@ -265,7 +276,9 @@ class SAC(Algo):
             actions, padding_mask, states, expected_q, is_weights
         )
 
-        log_pi, policy_loss = self._update_policy(padding_mask, states, is_weights)
+        log_pi, policy_loss = self._update_policy(
+            actions, padding_mask, states, is_weights
+        )
 
         # Plan v7 — stash the per-sample |TD| (numpy, CPU) so the agent loop
         # can feed it back to a PER buffer via update_priorities(). Harmless
@@ -274,7 +287,11 @@ class SAC(Algo):
 
         self.model.update_target_q(self.tau)
 
-        alpha_loss = self._update_alpha(log_pi)
+        if self.algo == "awac":
+            # AWAC has no entropy objective — alpha is unused; skip tuning.
+            alpha_loss = torch.zeros(1, device=self.device)
+        else:
+            alpha_loss = self._update_alpha(log_pi)
 
         self.update_step += 1
         
@@ -349,7 +366,7 @@ class SAC(Algo):
         self.alpha = self.model.log_alpha.exp()
         return alpha_loss
 
-    def _update_policy(self, padding_mask, states, is_weights=None):
+    def _update_policy(self, actions, padding_mask, states, is_weights=None):
         new_actions, log_pi = self._get_update_action(states)
         q1 = self.model.q1(states, new_actions)
         q2 = self.model.q2(states, new_actions)
@@ -359,9 +376,29 @@ class SAC(Algo):
             min_q *= padding_mask
             log_pi *= padding_mask
 
+        if self.algo == "awac":
+            # Plan v8 — AWAC advantage-weighted policy update. Behavior-clone
+            # the BUFFER action, weighted by exp(advantage / lambda). The
+            # state-value baseline V(s) is the policy-sample value `min_q`
+            # (already computed above); advantage + weight are detached —
+            # they only scale the BC loss, no grad flows through them.
+            with torch.no_grad():
+                q1_buf = self.model.q1(states, actions)
+                q2_buf = self.model.q2(states, actions)
+                q_buf = torch.min(q1_buf, q2_buf)
+                advantage = q_buf - min_q.detach()
+                weight = torch.exp(advantage / self.awac_lambda).clamp(max=20.0)
+            logp = self.model.policy.log_prob(states, actions)
+            if padding_mask is not None:
+                logp = logp * padding_mask
+                weight = weight * padding_mask
+            per_sample_loss = -(weight * logp)
+        else:
+            # SAC — entropy-regularized policy improvement.
+            per_sample_loss = self.alpha * log_pi - min_q
+
         # PER: per-sample IS weighting of the policy objective. Guarded —
         # uniform batches (is_weights is None) use the plain mean as before.
-        per_sample_loss = self.alpha * log_pi - min_q
         if is_weights is not None:
             policy_loss = (is_weights * per_sample_loss).mean()
         else:
@@ -374,6 +411,12 @@ class SAC(Algo):
         self._min_q_mean = min_q.mean().detach()
         # Fix #6: Compute clamp fraction for direct saturation detection in losses CSV
         self._clamp_fraction = _compute_clamp_fraction(new_actions.detach())
+        # Plan v8 — gradient clipping (after the diagnostic grad-norm read,
+        # so the logged norm stays the pre-clip value). 0 = off.
+        if self.grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.model.policy.parameters(), self.grad_clip
+            )
         self.model.policy_optimizer.step()
         if self.model.policy_scheduler:
             self.model.policy_scheduler.step()
@@ -396,6 +439,10 @@ class SAC(Algo):
         # Compute gradient norm before optimizer step
         self._grad_norm_q2 = compute_grad_norm(self.model.q2.parameters())
         self._q2_mean = curr_q2.mean().detach()
+        if self.grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.model.q2.parameters(), self.grad_clip
+            )
         self.model.q2_optimizer.step()
         if self.model.q2_scheduler:
             self.model.q2_scheduler.step()
@@ -423,6 +470,10 @@ class SAC(Algo):
         # Compute gradient norm before optimizer step
         self._grad_norm_q1 = compute_grad_norm(self.model.q1.parameters())
         self._q1_mean = curr_q1.mean().detach()
+        if self.grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.model.q1.parameters(), self.grad_clip
+            )
         self.model.q1_optimizer.step()
         if self.model.q1_scheduler:
             self.model.q1_scheduler.step()
@@ -435,9 +486,19 @@ class SAC(Algo):
             next_target_q1 = self.model.target_q1(all_states, next_actions)
             next_target_q2 = self.model.target_q2(all_states, next_actions)
 
-        next_target_q = (
-            torch.min(next_target_q1, next_target_q2) - self.alpha * next_log_pi
-        )
+        if self.algo == "awac":
+            # Plan v8 fix — AWAC critic target is a PLAIN Bellman backup,
+            # NO max-entropy term. SAC's `- alpha*next_log_pi` is
+            # incompatible with AWAC's advantage-weighted BC policy: that
+            # policy goes peaky, so next_log_pi grows large-positive and the
+            # entropy term becomes a huge negative drag that drives the
+            # critic to -inf (the -406k divergence in rcca_awac_gradclip10).
+            next_target_q = torch.min(next_target_q1, next_target_q2)
+        else:
+            next_target_q = (
+                torch.min(next_target_q1, next_target_q2)
+                - self.alpha * next_log_pi
+            )
         # only use next_state for next_q_target
         next_target_q = torch.narrow(next_target_q, dim=1, start=1, length=seq_length)
         expected_q = rewards + (1 - dones) * self.gamma * next_target_q

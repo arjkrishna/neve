@@ -294,10 +294,17 @@ class Runner(EveRLObject):
             # interleaving: one update per new explore step, fresh data
             # every cycle. The heatup/seed transitions still train — they
             # live in the buffer and PER samples them throughout.
-            update_steps = (
+            # Online update budget = exploration steps * ratio, minus the
+            # online updates already done. The warm-start pretraining
+            # updates are subtracted out (via `_pretrain_update_baseline`)
+            # so they don't count against the online explore:update ratio.
+            # max(0.0, ...) is a hard guard: a negative update budget
+            # deadlocks explore_and_update — it must never be passed down.
+            update_steps = max(0.0, (
                 self.step_counter.exploration * update_steps_per_explore_step
-                - self.step_counter.update
-            )
+                - (self.step_counter.update
+                   - getattr(self, "_pretrain_update_baseline", 0))
+            ))
             result = self.agent.explore_and_update(
                 explore_episodes=explore_episodes_between_updates,
                 update_steps=update_steps,
@@ -323,6 +330,7 @@ class Runner(EveRLObject):
         eval_episodes: Optional[int] = None,
         eval_seeds: Optional[List[int]] = None,
         heatup_cache_save_path: Optional[str] = None,
+        pretrain_updates: int = 0,
     ):
         # TODO: Log Training Run Infos
         heatup_episodes = self.heatup(heatup_steps)
@@ -342,6 +350,26 @@ class Runner(EveRLObject):
 
         # Capture and set probe states after heatup
         self._capture_and_set_probe_states(heatup_episodes)
+
+        # Warm-start — pretrain critic+policy on the seeded (heuristic +
+        # heatup) buffer before ANY exploration, so the first explore
+        # episodes are driven by a policy that has already learned from the
+        # demonstrations rather than a random network. Skipped when 0.
+        self._pretrain_update_baseline = 0
+        if pretrain_updates > 0:
+            self.logger.info(
+                f"Warm-start: {pretrain_updates} pretraining updates on the "
+                f"seeded buffer before exploration."
+            )
+            self.agent.update(steps=pretrain_updates)
+            # Record the pretraining update count. The explore-driven update
+            # budget (explore_and_update) must NOT count these — they are
+            # offline pretraining, not part of the online explore:update
+            # ratio. Without this, `exploration*ratio - update` goes hugely
+            # negative right after pretraining (exploration=0, update=
+            # pretrain_updates) and the first explore_and_update hangs on a
+            # negative update budget.
+            self._pretrain_update_baseline = self.step_counter.update
 
         next_eval_step_limt = (
             self.agent.step_counter.exploration + explore_steps_between_eval

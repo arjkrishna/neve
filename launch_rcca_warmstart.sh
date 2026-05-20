@@ -12,9 +12,9 @@
 set -e
 export MSYS_NO_PATHCONV=1
 
-docker rm rcca_per_grounded 2>/dev/null || true
+docker rm rcca_warmstart 2>/dev/null || true
 
-docker run --name rcca_per_grounded --gpus all --shm-size=24g --init -d \
+docker run --name rcca_warmstart --gpus all --shm-size=24g --init -d \
   -v "D:\neve\.claude\worktrees\rl_improv_8\training _scripts\heuristic_only_run.py:/opt/eve_training/training_scripts/heuristic_only_run.py" \
   -v "D:\neve\.claude\worktrees\rl_improv_8\training _scripts\heuristic_run_LCCA.py:/opt/eve_training/training_scripts/heuristic_run_LCCA.py" \
   -v "D:\neve\.claude\worktrees\rl_improv_8\training _scripts\heuristic_run_LVA.py:/opt/eve_training/training_scripts/heuristic_run_LVA.py" \
@@ -76,7 +76,7 @@ docker run --name rcca_per_grounded --gpus all --shm-size=24g --init -d \
   eve-training-fixed \
   python3 /opt/eve_training/training_scripts/DualDeviceNav_train.py \
     --env_version 5 \
-    -n rcca_per_grounded \
+    -n rcca_warmstart \
     --insertion_z 345 \
     --replay_mode step \
     --per \
@@ -92,4 +92,5 @@ docker run --name rcca_per_grounded --gpus all --shm-size=24g --init -d \
     --snapshots mesh \
     --heuristic_cache_file /opt/eve_training/results/rcca_heuristic_cache.npz \
     --heatup_cache_file /opt/eve_training/results/rcca_heatup_cache_20.npz \
-    -nw 16 -d cuda:0
+    --pretrain_updates 10000 \
+    -nw 8 -d cuda:0
