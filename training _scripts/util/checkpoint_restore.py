@@ -55,24 +55,35 @@ class CheckpointRestoreWrapper(gym.Wrapper):
     ):
         super().__init__(env)
         self.checkpoint_dir = checkpoint_dir
+        self._pattern = pattern
         self._rng_seed = rng_seed
         self._rng = None  # lazy, per-process seeded on first use
+        self._validated = False
 
+        # Plan v9 Change 8 — lazy scan. The pool may be EMPTY at
+        # construction time when caches + checkpoints are generated in
+        # the SAME run (heuristic seeding fills the pool before online
+        # explore needs it). So do NOT raise on an empty/absent dir;
+        # rescan lazily at reset time. Only validate the format once a
+        # file actually appears.
+        self.checkpoint_files = []
+        self._rescan()
+
+    def _rescan(self) -> int:
+        """(Re)glob the checkpoint dir. Returns the file count. Validates
+        the npz format once, the first time a file appears."""
         self.checkpoint_files = sorted(
-            glob.glob(os.path.join(checkpoint_dir, pattern))
+            glob.glob(os.path.join(self.checkpoint_dir, self._pattern))
         )
-        if not self.checkpoint_files:
-            raise FileNotFoundError(
-                f"No checkpoints matching {pattern} found in {checkpoint_dir}"
-            )
-
-        # Sanity check the first one — fail fast if the format is wrong.
-        sample = np.load(self.checkpoint_files[0])
-        missing = [k for k in _REQUIRED_KEYS if k not in sample.files]
-        if missing:
-            raise ValueError(
-                f"Checkpoint {self.checkpoint_files[0]} missing keys: {missing}"
-            )
+        if self.checkpoint_files and not self._validated:
+            sample = np.load(self.checkpoint_files[0])
+            missing = [k for k in _REQUIRED_KEYS if k not in sample.files]
+            if missing:
+                raise ValueError(
+                    f"Checkpoint {self.checkpoint_files[0]} missing keys: {missing}"
+                )
+            self._validated = True
+        return len(self.checkpoint_files)
 
     def _pick_index(self, seed: Optional[int],
                     explicit_id: Optional[int] = None) -> int:
@@ -94,15 +105,31 @@ class CheckpointRestoreWrapper(gym.Wrapper):
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None):
         options = dict(options) if options else {}
+        # Plan v9 Change 8 — heuristic-mode bypass. Heuristic seeding
+        # episodes are supposed to run from z=345 (the original
+        # insertion point) to produce demos with full-trunk action
+        # sequences. If the trainer happens to invoke a live
+        # heuristic_seed() pass after wrapping env_train with this
+        # restorer, we'd otherwise SOFA-restore the heuristic too, which
+        # would defeat the purpose. Skip injection in that case.
+        if options.get("heuristic_mode", False):
+            return self.env.reset(seed=seed, options=options)
         # Only inject if caller didn't already supply a checkpoint.
         if "restore_checkpoint" not in options:
-            explicit_id = options.get("checkpoint_id")
-            idx = self._pick_index(seed, explicit_id=explicit_id)
-            path = self.checkpoint_files[idx]
-            with np.load(path) as data:
-                options["restore_checkpoint"] = {k: np.array(data[k]) for k in data.files}
-            options["_restore_checkpoint_file"] = os.path.basename(path)
-            options["_restore_checkpoint_idx"] = int(idx)
+            # Plan v9 Change 8 — pool may have been filled by heuristic
+            # seeding since construction; rescan if we still have none.
+            if not self.checkpoint_files:
+                self._rescan()
+            if self.checkpoint_files:
+                explicit_id = options.get("checkpoint_id")
+                idx = self._pick_index(seed, explicit_id=explicit_id)
+                path = self.checkpoint_files[idx]
+                with np.load(path) as data:
+                    options["restore_checkpoint"] = {k: np.array(data[k]) for k in data.files}
+                options["_restore_checkpoint_file"] = os.path.basename(path)
+                options["_restore_checkpoint_idx"] = int(idx)
+            # else: pool still empty -> fall through; episode starts at the
+            # normal insertion point (z=345). Defensive: never crash.
         return self.env.reset(seed=seed, options=options)
 
     # Forward everything else untouched (gym.Wrapper does this by default).

@@ -52,7 +52,12 @@ class Runner(EveRLObject):
         self._next_snapshot_step = policy_snapshot_every_steps
         self._probe_states_set = False
         self._eval_count = 0
-        self._replay_save_interval = 4  # save replay buffer every N evals
+        # Plan v10 — save replay buffer every eval (alongside each .everl
+        # checkpoint, ~250k explore steps) so the buffer is recoverable and
+        # harvestable. Was 4 (every ~1M); the PER buffer save was also
+        # broken (deadlock) until the export_all/import_all + loop handlers
+        # were added.
+        self._replay_save_interval = 1  # save replay buffer every eval
 
         # Episode summary logger
         self._episode_summary_file = None
@@ -158,13 +163,30 @@ class Runner(EveRLObject):
                 self.logger.warning(f"Failed to load replay buffer: {e}")
         return 0
 
-    def heatup(self, steps: int):
-        episodes = self.agent.heatup(
+    def heatup(self, steps=None, episodes=None):
+        episodes_r = self.agent.heatup(
             steps=steps,
+            episodes=episodes,
             custom_action_low=self.heatup_action_low,
             custom_action_high=self.heatup_action_high,
         )
-        return episodes
+        return episodes_r
+
+    @staticmethod
+    def _episode_threaded(e) -> bool:
+        """Plan v10 — did this episode thread RCCA (final_branch == target)?
+        Mirrors Episode.to_replay(): prefer strict final-branch equality from
+        the last step's info; fall back to the reached_target_daughter flag
+        (raw Episode carries `infos`; EpisodeReplay carries the flag)."""
+        infos = getattr(e, "infos", None)
+        if infos:
+            info = infos[-1]
+            fb = info.get("final_branch_idx")
+            tb = info.get("target_daughter_branch_idx")
+            if fb is not None and tb is not None:
+                return int(fb) == int(tb)
+            return bool(info.get("reached_target_daughter", False))
+        return bool(getattr(e, "reached_target_daughter", False))
 
     def explore(self, n_episodes: int):
         self.agent.explore(episodes=n_episodes)
@@ -331,9 +353,46 @@ class Runner(EveRLObject):
         eval_seeds: Optional[List[int]] = None,
         heatup_cache_save_path: Optional[str] = None,
         pretrain_updates: int = 0,
+        heatup_until_successes: int = 0,
+        heatup_episode_limit: int = 0,
     ):
         # TODO: Log Training Run Infos
-        heatup_episodes = self.heatup(heatup_steps)
+        # Plan v10 — heatup-until-N-threaded: instead of a fixed step budget,
+        # run heatup in chunks until N episodes have THREADED RCCA (the seed
+        # signal), with a safety cap. The whole heatup run (threaded + fails)
+        # is the seed. `heatup_steps` is the per-chunk budget here.
+        if heatup_until_successes and heatup_until_successes > 0:
+            heatup_episodes = []
+            threaded = 0
+            cap_episodes = 2000
+            chunk = 0
+            while threaded < heatup_until_successes and len(heatup_episodes) < cap_episodes:
+                chunk += 1
+                batch = self.heatup(heatup_steps)
+                if not batch:
+                    self.logger.warning(
+                        "heatup-until-N: empty heatup batch — stopping."
+                    )
+                    break
+                heatup_episodes += batch
+                threaded = sum(1 for e in heatup_episodes if self._episode_threaded(e))
+                self.logger.info(
+                    f"heatup-until-N: chunk {chunk} | total_eps={len(heatup_episodes)} "
+                    f"| threaded={threaded}/{heatup_until_successes}"
+                )
+            if threaded < heatup_until_successes:
+                self.logger.warning(
+                    f"heatup-until-N: only {threaded} threaded in "
+                    f"{len(heatup_episodes)} eps (cap {cap_episodes}) — the 5 "
+                    f"states may not be as easy as hoped; proceeding anyway."
+                )
+        elif heatup_episode_limit and heatup_episode_limit > 0:
+            # Plan v10 — fixed N heatup episodes (random, restore-at-fork) for
+            # the fail/exploration side of the seed, after heuristic seeding.
+            self.logger.info(f"Heatup: {heatup_episode_limit} episodes (fixed).")
+            heatup_episodes = self.heatup(episodes=heatup_episode_limit)
+        else:
+            heatup_episodes = self.heatup(heatup_steps)
 
         # Save heatup cache if requested (before training starts)
         if heatup_cache_save_path and heatup_episodes:

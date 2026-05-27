@@ -165,6 +165,36 @@ class PERVanillaStepShared(VanillaStepShared):
                     elif task[0] == "shutdown":
                         logger.info("SHUTDOWN: received shutdown signal")
                         break
+                    elif task[0] == "save_buffer":
+                        # Plan v10 — persist the full PER buffer (transitions +
+                        # priorities + is_demo/is_clean). MUST put a result so
+                        # the blocking save_buffer_to_file() caller doesn't
+                        # deadlock (the base VanillaStepShared.loop has these
+                        # branches; this PER override previously omitted them).
+                        path = task[1]
+                        try:
+                            data = internal_replay_buffer.export_all()
+                            np.savez(path, **data)
+                            n_saved = int(data["n"]) if "n" in data else 0
+                            self._result_queue.put(n_saved)
+                            logger.info(
+                                f"SAVE_BUFFER: saved {n_saved} transitions to {path}"
+                            )
+                        except Exception as e:
+                            logger.error(f"SAVE_BUFFER failed: {e}", exc_info=True)
+                            self._result_queue.put(-1)
+                    elif task[0] == "load_buffer":
+                        path = task[1]
+                        try:
+                            with np.load(path, allow_pickle=False) as data:
+                                n_loaded = internal_replay_buffer.import_all(data)
+                            self._result_queue.put(n_loaded)
+                            logger.info(
+                                f"LOAD_BUFFER: loaded {n_loaded} transitions from {path}"
+                            )
+                        except Exception as e:
+                            logger.error(f"LOAD_BUFFER failed: {e}", exc_info=True)
+                            self._result_queue.put(-1)
                 elif not self._push_queue.empty():
                     item = self._push_queue.get()
                     if isinstance(item, tuple) and len(item) == 2:

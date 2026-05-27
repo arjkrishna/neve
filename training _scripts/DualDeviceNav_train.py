@@ -95,11 +95,39 @@ def main(args):
     step-version-RL variants, eval-only invocations) can call this
     after building their own argparse Namespace."""
 
-    if args.checkpoint_dir and args.insertion_z is not None:
+    # Plan v9 — in 'sofa_restore' mode the two flags are COMPLEMENTARY,
+    # not exclusive: --insertion_z is the start for heuristic-seeding
+    # episodes (which bypass restore) and the fallback when the pool is
+    # still empty, while --checkpoint_dir is the restore source for
+    # heatup/online episodes. Only enforce mutual exclusivity in the
+    # legacy z345 mode.
+    if (
+        args.checkpoint_dir
+        and args.insertion_z is not None
+        and getattr(args, "rl_start_mode", "z345") != "sofa_restore"
+    ):
         raise SystemExit(
-            "--checkpoint_dir and --insertion_z are mutually exclusive: "
-            "checkpoint restore replaces the entire wire state, while "
-            "anchoring high in the trunk is a clean alternative."
+            "--checkpoint_dir and --insertion_z are mutually exclusive "
+            "outside --rl_start_mode sofa_restore: checkpoint restore "
+            "replaces the entire wire state, while anchoring high in the "
+            "trunk is a clean alternative. (In sofa_restore mode they are "
+            "complementary — insertion_z drives heuristic seeding, "
+            "checkpoint_dir drives online restore.)"
+        )
+
+    # Plan v9 Change 8 — validate --rl_start_mode against --checkpoint_dir.
+    if getattr(args, "rl_start_mode", "z345") == "sofa_restore" and not args.checkpoint_dir:
+        raise SystemExit(
+            "--rl_start_mode sofa_restore requires --checkpoint_dir to "
+            "point at the pool of pre-bif(11) checkpoints (built by "
+            "Plan v9 Change 5b: heuristic run with PRE_BIF11_CHECKPOINT_DIR "
+            "env var set)."
+        )
+    if args.checkpoint_dir and getattr(args, "rl_start_mode", "z345") == "z345":
+        print(
+            "[Plan v9] --checkpoint_dir is set but --rl_start_mode is 'z345'; "
+            "online episodes WILL be SOFA-restored from the pool. To start "
+            "at z=345 instead, remove --checkpoint_dir."
         )
 
     # Plan v5 — apply per-daughter overrides from CLI. Use a local name
@@ -259,6 +287,29 @@ def main(args):
         else:
             print("WARNING: --snapshots set but no diagnostics_folder; snapshots disabled")
 
+    # Plan v9 Change 8b — restore-start snapshots written into the MAIN
+    # snapshots dir as a sibling phase bucket (snapshots/restore_start/...)
+    # alongside seed / eval / explore, so they browse together. Set env
+    # vars BEFORE agent worker spawn (spawn-inheritance). Works even when
+    # --snapshots is off (independent flag) — we point at the same base
+    # snapshots dir and force the render mode.
+    if getattr(args, "restore_start_snapshots", False):
+        if diagnostics_folder is not None:
+            rs_dir = os.path.join(diagnostics_folder, "snapshots")
+            os.makedirs(rs_dir, exist_ok=True)
+            os.environ["RESTORE_START_SNAPSHOT_DIR"] = rs_dir
+            os.environ["RESTORE_START_SNAPSHOT_MODE"] = "centerlines"
+            print(
+                f"[Plan v9 Change 8b] Set RESTORE_START_SNAPSHOT_DIR={rs_dir} "
+                "(restore-start snapshots -> snapshots/restore_start/, "
+                "sibling to seed/eval/explore)"
+            )
+        else:
+            print(
+                "WARNING: --restore_start_snapshots set but no "
+                "diagnostics_folder; restore-start snapshots disabled"
+            )
+
     logging.basicConfig(
         filename=log_file,
         level=DEBUG_LEVEL,
@@ -331,6 +382,22 @@ def main(args):
     env_eval = EnvClass(
         intervention=intervention_eval, mode="eval", visualisation=False, **env_kwargs
     )
+    env_eval_unwrapped = env_eval  # keep for config save (before any wrapper)
+    # Plan v10 C4 — eval must start from the SAME restore states as training
+    # (else eval measures the z=345 full task, a train/eval mismatch). Wrap
+    # env_eval with the same restorer (distinct rng_seed so its per-episode
+    # checkpoint picks differ from training's).
+    if args.checkpoint_dir:
+        from util.checkpoint_restore import CheckpointRestoreWrapper
+        env_eval = CheckpointRestoreWrapper(
+            env_eval,
+            checkpoint_dir=args.checkpoint_dir,
+            rng_seed=43,
+        )
+        print(
+            f"[Plan v10] eval restore enabled: {len(env_eval.checkpoint_files)} "
+            f".npz files in {args.checkpoint_dir} (eval starts from the 5 states)"
+        )
     agent = BenchAgentSynchron(
         trainer_device,
         worker_device,
@@ -362,14 +429,15 @@ def main(args):
         demo_priority_bonus=args.demo_priority_bonus,
         priority_mode=args.priority_mode,
         balanced_fraction=args.balanced_fraction,
+        log_std_min=args.log_std_min,
     )
 
     # Save config from unwrapped env (ActionCurriculumWrapper has no save_config)
     env_train_config = os.path.join(config_folder, "env_train.yml")
     env_train_unwrapped.save_config(env_train_config)
     env_eval_config = os.path.join(config_folder, "env_eval.yml")
-    env_eval.save_config(env_eval_config)
-    infos = list(env_eval.info.info.keys())
+    env_eval_unwrapped.save_config(env_eval_config)
+    infos = list(env_eval_unwrapped.info.info.keys())
     runner = Runner(
         agent=agent,
         heatup_action_low=[[-10.0, -1.5], [-10.0, -1.5]],
@@ -384,6 +452,15 @@ def main(args):
     )
     runner_config = os.path.join(config_folder, "runner.yml")
     runner.save_config(runner_config)
+
+    if args.eval_only_checkpoint:
+        print(f"[eval-only] loading checkpoint: {args.eval_only_checkpoint}")
+        agent.load_checkpoint(args.eval_only_checkpoint)
+        runner._replay_save_interval = 999999
+        quality, reward = runner.eval(seeds=EVAL_SEEDS)
+        print(f"[eval-only] result: quality={quality} reward={reward}")
+        agent.close()
+        return
 
     # Optional: seed replay buffer with heuristic episodes
     # Collects episodes using a centerline-following heuristic and pushes
@@ -457,18 +534,21 @@ def main(args):
                     return bool(ep.terminals[-1]) if ep.terminals else False
                 info = ep.infos[-1]
                 if _seeding_success_mode == "clean_thread":
-                    # "Cleanly threaded the target daughter": the state
-                    # machine committed the wire onto the target daughter
-                    # branch itself, and the wire never wrong-committed at
-                    # any fork. `reached_target_daughter` (not
-                    # `received_correct_daughter`) is the correct signal —
-                    # the latter fires at the trunk-top fork that every
-                    # trunk-ascending wire crosses, so it would count
-                    # trunk-wedge episodes as successes.
-                    return bool(
-                        info.get("reached_target_daughter", False)
-                        and not info.get("received_wrong_daughter", False)
-                    )
+                    # Plan v9 Change 2 — strict final-state check.
+                    # Old filter used the ever-touched latch
+                    # `reached_target_daughter` AND excluded any episode
+                    # that *ever* wrong-committed — wrongly disqualifying
+                    # legitimate RVA-detour-then-RCCA episodes.
+                    # New definition: "clean thread" = at episode end the
+                    # wire's current branch IS the target daughter
+                    # (final_branch_idx == target_daughter_branch_idx).
+                    # Detours along the way are fine; only the final
+                    # location matters.
+                    final_idx = info.get("final_branch_idx")
+                    target_idx = info.get("target_daughter_branch_idx")
+                    if final_idx is None or target_idx is None:
+                        return False
+                    return int(final_idx) == int(target_idx)
                 # default: TargetReached terminal
                 if "success" in info:
                     return bool(info["success"])
@@ -498,7 +578,12 @@ def main(args):
 
                 schedule = build_episode_schedule(
                     batch_size, target_branches, base_seed=42 + seed_offset,
-                    heuristic_mode=True,
+                    # Plan v10 — fork-heuristic: when --heuristic_from_restore,
+                    # do NOT set heuristic_mode, so the CheckpointRestoreWrapper
+                    # is NOT bypassed → the heuristic runs from the restored
+                    # fork state (restore-at-fork) instead of z=345. (Trade-off:
+                    # env-side abort detectors are off; fine for short fork runs.)
+                    heuristic_mode=(not args.heuristic_from_restore),
                 )
                 seed_offset += batch_size
 
@@ -621,13 +706,32 @@ def main(args):
         args.heuristic_cache_file and os.path.isfile(args.heuristic_cache_file)
         and args.heatup_cache_file and os.path.isfile(args.heatup_cache_file)
     )
-    if pretrain_updates > 0 and not both_caches:
-        print("[Plan v8] --pretrain_updates ignored — warm-start needs BOTH "
-              "--heuristic_cache_file and --heatup_cache_file loaded.")
+    # Plan v9 — warm-start is ALSO valid when the seed buffer is generated
+    # in THIS run (heuristic seeding + heatup both populate the buffer
+    # before pretraining runs inside training_run). The original gate only
+    # accepted caches loaded from disk; the single-run generate path
+    # (heuristic_seeding > 0, with --save_*_cache) populates the buffer
+    # just as well. heatup always runs unless a heatup cache is loaded, so
+    # `heuristic_seeding > 0` is sufficient to guarantee a non-empty seed
+    # buffer at pretrain time.
+    seed_generated_this_run = args.heuristic_seeding > 0
+    # Plan v10 — heatup also populates a non-empty seed buffer (especially
+    # heatup-until-N), so it is a valid warm-start seed source on its own.
+    heatup_runs = (args.heatup_until_successes > 0) or (heatup_steps_effective > 0)
+    seed_buffer_available = both_caches or seed_generated_this_run or heatup_runs
+    if pretrain_updates > 0 and not seed_buffer_available:
+        print("[Plan v8/v9/v10] --pretrain_updates ignored — no seed buffer: "
+              "need caches loaded, --heuristic_seeding > 0, or heatup to run.")
         pretrain_updates = 0
     elif pretrain_updates > 0:
-        print(f"[Plan v8] warm-start: {pretrain_updates} pretraining updates "
-              f"on the seeded buffer before exploration.")
+        if both_caches:
+            src = "loaded caches"
+        elif seed_generated_this_run:
+            src = "heuristic seeding this run"
+        else:
+            src = "heatup seed this run"
+        print(f"[Plan v8/v9/v10] warm-start: {pretrain_updates} pretraining "
+              f"updates on the seeded buffer ({src}) before exploration.")
 
     reward, success = runner.training_run(
         heatup_steps_effective,
@@ -638,6 +742,8 @@ def main(args):
         eval_seeds=EVAL_SEEDS,
         heatup_cache_save_path=heatup_cache_save,
         pretrain_updates=pretrain_updates,
+        heatup_until_successes=args.heatup_until_successes,
+        heatup_episode_limit=args.heatup_episodes,
     )
     agent.close()
 
@@ -773,6 +879,36 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--eval_only_checkpoint",
+        type=str,
+        default=None,
+        help=(
+            "If set, skip heatup/pretrain/training and run runner.eval() once "
+            "with the loaded checkpoint weights. Produces the standard run-dir "
+            "log/snapshot structure via the normal Synchron+env5 path."
+        ),
+    )
+    # Plan v9 Change 8 — explicit RL-start mode flag. The underlying
+    # restore mechanism is the existing CheckpointRestoreWrapper +
+    # --checkpoint_dir; this flag exists for clarity in launch scripts
+    # and to validate the two are configured consistently.
+    parser.add_argument(
+        "--rl_start_mode",
+        type=str,
+        default="z345",
+        choices=["z345", "sofa_restore"],
+        help=(
+            "Plan v9: where online RL episodes start. 'z345' (default) "
+            "preserves existing behaviour (start at the insertion point). "
+            "'sofa_restore' starts each online episode from a SOFA-restored "
+            "checkpoint randomly selected from --checkpoint_dir — used "
+            "for restore-at-fork training (pool of pre-bif(11) states "
+            "produced by Plan v9 Change 5b). Heuristic-mode episodes are "
+            "exempt from restore regardless of this flag (see "
+            "CheckpointRestoreWrapper.reset)."
+        ),
+    )
+    parser.add_argument(
         "--insertion_z",
         type=float,
         default=None,
@@ -873,6 +1009,53 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--log_std_min",
+        type=float,
+        default=-20.0,
+        help=(
+            "Plan v10 — hard floor on the GaussianPolicy log-std (entropy "
+            "floor). Default -20 preserves old behaviour; -2 (std~0.135) "
+            "keeps AWAC policy entropy near target and prevents the "
+            "deterministic collapse both prior runs hit by update ~2.5k."
+        ),
+    )
+    parser.add_argument(
+        "--heatup_until_successes",
+        type=int,
+        default=0,
+        help=(
+            "Plan v10 — run heatup (random, restore-at-fork) in chunks of "
+            "HEATUP_STEPS until N episodes THREAD RCCA (info final_branch== "
+            "target), safety cap ~2000 eps. 0 = off (fixed-step heatup). The "
+            "whole heatup run (threaded + fails) becomes the seed; no cache, "
+            "no heuristic. 'threaded' is only a stop criterion (no reward "
+            "change); real success stays TargetReached. NOTE: random heatup "
+            "can't thread RCCA even from the good states — use heuristic "
+            "seeding (--heuristic_from_restore) instead."
+        ),
+    )
+    parser.add_argument(
+        "--heuristic_from_restore",
+        action="store_true",
+        help=(
+            "Plan v10 — run heuristic SEEDING from the SOFA restore states "
+            "(restore-at-fork) instead of z=345. Builds the seeding schedule "
+            "WITHOUT heuristic_mode so CheckpointRestoreWrapper restores the "
+            "fork state and the heuristic steers from there. In-distribution "
+            "demos for restore-at-fork training."
+        ),
+    )
+    parser.add_argument(
+        "--heatup_episodes",
+        type=int,
+        default=0,
+        help=(
+            "Plan v10 — run exactly N heatup episodes (random, restore-at-fork) "
+            "AFTER heuristic seeding, for the fail/exploration side of the "
+            "seed. 0 = off (fixed-step heatup)."
+        ),
+    )
+    parser.add_argument(
         "--update_per_explore_step",
         type=float,
         default=None,
@@ -958,6 +1141,24 @@ if __name__ == "__main__":
             "episode bucketed by phase (seed/eval/explore). Use "
             "prune_training_snapshots.py to keep all seed+eval and only "
             "the 10-best/10-worst per 100 explore episodes."
+        ),
+    )
+    # Plan v9 Change 8b — restore-start debug snapshots into a SEPARATE
+    # folder, regardless of the main --snapshots flag. One image per
+    # SOFA-restored online episode at reset() time, captured AFTER the
+    # restore + obs/reward re-reset (so the rendered pose IS the
+    # post-restore state).
+    parser.add_argument(
+        "--restore_start_snapshots",
+        action="store_true",
+        help=(
+            "Plan v9 Change 8b — render+save the wire's post-SOFA-restore "
+            "pose into a separate snapshot folder for visual "
+            "verification that the restore-at-fork mode is landing the "
+            "wire at the intended pose (just before bif(11)). One PNG per "
+            "online episode. Sets env vars RESTORE_START_SNAPSHOT_DIR + "
+            "RESTORE_START_SNAPSHOT_MODE for env5 to pick up. Works "
+            "independently of --snapshots."
         ),
     )
     args = parser.parse_args()

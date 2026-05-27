@@ -757,6 +757,7 @@ If by the end of training each per-daughter model achieves >40% success rate and
 If success rates plateau much lower across all daughters AND the failure modes are similar (e.g., all of them fail because of bif2 cavity dynamics), the case for sharing flips — the underlying problem is structural and you're not getting separable benefit from separate training.
 
 # "1. Class imbalance is severe. Empirical: heuristic produces 19% LVA / 2.9% RCCA / 1.4% LCCA / 0.6% RVA successes. Without reweighting, ~19/24 of successful demos are LVA. Naïve SAC training will pull the policy toward "behave like LVA-agent" for every target — the worst possible failure mode for the hard daughters. 2. Phase B / Phase C are genuinely different policies. RVA needs dynamic_tangent + RVA-aimed steering at bif2. LCCA needs position-vector at lcca_jn + 25 mm. LVA needs no active steering (let trunk-ascent physics deliver wire to (18)). RCCA mirrors RVA. A shared network has to learn 4 distinct conditional sub-policies given target_state as the discriminator. Whether your SAC actor has enough capacity to learn this is empirical — current network width may or may not suffice." ----> Can these be solved by HER / PER applied to replay buffer
+
 Mostly yes for Con #1, no for Con #2. They're different problems and need different fixes.
 
 PER vs class imbalance — strong yes
@@ -813,3 +814,175 @@ Conservative target_state encoding — make sure the network's input layer can d
 This stack neutralizes most of Con #1 and side-steps Con #2 entirely by making the daughter identity highly observable.
 
 My standing recommendation, though, is still per-daughter models for the first training cycle — debugging is dramatically simpler, the engineering surface is smaller, and you get clean baselines for the shared-model experiment afterward. PER+HER+per-target-buffers is the right setup once you have a working per-daughter baseline to compare against.
+
+
+--------
+
+
+
+# Yes — and the most valuable use isn't resumability, it's that the buffer contains a far better demo set than we started with. Let me explore the angles, highest-value first.
+
+1. The RL successes are superior demos to the heuristic (the big one)
+Recall the tension we found: the heuristic demos are gentle (gw~2) and reliably thread RCCA, but they time out before the deep target — only ~12 heuristic episodes actually reach it. The RL policy, by contrast, has now produced ~1000+ episodes that genuinely reach the target (the explore/success set, fast, R+5 to +8).
+
+Those 1000 successes are exactly the demos we wish we'd had:
+
+They reach the actual target (heuristic demos mostly don't).
+They're at the speed that works for target-reaching — so re-seeding AWAC with them sidesteps the whole "demos say gw~2 but the task needs speed" mismatch that the policy had to discover on its own.
+There are ~5× more of them than the 209 seed demos.
+Re-seed a fresh run's buffer + warm-start from these RL successes and you'd start from a much stronger prior than the heuristic gave — likely well above the current ~10-17%.
+
+2. Iterated self-improvement loop (the compounding version of #1)
+This generalizes into a DAgger/distillation-style loop:
+
+
+run RL → harvest the successful episodes → re-seed the next run with them → run RL → harvest better successes → repeat
+Each generation's successes become the next generation's demos. Generation 1 distilled the heuristic; generation 2 distills generation 1's target-reaching policy; etc. The demo quality (success count, strategy quality) ratchets up each cycle. This is probably the single most impactful thing the buffer enables — without it, each run starts cold from the heuristic.
+
+3. Offline RL — sim-efficient learning
+SOFA simulation is the bottleneck (the run takes ~37h for ~900k steps). The buffer is a 900k-transition offline dataset. You could run offline RL (AWAC/IQL/CQL) on it — many gradient epochs, zero new simulation — to extract a strong policy, then do only a short online fine-tune. Given how slow the sim is, squeezing more learning out of already-collected data is a large efficiency lever.
+
+4. Curriculum restore-state mining
+The successful trajectories pass through every depth of the path. Mine restore checkpoints from them at multiple depths (at the turn, mid-RCCA, deep-RCCA) → build the reverse-curriculum restore pools we discussed, instead of only the single pre-bif(11) pool. The buffer is the raw material for that.
+
+5. Precise reward/threshold tuning
+Full (state, action) pairs at the turn let you analyze exactly what separates a successful turn from an overshoot — e.g., the precise gw_trans / rotation that makes the (0)→(11) turn — which would let you set the gentle-turn-penalty threshold from data rather than guessing.
+
+The catch, and what it implies
+The current buffer is already unrecoverable (the save is broken — and the successes' full transitions exist only in the in-memory buffer; the STEP logs don't store the observation vectors, the snapshots are just images). So none of the above can be applied to this run's data.
+
+But that's exactly why fixing the buffer save is worth more than just "resumability" — it unlocks the success-harvesting / iterated-improvement loop (#1, #2) for every future run. If you want #2 specifically and don't want to wait for a full buffer fix, a lighter alternative is a targeted hook: have env5 dump the full transition trajectory of each TargetReached episode to disk (like the pre-bif(11) checkpoints, but the whole episode) — that captures the superior demos directly, even without persisting the entire buffer.
+
+## So my recommendation shifts: fixing the PER save isn't just bug-cleanup — pair it with a "harvest successful episodes → next-gen demos" step, and you get a compounding training loop. Want me to design that (buffer-save fix + success-harvest → re-seed pipeline) as the Plan v10 follow-up?
+
+with aiwac and 2 stream balanced streaming isn't self iterating imrpovement already happening?
+Sharp point — and largely yes, it is. The clean stream + AWAC already form a within-run self-improvement loop:
+
+
+online success → pushed to buffer → flagged is_clean → enters the 30% clean stream
+   → AWAC advantage-clones it → policy improves → more successes → ...
+That loop is exactly what's driving the rising success rate (2.4% → 17%). The policy is bootstrapping off its own target-reaching episodes, not just the heuristic seed. So the in-run iterated improvement is real and working — you're right.
+
+The cross-run harvest I described isn't a different engine; it's the same loop, but it addresses three limits the within-run version has:
+
+1. The buffer is a sliding window, not an archive. Capacity is 1e6 and you're at ~900k. Once it's full it's a ring buffer — old successes get evicted as new data arrives. So the clean stream is "recent successes," not "all-time best successes." The first great episodes are gone. A harvest preserves them permanently.
+
+2. It reinforces the current strategy — it can't easily switch basins. This is the important one. The clean stream is full of high-speed successes (gw~14), so AWAC keeps cloning high-speed. The loop improves within the high-speed regime (more high-speed successes), but the ~7% gentle successes are a minority that gets out-weighted. So the within-run loop is unlikely to spontaneously discover the gentle-reliable strategy even if it has a higher ceiling — it's self-improving inside a local optimum. Escaping it needs an external nudge (the gentle-turn penalty to bias exploration, and/or re-seeding with curated gentle successes).
+
+3. No reset on degradation. If the run destabilizes (the action-rail collapse / critic strain we saw), the loop has no way to recover — a degraded policy pollutes the clean stream and the loop reinforces the degradation. A harvest-and-restart gives a clean slate from the best curated data.
+
+So the framing: the within-run loop is the optimizer; the cross-run harvest is curation + basin-hopping + checkpointing the best demos. If the current high-speed loop keeps climbing to a satisfying rate, you may never need the harvest. You'd reach for it if (a) the rate plateaus below what gentle could achieve, (b) the run degrades, or (c) you change the reward/arch and want to carry the good demos forward.
+
+Net: nothing urgent to add — the self-improvement you built is functioning. The harvest matters mainly as insurance against the ring-buffer eviction + the high-speed-local-optimum lock-in, which become relevant only if 17%-and-climbing stalls.
+
+
+--------
+# what are all the possible avenues you mentioned to improve this AWAC training for V10; can you reanalyse deeply and list all the possible avenues of improvement
+
+Here's a deep reanalysis grouped by mechanism and effort. The diagnosis is unchanged: critic stable, but AWAC's policy loss has no force that resists the mean railing into tanh saturation → policy converges to advantage-weighted clone of the buffer's (mostly saturated) high-A demos. Every lever below attacks that failure from a different angle.
+
+I'll mark each lever with [in-scope] (RL/AWAC-stabilization knob, no reward/obs/terminal change) or [out-of-scope] (would touch reward/obs/terminal — listed for completeness only, per your standing rule).
+
+Tier 1 — Direct attacks on the policy-mean rail (highest impact, in-scope)
+1.1 Entropy bonus on AWAC policy loss [in-scope] — the direct fix.
+Add + β · log_pi to the policy objective (with β small, e.g. 0.01-0.05). log_pi = Gaussian term + tanh-Jacobian −Σ log(1−aᵢ²) — the Jacobian explodes as the mean saturates, so this term directly penalizes mean rail. Unlike log_std_min, it doesn't just floor variance. AWAC's literature occasionally calls this "soft AWAC."
+Code change: ~5 lines in sac.py _update_policy AWAC branch. Plan v10's deferred lever for "entropy collapse with floor insufficient."
+
+1.2 Raise awac_lambda 3 → 6/8/10 [in-scope]
+Softer advantage weighting. AWAC's exp(A/λ) at λ=3 is sharply peaked on the few highest-A (saturated) actions; raising λ flattens the weighting toward uniform BC over the whole buffer. Slows the saturation feedback loop. Cheap to test (one CLI flag). Compose with 1.1.
+
+1.3 Tanh-margin penalty on the policy mean [in-scope]
+Penalize E[max(0, |tanh(μ)| − 0.9)²] or E[soft_plus(|tanh(μ)| − 0.95)] — a barrier that activates only when the mean approaches the rail. Cleaner than 1.1 (doesn't touch entropy semantics) and explicit. ~10 lines.
+
+1.4 Asymmetric policy-vs-critic learning rate [in-scope]
+Currently LR=3e-4 for both. Drop policy LR to 1e-4 while keeping critic at 3e-4. Standard actor-critic stabilization; smaller policy steps slow mean drift toward saturation without slowing critic convergence. Trivial change.
+
+1.5 Spectral / layer norm on policy network [in-scope]
+Add LayerNorm after each hidden layer in the policy MLP. Bounds activations, prevents the linear head from producing unbounded means. Architectural change but small (~3 lines). Composable.
+
+Tier 2 — Update-schedule and replay-buffer levers (in-scope, composable)
+2.1 Lower update_per_explore_step 1.0 → 0.25-0.5 [in-scope]
+Already discussed — slows the collapse feedback loop and improves buffer diversity. Cost: lower updates/wallclock; at 0.5 you'd have ~half the updates in the same time. Combine with Tier 1, not alone.
+
+2.2 Lower PER alpha 0.6 → 0.3, or disable PER [in-scope]
+PER amplifies high-TD transitions; in this regime the high-TD ones tend to include the saturated-success transitions and the −5 terminal transitions, so PER is reinforcing the saturation. Uniform sampling on a balanced buffer might be calmer. Cheap A/B.
+
+2.3 Raise balanced_fraction 0.3 → 0.5 [in-scope]
+Force more clean-thread (reached_target_daughter=True) transitions per batch. Risk: if all clean threads are saturated, this accelerates saturation. Worth A/B in combination with the entropy bonus only.
+
+2.4 PER demo priority bonus on heuristic-seeded transitions [in-scope]
+The 10 heuristic demos are gentle (not yet saturated) trajectories. Bumping their priority floor keeps them sampled forever, so AWAC always sees some gentle-action targets in the BC mix. Plan v8 implemented demo_priority_bonus; just turn it on.
+
+2.5 N-step returns (n=3 or 5) [in-scope]
+Currently 1-step Bellman. N-step propagates terminal +3 / −5 rewards faster to upstream transitions, reducing critic variance on sparse terminals. Helps the critic give cleaner advantage signals to AWAC, which then sees more useful relative-action gradients. ~30 LOC in sac.py _get_expected_q.
+
+2.6 More heuristic seed demos (10 → 50-100) [in-scope]
+Currently only 10 RCCA-threaded heuristic demos seed the buffer. With balanced sampling at 0.3, the clean stream sees the same handful of demos repeatedly → AWAC overfits to them. More diverse demos broaden the BC anchor.
+
+Tier 3 — Alternative algorithms (still in-scope as "AWAC stabilization replacement")
+3.1 IQL (Implicit Q-Learning) [in-scope]
+Replaces AWAC's exp(A/λ) weighting with expectile-regression on V, then weighted BC. Empirically more stable than AWAC on imbalanced offline buffers — doesn't suffer the same mean-rail concentration. The buffer + critic infra is reusable. Code change: ~150 LOC for a new algo/iql.py.
+
+3.2 BC-warm + SAC finetune [in-scope]
+Pure BC on the clean-thread buffer for 5-10k updates (no critic involved), then switch to SAC (--algo sac) for online improvement. SAC's mandatory entropy term (with alpha auto-tuned to target_entropy = −4) actively prevents mean saturation. The hard part (critic stability) is solved by the warm-started weights from BC. Best test of "what if AWAC's lack-of-entropy is the only issue."
+
+3.3 CQL (Conservative Q-Learning) [in-scope]
+Adds OOD-action penalty to Q. Probably overkill here since the issue isn't critic OOD overestimation. Listed for completeness.
+
+3.4 Soft AWAC with auto-tuned entropy [in-scope]
+Full SAC-style auto-tuned alpha on top of AWAC's advantage-weighted BC objective. Best-of-both: AWAC clones high-A actions but is constrained to hit a target entropy. ~20 LOC.
+
+Tier 4 — Curriculum / start-state levers (in-scope, Plan v10's natural extension)
+4.1 Narrow to 1-2 best states only [in-scope]
+Drop pid10145 (10%) and pid20043 (25%). Train on pid19116 + pid3285 + pid4907 only — the three states where the policy already exceeds 19%. Fewer failure modes diluting the buffer; pid10145 alone is 16+9 = 25/200 transitions that are almost all failures. Plan v10's own decision-tree branch.
+
+4.2 Reverse curriculum — pid19116 alone until >80%, then add others [in-scope]
+Most aggressive narrowing. If the policy genuinely can't get pid19116 alone to 80%, no broader curriculum will. If it can, that becomes the proven start, and you add pid3285 next.
+
+4.3 Resample pre-bif(11) checkpoint pool — find more "easy" states [in-scope]
+The 5 states were curated from one run's heuristic-success episodes. Re-run heuristic from z=345 with stricter "catheter-forward + small gap" criteria to produce ~20 high-quality states with diverse-but-comparable difficulty.
+
+4.4 Per-restore-state success-rate gating [in-scope]
+Schedule weights restore selection so harder states (pid10145) are sampled less until easier ones are mastered. Plan v10 idea.
+
+4.5 Restore-state jitter / domain randomization [in-scope]
+Add small per-restore Gaussian noise to xtip/dof_positions before scene step. Currently every restore from pid19116 produces an identical start — the policy may be overfitting to one frozen pose. ~10 LOC in env5.reset.
+
+Tier 5 — Run strategy
+5.1 Continue from current checkpoint with new knobs [in-scope]
+Save the current weights, restart with --algo sac --log_std_min -1 (or AWAC+entropy bonus). Cheaper than a fresh run; tests whether the new knobs can pull the policy off the rail after collapse. If yes, that's the recovery path. If no, fresh start needed.
+
+5.2 Offline RL on the saved 750k buffer [in-scope]
+After eval #3, take the buffer + apply IQL (or CQL) purely offline for 100-500k gradient steps with strong entropy regularization. Compare offline-final policy to current online one. Decouples policy improvement from explore generation.
+
+5.3 Fresh restart with composed levers [in-scope]
+The cleanest experiment. Drop all training, restart with: --algo awac + entropy-bonus patch + λ=8 + update_per_explore_step=0.5 + balanced_fraction=0.5 + demo_priority_bonus=on + n_step=3 + LR_pol=1e-4 + 50 seed demos + reverse-curriculum start = strongest in-scope combination. Expected eval ~50-60%.
+
+Tier 6 — Out-of-scope by current rule (listed for completeness)
+6.1 ⚠ Reward shaping — relax depth pressure
+The deep-target reward currently rewards high-speed push (139× the high-speed policy hit it). Softer depth requirement (target zone not point) or capped progress reward would let gentler policies win. Plan v10 deferred lever.
+
+6.2 ⚠ Saturation penalty in reward
+r += −γ · max(0, |a| − 0.9)² directly penalizes near-rail actions through the reward signal. Reward change.
+
+6.3 ⚠ Action history in observation
+Add last 4 actions to obs (16 dims). Lets the policy see its own rotation drift → could break the rotation-rail cycle. Obs change.
+
+6.4 ⚠ Truncation tuning — relax OFF_BRANCH_GRACE_STEPS 50 → 100
+Gives the wire more time to recover from an off-path excursion. Terminal-condition change.
+
+6.5 ⚠ Lower cross-track penalty weight
+Plan v10's Phase-4 fallback. Reward weight change.
+
+Recommended composition (in-scope only)
+If you wanted the strongest single experiment, I'd compose:
+
+Tier 1.1 (entropy bonus) — the direct mean-rail fix
+Tier 1.2 (awac_lambda → 8) — softer cloning
+Tier 1.4 (LR_pol = 1e-4) — slower policy drift
+Tier 2.4 (PER demo priority bonus) — protect gentle demos
+Tier 4.1 or 4.2 (narrow to 2-3 best states) — denser success signal
+Six small code changes, no reward/obs/terminal touched. Expected outcome on a fresh run: policy entropy holds in [−4, −6] range (vs current −10), eval climbs to 45-60%.
+
+The single best bisection test if you want to identify the dominant cause: Tier 3.2 (BC-warm + SAC finetune) — SAC's mandatory entropy makes the rail impossible, so if it works, you've confirmed entropy is the only issue. If SAC also plateaus, the problem is deeper (likely the reward structure itself, Tier 6).
+

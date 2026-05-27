@@ -337,7 +337,16 @@ def _classify_target_branch(env) -> str:
     return getattr(env, "_target_branch_short", "unknown") or "unknown"
 
 
-def save_snapshot(env, episode, ep_step, reason, reward, phase=None) -> Optional[str]:
+def save_snapshot(
+    env,
+    episode,
+    ep_step,
+    reason,
+    reward,
+    phase=None,
+    base_dir_override: Optional[str] = None,
+    mode_override: Optional[str] = None,
+) -> Optional[str]:
     """Render and save an end-of-episode snapshot.
 
     Mode and output dir are read from environment variables so the
@@ -357,13 +366,20 @@ def save_snapshot(env, episode, ep_step, reason, reward, phase=None) -> Optional
     reward is encoded in the filename (``R<+/-><value>``) so the pruner
     can rank without opening the PNGs.
 
+    ``base_dir_override`` / ``mode_override`` (Plan v9 Change 8b) let
+    callers (e.g. env5 restore-start verification) write to a separate
+    folder + force rendering even when SNAPSHOT_MODE is globally off.
+
     Returns the path written, or None if disabled / errored.
     """
-    mode = os.environ.get("SNAPSHOT_MODE", "none").lower()
+    mode = (mode_override or os.environ.get("SNAPSHOT_MODE", "none")).lower()
     if mode in ("none", "", "off", "false", "0"):
         return None
 
-    base_dir = os.environ.get("SNAPSHOT_DIR") or os.path.join(os.getcwd(), "snapshots")
+    if base_dir_override is not None:
+        base_dir = base_dir_override
+    else:
+        base_dir = os.environ.get("SNAPSHOT_DIR") or os.path.join(os.getcwd(), "snapshots")
     sub = reason if reason else "unknown"
     target_branch = _classify_target_branch(env)
     if phase:

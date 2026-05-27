@@ -106,26 +106,90 @@ class SofaBeamAdapter(Simulation):
         self._sofa.Simulation.reset(self.root)
         self._update_properties()
 
-    def restore_checkpoint(self, state_dict: dict, settle_steps: int = 50) -> None:
+    # Plan v9 Change 5 — DataField names we attempt to save/restore on
+    # the MechanicalObject. These are the 6 additional fields beyond the
+    # original (xtip, rotation, indexFirstNode, dof_positions) that
+    # together carry the bulk of SOFA's per-step physics state. Missing
+    # fields are silently skipped (build/version-dependent).
+    _DOF_EXTRA_FIELDS = (
+        "velocity",
+        "force",
+        "externalForce",
+        "free_position",
+        "free_velocity",
+        "derivX",
+    )
+
+    def save_checkpoint(self) -> dict:
+        """Plan v9 Change 5 — capture SOFA controller + full MechanicalObject
+        DOF state into a dict suitable for ``restore_checkpoint``.
+
+        Returns a dict containing the original four fields (xtip,
+        rotation_instrument, index_first_node, dof_positions) plus the
+        six MechanicalObject DataFields listed in ``_DOF_EXTRA_FIELDS``
+        (velocity, force, externalForce, free_position, free_velocity,
+        derivX). Fields that the running SOFA build doesn't expose are
+        skipped (no exception).
+        """
+        if self._sofa is None or self.root is None:
+            raise RuntimeError(
+                "save_checkpoint called before simulation.reset() has "
+                "built the SOFA scene."
+            )
+        ic = self._instruments_combined
+        state = {
+            "xtip": np.array(ic.m_ircontroller.xtip.value, copy=True),
+            "rotation_instrument": np.array(
+                ic.m_ircontroller.rotationInstrument.value, copy=True
+            ),
+            "index_first_node": np.array(
+                ic.m_ircontroller.indexFirstNode.value, copy=True
+            ),
+            "dof_positions": np.array(ic.DOFs.position.value, copy=True),
+        }
+        for field_name in self._DOF_EXTRA_FIELDS:
+            try:
+                field = getattr(ic.DOFs, field_name, None)
+                if field is None:
+                    continue
+                state[field_name] = np.array(field.value, copy=True)
+            except Exception:
+                # Field not exposed by this SOFA build — skip silently.
+                pass
+        return state
+
+    def restore_checkpoint(self, state_dict: dict, settle_steps: int = 3) -> None:
         """Restore SOFA controller + DOF state from a saved snapshot.
 
-        Expected keys in ``state_dict``:
+        Required keys in ``state_dict``:
           - xtip: (n_devices,) insertion lengths per device
           - rotation_instrument: (n_devices,) rotations per device
           - index_first_node: scalar int, active beam node index
           - dof_positions: (n_nodes, 7) beam-node positions (xyz + quaternion)
 
-        Order matters: ``Sofa.Simulation.reset`` clears solver/velocity state
-        and reverts DataFields to their scene-construction values. We do that
-        first so the subsequent assignments are the sole source of truth.
-        Then assign xtip / rotationInstrument / indexFirstNode / DOFs.position
-        and run ``settle_steps`` animate calls so the solver reconverges
-        contact forces on the restored configuration.
+        Optional Plan v9 Change 5 fields (any of these present triggers
+        the "fuller restore" path — preserves velocities and contact
+        forces; obviates the long settle):
+          - velocity, force, externalForce, free_position, free_velocity,
+            derivX (each: same shape as the corresponding DOFs DataField)
 
-        **This must be called AFTER eve.Env.reset's start.reset() step**, not
-        during intervention.reset — because InsertionPoint.start.reset()
-        unconditionally runs intervention.reset_devices() which zeroes every
-        field this method sets. See BenchEnv5.reset() for the driver.
+        Order matters: ``Sofa.Simulation.reset`` clears solver/velocity
+        state and reverts DataFields to their scene-construction values.
+        We do that first so the subsequent assignments are the sole
+        source of truth. Then assign all available state arrays and run
+        ``settle_steps`` animate calls.
+
+        **This must be called AFTER eve.Env.reset's start.reset() step**,
+        not during intervention.reset — because InsertionPoint.start.reset()
+        unconditionally runs intervention.reset_devices() which zeroes
+        every field this method sets. See BenchEnv5.reset() for the driver.
+
+        Plan v9 Change 5 also reverts the RL_IMPROV_7 §7 Fix 6
+        rotation-zeroing: when the checkpoint contains *any* of the
+        extra DOF fields, we trust the saved rotation_instrument value
+        (the previous fix was a workaround for state inconsistency
+        which fuller-save should eliminate). Old-format checkpoints
+        (no extra fields) keep the zeroing behaviour as a fallback.
         """
         if self._sofa is None or self.root is None:
             raise RuntimeError(
@@ -135,22 +199,41 @@ class SofaBeamAdapter(Simulation):
         ic = self._instruments_combined
         self._sofa.Simulation.reset(self.root)
 
+        # Detect "fuller-save" cache: any of the 6 extra DOF fields
+        # present means the saver was Plan v9 Change 5 aware.
+        has_extra = any(k in state_dict for k in self._DOF_EXTRA_FIELDS)
+
         ic.m_ircontroller.xtip.value = np.asarray(state_dict["xtip"])
-        # Zero out rotationInstrument instead of restoring the saved value.
-        # Diagnosis in RL_IMPROV_7 §7 Fix 6: the saved rotation accumulated
-        # during the collection episode was target-specific (spanning
-        # 0-342° across clusters). Restoring it forces the wire into a
-        # tip orientation aimed at the *original* target's daughter branch.
-        # Heuristic's first forward push then jams the wire into the
-        # wrong daughter → fold-stall within ~30 steps. Zeroing gives
-        # the policy/heuristic a neutral orientation to command from
-        # scratch. The wire's physical body DOFs are still restored, so
-        # the spatial path through the aorta is preserved.
         saved_rot = np.asarray(state_dict["rotation_instrument"])
-        ic.m_ircontroller.rotationInstrument.value = np.zeros_like(saved_rot)
+        if has_extra:
+            # Plan v9 Change 5 — fuller-save cache: restore the saved
+            # rotation_instrument as-is. The state-inconsistency that
+            # motivated zeroing (RL_IMPROV_7 §7 Fix 6) should be fixed
+            # by also restoring velocity/force fields below.
+            ic.m_ircontroller.rotationInstrument.value = saved_rot
+        else:
+            # Old-format cache: keep the legacy zero-out behaviour.
+            ic.m_ircontroller.rotationInstrument.value = np.zeros_like(saved_rot)
         ic.m_ircontroller.indexFirstNode.value = int(state_dict["index_first_node"])
         ic.DOFs.position.value = np.asarray(state_dict["dof_positions"])
 
+        if has_extra:
+            for field_name in self._DOF_EXTRA_FIELDS:
+                if field_name not in state_dict:
+                    continue
+                try:
+                    field = getattr(ic.DOFs, field_name, None)
+                    if field is None:
+                        continue
+                    field.value = np.asarray(state_dict[field_name])
+                except Exception:
+                    # Restore best-effort — skip fields the build doesn't expose.
+                    pass
+
+        # Plan v9 Change 5 — settle_steps default reduced 50 -> 3. With
+        # velocities preserved by the fuller restore, the solver doesn't
+        # need to reconverge from rest. Old-format caches that pass
+        # settle_steps=50 explicitly continue to work.
         for _ in range(max(0, int(settle_steps))):
             self._sofa.Simulation.animate(self.root, self.root.dt.value)
 

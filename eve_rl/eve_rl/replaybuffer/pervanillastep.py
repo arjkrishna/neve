@@ -170,6 +170,72 @@ class PERVanillaStep(ReplayBuffer):
                 self.clean_tree.update(pos, priority if reached else 0.0)
             self.position = int((pos + 1) % self.capacity)
 
+    def export_all(self) -> dict:
+        """Plan v10 — serialize the full PER buffer state to a dict of
+        numpy arrays (for np.savez). Includes the transitions AND the
+        PER-specific state (sum-tree priorities, is_demo, is_clean,
+        episode_returns, max_priority, sample_count) so a reload restores
+        prioritization faithfully. The clean_tree is rebuilt from
+        is_clean + leaf priorities on import (not stored)."""
+        n = len(self.buffer)
+        if n == 0:
+            return {"n": np.array(0, dtype=np.int64)}
+        obs_pairs = np.stack([self.buffer[i][0] for i in range(n)])
+        actions = np.stack([np.asarray(self.buffer[i][1]) for i in range(n)])
+        rewards = np.array([self.buffer[i][2] for i in range(n)], dtype=np.float32)
+        terminals = np.array([self.buffer[i][3] for i in range(n)])
+        return {
+            "n": np.array(n, dtype=np.int64),
+            "capacity": np.array(self.capacity, dtype=np.int64),
+            "obs_pairs": obs_pairs,
+            "actions": actions,
+            "rewards": rewards,
+            "terminals": terminals,
+            "position": np.array(self.position, dtype=np.int64),
+            "tree": self.tree.tree,
+            "is_demo": self.is_demo,
+            "is_clean": self.is_clean,
+            "episode_returns": self.episode_returns,
+            "max_priority": np.array(self.max_priority, dtype=np.float64),
+            "sample_count": np.array(self._sample_count, dtype=np.int64),
+        }
+
+    def import_all(self, data) -> int:
+        """Plan v10 — repopulate the buffer from an export_all() npz.
+        Returns the number of transitions loaded. Capacity must match
+        (ring-buffer geometry); if it differs we skip the load defensively.
+        Rebuilds the clean_tree from is_clean + leaf priorities."""
+        n = int(data["n"])
+        if n == 0:
+            return 0
+        if "capacity" in data and int(data["capacity"]) != self.capacity:
+            # Geometry mismatch — refuse rather than corrupt the sum-tree.
+            raise ValueError(
+                f"replay capacity mismatch: file={int(data['capacity'])} "
+                f"buffer={self.capacity}"
+            )
+        obs_pairs = data["obs_pairs"]; actions = data["actions"]
+        rewards = data["rewards"]; terminals = data["terminals"]
+        self.buffer = [
+            (obs_pairs[i], actions[i], rewards[i], terminals[i])
+            for i in range(n)
+        ]
+        self.position = int(data["position"])
+        self.tree.tree = np.array(data["tree"], dtype=np.float64)
+        self.is_demo = np.array(data["is_demo"], dtype=bool)
+        self.is_clean = np.array(data["is_clean"], dtype=bool)
+        self.episode_returns = np.array(data["episode_returns"], dtype=np.float64)
+        self.max_priority = float(data["max_priority"])
+        self._sample_count = int(data["sample_count"])
+        # Rebuild the clean sub-tree from is_clean + the main tree's leaves.
+        if self._balanced:
+            self.clean_tree = SumTree(self.capacity)
+            for i in range(n):
+                if self.is_clean[i]:
+                    leaf_pri = float(self.tree.tree[i + self.capacity - 1])
+                    self.clean_tree.update(i, leaf_pri)
+        return n
+
     def _draw(self, tree, count, beta, n):
         """Stratified proportional draw of ``count`` leaves from ``tree``.
         Returns (indices, samples, is_weight-list). Per-stream IS weights

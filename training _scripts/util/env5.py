@@ -13,6 +13,7 @@ import eve
 import eve.visualisation
 import time
 import logging
+import re
 import sys
 import os
 from eve.util.pathcontext import PathProjectionCache
@@ -183,7 +184,10 @@ class BenchEnv5(eve.Env):
             factor=3.0,
             final_only_after_all_interim=False,
         )
-        step_reward = eve.reward.Step(factor=-0.001)
+        # Plan v9 Change 4 — the uniform -0.001 step penalty is replaced by
+        # an inline path-segment-conditioned per-step term added in
+        # BenchEnv5.step() after update_branch_state. The eve.reward.Step
+        # primitive is no longer part of the Combination.
         arc_progress = eve.reward.ArcLengthProgress(
             intervention=intervention,
             pathfinder=pathfinder,
@@ -191,7 +195,7 @@ class BenchEnv5(eve.Env):
             lateral_penalty_factor=0.001,
             path_context=self._path_context,
         )
-        reward = eve.reward.Combination([target_reward, arc_progress, step_reward])
+        reward = eve.reward.Combination([target_reward, arc_progress])
 
         # ----------------------------------------------------------------
         # Terminal and Truncation
@@ -382,6 +386,15 @@ class BenchEnv5(eve.Env):
         # criterion in DualDeviceNav_train.
         self._reached_target_daughter = False
 
+        # Plan v9 Change 5b — pre-bif(11) checkpoint capture state.
+        # Captured into memory the first step the wire is ~5 mm before
+        # the (2)->(11) junction; written to disk at terminal if the
+        # episode finishes with the wire in the target daughter (clean
+        # thread). Gated by env var PRE_BIF11_CHECKPOINT_DIR.
+        self._pre_bif11_checkpoint_memo = None
+        self._pre_bif11_jn_arc = None
+        self._captured_pre_bif11 = False
+
         # Extract restore_checkpoint BEFORE super().reset(). Reason:
         # eve.Env.reset() calls self.start.reset(), which for InsertionPoint
         # runs intervention.reset_devices() and unconditionally zeros xtip /
@@ -392,9 +405,16 @@ class BenchEnv5(eve.Env):
         # apply the restore + re-run observation/reward reset so the obs
         # returned from reset() reflects the restored 380 mm state.
         ckpt = None
+        self._restore_ckpt_file = None
+        self._restore_ckpt_idx = None
         if options is not None and "restore_checkpoint" in options:
             options = dict(options)
             ckpt = options.pop("restore_checkpoint")
+            # Plan v10 — per-state logging: record which of the restore-pool
+            # checkpoints this episode used (set by CheckpointRestoreWrapper),
+            # so success% per start state is a simple EPISODE_START groupby.
+            self._restore_ckpt_file = options.get("_restore_checkpoint_file")
+            self._restore_ckpt_idx = options.get("_restore_checkpoint_idx")
 
         # path_context.reset() is called by LocalGuidance.reset() and
         # ArcLengthProgress.reset() inside super().reset(), AFTER
@@ -403,6 +423,16 @@ class BenchEnv5(eve.Env):
 
         if ckpt is not None:
             self.intervention.simulation.restore_checkpoint(ckpt)
+            # Plan v10 — SOFA first-restore quirk: the FIRST restore after a
+            # worker's scene build sets the controller xtip but does NOT apply
+            # dof_positions (the wire ends up un-restored ~z=345, so each
+            # worker's/respawn's first episode fails before the trunk top —
+            # confirmed: 9/16 ep1 started at z<392, branch (18), vs ep2+ at
+            # the fork). Apply the restore a SECOND time on the worker's first
+            # restore so the wire geometry actually takes.
+            if not getattr(self, "_restore_warmed_up", False):
+                self.intervention.simulation.restore_checkpoint(ckpt)
+                self._restore_warmed_up = True
             # Re-reset observation and reward so their initial per-step
             # quantities (projection, d_rem_prev, cross-track, guidance
             # features) reflect the restored tip state rather than the
@@ -421,6 +451,35 @@ class BenchEnv5(eve.Env):
             # the refreshed observation.
             from copy import deepcopy
             result = (deepcopy(self.observation()), deepcopy(self.info.info))
+
+            # Plan v9 Change 8b — restore-start debug snapshot. Render the
+            # wire's post-restore state into a separate folder so we can
+            # visually verify the SOFA-restore is landing the wire at the
+            # intended pose (just before bif(11)). Gated by env var
+            # RESTORE_START_SNAPSHOT_DIR; no-op otherwise. Snapshot mode
+            # is forced (overrides global SNAPSHOT_MODE) so this works
+            # even when regular snapshots are off.
+            rs_dir = os.environ.get("RESTORE_START_SNAPSHOT_DIR")
+            if rs_dir:
+                try:
+                    from util.snapshot import save_snapshot
+                    rs_mode = os.environ.get(
+                        "RESTORE_START_SNAPSHOT_MODE", "centerlines"
+                    )
+                    save_snapshot(
+                        self,
+                        episode=self._episode_count,
+                        ep_step=0,
+                        reason="start",
+                        reward=0.0,
+                        phase="restore_start",
+                        base_dir_override=rs_dir,
+                        mode_override=rs_mode,
+                    )
+                except Exception as e:
+                    self._step_logger.warning(
+                        f"restore-start snapshot failed: {e}"
+                    )
 
         # Initialise CORRECT_ENTRY_REWARD bookkeeping from the wire's CURRENT
         # position (post-restore). Junctions that the wire is already past at
@@ -441,9 +500,19 @@ class BenchEnv5(eve.Env):
             # latch so SOFA-restored episodes don't spuriously fire +1 on
             # the first step after restore for junctions the wire is
             # already past. Symmetric with _correct_entries_seen above.
-            for j_arc in self._path_context._path_daughter_arclengths:
+            # Plan v9 Change 1: latch is now set of (round(j_arc,3), +1)
+            # tuples (only the correct-commit is latched).
+            # Plan v9 — +1 now fires at ALL on-path junctions (top, bridge,
+            # daughter), so pre-latch from _path_junction_arclengths (all
+            # junctions), not just _path_daughter_arclengths. A restored
+            # wire starting just before (11) is past (2)->(0); pre-latching
+            # it prevents a spurious +1 if the state machine re-detects
+            # that crossing.
+            for j_arc in self._path_context._path_junction_arclengths:
                 if j_arc <= proj_s - 10.0:
-                    self._path_context._committed_forks.append(float(j_arc))
+                    self._path_context._committed_forks.add(
+                        (round(float(j_arc), 3), +1)
+                    )
         except Exception:
             pass
 
@@ -468,10 +537,14 @@ class BenchEnv5(eve.Env):
             f" | phase_c_variant={self._phase_c_variant}"
             if self._phase_c_variant else ""
         )
+        restore_str = (
+            f" | restore_ckpt={self._restore_ckpt_file}"
+            if getattr(self, "_restore_ckpt_file", None) else ""
+        )
         self._step_logger.info(
             f"EPISODE_START | ep={self._episode_count} | global_steps={self._step_count} | "
             f"wall_time={time.time():.6f} | pid={os.getpid()}{target_str}{ins_str}"
-            f" | target_branch={self._target_branch_short}{seed_str}{variant_str}"
+            f" | target_branch={self._target_branch_short}{seed_str}{variant_str}{restore_str}"
         )
         sys.stderr.flush()
 
@@ -593,6 +666,17 @@ class BenchEnv5(eve.Env):
         except Exception as e:
             self._step_logger.warning(f"update_branch_state failed: {e}")
 
+        # ---- Plan v9 Change 4: path-segment-conditioned step reward ----
+        # Per-step penalty depends on which segment of the planned path
+        # the wire is currently on. Replaces the old uniform -0.001 step
+        # penalty (which has been removed from the Combination above).
+        try:
+            reward += self._compute_path_segment_step_reward()
+        except Exception as e:
+            self._step_logger.warning(
+                f"path-segment step reward failed: {e}"
+            )
+
         # ---- Plan v5: drain state-machine daughter-commit events ----
         # update_branch_state may have emitted (j_arc, +1|-1) events when
         # the wire committed at a daughter fork. +1 = correct-daughter
@@ -623,6 +707,47 @@ class BenchEnv5(eve.Env):
                 self._reached_target_daughter = True
         except Exception:
             pass
+
+        # ---- Plan v9 Change 5b: pre-bif(11) checkpoint memo ----
+        # Capture an in-memory SOFA snapshot the first step the wire is
+        # within 5 mm of crossing the (2)->(11) junction. Written to disk
+        # at episode end IF the episode terminates in the target
+        # daughter (clean thread). Gated by env var
+        # PRE_BIF11_CHECKPOINT_DIR; no-op otherwise.
+        pre_bif11_dir = os.environ.get("PRE_BIF11_CHECKPOINT_DIR")
+        if pre_bif11_dir and not self._captured_pre_bif11:
+            try:
+                if self._pre_bif11_jn_arc is None:
+                    juncs = self._path_context.get_path_junctions()
+                    # RCCA path topology is (2)->(0)->(11)->RCCA, so the
+                    # junction "just before (11)" is the (0)->(11) bridge
+                    # crossing, NOT a direct (2)->(11) (which does not
+                    # exist). Matches heuristic_policy_rcca's
+                    # _lcca_jn_arc = _find_junction_arc(junctions,"(0)","(11)").
+                    for arc, prev_n, next_n in juncs:
+                        if re.search(r"\(0\)", prev_n) and re.search(
+                            r"\(11\)", next_n
+                        ):
+                            self._pre_bif11_jn_arc = float(arc)
+                            break
+                if self._pre_bif11_jn_arc is not None:
+                    proj_s = float(self._path_context.get_projection().s)
+                    if proj_s >= self._pre_bif11_jn_arc - 5.0:
+                        import numpy as _np
+                        sim = self.intervention.simulation
+                        memo = sim.save_checkpoint()
+                        memo["tracking3d"] = _np.array(
+                            self.intervention.fluoroscopy.tracking3d,
+                            copy=True,
+                        )
+                        memo["_proj_s_at_capture"] = float(proj_s)
+                        memo["_pre_bif11_jn_arc"] = float(self._pre_bif11_jn_arc)
+                        self._pre_bif11_checkpoint_memo = memo
+                        self._captured_pre_bif11 = True
+            except Exception as e:
+                self._step_logger.warning(
+                    f"pre_bif11_checkpoint capture failed: {e}"
+                )
 
         # ---- RVA-arclength SOFA checkpoint capture (RL_IMPROV_8 §25) ----
         # Save SOFA state the first step where the wire's projection
@@ -907,6 +1032,25 @@ class BenchEnv5(eve.Env):
         except Exception:
             pass
 
+        # Plan v9 Change 2 — expose final-branch identity at end of each
+        # step so the seeding filter can switch from the ever-touched
+        # `reached_target_daughter` latch to a strict final-state check
+        # (final_branch_idx == target_daughter_branch_idx). Only the
+        # value at the TERMINAL step matters; consumers should read
+        # these from `info` of the last transition of the episode.
+        try:
+            pc = self._path_context
+            info["final_branch_idx"] = (
+                int(pc._current_branch_idx)
+                if pc._current_branch_idx is not None else None
+            )
+            info["target_daughter_branch_idx"] = (
+                int(pc._target_daughter_branch_idx)
+                if pc._target_daughter_branch_idx is not None else None
+            )
+        except Exception:
+            pass
+
         # MDP-grounding fix — a truncated episode (wrong_branch_timeout,
         # wire_fold_stall, vessel_end, sim_error, max_steps) is an absorbing
         # FAILURE state: the task is unrecoverable, so its value IS the
@@ -921,7 +1065,242 @@ class BenchEnv5(eve.Env):
         if truncated:
             terminated = True
 
+        # ---- Plan v9 Change 5b: write pre-bif(11) checkpoint on success ----
+        # If we captured a memo earlier in this episode AND the wire
+        # actually finished in the target daughter (clean RCCA thread),
+        # persist the memo to disk. Otherwise drop it.
+        if terminated and self._pre_bif11_checkpoint_memo is not None:
+            try:
+                final_idx = info.get("final_branch_idx")
+                target_idx = info.get("target_daughter_branch_idx")
+                clean = (
+                    final_idx is not None
+                    and target_idx is not None
+                    and int(final_idx) == int(target_idx)
+                )
+                if clean:
+                    pre_bif11_dir = os.environ.get("PRE_BIF11_CHECKPOINT_DIR")
+                    if pre_bif11_dir:
+                        self._save_pre_bif11_checkpoint(pre_bif11_dir)
+            except Exception as e:
+                self._step_logger.warning(
+                    f"pre_bif11_checkpoint write-on-terminal failed: {e}"
+                )
+            # Whether kept or dropped, the memo's role for this episode
+            # is done.
+            self._pre_bif11_checkpoint_memo = None
+
         return obs, reward, terminated, truncated, info
+
+    # ------------------------------------------------------------------
+    # Plan v9 Change 4 — path-segment-conditioned per-step reward
+    # ------------------------------------------------------------------
+    # Replaces the uniform -0.001 Step penalty with branch-aware values:
+    #   trunk (2): linear interp -0.007 (z=345/start) -> -0.002 (pre-bif)
+    #   post-bif (0):   -0.007 (wrong-direction off-path branch)
+    #   bridge  (11):    0.0   (on-path, between bifs — don't penalise)
+    #   target daughter (RCCA for RCCA training): 0.0 (depth reward via
+    #     Change 4b's 2x progress doubling, NOT a per-step bonus)
+    #   wrong daughter (RVA/LCCA/LVA when target is the other):  -0.007
+    #   anything else (fallback): -0.001 (old uniform value, defensive)
+    # ------------------------------------------------------------------
+
+    def _classify_branch_segment(self, branch_idx: int) -> str:
+        """Return one of: trunk / post_bif / bridge / target_daughter /
+        wrong_daughter / other for a given branch index."""
+        try:
+            pc = self._path_context
+            if branch_idx is None:
+                return "other"
+            target_idx = pc._target_daughter_branch_idx
+            if target_idx is not None and int(branch_idx) == int(target_idx):
+                return "target_daughter"
+            name = getattr(pc._branches_tuple[branch_idx], "name", "") or ""
+            # Numbered branches: regex extracts the integer inside "(N)"
+            m = re.search(r"\((\d+)\)", name)
+            if m is not None:
+                n = int(m.group(1))
+                if n == 2:
+                    return "trunk"
+                if n == 0:
+                    return "post_bif"
+                if n == 11:
+                    return "bridge"
+                return "other"
+            # Named daughter that isn't the current target
+            for tag in ("RCCA", "RVA", "LCCA", "LVA"):
+                if tag in name:
+                    return "wrong_daughter"
+            return "other"
+        except Exception:
+            return "other"
+
+    def _ensure_path_segment_cache(self) -> None:
+        """Lazily build the per-branch segment-class map and the trunk
+        end-arclength cache, both keyed off the current planned path.
+        Recomputed only when the cached path-context object changes
+        (cheap pointer check)."""
+        try:
+            pc = self._path_context
+            if (getattr(self, "_step_reward_pc_id", None) == id(pc)
+                    and getattr(self, "_step_reward_branch_class", None) is not None):
+                return
+            self._step_reward_branch_class = {
+                i: self._classify_branch_segment(i)
+                for i in range(len(pc._branches_tuple))
+            }
+            # Trunk end arclength = the (2)->(0) junction arc (top of
+            # trunk / bif1) along the planned path. The RCCA topology is
+            # (2)->(0)->(11)->RCCA, so the trunk (2) ENDS at the (2)->(0)
+            # junction, NOT at any (2)->(11) (which doesn't exist). The
+            # -0.007 -> -0.002 interpolation spans z=345 (proj_s=0) to
+            # this junction; (0)-on-path then continues flat at -0.002.
+            # Fall back to the first on-path junction if naming differs.
+            trunk_end_arc = None
+            try:
+                for arc, prev_n, next_n in pc.get_path_junctions():
+                    p_is_trunk = bool(re.search(r"\(2\)", prev_n))
+                    n_is_postbif = bool(re.search(r"\(0\)", next_n))
+                    if p_is_trunk and n_is_postbif:
+                        trunk_end_arc = float(arc)
+                        break
+                if trunk_end_arc is None:
+                    juncs = pc.get_path_junctions()
+                    if juncs:
+                        trunk_end_arc = float(juncs[0][0])
+            except Exception:
+                pass
+            self._trunk_end_arc = trunk_end_arc
+            self._step_reward_pc_id = id(pc)
+        except Exception as e:
+            try:
+                self._step_logger.warning(
+                    f"_ensure_path_segment_cache failed: {e}"
+                )
+            except Exception:
+                pass
+
+    def _compute_path_segment_step_reward(self) -> float:
+        """Return the per-step reward for the wire's current path segment.
+        Called once per step after pathcontext's update_branch_state.
+
+        Plan v9 (corrected) — keyed on ON-PATH vs OFF-PATH first, then
+        segment. (0) is a SHARED branch: its on-path portion (the segment
+        from bif1 to the (0)->(11) fork) is part of the route to (11) and
+        gets the same low 0.002 as the trunk end; only the OVERSHOOT into
+        (0) past the fork is off-path and gets the full 0.007. The
+        on-path/off-path classifier (is_on_correct_path) already makes
+        that distinction, plus it folds in wrong daughters (RVA/LVA/LCCA)
+        and LVA-direction drift at the top junction — all off-path -> 0.007.
+
+        On-path corridor:
+          trunk (2)         : interpolate -0.007 (z=345) -> -0.002 (pre-bif)
+          (0) on-path part  : -0.002 (flat; still progressing to (11))
+          (11) bridge       : 0.0
+          target daughter   : 0.0 (depth reward via Change 4b progress 2x)
+        Off-path (anything): -0.007.
+        """
+        try:
+            self._ensure_path_segment_cache()
+            pc = self._path_context
+            # Off-path -> full penalty regardless of branch. Covers:
+            # wrong daughters (RVA/LVA/LCCA), LVA-direction drift at the
+            # top junction, AND overshoot into (0) past the (0)->(11) fork.
+            try:
+                on_path = pc.is_on_correct_path()
+            except Exception:
+                on_path = True
+            if not on_path:
+                return -0.007
+            idx = pc._current_branch_idx
+            if idx is None:
+                return -0.002
+            segment_class = self._step_reward_branch_class.get(
+                int(idx), self._classify_branch_segment(int(idx))
+            )
+            if segment_class == "trunk":
+                if self._trunk_end_arc is None or self._trunk_end_arc <= 0:
+                    return -0.002
+                try:
+                    proj_s = float(pc.get_projection().s)
+                except Exception:
+                    return -0.002
+                t = max(0.0, min(1.0, proj_s / self._trunk_end_arc))
+                return -0.007 + (0.005 * t)  # -0.007 at start -> -0.002 at end
+            if segment_class == "post_bif":      # (0) on-path part
+                return -0.002
+            if segment_class == "bridge":        # (11)
+                return 0.0
+            if segment_class == "target_daughter":  # RCCA
+                return 0.0
+            return -0.002  # other on-path (defensive, low corridor value)
+        except Exception:
+            return -0.002
+
+    def _save_pre_bif11_checkpoint(self, out_dir: str) -> None:
+        """Plan v9 Change 5b — write the in-memory pre-bif(11) checkpoint
+        memo to disk. Called from step() at episode-terminal IF the
+        episode finished cleanly threaded into the target daughter.
+        """
+        try:
+            import numpy as np
+            os.makedirs(out_dir, exist_ok=True)
+            memo = self._pre_bif11_checkpoint_memo
+            if memo is None:
+                return
+            proj_s = float(memo.get("_proj_s_at_capture", 0.0))
+            jn_arc = float(memo.get("_pre_bif11_jn_arc", 0.0))
+            # Strip leading-underscore metadata before np.savez (NPZ keys
+            # can't start with '_' or they'd be hidden on load).
+            state = {k: v for k, v in memo.items() if not k.startswith("_")}
+            target_coords = None
+            try:
+                target_coords = list(
+                    np.array(
+                        self.intervention.target.coordinates3d, copy=True
+                    ).flatten().astype(float)
+                )
+            except Exception:
+                pass
+            pid = os.getpid()
+            base = (
+                f"pre_bif11_pid{pid}_ep{self._episode_count:04d}"
+                f"_step{self._episode_step_count:04d}"
+            )
+            npz_path = os.path.join(out_dir, base + ".npz")
+            json_path = os.path.join(out_dir, base + ".json")
+            np.savez(npz_path, **state)
+            inserted_lengths = None
+            try:
+                inserted_lengths = [
+                    float(x) for x in self.intervention.device_lengths_inserted
+                ]
+            except Exception:
+                pass
+            meta = {
+                "pid": pid,
+                "episode_idx": self._episode_count,
+                "step_idx": self._episode_step_count,
+                "target_branch": self._target_branch_short,
+                "target_coordinates3d": target_coords,
+                "inserted_lengths": inserted_lengths,
+                "proj_s_at_capture": proj_s,
+                "pre_bif11_jn_arc": jn_arc,
+                "reset_seed": self._reset_seed,
+                "wall_time": time.time(),
+            }
+            import json as _json
+            with open(json_path, "w") as f:
+                _json.dump(meta, f, indent=2)
+            self._step_logger.info(
+                f"PRE_BIF11_CHECKPOINT | ep={self._episode_count} | "
+                f"pid={pid} | proj_s={proj_s:.2f} | "
+                f"pre_bif11_jn_arc={jn_arc:.2f} | file={base}.npz"
+            )
+        except Exception as e:
+            self._step_logger.warning(
+                f"_save_pre_bif11_checkpoint exception: {e}"
+            )
 
     def _save_rva_checkpoint(self, out_dir: str, proj_s: float) -> None:
         """Capture SOFA controller + DOF state at the moment wire's
@@ -934,20 +1313,15 @@ class BenchEnv5(eve.Env):
             import numpy as np
             os.makedirs(out_dir, exist_ok=True)
             sim = self.intervention.simulation
-            ic = sim._instruments_combined
-            state = {
-                "xtip": np.array(ic.m_ircontroller.xtip.value, copy=True),
-                "rotation_instrument": np.array(
-                    ic.m_ircontroller.rotationInstrument.value, copy=True
-                ),
-                "index_first_node": np.array(
-                    ic.m_ircontroller.indexFirstNode.value, copy=True
-                ),
-                "dof_positions": np.array(ic.DOFs.position.value, copy=True),
-                "tracking3d": np.array(
-                    self.intervention.fluoroscopy.tracking3d, copy=True
-                ),
-            }
+            # Plan v9 Change 5 — call the new save_checkpoint() helper to
+            # get the fuller-format dict (4 base fields + up to 6 extra
+            # DOF DataFields: velocity / force / externalForce /
+            # free_position / free_velocity / derivX). Then enrich with
+            # tracking3d for downstream consumers.
+            state = sim.save_checkpoint()
+            state["tracking3d"] = np.array(
+                self.intervention.fluoroscopy.tracking3d, copy=True
+            )
             target_coords = None
             try:
                 target_coords = list(

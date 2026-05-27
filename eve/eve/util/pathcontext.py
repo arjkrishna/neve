@@ -58,6 +58,14 @@ MAX_RADIUS_CEILING_MM = 12.0
 # _current_branch_idx state flips to the next on-path branch.
 COMMIT_HYSTERESIS_MM = 10.0
 
+# Plan v9 (reward-only) — a wrong-daughter commit fires -0.05 only when the
+# wire has genuinely gone DEEP into a wrong branch: off-path arclength since
+# divergence >= WRONG_COMMIT_ARC_MM. This is a REWARD-side threshold; it does
+# NOT alter the on/off-path classifier (which the heuristic reads). A wire
+# merely wedged at a fork mouth oscillates on/off-path but its off-path arc
+# stays shallow, so it never triggers the -0.05 (no flicker hammering).
+WRONG_COMMIT_ARC_MM = 10.0
+
 
 def _branch_interior_point(branch, junction_coord, offset_mm=15.0):
     """Walk ``offset_mm`` along ``branch.coordinates`` starting from the point
@@ -243,7 +251,14 @@ class PathProjectionCache:
         self._divergence_wrong_branch_arc = 0.0
         self._divergence_wrong_branch_idx = None
         self._daughter_commit_events = []
-        self._committed_forks = []
+        # Plan v9 Change 1: set of (round(j_arc,3), +1) tuples. Only the +1
+        # correct-commit is latched (at most once per fork per episode);
+        # the -0.05 wrong-commit reward is never latched, so repeated wrong
+        # commits at the same fork keep firing.
+        self._committed_forks = set()
+        # Plan v9 (reward-only) — per-divergence latch for the -0.05
+        # deep-wrong-commit (mirrors reset()).
+        self._wrong_commit_fired = False
 
         # Plan v5 (Tier 1) — Markov-completing state exposed in LocalGuidance.
         #   _trunk_branch_idx: cached at reset from _path_branch_sequence[0].
@@ -252,9 +267,9 @@ class PathProjectionCache:
         #     _path_branch_sequence[-1]. The path's terminal branch IS the
         #     target daughter. Feature: is_on_target_daughter.
         #   _n_correct_commits / _n_wrong_commits: counters incremented in
-        #     _maybe_emit_daughter_commit. Per-episode totals exposed as
+        #     _maybe_emit_junction_commit. Per-episode totals exposed as
         #     normalized features so the agent knows what it has and
-        #     hasn't accomplished at each daughter fork.
+        #     hasn't accomplished at each fork.
         self._trunk_branch_idx = None
         self._target_daughter_branch_idx = None
         self._n_correct_commits = 0
@@ -306,14 +321,23 @@ class PathProjectionCache:
         else:
             self._current_branch_idx = None
         # Plan v5 — reset divergence tracking and per-episode commit latch.
+        # Plan v9 Change 1 — MUST be a set() (matches __init__): the
+        # +1 junction-commit latch does `_committed_forks.add((j_arc,+1))`.
+        # A previous bug reset this to [] here, so every +1 commit raised
+        # 'list' object has no attribute 'add' (swallowed by env5's
+        # try/except around update_branch_state) and NO +1 ever recorded.
         self._divergence_wrong_branch_arc = 0.0
         self._divergence_wrong_branch_idx = None
-        self._committed_forks = []
+        self._committed_forks = set()
         # Plan v5 (Tier 1) — reset commit counters per episode; cache the
         # trunk and target-daughter branch indices once the path-branch
         # sequence is built (first segment = trunk, last segment = target).
         self._n_correct_commits = 0
         self._n_wrong_commits = 0
+        # Plan v9 (reward-only) — per-divergence latch for the -0.05
+        # wrong-commit. Set True when a deep wrong-commit fires; reset on
+        # return on-path so a later genuine deep excursion can fire again.
+        self._wrong_commit_fired = False
         if self._path_branch_sequence:
             self._trunk_branch_idx = self._path_branch_sequence[0][2]
             self._target_daughter_branch_idx = self._path_branch_sequence[-1][2]
@@ -1014,93 +1038,129 @@ class PathProjectionCache:
                 if (s >= j_arc + COMMIT_HYSTERESIS_MM
                         and self._current_branch_idx == prev_idx):
                     self._current_branch_idx = next_idx
-                    # Plan v5 — correct-daughter commit. Emit +1 if this
-                    # junction is a real daughter fork.
-                    self._maybe_emit_daughter_commit(j_arc, +1)
+                    # Plan v9 — correct on-path commit. Emit +1 at EVERY
+                    # on-path junction crossing (top (2)->(0), bridge
+                    # (0)->(11), daughter fork (11)->RCCA), not only at
+                    # real daughter forks. Rewards each correct
+                    # navigational decision along the path: "commit to
+                    # (11), don't dwell in (0)" and "turn into (0) at the
+                    # top junction, don't drift toward LVA".
+                    self._maybe_emit_junction_commit(j_arc)
                 elif (s < j_arc - COMMIT_HYSTERESIS_MM
                         and self._current_branch_idx == next_idx):
                     self._current_branch_idx = prev_idx
-            # Off-path detection — cross-track exceeded radius-aware tolerance
+            # Off-path detection — cross-track exceeded radius-aware tolerance.
+            # NOTE: this branch-classification logic is UNCHANGED from the
+            # pre-Plan-v9 baseline. is_on_correct_path() / _on_planned_path /
+            # _current_branch_idx must stay byte-for-byte identical to the
+            # baseline because the heuristic policy READS is_on_correct_path()
+            # to gate its RCCA-specific steering — any change here alters the
+            # heuristic's ACTIONS, not just the reward. (A debounce attempt
+            # here broke threading to 0% RCCA; reverted. The flicker-driven
+            # spurious -0.05 is now handled purely on the REWARD side below,
+            # via off-path arc magnitude, without touching this classifier.)
             if ct > tol:
                 self._on_planned_path = False
                 self._current_branch_idx = self._pick_off_path_branch(s)
                 self._capture_divergence_point(s)
-                # Plan v5 — wrong-daughter commit + deterministic rejoin
-                # anchor (item 15, Option C). Emit -1 if this happened at a
-                # real daughter fork; pin _last_on_path_arclen to the
-                # nearest daughter junction so the routed-d_corr fallback
-                # is a function of current geometry, not episode history.
-                j_arc = self._nearest_daughter_junction_arc(s)
-                if j_arc is not None:
-                    self._last_on_path_arclen = j_arc
-                    self._maybe_emit_daughter_commit(j_arc, -1)
+                dj_arc = self._nearest_daughter_junction_arc(s)
+                if dj_arc is not None:
+                    self._last_on_path_arclen = dj_arc
             # BUG-A fix: also flip off-path if tip is on the off-path
             # section of a shared branch (e.g. (0).mrk lower indices for
-            # non-LCCA targets). This keeps the state machine consistent
-            # with is_on_correct_path()'s mask-aware verdict.
+            # non-LCCA targets). Keeps the state machine consistent with
+            # is_on_correct_path()'s mask-aware verdict.
             elif not self._tip_on_path_used_segment():
                 self._on_planned_path = False
                 self._current_branch_idx = self._pick_off_path_branch(s)
                 self._capture_divergence_point(s)
-                # Plan v5 (item 15, Option C) — same deterministic rejoin
-                # anchor as the cross-track off-path branch above.
-                j_arc = self._nearest_daughter_junction_arc(s)
-                if j_arc is not None:
-                    self._last_on_path_arclen = j_arc
-                    self._maybe_emit_daughter_commit(j_arc, -1)
+                dj_arc = self._nearest_daughter_junction_arc(s)
+                if dj_arc is not None:
+                    self._last_on_path_arclen = dj_arc
         else:
-            # On-path return: cross-track within tolerance AND tip is on the
-            # path-used segment of the branch implied by the current arclength.
+            # On-path return (UNCHANGED from baseline): cross-track within
+            # tolerance AND tip on the path-used segment of the arclength-
+            # implied branch.
             if ct <= tol:
                 candidate_idx = self._branch_at_arclength(s)
-                # Temporarily set current_branch_idx to test the mask
                 prev_idx = self._current_branch_idx
                 self._current_branch_idx = candidate_idx
                 if self._tip_on_path_used_segment():
                     self._on_planned_path = True
-                    # keep candidate_idx; clear divergence (wire back on-path)
                     self._divergence_wrong_branch_arc = 0.0
                     self._divergence_wrong_branch_idx = None
                 else:
-                    # mask says off-path despite low cross-track → revert
                     self._current_branch_idx = prev_idx
-            # else: stay in current off-path branch. If state machine has
-            # committed to a NEW off-path branch (different from divergence
-            # capture), reset baseline so off-path arc tracks the most
-            # recent committed branch (don't try to project tip onto an
-            # old wrong-branch polyline the tip has left).
             elif (self._divergence_wrong_branch_idx is not None
                     and self._current_branch_idx != self._divergence_wrong_branch_idx):
                 self._capture_divergence_point(s)
 
+        # Plan v9 (reward-only) — wrong-commit -0.05 on a GENUINE deep
+        # divergence, NOT on the fork-mouth flicker. Decoupled from the
+        # is_on_correct_path() classifier above (which the heuristic reads).
+        # Fires once per divergence event, when the wire has traveled
+        # WRONG_COMMIT_ARC_MM along the wrong branch since diverging — a
+        # wedged-at-the-mouth wire (shallow off-arc) never triggers it,
+        # so threaded episodes are no longer hammered ~100x. Repeats across
+        # SEPARATE deep excursions (the latch resets on return on-path).
+        if not self._on_planned_path:
+            if not self._wrong_commit_fired:
+                try:
+                    off_arc = self.get_off_path_arc_since_divergence()
+                except Exception:
+                    off_arc = 0.0
+                if off_arc >= WRONG_COMMIT_ARC_MM:
+                    jc_arc = self._nearest_junction_arc(s)
+                    if jc_arc is not None:
+                        self._maybe_emit_junction_commit(jc_arc, -1)
+                    self._wrong_commit_fired = True
+        else:
+            # Back on-path → re-arm so the next genuine deep wrong-commit
+            # can fire again.
+            self._wrong_commit_fired = False
+
     # ------------------------------------------------------------------
     # Plan v5 helpers — daughter-commit events + off-path divergence
     # ------------------------------------------------------------------
-    def _maybe_emit_daughter_commit(self, j_arc: float, sign: int) -> None:
-        """Append a (junction_arc, +1|-1) event to _daughter_commit_events
-        if ``j_arc`` is a real daughter fork (in _path_daughter_arclengths)
-        and not already latched this episode.
+    def _maybe_emit_junction_commit(self, j_arc: float, sign: int = +1) -> None:
+        """Plan v9 — emit a fork-commit reward at ANY on-path junction
+        (top (2)->(0), bridge (0)->(11), daughter fork (11)->RCCA), NOT
+        gated by the daughter-fork filter.
 
-        ``sign``:
-          +1 = wire committed to the on-path branch at this fork (correct).
-          -1 = wire committed to an off-path branch at this fork (wrong).
+        Asymmetric, partly-latched scheme:
+          sign=+1 (correct forward commit onto the next on-path branch):
+            emit +1.0; latch (round(j_arc,3), +1) so each junction fires
+            at most once per episode. On a clean RCCA thread this gives
+            +3 (top + bridge + daughter).
+          sign=-1 (wrong off-path commit at this junction): emit -0.05;
+            NEVER latched so every wrong commit re-fires -0.05. The
+            state-machine 10mm commit hysteresis prevents per-step
+            thrashing.
+
+        Rationale: dense per-junction positive signal for each correct
+        navigational decision; a small repeating -0.05 for wrong turns
+        that keeps wrong-try-then-correct episodes net positive (vs the
+        old symmetric +-1 which made the policy freeze at forks).
         """
-        if len(self._path_daughter_arclengths) == 0:
-            return
-        if not bool(np.any(
-            np.isclose(self._path_daughter_arclengths, j_arc, atol=1e-3)
-        )):
-            return
-        for latched in self._committed_forks:
-            if abs(latched - j_arc) < 1e-3:
-                return
-        self._committed_forks.append(float(j_arc))
-        self._daughter_commit_events.append((float(j_arc), int(sign)))
-        # Plan v5 (Tier 1) — count for LocalGuidance features.
+        j_key = round(float(j_arc), 3)
         if sign > 0:
+            if (j_key, +1) in self._committed_forks:
+                return
+            self._committed_forks.add((j_key, +1))
+            self._daughter_commit_events.append((float(j_arc), 1.0))
             self._n_correct_commits += 1
-        elif sign < 0:
+        else:
+            self._daughter_commit_events.append((float(j_arc), -0.05))
             self._n_wrong_commits += 1
+
+    def _nearest_junction_arc(self, s: float):
+        """Return the arclength of the on-path junction (ANY fork: top,
+        bridge, or daughter) nearest to s, or None. Used to attribute a
+        wrong-commit -0.05 to whichever fork the wire diverged at."""
+        if len(self._path_junction_arclengths) == 0:
+            return None
+        idx = int(np.argmin(np.abs(self._path_junction_arclengths - s)))
+        return float(self._path_junction_arclengths[idx])
 
     def _nearest_daughter_junction_arc(self, s: float):
         """Return the arclength of the daughter junction nearest to s,

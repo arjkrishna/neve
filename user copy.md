@@ -127,7 +127,7 @@ One caveat carried forward: the existing rcca_heuristic_cache.npz predates the m
 
 ok , now we have indentified a stable setup, now we need to capitalize on it and improv bigly;
 
-First we indentified previously a couple of bugs in our reward setup ; we need to fix it and to improve it further we need to make a few more modifications ; right now all our RLs come with a standard step penalty that means they are getting 0.001 for every step at the beginning and also at RCCA daughter and (11) when they are much closer to the target which sometimes encourages agent to be slow at the start and remain close since there is no much cross_track penalty and .001 penalty for 600 steps doesn't count to much so we need reformulation where they are getting 0.007 (closer to start) - 0.002 (closer to (11)) penalty, 0.007 penalty in (0) (past bifurcation), no penalty in (11) , 0.005 step reward in RCCA and 0.007 step penalty in RVA ; right now +1/-1 are awards at making right decision at every point, for each juncton make it -0.05 (that they can get again and again, when theaded wrongly) / +1 (once per fork per episode) so that they are not afraid and encouraged to explore to go for +1 ; obviously we will be running new heusristics / heatup for our new setup , for heuristics we will be aiming for 100 successful episodes (so for 100 succ. it will be running probably upto 400/450 heusistic episodes) as AWAC closely mirrors heuristic and we will be starting a little before and outside (11) (SOFA restore), one question I had, we will be running heuristics from z= 345 as we are now but during RL we would be using SOFA restore just outside (11), would we append the saved steps and reward from that episode and continue this episode forward and q1 mean would reflect expected reward from the start point and saved heuristic steps but optimized steps after the start point (within daughters) because this would be ideal.  The other question I had can we also implement one of these:
+First we indentified previously a couple of bugs in our reward setup ; we need to fix it and to improve it further we need to make a few more modifications ; right now all our RLs come with a standard step penalty that means they are getting 0.001 for every step at the beginning and also at RCCA daughter and (11) when they are much closer to the target which sometimes encourages agent to be slow at the start and remain close since there is not much cross_track penalty and   .001 penalty for 600 steps doesn't count to much so we need reformulation where they are getting 0.007 (closer to start) - 0.002 (closer to (11)) penalty, 0.007 penalty in (0) (past bifurcation), no penalty in (11) , 0.005 step reward in RCCA and 0.007 step penalty in RVA ; right now +1/-1 are awards for making right decision at every fork, for each juncton make it -0.05 (that they can get again and again, when threaded wrongly) / +1 (once per fork per episode) so that they are not afraid and encouraged to explore to go for +1 ; obviously we will be running new heusristics / heatup for our new reward setup, for heuristics we will be aiming for 100 successful (100% success in threading RCCA) episodes (so for 100 succ. it will be running probably upto 400/450 heusistic episodes) as AWAC closely mirrors heuristic and we will be starting a little before and outside (11) (SOFA restore), one question I had, we will be running heuristics from z=345 as we are now but during RL we would be using SOFA restore just outside (11), would we append the saved steps and reward from that episode and continue this episode forward and q1 mean would reflect expected reward from the start point and saved heuristic steps but optimized steps after the start point (within daughters) because this would be ideal.  The other question I had can we also implement one of these:
 1. Balanced two-stream sampling (cheap, high value) 
 2. DQfD-style demo protection 
 3. Return/outcome-prioritized replay 
@@ -190,3 +190,59 @@ That should catch >80% of the missing physics state. The remaining gap (BeamAdap
 Balanced two-stream sampling (cheap, high value) — keep a separate stream of "clean" episodes (reached the RCCA daughter / near-positive return) and draw a fixed fraction of every batch (e.g. 25–50%) from it, the rest from the general buffer. Directly does what you're asking, and it's a small change.
 DQfD-style demo protection — give the heuristic-seeded transitions a permanent priority bonus so they don't get starved as PER drifts toward explore data (the gap I flagged earlier). Bolts onto the existing PER.
 Return/outcome-prioritized replay — replace TD-priority with episode-return priority. More stable than PER, but can over-imitate.
+
+--------------
+
+
+The experiment is launched and monitored. Status:
+
+rcca_awac_v2 is running — single-run design as you requested. Sequence it will execute:
+
+Heuristic seeding from z=345 (~333-500 episodes) → builds rcca_heuristic_cache_v2.npz + fills the pre-bif(11) checkpoint pool (one per RCCA-final success).
+Heatup → builds rcca_heatup_cache_20_v2.npz (now runs from the restored fork, since the pool is filled by then and heatup isn't heuristic-mode).
+10k warm-start pretrain updates on the filled buffer (the gate fix lets this fire even though caches are generated, not loaded).
+Online explore + train from SOFA-restored pre-bif(11) states.
+The three blockers I fixed to make the single run work:
+
+Lazy CheckpointRestoreWrapper (confirmed in logs: 0 .npz files accepted at startup, no crash — it'll re-scan once seeding fills the pool).
+Warm-start gate now accepts a seeding-generated buffer (not just disk-loaded caches).
+Relaxed the --insertion_z / --checkpoint_dir mutual-exclusivity for sofa_restore mode.
+A persistent monitor (b7676uxls) is watching for seeding-batch progress, cache saves, the 10k warm-start, eval Quality:, and any divergence/error/OOM. I'll report as milestones land — next expected is the first seeding batch result. Once seeding completes I'll verify the pool actually has ~100 checkpoints before trusting the restore phase.
+
+
+-------> so all the explore updates and training will happen post SOFA restore steps; right?
+--------> after heuris... finishes ; gather all 100 selected episode snapshots 
+--------> (0) then should 0.007 step penanlty post (0) point where it needs to turn up; otherwise it could stay at same 0.002
+-------> there should be +2 more reward at  commiting to (11) (and not going deeper into (0)) and post top junction (not getting stuck in LVA direction) that happene earlier in the trunk 
+
+-----> ok, it's all fine ; let's do some deep analysis in the meantime ; for example can you analyse the logs of successes and failures and see if there's any way it can be trained faster ; for example most of the failures 
+--balanced ratio 
+--planning
+--success sofa res. states 
+---The dominant failure is overshooting straight into (0) instead of turning up into (11). RL can only turn at the right moment if the observation makes the turn visible — verify LocalGuidance's arc_to_next_daughter and direction-to-correct-entry are sharp and correct in the (0)-corridor approach. If the wire can't "see" the bridge coming, no reward shaping will fix the overshoot.
+---so about your SOFA store seeding analysis 140 vs 1028 : I check the sofa start snapshots of both 140 and 1028 stages (based on timestamps of when they were saved) and found out why this huge divergence of trainig progress between 2 runs . Making the pool larger was a mistake since you are making sofa restore states based on existing sofa restore states with guidewire more pushed in further hence making the pooi of sofa res. states inconsistent (no consistent start point) which will inevitable cause it to overshoot , also making start states harder by pinning it to the entry, when instead we should have gone the other way; recognize the sable start points out of those 140 (maybe 10 states or so where guidewire is little ahead of cathetar but comfortably before (11) entry ) and only have done training on those 10 or fewer states (one isn't bad either to get the guidewire consistently thread (11)/RCCA). Now I have realized that you can actually calculate which of those 140 states got the most success in the 202750 run by actually looking at the success folder (about 1500) and find the matching start state in the start folder and reading the start point of that episode for cathetar and guidewors bucketing successes for the start states and then cross referencing them with the saved 140 start states  
+
+------so it means that you can extract the success episodes and fail episodes of these list start states --> (success	n	gw	cath	gap	file
+46.7%	7/15	109.0	101.0	8.0	pre_bif11_pid20043_ep0003_step0038.npz
+27.3%	6/22	118.6	104.3	14.3	pre_bif11_pid4907_ep0176_step0054.npz
+26.7%	4/15	114.2	99.0	15.1	pre_bif11_pid19116_ep0017_step0050.npz
+25.0%	4/16	101.4	97.4	3.9	pre_bif11_pid20926_ep0002_step0115.npz
+22.0%	9/41	115.0	100.7	14.4	pre_bif11_pid3285_ep0046_step0132.npz
+20.0%	4/20	104.0	102.9	1.1	pre_bif11_pid10145_ep0075_step0060.npz
+) --> which gives us 34 successful states and several states and that store can make a better heuristic seeding file ; we can also reduce the number of updates say ~ 500 /1000 to keep the entropy healthy but first can you make snapshots of all these listed states in a separate folder under saved folder ; make snapshots of these good states and also of the other 148 states that ar mostly bad
+----new heusristic heatup reduced
+---entropy regulation 
+--- pretraining reduced
+
+
+
+-----sofa restore seed 
+     ----investigate shapshots 
+     -----retaction behaviour
+     -----heirrchial learning 
+     ----- speed/tolerance lever 
+-----episode RL
+------update per explore
+
+--------"The two levers that target this failure (both RL-stabilization knobs, not reward/obs/terminal changes) are: (a) raise awac_lambda 3 → 8-10 (softer advantage weighting keeps the policy near the broader buffer distribution instead of cloning only the few saturated high-A actions — slows the collapse), and (b) add a true entropy bonus to the AWAC policy loss (penalizes log_pi directly, including the tanh-Jacobian, so it counters the mean rail — the std floor can't). Per Plan v10's own decision tree, (b) is the deferred lever for "entropy collapse with floor insufficient."" ---> You mention some solutions to this , can it be that if we have tried a lower ratio of update per explore step which we increased from 1:20 to 1:1 it would have been better since policy would have the chance to make a lot more exploratory steps before locking in behaviours.
+

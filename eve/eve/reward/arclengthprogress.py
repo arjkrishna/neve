@@ -125,7 +125,27 @@ class ArcLengthProgress(Reward):
         # _prev_d_rem is updated unconditionally so the next on-path step
         # has a correct delta when wire returns to path.
         if on_path:
-            r_progress = self.progress_factor * (self._prev_d_rem - d_rem_curr)
+            delta_s = self._prev_d_rem - d_rem_curr
+            pf = self.progress_factor
+            # Plan v9 Change 4b — double the progress reward when the
+            # wire is inside the target daughter AND moving forward
+            # (delta_s > 0). Replaces the originally-drafted +0.005/step
+            # constant RCCA bonus, which would have rewarded mere dwell.
+            # Doubling on forward motion only: deeper threading -> more
+            # reward; freezing in shallow RCCA -> no reward; backward
+            # motion still penalised at the standard 1x rate.
+            try:
+                pc = self._path_context
+                if (delta_s > 0
+                        and pc is not None
+                        and pc._current_branch_idx is not None
+                        and pc._target_daughter_branch_idx is not None
+                        and int(pc._current_branch_idx)
+                            == int(pc._target_daughter_branch_idx)):
+                    pf *= 2.0
+            except Exception:
+                pass
+            r_progress = pf * delta_s
             # Reset off-arc baseline so a subsequent off-path transition
             # captures a fresh baseline from the new divergence point.
             self._prev_off_arc = 0.0
@@ -136,8 +156,26 @@ class ArcLengthProgress(Reward):
         else:
             r_progress = 0.0
 
-        # Lateral penalty: penalise straying from the path centerline
-        r_lateral = -self.lateral_penalty_factor * result.cross_track_dist
+        # Lateral penalty: penalise straying from the path centerline.
+        # Plan v9 — radius-aware deadband. A few mm of cross-track is
+        # geometrically unavoidable in a wide vessel (the wire rides the
+        # wall, not the centerline polyline), so penalising raw
+        # cross_track adds a large constant drag (~-3 over an episode at
+        # ~5 mm mean offset) that makes even clean threads net negative.
+        # Instead, only penalise the EXCESS beyond the local radius-aware
+        # tolerance (max(MIN_TOLERANCE_MM, K_RADIUS*local_radius)) — the
+        # same tolerance the state machine uses for on-path detection.
+        # Wide trunk -> large tolerance -> ~0 penalty for normal
+        # wall-hugging; narrow daughter -> small tolerance -> genuine
+        # divergence still penalised.
+        ct = result.cross_track_dist
+        if self._path_context is not None:
+            try:
+                tol = self._path_context.get_local_tolerance()
+            except Exception:
+                tol = 0.0
+            ct = max(0.0, ct - tol)
+        r_lateral = -self.lateral_penalty_factor * ct
 
         self.reward = r_progress + r_lateral
         self._prev_d_rem = d_rem_curr

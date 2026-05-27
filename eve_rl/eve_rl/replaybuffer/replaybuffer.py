@@ -55,9 +55,19 @@ class Episode:
         # Plan v8 — carry episode-level quality flags into the buffer form.
         # `infos` itself is dropped (too heavy), but the last step's info
         # holds the per-episode latches the env5 state machine sets.
+        # Plan v9 Change 2 — prefer strict final-branch equality over the
+        # buggy ever-touched `reached_target_daughter` latch. The latch is
+        # kept as a fallback for envs that don't expose final_branch_idx
+        # in info (e.g. legacy env4 replays).
         reached = False
         if self.infos:
-            reached = bool(self.infos[-1].get("reached_target_daughter", False))
+            info = self.infos[-1]
+            final_idx = info.get("final_branch_idx")
+            target_idx = info.get("target_daughter_branch_idx")
+            if final_idx is not None and target_idx is not None:
+                reached = int(final_idx) == int(target_idx)
+            else:
+                reached = bool(info.get("reached_target_daughter", False))
         return EpisodeReplay(
             self.flat_obs, self.actions, self.rewards, self.terminals,
             episode_return=float(self.episode_reward),

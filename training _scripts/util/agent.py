@@ -152,6 +152,7 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         demo_priority_bonus: float = 0.0,
         priority_mode: str = "td",
         balanced_fraction: float = 0.0,
+        log_std_min: float = -20.0,
     ):
 
         obs_dict = env_train.observation_space.sample()
@@ -199,7 +200,8 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         )
 
         policy = eve_rl.network.GaussianPolicy(
-            policy_base, n_observations, n_actions, q1_embedder
+            policy_base, n_observations, n_actions, q1_embedder,
+            log_std_min=log_std_min,
         )
         policy_optim = eve_rl.optim.Adam(
             policy_base,
