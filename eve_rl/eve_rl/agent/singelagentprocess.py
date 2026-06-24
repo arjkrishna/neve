@@ -7,6 +7,7 @@ import os
 import traceback
 import queue
 
+import numpy as np  # Plan v12 R16 — needed for spawn-time np.random.seed
 from torch import multiprocessing as mp
 import torch
 
@@ -113,12 +114,35 @@ def run(
     name,
     nice_level: int,
     diagnostics_config: Optional[Dict] = None,
+    heatup_stop=None,
 ):
     if platform.system() != "Windows":
         os.nice(nice_level)
 
     try:
         torch.set_num_threads(4)
+
+        # Plan v12 R16 — per-worker spawn-time RNG reseed.
+        # Under Linux fork, every child inherits the parent's exact
+        # global RNG state at fork time → all workers replay identical
+        # action sequences episode-by-episode. Reseed the global
+        # numpy / random / torch RNGs from a worker-distinct entropy
+        # stack (deterministic so the same base_seed reproduces).
+        # Per-episode action sampling in single.py:heatup uses its own
+        # np.random.default_rng() Generator keyed on (base_seed,
+        # worker_id, episode_idx); this spawn-time reseed protects any
+        # other consumer of the global state.
+        import random as _py_random
+        try:
+            _worker_id = int(name.split("_")[-1]) if name else 0
+        except Exception:
+            _worker_id = 0
+        _pid = int(os.getpid()) & 0x3FFFFFFF
+        _base_seed = 42  # Plan v12 R16 — same base_seed used by single.py
+        _worker_seed = (_base_seed * 1_000_003 + _worker_id * 1_000_033 + _pid) & 0x7FFFFFFF
+        np.random.seed(_worker_seed)
+        _py_random.seed(_worker_seed)
+        torch.manual_seed(_worker_seed)
         for handler_name, handler_config in log_config_dict["handlers"].items():
             if "filename" in handler_config.keys():
                 filename = handler_config["filename"]
@@ -142,6 +166,23 @@ def run(
         )
         agent.step_counter = step_counter
         agent.episode_counter = episode_counter
+
+        # Plan v12 R16 FIX — propagate worker identity onto the agent so
+        # single.py:heatup's per-(worker, episode) np.random.default_rng()
+        # seed actually varies across workers. Without this, single.py
+        # reads `self._worker_id` / `self._heatup_base_seed` via getattr
+        # defaults (0 and 42), collapsing every worker's RNG to
+        # default_rng(42 + 0*1_000_003 + ep_idx) — MD5-identical action
+        # streams (confirmed in Phase 7 smoke test). The two values
+        # below were already computed above for the spawn-time global
+        # RNG seeding (line ~136 _worker_id, line 140 _base_seed); this
+        # just makes them visible to the heatup action loop.
+        agent._worker_id = _worker_id
+        agent._heatup_base_seed = _base_seed
+        logger.info(
+            f"Plan v12 R16 — worker RNG: _worker_id={_worker_id}, "
+            f"_heatup_base_seed={_base_seed}, _worker_seed={_worker_seed}"
+        )
 
         # Initialize diagnostics logger for trainer subprocess
         if diagnostics_config is not None and diagnostics_config.get("enabled", False):
@@ -173,6 +214,9 @@ def run(
                     custom_action_low=task[5],
                     custom_action_high=task[6],
                     episode_schedule=task[7],
+                    heatup_save_every=task[8] if len(task) > 8 else 0,
+                    heatup_save_path=task[9] if len(task) > 9 else None,
+                    heatup_stop=heatup_stop,
                 )
             elif task_name == "heuristic_seed":
                 result = agent.heuristic_seed(
@@ -260,7 +304,12 @@ def run(
                 # Set probe states for diagnostics evaluation
                 probe_states = task[1]
                 if agent.diagnostics is not None:
-                    import numpy as np
+                    # np already imported at module top (line 10) for the
+                    # Plan v12 R16 spawn-time seeding. A redundant local
+                    # `import numpy as np` HERE was the silent bug that
+                    # made np a local variable for the whole run()
+                    # function and triggered UnboundLocalError at the
+                    # R16 reseed (Phase 7 smoke crash).
                     agent.diagnostics.set_probe_states(
                         np.array(probe_states),
                         device=device
@@ -322,12 +371,19 @@ class SingleAgentProcess(Agent):
         episode_counter: EpisodeCounterShared = None,
         nice_level: int = 0,
         diagnostics_config: Optional[Dict] = None,
+        heatup_stop=None,
     ) -> None:
         self.logger = logging.getLogger(self.__module__)
         self.agent_id = agent_id
         self.name = name
         self._shutdown = mp.Event()
         self._is_shutdown = mp.Event()
+        # Plan v12 Stage 2 — shared (across all workers) stop Event for the
+        # rolling heatup harvest. The main-process SIGTERM/docker-stop handler
+        # sets it so each worker exits its heatup loop and runs its final-batch
+        # flush. Synchron passes ONE Event to every worker; None (legacy
+        # callers) → a private, never-set Event (no behaviour change).
+        self._heatup_stop = heatup_stop if heatup_stop is not None else mp.Event()
         self._task_queue = mp.Queue()
         self._result_queue = mp.Queue()
         self._model_queue = mp.Queue()
@@ -369,6 +425,7 @@ class SingleAgentProcess(Agent):
                 name,
                 nice_level,
                 diagnostics_config,
+                self._heatup_stop,
             ],
             name=name,
         )
@@ -384,6 +441,8 @@ class SingleAgentProcess(Agent):
         custom_action_low: Optional[List[float]] = None,
         custom_action_high: Optional[List[float]] = None,
         episode_schedule=None,
+        heatup_save_every: int = 0,
+        heatup_save_path: Optional[str] = None,
     ) -> None:
         self._task_queue.put(
             [
@@ -395,6 +454,8 @@ class SingleAgentProcess(Agent):
                 custom_action_low,
                 custom_action_high,
                 episode_schedule,
+                heatup_save_every,
+                heatup_save_path,
             ]
         )
 

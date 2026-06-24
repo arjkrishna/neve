@@ -262,6 +262,33 @@ class DiagnosticsLogger:
         "nonfinite_q_loss_count",
         "nonfinite_policy_loss_count",
         "nonfinite_grad_count",
+        # Plan v11 risk audit #1 — AWAC advantage-weight saturation
+        # diagnostics. Populated only when algo="awac"; SAC runs leave
+        # them as 0 (the algo branch never executes _update_policy's
+        # AWAC code path). Empty cells become 0 in pandas, which is
+        # benign for downstream analysis.
+        "awac_weight_saturation",
+        "awac_weight_max",
+        "awac_weight_mean",
+        # FIX 3 (RL_IMPROV_8 KL-anchor iteration) — IQL publishes the
+        # equivalent advantage-weight saturation metrics under the
+        # `awr_weight_*` namespace (iql.py last_metrics keys). Before
+        # this fix, iql.py emitted these keys but the CSV header only
+        # listed `awac_weight_*`, so every IQL update silently dropped
+        # the saturation/mean/max values for 100k steps. With these
+        # rows added, IQL runs now persist the AWR clamp diagnostics
+        # to losses_*.csv and we can verify whether the clamp at
+        # iql_awr_max is the rate-limiting factor.
+        "awr_weight_saturation",
+        "awr_weight_max",
+        "awr_weight_mean",
+        # FIX 1 (RL_IMPROV_8 KL-anchor iteration) — KL-to-warmstart
+        # penalty diagnostics. Populated by IQL._update_policy when
+        # alpha_kl > 0 (kl_to_warmstart = closed-form Gaussian KL
+        # between current policy and the frozen warm-start reference).
+        # 0 when alpha_kl == 0 (no anchor active).
+        "kl_to_warmstart",
+        "alpha_kl",
     ]
     
     def __init__(

@@ -325,6 +325,69 @@ class PERVanillaStep(ReplayBuffer):
             if self._balanced and self.is_clean[idx]:
                 self.clean_tree.update(idx, p)
 
+    def bulk_import_arrays(self, arrays: dict) -> int:
+        """Plan v11 Stage 1 — fast offline-buffer load from
+        ``buffer_filter.concat_filtered()`` output. Bypasses the per-
+        transition Episode wrapping by writing directly into the ring
+        buffer + companion arrays. After loading, callers SHOULD invoke
+        ``_recompute_all_priorities()`` to rebuild the sum-tree at a
+        uniform initial priority so V2-vs-V3 priority skew (risk audit
+        #8) is erased.
+
+        Required keys: obs_pairs, actions, rewards, terminals, is_demo,
+        is_clean, episode_returns. Returns the number of transitions
+        loaded (clamped at capacity)."""
+        n = int(arrays["actions"].shape[0])
+        if n == 0:
+            return 0
+        if n > self.capacity:
+            raise ValueError(
+                f"Filtered buffer ({n}) exceeds PER capacity ({self.capacity}). "
+                f"Increase --replay_buffer_size or tighten the filter."
+            )
+        obs_pairs = np.asarray(arrays["obs_pairs"])
+        actions = np.asarray(arrays["actions"])
+        rewards = np.asarray(arrays["rewards"])
+        terminals = np.asarray(arrays["terminals"])
+        is_demo = np.asarray(arrays["is_demo"], dtype=bool)
+        is_clean = np.asarray(arrays["is_clean"], dtype=bool)
+        episode_returns = np.asarray(arrays["episode_returns"], dtype=np.float64)
+        # Resize the buffer list once and write in order.
+        self.buffer = [None] * n
+        for i in range(n):
+            self.buffer[i] = (
+                obs_pairs[i], actions[i], rewards[i], terminals[i],
+            )
+        self.is_demo[:n] = is_demo
+        self.is_clean[:n] = is_clean
+        self.episode_returns[:n] = episode_returns
+        self.position = int(n % self.capacity)
+        return n
+
+    def _recompute_all_priorities(self) -> None:
+        """Plan v11 Stage 1 — rebuild every leaf priority from the
+        current per-transition flags (`is_demo`, `is_clean`,
+        `episode_returns`) using the same `_initial_priority` rule that
+        `push()` would apply at the running `max_priority`. After a
+        bulk-import this erases any V2/V3 push-order skew in the sum-tree
+        (risk audit #8) and gives PER a uniform starting distribution."""
+        n = len(self.buffer)
+        if n == 0:
+            return
+        # Reset the sum-tree to zero before rewriting leaves.
+        self.tree.tree[:] = 0.0
+        if self._balanced:
+            self.clean_tree.tree[:] = 0.0
+        for i in range(n):
+            p = self._initial_priority(
+                bool(self.is_demo[i]),
+                bool(self.is_clean[i]),
+                float(self.episode_returns[i]),
+            )
+            self.tree.update(i, p)
+            if self._balanced and self.is_clean[i]:
+                self.clean_tree.update(i, p)
+
     def __len__(self):
         return len(self.buffer)
 

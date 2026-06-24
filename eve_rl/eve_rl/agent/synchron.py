@@ -6,6 +6,7 @@ from math import inf
 import logging
 import torch
 import queue
+import multiprocessing as mp
 
 from ..util import DummyEnv
 from .agent import (
@@ -106,7 +107,27 @@ class SynchronEvalOnly(Agent):
         episode_results = []
         results_pending = self.worker.copy()
         t_limit_result = inf
+        # Plan v11 — HARD wall-clock cap on the entire result-collection
+        # loop. The original code waited on `t_limit_result` (which only
+        # starts ticking after step/episode targets are reached) and
+        # could hang forever if a worker stopped reporting before the
+        # target was hit. We've hit this exact failure on every canonical
+        # 54-seed eval (Task C, 1B-IQL/AWAC step-0, resume eval @ u20k).
+        # Configurable via env var EVE_RL_EVAL_HARD_TIMEOUT_MIN (default
+        # 70 min). Returns partial results rather than blocking training.
+        import os as _os
+        _hard_timeout_min = float(
+            _os.environ.get("EVE_RL_EVAL_HARD_TIMEOUT_MIN", "70")
+        )
+        t_hard_limit = perf_counter() + _hard_timeout_min * 60.0
         while results_pending and perf_counter() < t_limit_result:
+            if perf_counter() > t_hard_limit:
+                self.logger.warning(
+                    f"Eval HARD TIMEOUT ({_hard_timeout_min:.0f} min) reached with "
+                    f"{len(results_pending)} workers still pending; "
+                    f"returning {len(episode_results)} partial episodes."
+                )
+                break
             results_pending, t_limit_result, episode_results = self._worker_result_loop(
                 step_limit,
                 episode_limit,
@@ -323,6 +344,8 @@ class Synchron(SynchronEvalOnly, Agent):
         custom_action_low: Optional[List[float]] = None,
         custom_action_high: Optional[List[float]] = None,
         episode_schedule: Optional[List] = None,
+        heatup_save_every: int = 0,
+        heatup_save_path: Optional[str] = None,
     ) -> List[Episode]:
         t_start = perf_counter()
         steps_start = self.step_counter.heatup
@@ -349,6 +372,8 @@ class Synchron(SynchronEvalOnly, Agent):
                 custom_action_low=custom_action_low,
                 custom_action_high=custom_action_high,
                 episode_schedule=worker_schedules[i],
+                heatup_save_every=heatup_save_every,
+                heatup_save_path=heatup_save_path,
             )
         result = self._get_worker_results(step_limit, episode_limit, "heatup")
         n_steps = self.step_counter.heatup - steps_start
@@ -666,6 +691,11 @@ class Synchron(SynchronEvalOnly, Agent):
         return result
 
     def _create_worker_agent(self, i):
+        # Plan v12 Stage 2 — ONE shared heatup-stop Event for ALL workers, so
+        # the main-process SIGTERM/docker-stop handler can set it once and every
+        # worker exits its heatup loop + runs its final-batch flush.
+        if getattr(self, "_heatup_stop", None) is None:
+            self._heatup_stop = mp.Event()
         return SingleAgentProcess(
             i,
             self.algo.to_play_only(),
@@ -680,6 +710,7 @@ class Synchron(SynchronEvalOnly, Agent):
             step_counter=self.step_counter,
             episode_counter=self.episode_counter,
             nice_level=10,
+            heatup_stop=self._heatup_stop,
         )
 
     def _create_trainer_agent(self):

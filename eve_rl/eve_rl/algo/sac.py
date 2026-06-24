@@ -1,4 +1,4 @@
-from typing import Tuple, Dict, Any, List
+from typing import Tuple, Dict, Any, List, Optional
 import logging
 import math
 import numpy as np
@@ -159,6 +159,9 @@ class SAC(Algo):
         grad_clip: float = 0.0,
         algo: str = "sac",
         awac_lambda: float = 3.0,
+        entropy_beta_per_dim: Optional[List[float]] = None,
+        action_mean_penalty: float = 0.0,
+        offline_mode: bool = False,
     ):
         self.logger = logging.getLogger(self.__module__)
         # HYPERPARAMETERS
@@ -174,6 +177,23 @@ class SAC(Algo):
         self.grad_clip = grad_clip
         self.algo = algo
         self.awac_lambda = awac_lambda
+        # Plan v11 Stage 1 — scaffold per-dim entropy bonus + mean-margin
+        # penalty (Direction 1, applied in Stage 2 to fight the cath_trans
+        # mean-rail collapse). Default all zero → no-op in Stage 1 / SAC /
+        # AWAC. When `entropy_beta_per_dim[i] > 0`, _update_policy adds
+        # `-beta_i * log_std_i.mean()` to the policy loss (encourages
+        # larger std on that action dim). `action_mean_penalty > 0`
+        # adds `+coef * mean(|atanh(action_mean.clamp(±0.99))|)` — direct
+        # rail-saturation guard (risk audit #3 HIGH).
+        self.entropy_beta_per_dim = (
+            list(entropy_beta_per_dim) if entropy_beta_per_dim else None
+        )
+        self.action_mean_penalty = float(action_mean_penalty)
+        # Plan v11 Stage 1 — offline_mode flag. Surfaces in update() so
+        # the trainer can route around any online-only telemetry hooks.
+        # No behavior change today; reserved for hooks the IQL/CQL/BC
+        # branches will introduce.
+        self.offline_mode = bool(offline_mode)
         # Model
         self.model = model
 
@@ -348,6 +368,15 @@ class SAC(Algo):
             "nonfinite_policy_loss_count": self._nonfinite_policy_loss_count,
             "nonfinite_grad_count": self._nonfinite_grad_count,
         }
+        # Plan v11 risk audit #1 — surface AWAC weight-saturation
+        # diagnostics into the trainer-CSV. Skipped for non-AWAC algos
+        # (the instance attrs only exist after the first AWAC update).
+        if self.algo == "awac" and hasattr(self, "_awac_weight_saturation"):
+            self.last_metrics["awac_weight_saturation"] = (
+                self._awac_weight_saturation
+            )
+            self.last_metrics["awac_weight_max"] = self._awac_weight_max
+            self.last_metrics["awac_weight_mean"] = self._awac_weight_mean
         
         return [
             q1_loss.detach().cpu().numpy(),
@@ -388,6 +417,17 @@ class SAC(Algo):
                 q_buf = torch.min(q1_buf, q2_buf)
                 advantage = q_buf - min_q.detach()
                 weight = torch.exp(advantage / self.awac_lambda).clamp(max=20.0)
+                # Plan v11 risk audit #1 — log AWAC weight saturation
+                # EVERY AWAC update. If >80 % of weights are < 0.05 the
+                # advantage signal has collapsed onto a few demos and
+                # lambda is too small. Stored as instance attrs so the
+                # dict rebuild in update() (which reassigns
+                # self.last_metrics) doesn't wipe them.
+                self._awac_weight_saturation = (
+                    (weight < 0.05).float().mean().item()
+                )
+                self._awac_weight_max = float(weight.max().item())
+                self._awac_weight_mean = float(weight.mean().item())
             logp = self.model.policy.log_prob(states, actions)
             if padding_mask is not None:
                 logp = logp * padding_mask

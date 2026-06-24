@@ -80,11 +80,22 @@ class FixedPathfinder(Pathfinder):
         # Flag to track if path is computed
         self._path_computed = False
 
-    def reset(self, episode_nr=0) -> None:
+    def reset(self, episode_nr=0, target_coord3d: Optional[np.ndarray] = None) -> None:
         """
         Compute the fixed path from insertion point to target.
-        
+
         This is called once per episode when the target is set.
+
+        Args:
+            target_coord3d: Plan v12 Stage 1 — multi-target heatup. When
+                provided, this tracking3d-frame coord OVERRIDES
+                `self.intervention.target.coordinates3d` (line 125) for
+                THIS pathfinder instance's planned-path computation. The
+                4 virtual envs in `MultiTargetEnv5` instance 4
+                `FixedPathfinder`s, each with its daughter k's coord
+                snapshotted from a per-daughter `CenterlineRandom` probe
+                at episode start. Default `None` preserves single-target
+                behavior (reads shared `intervention.target` as before).
         """
         # Initialize vessel tree graph if needed
         if self._branches != self.intervention.vessel_tree.branches:
@@ -92,37 +103,54 @@ class FixedPathfinder(Pathfinder):
             self._branches = self.intervention.vessel_tree.branches
             if len(self._branches) > 0:
                 self._root_branch = self._branches[0]
-        
+
+        # Plan v12 — grader mode: eve.Env.reset() calls pathfinder.reset(
+        # episode_number) positionally with NO target_coord3d, so a multi-
+        # target grader would otherwise compute its path to the shared
+        # intervention.target (RCCA) instead of its own daughter. Fall back
+        # to a coord stamped on the pathfinder by BenchEnv5.set_grader_target.
+        if target_coord3d is None:
+            target_coord3d = getattr(self, "_grader_target_coord3d", None)
+
         # Compute path from insertion point to target
-        self._compute_fixed_path()
+        self._compute_fixed_path(target_coord3d_override=target_coord3d)
         self._path_computed = True
 
     def step(self) -> None:
         """
         No-op. The path is fixed for the episode.
-        
+
         The path was computed at reset() and doesn't change.
         """
         # Nothing to do - path is fixed
         pass
 
-    def _compute_fixed_path(self) -> None:
+    def _compute_fixed_path(self, target_coord3d_override: Optional[np.ndarray] = None) -> None:
         """
         Compute the path from insertion point to target.
-        
+
         Uses the INSERTION POINT (start of root branch) as the starting point,
         not the current tip position.
+
+        Args:
+            target_coord3d_override: Plan v12 — when not None, overrides
+                `self.intervention.target.coordinates3d` for this path
+                computation (multi-target heatup support).
         """
         fluoro = self.intervention.fluoroscopy
         vessel_tree = self.intervention.vessel_tree
-        
+
         # Get insertion point (start of the vessel tree / root branch)
         # This is where the device starts, not where the tip currently is
         insertion_point = np.array(vessel_tree.insertion.position)  # Ensure it's a numpy array
         insertion_vessel_cs = insertion_point  # Already in vessel CS
-        
-        # Get target position
-        target = self.intervention.target.coordinates3d
+
+        # Get target position — Plan v12 multi-target override takes
+        # precedence; default reads shared intervention.target.
+        if target_coord3d_override is not None:
+            target = np.array(target_coord3d_override, dtype=np.float64)
+        else:
+            target = self.intervention.target.coordinates3d
         target_vessel_cs = tracking3d_to_vessel_cs(
             target, fluoro.image_rot_zx, fluoro.image_center
         )

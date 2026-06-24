@@ -283,7 +283,12 @@ def main(args):
             os.makedirs(snap_dir, exist_ok=True)
             os.environ["SNAPSHOT_MODE"] = args.snapshots
             os.environ["SNAPSHOT_DIR"] = snap_dir
-            print(f"Set SNAPSHOT_MODE={args.snapshots} SNAPSHOT_DIR={snap_dir}")
+            # Plan v12 — sparse per-physical-episode snapshot rate for the
+            # MultiTargetEnv5 driver (full snapshots always taken for
+            # physically-reached-daughter episodes regardless of this rate).
+            os.environ["SNAPSHOT_EVERY"] = str(getattr(args, "snapshot_every", 10))
+            print(f"Set SNAPSHOT_MODE={args.snapshots} SNAPSHOT_DIR={snap_dir} "
+                  f"SNAPSHOT_EVERY={os.environ['SNAPSHOT_EVERY']}")
         else:
             print("WARNING: --snapshots set but no diagnostics_folder; snapshots disabled")
 
@@ -349,9 +354,52 @@ def main(args):
         print(f"[Plan v5] single-daughter scoping: default_target_branch={default_tb}")
 
     intervention = DualDeviceNav(insertion_z=args.insertion_z)
-    env_train_unwrapped = EnvClass(
-        intervention=intervention, mode="train", visualisation=False, **env_kwargs
-    )
+
+    # Plan v12 Stage 1 — multi-target heatup harvester. When
+    # --multi_target_heatup is set, swap BenchEnv5 (single-target) for
+    # MultiTargetEnv5 (4 virtual envs sharing the SOFA backend). Stage 0
+    # calibration probe and any non-Plan-v12 use of env_train remain
+    # single-target. The flag is mutually exclusive with --checkpoint_dir
+    # (Plan v12 trains from z=345, NOT from a restore pool) — enforced
+    # below.
+    if getattr(args, "multi_target_heatup", False):
+        if args.checkpoint_dir:
+            raise ValueError(
+                "--multi_target_heatup is incompatible with --checkpoint_dir "
+                "(Plan v12 trains from z=345, NOT from restore pool — see "
+                "Plan v12 Decision #1 + 'Why 98 not 54' in Context). Drop "
+                "--checkpoint_dir."
+            )
+        if args.env_version != 5:
+            raise ValueError(
+                "--multi_target_heatup requires --env_version 5 "
+                "(MultiTargetEnv5 lives in env5.py)."
+            )
+        from util.env5 import MultiTargetEnv5
+        # Determine primary target from --target_branches (first listed)
+        # if any, defaulting to RCCA otherwise. Secondaries auto-fill the
+        # remaining 3 daughters.
+        primary_short = "RCCA"
+        if default_tb:
+            for tag in ("RCCA", "LCCA", "RVA", "LVA"):
+                if tag in default_tb:
+                    primary_short = tag
+                    break
+        env_train_unwrapped = MultiTargetEnv5(
+            intervention=intervention,
+            mode="train",
+            visualisation=False,
+            primary_target_short=primary_short,
+        )
+        print(
+            f"[Plan v12] MultiTargetEnv5: primary={primary_short}, "
+            f"secondaries={env_train_unwrapped.secondary_target_shorts}"
+        )
+    else:
+        env_train_unwrapped = EnvClass(
+            intervention=intervention, mode="train", visualisation=False,
+            **env_kwargs
+        )
     env_train = env_train_unwrapped  # May be wrapped below
 
     # Wrap with action curriculum if requested
@@ -455,9 +503,42 @@ def main(args):
 
     if args.eval_only_checkpoint:
         print(f"[eval-only] loading checkpoint: {args.eval_only_checkpoint}")
+        eval_seeds = EVAL_SEEDS
+        if args.drop_restore_states:
+            if not args.checkpoint_dir:
+                raise ValueError(
+                    "--drop_restore_states requires --checkpoint_dir (the wrapper's "
+                    "sorted file list defines the seed → state mapping)"
+                )
+            import glob as _glob
+            sorted_files = sorted(_glob.glob(os.path.join(args.checkpoint_dir, "*.npz")))
+            dropped_tokens = [t.strip() for t in args.drop_restore_states.split(",") if t.strip()]
+            print(f"[canonical-eval] restore pool ({len(sorted_files)} files): "
+                  f"{[os.path.basename(p) for p in sorted_files]}")
+            print(f"[canonical-eval] dropping states whose filename contains any of: {dropped_tokens}")
+
+            def _seed_picks_dropped(seed):
+                idx = int(np.random.default_rng(seed).integers(0, len(sorted_files)))
+                fname = os.path.basename(sorted_files[idx])
+                return any(token in fname for token in dropped_tokens)
+
+            kept = []
+            dropped_summary = {}
+            for seed in EVAL_SEEDS:
+                if _seed_picks_dropped(seed):
+                    idx = int(np.random.default_rng(seed).integers(0, len(sorted_files)))
+                    fname = os.path.basename(sorted_files[idx])
+                    dropped_summary[fname] = dropped_summary.get(fname, 0) + 1
+                else:
+                    kept.append(seed)
+            eval_seeds = kept
+            print(f"[canonical-eval] EVAL_SEEDS filtered: {len(EVAL_SEEDS)} → {len(eval_seeds)} "
+                  f"(dropped {len(EVAL_SEEDS) - len(eval_seeds)})")
+            for fname, count in dropped_summary.items():
+                print(f"[canonical-eval]   dropped {count} seeds mapping to {fname}")
         agent.load_checkpoint(args.eval_only_checkpoint)
         runner._replay_save_interval = 999999
-        quality, reward = runner.eval(seeds=EVAL_SEEDS)
+        quality, reward = runner.eval(seeds=eval_seeds)
         print(f"[eval-only] result: quality={quality} reward={reward}")
         agent.close()
         return
@@ -630,6 +711,15 @@ def main(args):
 
             to_push = successes + sampled_failures
             for ep in to_push:
+                # Plan v11 — tag live-seeded heuristic episodes as demos for
+                # PER's demo_priority_bonus. Matches the cache-load path
+                # (line ~493) and cache-save metadata (line ~659) which
+                # already tag is_demo=True. Without this, V3-style runs
+                # (--heuristic_seeding ... --heuristic_from_restore, no
+                # --heuristic_cache_file) end up with 0 demo-tagged
+                # transitions in the buffer (the regression observed
+                # comparing V2 18.5% demo-tagged vs V3 0%).
+                ep.is_demo = True
                 agent.replay_buffer.push(ep)
 
             print(f"Heuristic seeding complete: pushing {n_success} successes + "
@@ -695,6 +785,19 @@ def main(args):
         print(f"Heatup cache loaded: {n_pushed} episodes. Skipping heatup phase.")
         heatup_steps_effective = 0
 
+    # Plan v12 Stage 2 — indefinite --heatup_only harvest: give the heatup loop
+    # an effectively-infinite step budget so neither the step nor the episode
+    # limit ends it. The run ends ONLY on `docker stop` (SIGTERM → the shared
+    # heatup_stop Event → workers flush their final batch and exit). Gated to
+    # --heatup_only with no fixed episode / success quota, so normal training
+    # heatup is byte-for-byte unchanged.
+    if (
+        getattr(args, "heatup_only", False)
+        and not args.heatup_episodes
+        and not args.heatup_until_successes
+    ):
+        heatup_steps_effective = int(1e12)
+
     # Determine heatup cache save path (only if not loading from cache)
     heatup_cache_save = args.save_heatup_cache if not args.heatup_cache_file else None
 
@@ -733,19 +836,56 @@ def main(args):
         print(f"[Plan v8/v9/v10] warm-start: {pretrain_updates} pretraining "
               f"updates on the seeded buffer ({src}) before exploration.")
 
-    reward, success = runner.training_run(
-        heatup_steps_effective,
-        TRAINING_STEPS,
-        EXPLORE_STEPS_BTW_EVAL,
-        CONSECUTIVE_EXPLORE_EPISODES,
-        update_per_explore_step,
-        eval_seeds=EVAL_SEEDS,
-        heatup_cache_save_path=heatup_cache_save,
-        pretrain_updates=pretrain_updates,
-        heatup_until_successes=args.heatup_until_successes,
-        heatup_episode_limit=args.heatup_episodes,
-    )
-    agent.close()
+    # Plan v12 Stage 2 — for the indefinite --heatup_only harvest, install a
+    # SIGTERM/SIGINT handler so `docker stop` (SIGTERM to PID 1) sets the shared
+    # heatup-stop Event. Each worker's heatup loop checks it, exits, and runs its
+    # final-batch flush (try/finally in single.heatup) so the in-flight <N batch
+    # is not lost. NB: use `docker stop -t 60` so workers can finish the current
+    # SOFA episode within the grace window before SIGKILL.
+    if getattr(args, "heatup_only", False):
+        import signal as _signal
+
+        def _heatup_stop_handler(signum, frame):
+            try:
+                _evt = getattr(getattr(runner, "agent", None), "_heatup_stop", None)
+                if _evt is not None:
+                    _evt.set()
+            except Exception:
+                pass
+
+        try:
+            _signal.signal(_signal.SIGTERM, _heatup_stop_handler)
+            _signal.signal(_signal.SIGINT, _heatup_stop_handler)
+        except Exception:
+            pass
+
+    try:
+        reward, success = runner.training_run(
+            heatup_steps_effective,
+            TRAINING_STEPS,
+            EXPLORE_STEPS_BTW_EVAL,
+            CONSECUTIVE_EXPLORE_EPISODES,
+            update_per_explore_step,
+            eval_seeds=EVAL_SEEDS,
+            heatup_cache_save_path=heatup_cache_save,
+            pretrain_updates=pretrain_updates,
+            heatup_until_successes=args.heatup_until_successes,
+            heatup_episode_limit=args.heatup_episodes,
+            # Plan v12 Stage 2 — when --heatup_only is set, runner.training_run
+            # exits after heatup harvest completes and per-target .npz files
+            # are saved. NO pretrain, NO AWAC. Used by the standalone heatup
+            # harvester launcher.
+            heatup_only=getattr(args, "heatup_only", False),
+            # Rolling per-daughter chunk save (Version A + Version B) every N
+            # SOFA episodes — ONLY for --heatup_only runs (single-target training
+            # heatup must keep returning its episodes for seeding).
+            heatup_save_every=(
+                int(getattr(args, "heatup_save_every", 0) or 0)
+                if getattr(args, "heatup_only", False) else 0
+            ),
+        )
+    finally:
+        agent.close()
 
 
 if __name__ == "__main__":
@@ -886,6 +1026,22 @@ if __name__ == "__main__":
             "If set, skip heatup/pretrain/training and run runner.eval() once "
             "with the loaded checkpoint weights. Produces the standard run-dir "
             "log/snapshot structure via the normal Synchron+env5 path."
+        ),
+    )
+    parser.add_argument(
+        "--drop_restore_states",
+        type=str,
+        default=None,
+        help=(
+            "Plan v11 canonical eval — comma-separated substring tokens of "
+            "restore-state .npz filenames to DROP from EVAL_SEEDS. For each "
+            "EVAL_SEED, the wrapper picks a restore file via "
+            "np.random.default_rng(seed).integers(0, len(files)); if the "
+            "picked filename contains any dropped token, that seed is "
+            "filtered out. Example: --drop_restore_states pid10145,pid20043 "
+            "drops 44 seeds whose mapping lands on those states, leaving the "
+            "canonical 54-seed eval. Requires --checkpoint_dir to be set "
+            "(the wrapper's sorted file list is the mapping basis)."
         ),
     )
     # Plan v9 Change 8 — explicit RL-start mode flag. The underlying
@@ -1161,6 +1317,76 @@ if __name__ == "__main__":
             "independently of --snapshots."
         ),
     )
+
+    # ====================================================================
+    # Plan v12 Stage 1 — Multi-target random heatup harvester CLI flags.
+    # ====================================================================
+    parser.add_argument(
+        "--multi_target_heatup",
+        action="store_true",
+        help=(
+            "Plan v12 Stage 1 — replace BenchEnv5 single-target env_train "
+            "with MultiTargetEnv5 wrapping ONE intervention + 4 virtual "
+            "envs (RCCA primary + LCCA/RVA/LVA secondaries). Each SOFA "
+            "tick advances the shared SOFA backend; every virtual env "
+            "computes its own (obs, reward, terminal) and emits a "
+            "target-tagged Episode. runner.py heatup-save partitions on "
+            "target_branch_idx into 4 per-target .npz files. Stage 3 "
+            "AWAC trains per-daughter from these files."
+        ),
+    )
+    parser.add_argument(
+        "--heatup_only",
+        action="store_true",
+        help=(
+            "Plan v12 Stage 2 — run ONLY the heatup loop, then exit. "
+            "Standalone heatup harvest process: NO pretrain, NO AWAC "
+            "training, NO online explore. The trainer enters the heatup "
+            "loop (multi-target if --multi_target_heatup is also set) "
+            "and runs until SIGTERM, the episode/step limit, or the "
+            "(optional) per-target success quota is reached. Rolling "
+            "save every --heatup_save_every SOFA episodes; SIGTERM does a "
+            "final clean flush of all 4 per-target .npz files."
+        ),
+    )
+    parser.add_argument(
+        "--heatup_save_every",
+        type=int,
+        default=100,
+        help=(
+            "Plan v12 Stage 2 — rolling save cadence. Every N SOFA "
+            "episodes, the runner overwrites the per-target .npz files "
+            "with everything harvested so far. Allows the user to inspect "
+            "snapshots + cumulative clean counts mid-run and stop when "
+            "satisfied (Decision #13). Default 100."
+        ),
+    )
+    parser.add_argument(
+        "--snapshot_every",
+        type=int,
+        default=10,
+        help=(
+            "Plan v12 Stage 2 — sparse snapshot rate. Every Nth episode's "
+            "centerline snapshot is rendered to bound disk; "
+            "is_clean=True successes are rendered regardless (rare and "
+            "high-value). Combined with --snapshots centerlines. Default 10."
+        ),
+    )
+    parser.add_argument(
+        "--base_seed",
+        type=int,
+        default=42,
+        help=(
+            "Plan v12 R16 — single seed that controls the per-worker + "
+            "per-episode RNG separation. Heatup is deterministic-per-"
+            "(base_seed, worker_id, episode_idx) AND distinct across "
+            "workers, so same --base_seed reproduces the harvest while "
+            "16 workers produce 16 disjoint random streams. Read by "
+            "single.py heatup loop + singelagentprocess.py spawn-time "
+            "reseed. Default 42."
+        ),
+    )
+
     args = parser.parse_args()
 
     main(args)

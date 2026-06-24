@@ -31,6 +31,13 @@ class Episode:
         # Step counters at episode completion (stamped by worker)
         self.explore_step_at_completion: Optional[int] = None
         self.update_step_at_completion: Optional[int] = None
+        # Plan v12 — per-virtual-env target identity (multi-target heatup).
+        # -1 = single-target legacy. Set by the heatup loop's multi-target
+        # play method when this Episode was emitted by one of the 4
+        # MultiTargetEnv5 virtual envs. Carried through to_replay() into
+        # EpisodeReplay.target_branch_idx so runner.py's heatup-save block
+        # can partition Episodes by target into 4 separate .npz files.
+        self.target_branch_idx: int = -1
 
     def add_transition(
         self,
@@ -72,6 +79,8 @@ class Episode:
             self.flat_obs, self.actions, self.rewards, self.terminals,
             episode_return=float(self.episode_reward),
             reached_target_daughter=reached,
+            is_demo=bool(getattr(self, "is_demo", False)),
+            target_branch_idx=int(getattr(self, "target_branch_idx", -1)),
         )
 
     def __len__(self):
@@ -93,6 +102,10 @@ class EpisodeReplay:
     is_demo: bool = False
     episode_return: float = 0.0
     reached_target_daughter: bool = False
+    # Plan v12 Stage 1 — multi-target heatup harvest. Identifies which
+    # virtual env's target this Episode was recorded against (0=RCCA,
+    # 1=LCCA, 2=RVA, 3=LVA). Default -1 preserves single-target callers.
+    target_branch_idx: int = -1
 
     def __len__(self):
         return len(self.actions)

@@ -16,7 +16,54 @@ import logging
 import re
 import sys
 import os
-from eve.util.pathcontext import PathProjectionCache
+import numpy as np
+import gymnasium as gym
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from eve.util.pathcontext import (
+    PathProjectionCache,
+    make_per_target_caches,
+    classify_physical_branch,
+)
+
+
+# Plan v12 — daughter short-tag derivation. Used to populate
+# `info["final_branch_short"]` so per-Episode downstream filtering
+# (Stage 3 + manual heatup inspection) can identify WHICH daughter the
+# wire actually ended in — distinct from `target_branch_short` which
+# is WHICH daughter this virtual env was tracking. Allows queries like
+# "RCCA-target episodes where wire actually went to LCCA" for failure
+# analysis.
+DAUGHTER_TAGS: Tuple[str, ...] = ("RCCA", "LCCA", "RVA", "LVA")
+
+
+def _branch_short_from_name(branch_name: Optional[str]) -> str:
+    """Map a branch name string (e.g. "Centerline curve - RCCA.mrk") to a
+    short daughter tag. Returns "other" for trunk / bridge / unnamed
+    branches, "unknown" when the input is None."""
+    if not isinstance(branch_name, str):
+        return "unknown"
+    for tag in DAUGHTER_TAGS:
+        if tag in branch_name:
+            return tag
+    return "other"
+
+
+def _final_branch_short(path_context) -> str:
+    """Look up the wire's current branch's short daughter tag from the
+    PathContext state machine. Used at every-step info population so the
+    terminal step's info carries `final_branch_short`."""
+    try:
+        idx = path_context._current_branch_idx
+        if idx is None:
+            return "unknown"
+        branches_tuple = path_context._branches_tuple
+        if idx >= len(branches_tuple):
+            return "unknown"
+        branch = branches_tuple[idx]
+        return _branch_short_from_name(getattr(branch, "name", None))
+    except Exception:
+        return "unknown"
 
 # ---------------------------------------------------------------------------
 # Heuristic-mode detector thresholds
@@ -28,6 +75,11 @@ OFF_BRANCH_GRACE_STEPS = 50  # was 20; bumped in RL_IMPROV_7 §7 Fix 3 — with
                               # bif2 wrong branches (~50 steps of retract needed).
 OFF_BRANCH_MIN_INSERTED_MM = 0.0  # was 50.0 workaround; now using true branch membership
 FAILURE_TRUNCATION_PENALTY = -5.0
+# RL_IMPROV_8 OST — overshoot penalty. When the 50-step off-path timeout fires
+# but the wire's TIP is physically still inside the CORRECT target daughter
+# (classify_physical_branch == target tag), the wire overshot the target INSIDE
+# the right daughter rather than diverging into a wrong branch → soft -1, not -5.
+OVERSHOOT_PENALTY = -1.0
 # Plan v5 — WRONG_BRANCH_ENTRY_PENALTY and WRONG_BRANCH_STEP_PENALTY removed.
 # Off-path signal is now carried by ArcLengthProgress's symmetric per-step
 # Δoff_arc shaping (penalizes deeper drift, rewards retract — matches the
@@ -77,6 +129,57 @@ def setup_step_logger(name="step_logger"):
     return logger
 
 
+# ============================================================================
+# Plan v12 redesign — coord-based TargetReached reward + terminal.
+# ============================================================================
+# eve.reward.TargetReached / eve.terminal.TargetReached read the SHARED
+# intervention.target.reached. Under MultiTargetEnv5, the 4 graders share one
+# intervention but each grades against its OWN daughter target. These coord
+# variants check dist(tip, frozen_target_coord3d) < threshold instead, so a
+# grader's success/terminal reflects ITS daughter without mutating the shared
+# intervention.target. The frozen coord + threshold are updated each episode
+# in BenchEnv5.reset() when target_coord3d mode is active.
+
+class _CoordTargetReachedReward(eve.reward.TargetReached):
+    """TargetReached reward against a frozen target_coord3d (not the shared
+    intervention.target). factor=3.0 same as the env default."""
+
+    def __init__(self, intervention, factor: float = 3.0):
+        super().__init__(intervention, factor=factor,
+                         final_only_after_all_interim=False)
+        self.target_coord3d = None
+        self.threshold = None
+
+    def step(self) -> None:
+        if self.target_coord3d is None or self.threshold is None:
+            # Fall back to shared-target behavior (single-target / not yet set).
+            super().step()
+            return
+        tip = np.asarray(self.intervention.fluoroscopy.tracking3d[0],
+                         dtype=np.float64)
+        reached = float(
+            np.linalg.norm(tip - self.target_coord3d) < self.threshold
+        )
+        self.reward = self.factor * reached
+
+
+class _CoordTargetReachedTerminal(eve.terminal.TargetReached):
+    """TargetReached terminal against a frozen target_coord3d."""
+
+    def __init__(self, intervention):
+        super().__init__(intervention)
+        self.target_coord3d = None
+        self.threshold = None
+
+    @property
+    def terminal(self) -> bool:
+        if self.target_coord3d is None or self.threshold is None:
+            return self.intervention.target.reached
+        tip = np.asarray(self.intervention.fluoroscopy.tracking3d[0],
+                         dtype=np.float64)
+        return bool(np.linalg.norm(tip - self.target_coord3d) < self.threshold)
+
+
 class BenchEnv5(eve.Env):
     def __init__(
         self,
@@ -85,9 +188,22 @@ class BenchEnv5(eve.Env):
         visualisation: bool = False,
         n_max_steps=600,
         default_target_branch: str = None,
+        target_coord3d=None,
     ) -> None:
         self.mode = mode
         self.visualisation = visualisation
+        # Plan v12 redesign — when set, this grader grades against a FROZEN
+        # target_coord3d (sampled per-episode from its daughter centerline)
+        # instead of the shared intervention.target. Flows to Target2D, the
+        # FixedPathfinder planned path, and the coord-based TargetReached
+        # reward + terminal. None = legacy single-target (reads
+        # intervention.target). Used by MultiTargetEnv5 to make all 4 graders
+        # run the IDENTICAL pipeline against their own targets.
+        self._grader_target_coord3d = (
+            np.asarray(target_coord3d, dtype=np.float64)
+            if target_coord3d is not None else None
+        )
+        self._is_grader = target_coord3d is not None
         # Plan v5 — per-daughter RL: when set, every reset() that does not
         # explicitly pass a `target_branch` option falls back to this
         # branch. This scopes heatup / explore / eval (which the eve_rl
@@ -143,9 +259,17 @@ class BenchEnv5(eve.Env):
             reset_mode=eve.observation.wrapper.MemoryResetMode.FILL,
         )
 
-        target_state = eve.observation.Target2D(intervention)
+        # Plan v12 — grader mode: Target2D reads the frozen target_coord3d
+        # so obs[40:42] is target-coherent for THIS grader's daughter.
+        # Keep a ref to the INNER Target2D so set_grader_target() can update
+        # its coord per episode (it's wrapped below).
+        _inner_target2d = eve.observation.Target2D(
+            intervention,
+            target_coord3d=self._grader_target_coord3d,
+        )
+        self._grader_target2d_inner = _inner_target2d if self._is_grader else None
         target_state = eve.observation.wrapper.NormalizeTracking2DEpisode(
-            target_state, intervention
+            _inner_target2d, intervention
         )
 
         last_action = eve.observation.LastAction(intervention)
@@ -179,11 +303,19 @@ class BenchEnv5(eve.Env):
         # ----------------------------------------------------------------
         # Reward
         # ----------------------------------------------------------------
-        target_reward = eve.reward.TargetReached(
-            intervention,
-            factor=3.0,
-            final_only_after_all_interim=False,
-        )
+        # Plan v12 — grader mode uses the coord-based TargetReached so the
+        # +3.0 success reward fires on THIS grader's daughter, not the shared
+        # intervention.target. Single-target keeps the original behavior.
+        if self._is_grader:
+            target_reward = _CoordTargetReachedReward(intervention, factor=3.0)
+            self._grader_target_reward = target_reward
+        else:
+            target_reward = eve.reward.TargetReached(
+                intervention,
+                factor=3.0,
+                final_only_after_all_interim=False,
+            )
+            self._grader_target_reward = None
         # Plan v9 Change 4 — the uniform -0.001 step penalty is replaced by
         # an inline path-segment-conditioned per-step term added in
         # BenchEnv5.step() after update_branch_state. The eve.reward.Step
@@ -200,7 +332,12 @@ class BenchEnv5(eve.Env):
         # ----------------------------------------------------------------
         # Terminal and Truncation
         # ----------------------------------------------------------------
-        terminal = eve.terminal.TargetReached(intervention)
+        if self._is_grader:
+            terminal = _CoordTargetReachedTerminal(intervention)
+            self._grader_target_terminal = terminal
+        else:
+            terminal = eve.terminal.TargetReached(intervention)
+            self._grader_target_terminal = None
 
         max_steps = eve.truncation.MaxSteps(n_max_steps)
         vessel_end = eve.truncation.VesselEnd(intervention)
@@ -245,6 +382,7 @@ class BenchEnv5(eve.Env):
         self._heuristic_mode = False
         self._heuristic_abort_reason = None
         self._off_branch_steps = 0
+        self._overshoot_truncation = False  # RL_IMPROV_8 OST — set at WBT trigger
         self._fold_stall_count = 0
         self._prev_tip_s = 0.0
         self._prev_inserted_gw = 0.0
@@ -261,6 +399,35 @@ class BenchEnv5(eve.Env):
             info=info,
             interim_target=None,
         )
+
+    # ------------------------------------------------------------------
+    # Plan v12 — grader-mode per-episode target setter.
+    # ------------------------------------------------------------------
+    def set_grader_target(self, target_coord3d, threshold) -> None:
+        """Update this grader's frozen target for the upcoming episode.
+
+        Multi-target heatup: MultiTargetEnv5 samples a fresh point on each
+        daughter's centerline per episode and calls this BEFORE the grader's
+        reset(), so the pathfinder (planned path), the coord-based
+        TargetReached reward + terminal, and the Target2D obs all grade
+        against the same daughter point. No-op for non-grader (single-target)
+        instances.
+        """
+        if not self._is_grader:
+            return
+        coord = np.asarray(target_coord3d, dtype=np.float64)
+        thr = float(threshold)
+        self._grader_target_coord3d = coord
+        # Pathfinder picks this up in reset() (positional eve.Env.reset call).
+        self.pathfinder._grader_target_coord3d = coord
+        if self._grader_target_reward is not None:
+            self._grader_target_reward.target_coord3d = coord
+            self._grader_target_reward.threshold = thr
+        if self._grader_target_terminal is not None:
+            self._grader_target_terminal.target_coord3d = coord
+            self._grader_target_terminal.threshold = thr
+        if self._grader_target2d_inner is not None:
+            self._grader_target2d_inner.target_coord3d = coord
 
     def __setstate__(self, state):
         """Re-initialize components after unpickling in a worker process."""
@@ -311,6 +478,44 @@ class BenchEnv5(eve.Env):
                 f"wall_time={time.time():.6f} | pid={os.getpid()}"
                 f"{heur_end_str}"
             )
+            # Plan v12 harvest — consolidated per-episode OUTCOME line carrying
+            # EVERY field needed to filter the heatup npzs for AWAC later. These
+            # mirror experience_cache.episode_metadata EXACTLY (same final_branch
+            # via classify, same is_clean formula), so filtering from logs and
+            # from the npz agree. _last_reason / _last_final_branch_short are
+            # snapshotted at the terminal STEP (the shared wire moves on for an
+            # early-terminating grader, so they cannot be recomputed here).
+            try:
+                _tbs = str(getattr(self, "_target_branch_short", "unknown"))
+                _fbs = str(getattr(self, "_last_final_branch_short", "unknown"))
+                _rcd = bool(getattr(self, "_received_correct_daughter", False))
+                _rwd = bool(getattr(self, "_received_wrong_daughter", False))
+                _ovs = bool(getattr(self, "_overshoot_truncation", False))
+                _gsucc = bool(
+                    getattr(getattr(self, "_target_terminal", None), "terminal", False)
+                )
+                _gtimeout = bool(
+                    (self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS and not _ovs)
+                    or self._fold_stall_count >= FOLD_STALL_STEPS
+                )
+                _clean = bool(
+                    _fbs == _tbs
+                    and _fbs not in ("unknown", "other")
+                    and _rcd
+                    and not _gtimeout
+                )
+                _reason = str(getattr(self, "_last_reason", "unknown"))
+                self._step_logger.info(
+                    f"EPISODE_OUTCOME | ep={self._episode_count} | "
+                    f"target_branch={_tbs} | final_branch={_fbs} | reason={_reason} | "
+                    f"is_clean={int(_clean)} | grader_success={int(_gsucc)} | "
+                    f"grader_timeout={int(_gtimeout)} | overshoot={int(_ovs)} | "
+                    f"received_correct={int(_rcd)} | received_wrong={int(_rwd)} | "
+                    f"return={self._episode_total_reward:.4f} | "
+                    f"steps={self._episode_step_count} | pid={os.getpid()}"
+                )
+            except Exception:
+                pass
             sys.stderr.flush()
 
         self._episode_count += 1
@@ -359,6 +564,7 @@ class BenchEnv5(eve.Env):
                         self._target_branch_short = tag
                         break
         self._off_branch_steps = 0
+        self._overshoot_truncation = False  # RL_IMPROV_8 OST — per-episode reset
         self._fold_stall_count = 0
         self._prev_tip_s = 0.0
         self._prev_inserted_gw = 0.0
@@ -519,7 +725,14 @@ class BenchEnv5(eve.Env):
         # Log after super().reset() so target coords are populated for this episode
         target_str = ""
         try:
-            tc = self.intervention.target.coordinates3d
+            # RL_IMPROV_8 — log THIS grader's OWN frozen target (graders) instead
+            # of the shared dummy intervention.target, so per-grader analysis can
+            # tell the 4 daughters' targets apart (previously all 4 EPISODE_START
+            # lines logged the identical shared coord).
+            if getattr(self, "_is_grader", False) and self._grader_target_coord3d is not None:
+                tc = self._grader_target_coord3d
+            else:
+                tc = self.intervention.target.coordinates3d
             target_str = f" | target=({tc[0]:.1f},{tc[1]:.1f},{tc[2]:.1f})"
         except Exception:
             pass
@@ -777,6 +990,28 @@ class BenchEnv5(eve.Env):
         # commit hysteresis on junction crossings — no in-lumen flicker.
         on_correct_path = self._path_context.is_on_correct_path()
         on_correct_branch = self._path_context.is_on_correct_branch()  # legacy log
+        # ---- RL_IMPROV_8 Fix 2 (state-machine correction, heatup/AWAC only) ----
+        # At the shared (11) fork the per-grader state machine can lock a wire that
+        # is GEOMETRICALLY in the CORRECT daughter onto a sister and count it
+        # off-path (_pick_off_path_branch can never return the target daughter), so
+        # a wire threading the right daughter gets spuriously WBT'd. classify_-
+        # physical_branch reads ONLY the tip geometry. If the tip is physically in
+        # the target daughter AND has NOT yet passed the target (proj.s < total),
+        # treat it as on-path so off_branch_steps does not accumulate while it
+        # threads the correct daughter. Overshoot (proj.s past the target) is left
+        # alone — it still times out and Fix 1 (OST) relabels it. Heuristic path is
+        # untouched via the _heuristic_mode gate (its frozen classifier is unchanged).
+        if (not on_correct_path and not self._heuristic_mode
+                and self._target_branch_short in ("RCCA", "LCCA", "RVA", "LVA")):
+            try:
+                _proj = self._path_context.get_projection()
+                _tl = float(getattr(self._path_context, "_total_length", 0.0) or 0.0)
+                if (_tl > 1e-6 and _proj.s < _tl - 1.0
+                        and classify_physical_branch(self.intervention)
+                        == self._target_branch_short):
+                    on_correct_path = True
+            except Exception:
+                pass
         if not terminated and not truncated:
             if not on_correct_path:
                 self._off_branch_steps += 1
@@ -806,6 +1041,22 @@ class BenchEnv5(eve.Env):
                 # is genuinely advancing along a valid extension branch.
                 suppress = bool(getattr(self, "_heur_suppress_wrong_branch", False))
                 if not suppress and self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS:
+                    # RL_IMPROV_8 Fix 1 (OST) — if the tip is physically in the
+                    # CORRECT target daughter at the off-path timeout, the wire
+                    # overshot the target INSIDE the right daughter (not a wrong-
+                    # branch divergence) → soft -1 + "overshoot" reason instead of
+                    # -5 WBT. Geometry-only, heatup-gated. (Fix 2 above already
+                    # keeps a still-threading wire on-path, so this fires mainly
+                    # for genuine overshoot past the target.)
+                    self._overshoot_truncation = False
+                    if (not self._heuristic_mode
+                            and self._target_branch_short in ("RCCA", "LCCA", "RVA", "LVA")):
+                        try:
+                            if (classify_physical_branch(self.intervention)
+                                    == self._target_branch_short):
+                                self._overshoot_truncation = True
+                        except Exception:
+                            pass
                     if self._heuristic_mode:
                         self._heuristic_abort("wrong_branch_timeout", info)
                     truncated = True
@@ -825,7 +1076,15 @@ class BenchEnv5(eve.Env):
             or self._fold_stall_count >= FOLD_STALL_STEPS
             or self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS
         ):
-            reward += FAILURE_TRUNCATION_PENALTY
+            # RL_IMPROV_8 OST — overshoot inside the correct daughter gets the
+            # soft -1; all other truncations (wrong-branch / vessel-end / fold-
+            # stall) keep -5. _overshoot_truncation is set ONLY in the off-branch
+            # timeout branch above, so vessel_end / fold_stall truncations
+            # correctly take the -5 path. Mutually exclusive.
+            if getattr(self, "_overshoot_truncation", False):
+                reward += OVERSHOOT_PENALTY
+            else:
+                reward += FAILURE_TRUNCATION_PENALTY
 
         self._episode_total_reward += reward
 
@@ -953,6 +1212,51 @@ class BenchEnv5(eve.Env):
                 f" | tip3d={_tip} | rot_inst={_rots}"
             )
 
+            # RL_IMPROV_8 — per-grader diagnostics so the 4 interleaved graders
+            # are disambiguable AND the on-the-way-vs-overshoot question is
+            # answerable from the log alone:
+            #   grader      = THIS grader's daughter tag (RCCA/LCCA/RVA/LVA)
+            #   tgt/d_tgt   = the grader's OWN target coord + 3D tip->target dist
+            #                 (same point & CS the _CoordTargetReachedTerminal
+            #                 thresholds on, so d_tgt < threshold == success)
+            #   xt_true     = the REAL planned-path cross-track (the cross_tr
+            #                 field above is the heuristic's, =0 in heatup)
+            #   proj_s/path_len = projection arclength vs planned-path length
+            #                 (proj_s >= path_len  ==> tip is PAST the target
+            #                 ==> overshoot; proj_s < path_len ==> on the way)
+            #   phys        = geometric physical tag (vs state-machine cur_branch)
+            _gtgt = "?"; _dtgt = "?"; _xt = "?"; _projs = "?"; _plen = "?"; _phys = "?"
+            try:
+                _tc = (self._grader_target_coord3d
+                       if getattr(self, "_is_grader", False)
+                       and self._grader_target_coord3d is not None
+                       else np.asarray(self.intervention.target.coordinates3d,
+                                       dtype=np.float64))
+                _gtgt = f"({_tc[0]:.1f},{_tc[1]:.1f},{_tc[2]:.1f})"
+                _tipv = np.asarray(self.intervention.fluoroscopy.tracking3d[0],
+                                   dtype=np.float64)
+                _dtgt = f"{float(np.linalg.norm(_tipv - _tc)):.1f}"
+            except Exception:
+                pass
+            try:
+                _pr = self._path_context.get_projection()
+                _xt = f"{float(_pr.cross_track_dist):.2f}"
+                _projs = f"{float(_pr.s):.1f}"
+                _plen = f"{float(getattr(self._path_context, '_total_length', 0.0)):.1f}"
+            except Exception:
+                pass
+            try:
+                _phys = classify_physical_branch(self.intervention)
+            except Exception:
+                pass
+            grader_str = (
+                f" | grader={self._target_branch_short}"
+                f" | tgt={_gtgt} | d_tgt={_dtgt}"
+                f" | xt_true={_xt} | proj_s={_projs} | path_len={_plen}"
+                f" | phys={_phys}"
+                f" | overshoot={bool(getattr(self, '_overshoot_truncation', False))}"
+            )
+
             # Heuristic diagnostics published by heuristic_policy wrapper
             _head_err = float(getattr(self, "_heur_heading_error", 0.0))
             _cross_tr = float(getattr(self, "_heur_cross_track", 0.0))
@@ -965,7 +1269,7 @@ class BenchEnv5(eve.Env):
                 f"term={terminated} | trunc={truncated} | "
                 f"{sofa_info} | delta_ins=[{delta_ins[0]:.2f},{delta_ins[1]:.2f}]"
                 f" | heading_err={_head_err:+.3f} | cross_tr={_cross_tr:+.2f}"
-                f"{shared_str}{heur_str}"
+                f"{shared_str}{grader_str}{heur_str}"
             )
             self._step_logger.info(log_msg)
             for handler in self._step_logger.handlers:
@@ -1000,7 +1304,12 @@ class BenchEnv5(eve.Env):
         #   seed    — heuristic-mode episode (heuristic-seeding phase)
         #   explore — everything else (heatup + SAC exploration)
         # Defensive: never raises; never affects rl flow.
+        # Plan v12 — under MultiTargetEnv5, suppress this per-grader internal
+        # snapshot. The driver fires ONE snapshot per physical episode,
+        # bucketed by the physical final branch (not 4x RCCA snapshots from
+        # the primary grader). Set on the primary by MultiTargetEnv5.__init__.
         if (terminated or truncated) and \
+                not getattr(self, "_suppress_internal_snapshot", False) and \
                 os.environ.get("SNAPSHOT_MODE", "none").lower() not in ("", "none", "off", "false", "0"):
             try:
                 from util.snapshot import save_snapshot
@@ -1029,6 +1338,30 @@ class BenchEnv5(eve.Env):
             info["received_correct_daughter"] = bool(self._received_correct_daughter)
             info["received_wrong_daughter"] = bool(self._received_wrong_daughter)
             info["reached_target_daughter"] = bool(self._reached_target_daughter)
+            # Plan v12 — PER-GRADER deep-target success. info["success"] (from
+            # eve.info.TargetReached) reads the SHARED intervention.target, so
+            # under MultiTargetEnv5 a secondary would report RCCA's reach, not
+            # its own daughter's. self._target_terminal is this grader's
+            # terminal (the coord-based _CoordTargetReachedTerminal for graders,
+            # the real RCCA TargetReached for the driver), so its .terminal is
+            # the correct per-grader deep-target reach (dist(tip, own_coord) <
+            # threshold). Used by runner.py is_clean to exclude wrong-branch
+            # timeouts. Also a separate Challenge-2 (deep reach) filter signal.
+            info["grader_success"] = bool(
+                getattr(self._target_terminal, "terminal", False)
+            )
+            # The episode's terminal REASON (so the harvester can exclude
+            # off-path / fold / vessel-end failures from "clean threads").
+            # RL_IMPROV_8 OST — an overshoot inside the correct daughter is NOT a
+            # wrong-branch failure-timeout. Excluding it here lets is_clean (which
+            # excludes grader_failure_timeout) fold an OST reach into the clean
+            # lane; info["overshoot"] keeps it individually traceable.
+            info["grader_failure_timeout"] = bool(
+                (self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS
+                 and not getattr(self, "_overshoot_truncation", False))
+                or self._fold_stall_count >= FOLD_STALL_STEPS
+            )
+            info["overshoot"] = bool(getattr(self, "_overshoot_truncation", False))
         except Exception:
             pass
 
@@ -1048,6 +1381,13 @@ class BenchEnv5(eve.Env):
                 int(pc._target_daughter_branch_idx)
                 if pc._target_daughter_branch_idx is not None else None
             )
+            # Plan v12 — short tag for downstream filtering. Tells us WHICH
+            # daughter the wire is currently in: RCCA/LCCA/RVA/LVA/other.
+            # Combined with target_branch_short and received_correct_daughter
+            # downstream filters can express the user's "success = (target
+            # in daughter AND got +1 bonus)" definition exactly.
+            info["final_branch_short"] = _final_branch_short(pc)
+            info["target_branch_short"] = self._target_branch_short
         except Exception:
             pass
 
@@ -1062,6 +1402,23 @@ class BenchEnv5(eve.Env):
         # critic diverges (SAC -> +inf, AWAC -> -inf). Done AFTER the -5
         # FailureTruncationPenalty block (which gates on `not terminated`),
         # so the penalty still applies.
+        #
+        # Plan v12 harvest — snapshot the terminal outcome BEFORE this fix
+        # rewrites `terminated` (else EPISODE_OUTCOME would read "success" for
+        # every failure). classify here == the broadcast final_branch_short
+        # (same shared intervention + step); an early-terminating grader's wire
+        # keeps moving for the rest of the physical episode, so it must be
+        # captured NOW, not recomputed in the next reset.
+        if terminated or truncated:
+            try:
+                self._last_reason = self._resolve_termination_reason(
+                    terminated, truncated
+                )
+                self._last_final_branch_short = classify_physical_branch(
+                    self.intervention
+                )
+            except Exception:
+                pass
         if truncated:
             terminated = True
 
@@ -1106,28 +1463,43 @@ class BenchEnv5(eve.Env):
     # ------------------------------------------------------------------
 
     def _classify_branch_segment(self, branch_idx: int) -> str:
-        """Return one of: trunk / post_bif / bridge / target_daughter /
-        wrong_daughter / other for a given branch index."""
+        """Return one of: trunk / bridge / target_daughter / wrong_daughter /
+        other for a given branch index.
+
+        Plan v12 (de-RCCA-hardcoded) — classify STRUCTURALLY from THIS grader's
+        own planned path, NOT by hardcoded branch numbers. The previous version
+        hardcoded the bridge as n==11 (RCCA/LCCA's bif2 ostium); RVA routes
+        through (19) and LVA through (18), so their own correct bridge failed
+        the n==11 test, fell to "other", and was charged -0.002/step instead of
+        the bridge's intended 0.0. The structural rule is anatomy-invariant:
+          trunk          = the FIRST on-path branch  (pc._trunk_branch_idx)
+          target_daughter= the LAST on-path branch   (pc._target_daughter_branch_idx)
+          bridge         = any OTHER on-path branch   (in pc._path_branch_idx_set)
+          wrong_daughter = a named daughter NOT on this path
+          other          = anything else
+        All three index fields are derived per-grader from the Dijkstra path
+        (pathcontext _build_path_branch_sequence / _build_branch_index), so
+        every daughter — (0)+(11) for RCCA/LCCA, (19) for RVA, (18) for LVA —
+        maps its own bridge(s) to "bridge" with NO numbered literal.
+        """
         try:
             pc = self._path_context
             if branch_idx is None:
                 return "other"
+            idx = int(branch_idx)
             target_idx = pc._target_daughter_branch_idx
-            if target_idx is not None and int(branch_idx) == int(target_idx):
+            if target_idx is not None and idx == int(target_idx):
                 return "target_daughter"
-            name = getattr(pc._branches_tuple[branch_idx], "name", "") or ""
-            # Numbered branches: regex extracts the integer inside "(N)"
-            m = re.search(r"\((\d+)\)", name)
-            if m is not None:
-                n = int(m.group(1))
-                if n == 2:
-                    return "trunk"
-                if n == 0:
-                    return "post_bif"
-                if n == 11:
-                    return "bridge"
-                return "other"
-            # Named daughter that isn't the current target
+            trunk_idx = pc._trunk_branch_idx
+            if trunk_idx is not None and idx == int(trunk_idx):
+                return "trunk"
+            if idx in pc._path_branch_idx_set:
+                # On THIS grader's planned path, neither trunk nor daughter →
+                # an intermediate bridge segment (RCCA/LCCA (0)+(11),
+                # RVA (19), LVA (18)). Cheapest on-path segment → 0.0.
+                return "bridge"
+            # Off-path: a named daughter that isn't this grader's target.
+            name = getattr(pc._branches_tuple[idx], "name", "") or ""
             for tag in ("RCCA", "RVA", "LCCA", "LVA"):
                 if tag in name:
                     return "wrong_daughter"
@@ -1149,25 +1521,18 @@ class BenchEnv5(eve.Env):
                 i: self._classify_branch_segment(i)
                 for i in range(len(pc._branches_tuple))
             }
-            # Trunk end arclength = the (2)->(0) junction arc (top of
-            # trunk / bif1) along the planned path. The RCCA topology is
-            # (2)->(0)->(11)->RCCA, so the trunk (2) ENDS at the (2)->(0)
-            # junction, NOT at any (2)->(11) (which doesn't exist). The
-            # -0.007 -> -0.002 interpolation spans z=345 (proj_s=0) to
-            # this junction; (0)-on-path then continues flat at -0.002.
-            # Fall back to the first on-path junction if naming differs.
+            # Trunk end arclength = the FIRST on-path junction (top of trunk /
+            # the trunk's exit toward the bridge), generic across daughters.
+            # The trunk -0.007 -> -0.002 interpolation spans z=345 (proj_s=0)
+            # to this junction. Plan v12: dropped the RCCA-specific (2)->(0)
+            # named detector — the first on-path junction IS the trunk exit
+            # for every daughter (RCCA/LCCA via (0), RVA via (19), LVA via
+            # (18)), so this is anatomy-invariant.
             trunk_end_arc = None
             try:
-                for arc, prev_n, next_n in pc.get_path_junctions():
-                    p_is_trunk = bool(re.search(r"\(2\)", prev_n))
-                    n_is_postbif = bool(re.search(r"\(0\)", next_n))
-                    if p_is_trunk and n_is_postbif:
-                        trunk_end_arc = float(arc)
-                        break
-                if trunk_end_arc is None:
-                    juncs = pc.get_path_junctions()
-                    if juncs:
-                        trunk_end_arc = float(juncs[0][0])
+                juncs = pc.get_path_junctions()
+                if juncs:
+                    trunk_end_arc = float(juncs[0][0])
             except Exception:
                 pass
             self._trunk_end_arc = trunk_end_arc
@@ -1227,12 +1592,10 @@ class BenchEnv5(eve.Env):
                     return -0.002
                 t = max(0.0, min(1.0, proj_s / self._trunk_end_arc))
                 return -0.007 + (0.005 * t)  # -0.007 at start -> -0.002 at end
-            if segment_class == "post_bif":      # (0) on-path part
-                return -0.002
-            if segment_class == "bridge":        # (11)
-                return 0.0
-            if segment_class == "target_daughter":  # RCCA
-                return 0.0
+            if segment_class == "bridge":        # on-path intermediate(s)
+                return 0.0                        # cheapest on-path segment
+            if segment_class == "target_daughter":
+                return 0.0                        # depth via Change 4b 2x progress
             return -0.002  # other on-path (defensive, low corridor value)
         except Exception:
             return -0.002
@@ -1393,6 +1756,12 @@ class BenchEnv5(eve.Env):
             # episode as wrong_branch_timeout. Treat as max_steps instead.
             if (self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS
                     and not getattr(self, "_heur_suppress_wrong_branch", False)):
+                # RL_IMPROV_8 OST — same off-path timeout, but if the tip was
+                # physically in the target daughter this is an overshoot. Use the
+                # flag cached at step-time so the snapshot reason matches the
+                # penalty already applied in step().
+                if getattr(self, "_overshoot_truncation", False):
+                    return "overshoot"
                 return "wrong_branch_timeout"
         except Exception:
             pass
@@ -1412,3 +1781,385 @@ class BenchEnv5(eve.Env):
         except Exception:
             pass
         return "unknown_truncation"
+
+
+# ============================================================================
+# Plan v12 redesign — Multi-target heatup wrapper (symmetric full graders).
+# ============================================================================
+# ONE shared eve.intervention.SimulatedIntervention (one SOFA backend) + 4
+# FULL BenchEnv5 graders (RCCA primary + LCCA/RVA/LVA), so EVERY daughter runs
+# the IDENTICAL reward + observation pipeline as RCCA (the user's "handle all
+# branches the same way" requirement) — uniformity guaranteed by construction
+# because each grader IS a BenchEnv5, not a hand-rolled simplified peer.
+#
+# How the shared SOFA is multiplexed:
+#   - graders[0] (RCCA) is the DRIVER. Its step()/reset() run the real
+#     intervention.step()/reset() that advance / initialise SOFA.
+#   - graders[1..3] (LCCA/RVA/LVA) are coord-based BenchEnv5 instances sharing
+#     the intervention. During their step()/reset(), intervention.step /
+#     intervention.reset / reset_devices are temporarily neutralised (a thin
+#     monkeypatch) so they GRADE the already-advanced shared SOFA state
+#     against their own daughter WITHOUT re-advancing the physics. This avoids
+#     refactoring BenchEnv5's tested 500-line step() while still giving each
+#     grader the full pipeline.
+#
+# final_branch_short (which daughter the wire PHYSICALLY ended in) is ONE
+# target-independent geometric fact (classify_physical_branch), computed once
+# per tick and broadcast into all 4 graders' info — so the 4 per-target .npz
+# agree by construction (was the v0 bug: 56/92; now 91/91).
+#
+# Snapshots fire ONCE per physical episode from the driver, bucketed by the
+# physical final branch with that branch in the header (after reward).
+# ============================================================================
+
+
+class MultiTargetEnv5(gym.Env):
+    """Plan v12 multi-target heatup harvester — 4 full BenchEnv5 graders on
+    one shared SOFA intervention.
+
+    Inheritance note: subclasses gym.Env solely so eve_rl's confighandler
+    stubs serialization. reset/step return a LIST of per-grader tuples (NOT
+    the single gym shape); single.py:_play_episode_multitarget dispatches on
+    the duck-typed .secondaries / .primary attributes.
+    """
+
+    DAUGHTER_SHORT_NAMES: Tuple[str, ...] = ("RCCA", "LCCA", "RVA", "LVA")
+    DAUGHTER_CENTERLINE_TEMPLATES: Dict[str, str] = {
+        "RCCA": "Centerline curve - RCCA.mrk",
+        "LCCA": "Centerline curve - LCCA.mrk",
+        "RVA":  "Centerline curve - RVA.mrk",
+        "LVA":  "Centerline curve - LVA.mrk",
+    }
+
+    def __init__(
+        self,
+        intervention,
+        mode: str = "train",
+        visualisation: bool = False,
+        n_max_steps: int = 600,
+        primary_target_short: str = "RCCA",
+        secondary_target_shorts: Optional[Sequence[str]] = None,
+    ) -> None:
+        if primary_target_short not in self.DAUGHTER_SHORT_NAMES:
+            raise ValueError(
+                f"primary_target_short must be one of "
+                f"{self.DAUGHTER_SHORT_NAMES}; got {primary_target_short!r}"
+            )
+        if secondary_target_shorts is None:
+            secondary_target_shorts = tuple(
+                s for s in self.DAUGHTER_SHORT_NAMES if s != primary_target_short
+            )
+        for s in secondary_target_shorts:
+            if s not in self.DAUGHTER_SHORT_NAMES:
+                raise ValueError(f"secondary {s!r} not in {self.DAUGHTER_SHORT_NAMES}")
+            if s == primary_target_short:
+                raise ValueError(f"secondary {s!r} duplicates primary_target_short")
+
+        self.intervention = intervention
+        self.mode = mode
+        self.primary_target_short = primary_target_short
+        self.secondary_target_shorts = tuple(secondary_target_shorts)
+        self.n_max_steps = n_max_steps
+
+        # graders[0] — RCCA driver: a normal BenchEnv5 (target_coord3d=None →
+        # grades against the shared intervention.target, which its
+        # default_target_branch scopes to RCCA). Its step()/reset() advance
+        # the real SOFA.
+        self.primary = BenchEnv5(
+            intervention=intervention,
+            mode=mode,
+            visualisation=visualisation,
+            n_max_steps=n_max_steps,
+            default_target_branch=self.DAUGHTER_CENTERLINE_TEMPLATES[
+                primary_target_short
+            ],
+        )
+        self.primary._suppress_internal_snapshot = True
+
+        # graders[1..3] — coord-based BenchEnv5 graders sharing the
+        # intervention. target_coord3d is a placeholder set per-episode in
+        # reset() via set_grader_target(); _is_grader=True makes them use the
+        # coord TargetReached reward/terminal + Target2D-coord obs.
+        self.secondaries: List[BenchEnv5] = []
+        for s in self.secondary_target_shorts:
+            g = BenchEnv5(
+                intervention=intervention,
+                mode=mode,
+                visualisation=False,
+                n_max_steps=n_max_steps,
+                target_coord3d=np.zeros(3, dtype=np.float64),  # placeholder
+            )
+            g._suppress_internal_snapshot = True
+            g._grader_short = s
+            self.secondaries.append(g)
+
+        # Per-daughter CenterlineRandom target probes (lazy-built at first reset).
+        self._target_probes: Dict[str, Any] = {}
+
+        # Snapshot cadence (driver-level, per physical episode).
+        try:
+            self._snapshot_every = int(os.environ.get("SNAPSHOT_EVERY", "10"))
+        except Exception:
+            self._snapshot_every = 10
+        self._physical_episode_count = 0
+
+        # Plan v12 R15 — no shared mutable state across the 4 graders' caches.
+        from eve.util.pathcontext import assert_caches_independent
+        assert_caches_independent(
+            [g._path_context for g in ([self.primary] + self.secondaries)]
+        )
+
+    # ------------------------------------------------------------------
+    # Gym / pickling passthrough.
+    # ------------------------------------------------------------------
+    def __getattr__(self, name: str):
+        if name in ("primary", "intervention"):
+            raise AttributeError(name)
+        primary = self.__dict__.get("primary")
+        if primary is None:
+            raise AttributeError(name)
+        return getattr(primary, name)
+
+    def render(self):
+        try:
+            return self.primary.render()
+        except Exception:
+            return None
+
+    def close(self):
+        try:
+            self.primary.close()
+        except Exception:
+            pass
+
+    def __setstate__(self, state):
+        # Each grader is a BenchEnv5 with its OWN __setstate__ that rebuilds
+        # its path_context + re-binds obs/reward refs; pickle invokes those
+        # recursively. The shared intervention is preserved as ONE object by
+        # pickle's identity tracking. Nothing extra needed here.
+        self.__dict__.update(state)
+
+    def _ordered_target_shorts(self) -> Tuple[str, ...]:
+        return (self.primary_target_short,) + self.secondary_target_shorts
+
+    # ------------------------------------------------------------------
+    # target sampling
+    # ------------------------------------------------------------------
+    def _sample_target_coord3d(self, target_branch_full: str,
+                               seed: Optional[int]) -> np.ndarray:
+        """Sample a 3-D point on the named daughter centerline (per-episode
+        target for a coord-based grader). Probe built lazily after the first
+        reset populates the vessel tree."""
+        probe = self._target_probes.get(target_branch_full)
+        if probe is None:
+            probe = eve.intervention.target.CenterlineRandom(
+                vessel_tree=self.intervention.vessel_tree,
+                fluoroscopy=self.intervention.fluoroscopy,
+                threshold=float(getattr(self.intervention.target, "threshold", 5.0)),
+                branches=[target_branch_full],
+            )
+            self._target_probes[target_branch_full] = probe
+        probe.reset(seed=seed, target_branch=target_branch_full)
+        return np.array(probe.coordinates3d, dtype=np.float64)
+
+    # ------------------------------------------------------------------
+    # reset
+    # ------------------------------------------------------------------
+    def reset(self, seed: Optional[int] = None,
+              options: Optional[Dict[str, Any]] = None
+    ) -> List[Tuple[Any, Dict[str, Any]]]:
+        """Reset all 4 graders against ONE shared intervention. Returns
+        [(obs, info)] per grader, RCCA first."""
+        # graders[0] (RCCA) — real intervention reset (builds SOFA + vessel
+        # tree + samples the RCCA target). default_target_branch scopes it.
+        primary_result = self.primary.reset(seed=seed, options=options)
+        # RL_IMPROV_8 — pin the primary's tag explicitly (robust to options not
+        # carrying target_branch), matching the secondary override below.
+        self.primary._target_branch_short = self.primary_target_short
+        results: List[Tuple[Any, Dict[str, Any]]] = [primary_result]
+
+        threshold = float(getattr(self.intervention.target, "threshold", 5.0))
+
+        # graders[1..3] — grade-only reset: neutralise intervention reset so
+        # the shared SOFA state (set by the driver) is NOT re-initialised.
+        real_reset = self.intervention.reset
+        real_reset_devices = getattr(self.intervention, "reset_devices", None)
+        self.intervention.reset = lambda *a, **k: None
+        if real_reset_devices is not None:
+            self.intervention.reset_devices = lambda *a, **k: None
+        try:
+            for g, s in zip(self.secondaries, self.secondary_target_shorts):
+                coord = self._sample_target_coord3d(
+                    self.DAUGHTER_CENTERLINE_TEMPLATES[s], seed
+                )
+                g.set_grader_target(coord, threshold)
+                res = g.reset(seed=seed, options=options)
+                # RL_IMPROV_8 — g.reset() set _target_branch_short from the SHARED
+                # options (the driver's target / "unknown"); override with THIS
+                # grader's true daughter tag so the OST + state-machine-correction
+                # predicates (which key on _target_branch_short) apply to the
+                # secondaries too, not just the RCCA primary.
+                g._target_branch_short = s
+                results.append(res)
+        finally:
+            self.intervention.reset = real_reset
+            if real_reset_devices is not None:
+                self.intervention.reset_devices = real_reset_devices
+
+        self._physical_episode_count = getattr(self, "_physical_episode_count", 0)
+        # Per-grader done tracking. Once a grader terminates/truncates, its
+        # step() is short-circuited (single.py:219-222 expects this) so it
+        # does NOT over-accumulate reward past its own termination. The
+        # primary keeps advancing SOFA even when done (the physical episode
+        # continues until ALL graders are done) but its grade is stubbed.
+        self._grader_done = [False] * (1 + len(self.secondaries))
+        self._last_grader_result = [None] * (1 + len(self.secondaries))
+        self._snapshot_fired_this_episode = False
+        return results
+
+    # ------------------------------------------------------------------
+    # step
+    # ------------------------------------------------------------------
+    def step(self, action) -> List[Tuple[Any, float, bool, bool, Dict[str, Any]]]:
+        """One SOFA tick → 4 per-grader (obs, reward, term, trunc, info)
+        tuples. Driver advances SOFA + grades RCCA; the other 3 grade the
+        shared advanced state without re-advancing physics. Graders that have
+        already terminated are short-circuited (no over-stepping)."""
+        from eve.util.pathcontext import classify_physical_branch
+
+        if not hasattr(self, "_grader_done"):
+            self._grader_done = [False] * (1 + len(self.secondaries))
+            self._last_grader_result = [None] * (1 + len(self.secondaries))
+
+        # Advance the shared SOFA physics EXACTLY ONCE, decoupled from grading.
+        # All 4 graders are SYMMETRIC: each has its OWN observation / reward /
+        # terminal / planned-path and grades the same advanced physical state;
+        # they share only the action+physics. The only reason a single physics
+        # advance exists is that SOFA must step once per tick, not four times.
+        #
+        # Previously graders[0] (RCCA) was the "primary" that drove the advance
+        # via its own .step(), which made it asymmetric: after it terminated it
+        # still had to be stepped (to keep advancing physics for the others),
+        # re-grading itself every tick. That wasted grade's -5/step off-path
+        # penalty inflated RCCA's *logged* _episode_total_reward to
+        # -2000/+15/-91 (a pure logging artifact — the recorded buffer
+        # transition was already clean). Decoupling the advance removes that
+        # asymmetry entirely: physics steps here, and a terminated grader is
+        # short-circuited identically regardless of index. No grader is special.
+        self.intervention.step(action)
+
+        # ONE target-independent physical branch, broadcast to all graders.
+        try:
+            physical_branch = classify_physical_branch(self.intervention)
+        except Exception:
+            physical_branch = "unknown"
+
+        # Grade all 4 graders against the already-advanced state (grade-only:
+        # neutralise intervention.step so NONE of them re-advances physics).
+        graders = [self.primary] + list(self.secondaries)
+        shorts = [self.primary_target_short] + list(self.secondary_target_shorts)
+        real_step = self.intervention.step
+        self.intervention.step = lambda *a, **k: None
+        results: List[Tuple[Any, float, bool, bool, Dict[str, Any]]] = []
+        try:
+            for i, (g, s) in enumerate(zip(graders, shorts)):
+                if self._grader_done[i]:
+                    # Already terminated → never re-stepped; replay its terminal
+                    # stub so its reward (and _episode_total_reward) freezes at
+                    # termination, identically for every grader.
+                    stub = self._last_grader_result[i]
+                    if stub is None:
+                        stub = (None, 0.0, True, True,
+                                {"final_branch_short": physical_branch,
+                                 "target_branch_short": s})
+                    results.append(stub)
+                    continue
+                g_obs, g_r, g_term, g_trunc, g_info = g.step(action)
+                g_info = dict(g_info)
+                g_info["final_branch_short"] = physical_branch
+                g_info["target_branch_short"] = s
+                g_result = (g_obs, g_r, g_term, g_trunc, g_info)
+                self._last_grader_result[i] = g_result
+                if g_term or g_trunc:
+                    self._grader_done[i] = True
+                results.append(g_result)
+        finally:
+            self.intervention.step = real_step
+
+        # Driver-level snapshot ONCE per physical episode, fired when the
+        # PHYSICAL episode truly ends (ALL graders done — not just RCCA), and
+        # bucketed by the physical final branch. VERSION-AWARE: render the
+        # grader whose target == physical_final_branch (so an LVA-ending
+        # episode shows target=LVA, LVA's planned path, LVA's OWN reward — a
+        # POSITIVE success — not RCCA's negative reward). Falls back to the
+        # highest-reward grader when the wire ended off any daughter
+        # (trunk/other). Optional SNAPSHOT_ALL_VERSIONS=1 renders all 4.
+        all_done = all(self._grader_done)
+        if all_done and not getattr(self, "_snapshot_fired_this_episode", False) and \
+                os.environ.get("SNAPSHOT_MODE", "none").lower() not in (
+                    "", "none", "off", "false", "0"):
+            self._snapshot_fired_this_episode = True
+            try:
+                self._physical_episode_count += 1
+                reached_named = physical_branch in ("RCCA", "LCCA", "RVA", "LVA")
+                if reached_named or (
+                    self._physical_episode_count % max(1, self._snapshot_every) == 0
+                ):
+                    from util.snapshot import save_snapshot
+                    graders = [self.primary] + list(self.secondaries)
+                    shorts = [self.primary_target_short] + list(
+                        self.secondary_target_shorts
+                    )
+                    if self.primary.mode == "eval":
+                        phase = "eval"
+                    elif getattr(self.primary, "_heuristic_mode", False):
+                        phase = "seed"
+                    else:
+                        phase = "explore"
+
+                    def _render_grader(idx):
+                        g = graders[idx]
+                        gs = shorts[idx]
+                        g_success = bool(
+                            getattr(g._target_terminal, "terminal", False)
+                        )
+                        last = self._last_grader_result[idx]
+                        g_trunc = bool(last[3]) if last is not None else False
+                        g_reason = g._resolve_termination_reason(g_success, g_trunc)
+                        coord = (
+                            None if g is self.primary
+                            else getattr(g, "_grader_target_coord3d", None)
+                        )
+                        save_snapshot(
+                            g,
+                            episode=g._episode_count,
+                            ep_step=g._episode_step_count,
+                            reason=g_reason,
+                            reward=float(g._episode_total_reward),
+                            phase=phase,
+                            physical_final_branch=physical_branch,
+                            target_short=gs,
+                            target_coord3d=coord,
+                        )
+
+                    if os.environ.get("SNAPSHOT_ALL_VERSIONS", "0") == "1":
+                        for idx in range(len(graders)):
+                            _render_grader(idx)
+                    else:
+                        # Pick the version matching the physical outcome; else
+                        # the highest-reward grader (physically closest).
+                        match_idx = None
+                        for idx, gs in enumerate(shorts):
+                            if gs == physical_branch:
+                                match_idx = idx
+                                break
+                        if match_idx is None:
+                            match_idx = max(
+                                range(len(graders)),
+                                key=lambda j: graders[j]._episode_total_reward,
+                            )
+                        _render_grader(match_idx)
+            except Exception:
+                pass
+
+        return results

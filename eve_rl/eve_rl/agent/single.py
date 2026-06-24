@@ -126,6 +126,118 @@ class SingleEvalOnly(AgentEvalOnly):
 
         return episode, step_counter
 
+    def _play_episode_multitarget(
+        self,
+        env,
+        action_function: Callable[[np.ndarray], np.ndarray],
+        consecutive_actions: int,
+        seed: Optional[int] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[List[Episode], int]:
+        """Plan v12 Stage 1 multi-target heatup play loop.
+
+        Expects `env` to be a `MultiTargetEnv5` (or duck-typed equivalent):
+          - reset() returns a List[(obs, info)] of length N (primary +
+            secondaries).
+          - step(action) returns a List[(obs, reward, term, trunc, info)]
+            of length N.
+
+        Behavior:
+          - Sample action ONCE per SOFA step (shared across all virtual envs).
+          - Tick SOFA once via env.step(action) — same action applied; the
+            wrapper computes per-virtual-env (obs, reward, term, trunc, info).
+          - For each virtual env k, append the transition to its Episode
+            UNTIL that virtual env terminates/truncates. Other virtual envs
+            continue accumulating.
+          - SOFA loop exits when ALL virtual envs have terminated OR truncated.
+
+        Returns:
+            (List[Episode] of length N, total SOFA step count).
+            Each Episode is tagged with target_branch_idx = k (0..N-1),
+            matching the order env.reset() returned its tuples. Episode's
+            R17-safe to_replay() reads infos[-1] strictly to derive
+            reached_target_daughter from this virtual env's per-step info.
+        """
+        n_targets = len(env.secondaries) + 1
+        # Per-virtual-env termination flags. Once flipped True, subsequent
+        # SOFA steps don't extend that virtual env's Episode.
+        done = [False] * n_targets
+        step_counter = 0
+
+        self.algo.reset()
+        reset_results = env.reset(seed=seed, options=options)
+        if len(reset_results) != n_targets:
+            raise RuntimeError(
+                f"_play_episode_multitarget: env.reset() returned "
+                f"{len(reset_results)} tuples, expected {n_targets}. "
+                f"env type {type(env).__name__} not multi-target?"
+            )
+
+        episodes: List[Episode] = []
+        flat_obs_list: List[np.ndarray] = []
+        for k, (obs_k, _info_k) in enumerate(reset_results):
+            flat_obs_k, flat_obs_to_obs_k = flatten_obs(obs_k)
+            ep_k = Episode(obs_k, flat_obs_k, flat_obs_to_obs_k, seed, options)
+            ep_k.target_branch_idx = k
+            episodes.append(ep_k)
+            flat_obs_list.append(flat_obs_k)
+
+        # The action_function reads flat_obs to potentially condition on
+        # state (e.g. heatup random sampling ignores it; a learned policy
+        # would not). For multi-target heatup, we use the PRIMARY virtual
+        # env's flat_obs as the canonical state input (Plan v12 v0 — v1
+        # adds per-secondary obs and the action_function would average or
+        # vote across them; for random heatup the obs is unused).
+        primary_flat_obs = flat_obs_list[0]
+
+        while not all(done):
+            action = action_function(primary_flat_obs)
+
+            for _ in range(consecutive_actions):
+                env_action = action.reshape(env.action_space.shape)
+                if self.normalize_actions:
+                    env_action = (env_action + 1) / 2 * (
+                        env.action_space.high - env.action_space.low
+                    ) + env.action_space.low
+                step_results = env.step(env_action)
+                if len(step_results) != n_targets:
+                    raise RuntimeError(
+                        f"_play_episode_multitarget: env.step() returned "
+                        f"{len(step_results)} tuples, expected {n_targets}"
+                    )
+                step_counter += 1
+                try:
+                    env.render()
+                except Exception:
+                    # Render is best-effort; the per-virtual-env wrapper
+                    # may not implement it.
+                    pass
+
+                for k, (obs_k, r_k, term_k, trunc_k, info_k) in enumerate(
+                    step_results
+                ):
+                    if done[k]:
+                        # Already terminated; skip recording. The
+                        # MultiTargetEnv5 internally short-circuits step
+                        # computation for done virtual envs.
+                        continue
+                    flat_obs_k, _ = flatten_obs(obs_k)
+                    flat_obs_list[k] = flat_obs_k
+                    episodes[k].add_transition(
+                        obs_k, flat_obs_k, action, r_k, bool(term_k),
+                        bool(trunc_k), info_k,
+                    )
+                    if term_k or trunc_k:
+                        done[k] = True
+
+                # Refresh primary flat_obs for next action sampling
+                if not done[0]:
+                    primary_flat_obs = flat_obs_list[0]
+                if all(done):
+                    break
+
+        return episodes, step_counter
+
     def to(self, device: torch.device):
         self.device = device
         self.algo.to(device)
@@ -200,6 +312,9 @@ class Single(SingleEvalOnly, Agent):
         custom_action_low: Optional[List[float]] = None,
         custom_action_high: Optional[List[float]] = None,
         episode_schedule: Optional[List[Tuple[Optional[int], Optional[Dict[str, Any]]]]] = None,
+        heatup_save_every: int = 0,
+        heatup_save_path: Optional[str] = None,
+        heatup_stop=None,
     ) -> List[Episode]:
         t_start = perf_counter()
         self._log_heatup(
@@ -216,6 +331,36 @@ class Single(SingleEvalOnly, Agent):
 
         episodes_data = []
 
+        # Plan v12 R16 — per-episode action RNG. The previous implementation
+        # called `np.random.uniform(...)` against the GLOBAL numpy RNG;
+        # under Linux fork (default mp.set_start_method), every worker
+        # inherits the parent's identical global state at fork time, so all
+        # N workers replay the SAME action sequence episode-by-episode →
+        # multi-worker compute spent on 1× yield. The fix derives a fresh
+        # Generator per (worker_id, episode_idx) from a base seed; same
+        # base_seed reproduces the harvest, distinct (worker_id, episode_idx)
+        # pairs produce disjoint streams.
+        #
+        # Worker spawn-time seeding (mirrors this strategy but seeds the
+        # global RNG for any consumer that still touches it) lives in
+        # singelagentprocess.py's _subprocess_func.
+        worker_id = int(getattr(self, "_worker_id", 0))
+        base_seed = int(getattr(self, "_heatup_base_seed", 42))
+        ep_counter = {"i": 0}  # closure-captured episode index
+        # Plan v13 fix — the per-episode Generator is created ONCE per episode
+        # (in the episode loop below, where ep_counter is set) and STORED here
+        # so successive random_action() calls DRAW FROM IT, advancing the
+        # stream. The prior R16 code re-seeded a fresh Generator from the
+        # (episode-constant) seed on EVERY call, so every block returned the
+        # IDENTICAL draw → the action was frozen for the whole episode: each
+        # device got one constant velocity, and a single negative draw pinned
+        # that device at insertion 0 for the entire trajectory (the "only one
+        # device moves" pathology). Drawing from a persistent per-episode
+        # Generator restores the intended per-`consecutive_action_steps`
+        # resampling while keeping the harvest reproducible per
+        # (base_seed, worker_id, episode_idx).
+        ep_rng = {"gen": np.random.default_rng(base_seed + worker_id * 1_000_003)}
+
         def random_action(*args, **kwargs):  # pylint: disable=unused-argument
             env_low = self.env_train.action_space.low.reshape(-1)
             env_high = self.env_train.action_space.high.reshape(-1)
@@ -228,44 +373,143 @@ class Single(SingleEvalOnly, Agent):
                 action_high = np.array(custom_action_high).reshape(-1)
             else:
                 action_high = env_high.reshape(-1)
-            action = np.random.uniform(action_low, action_high)
+            # Plan v13 fix — draw from the persistent per-episode Generator
+            # (created in the episode loop) so each call ADVANCES the stream and
+            # the action actually resamples every consecutive_action_steps,
+            # instead of re-seeding to the same episode-constant value on every
+            # call (which froze the action for the whole episode). The 1_000_003
+            # prime stride in the per-episode seed still guarantees disjoint
+            # streams across workers.
+            action = ep_rng["gen"].uniform(action_low, action_high)
 
             if self.normalize_actions:
                 action = 2 * (action - env_low) / (env_high - env_low) - 1
 
             return action
 
+        # Plan v12 Stage 1 — detect multi-target heatup mode by duck-typing
+        # the env. MultiTargetEnv5 exposes .secondaries; standard BenchEnv5
+        # does not. We dispatch to _play_episode_multitarget() and emit
+        # N+1 Episodes per SOFA episode in that case.
+        is_multitarget = hasattr(self.env_train, "secondaries") and hasattr(
+            self.env_train, "primary"
+        )
+
         n_episodes = 0
         n_steps = 0
         sched_idx = 0
-        while (
-            self.step_counter.heatup < step_limit
-            and self.episode_counter.heatup < episode_limit
-        ):
-            with self.episode_counter.lock:
-                self.episode_counter.heatup += 1
 
-            # Consume per-episode seed/options from schedule if available
-            ep_seed = None
-            ep_options = None
-            if episode_schedule is not None and sched_idx < len(episode_schedule):
-                ep_seed, ep_options = episode_schedule[sched_idx]
-                sched_idx += 1
+        # Plan v12 Stage 2 — worker-side ROLLING save. For an indefinite
+        # --heatup_only multi-target harvest the worker never returns, so the
+        # only memory-safe place to persist + free episodes is here. Every
+        # `heatup_save_every` SOFA episodes (and once more on ANY loop exit —
+        # episode_limit, `heatup_stop`/docker-stop, or exception) we write the
+        # accumulated batch to per-daughter Version-A + Version-B chunk files
+        # and CLEAR the in-memory list → worker RAM stays O(heatup_save_every).
+        chunk_idx = 0
+        rolling = bool(
+            heatup_save_every and heatup_save_path and is_multitarget
+        )
+        ordered_shorts = None
+        if rolling:
+            try:
+                ordered_shorts = self.env_train._ordered_target_shorts()
+            except Exception:
+                ordered_shorts = None
 
-            episode, n_steps_episode = self._play_episode(
-                env=self.env_train,
-                action_function=random_action,
-                consecutive_actions=self.consecutive_action_steps,
-                seed=ep_seed,
-                options=ep_options,
-            )
+        def _flush_heatup_batch():
+            nonlocal chunk_idx
+            if not rolling or not episodes_data:
+                return
+            try:
+                from ..util.experience_cache import save_heatup_batch
+                save_heatup_batch(
+                    list(episodes_data),
+                    heatup_save_path,
+                    ordered_shorts=ordered_shorts,
+                    worker_id=int(getattr(self, "_worker_id", 0)),
+                    chunk_idx=chunk_idx,
+                    rolling=True,
+                )
+                chunk_idx += 1
+            except Exception as exc:  # never let saving break the harvest
+                try:
+                    self.logger.warning(f"heatup rolling save failed: {exc}")
+                except Exception:
+                    pass
+            finally:
+                # Free the batch regardless so an indefinite run cannot OOM.
+                episodes_data.clear()
 
-            with self.step_counter.lock:
-                self.step_counter.heatup += n_steps_episode
-            n_steps += n_steps_episode
-            n_episodes += 1
-            self.replay_buffer.push(episode)
-            episodes_data.append(episode)
+        try:
+            while (
+                self.step_counter.heatup < step_limit
+                and self.episode_counter.heatup < episode_limit
+                and not (heatup_stop is not None and heatup_stop.is_set())
+            ):
+                with self.episode_counter.lock:
+                    self.episode_counter.heatup += 1
+
+                # Consume per-episode seed/options from schedule if available
+                ep_seed = None
+                ep_options = None
+                if episode_schedule is not None and sched_idx < len(episode_schedule):
+                    ep_seed, ep_options = episode_schedule[sched_idx]
+                    sched_idx += 1
+
+                # Plan v12 R16 / v13 — (re)create the per-episode RNG so this
+                # episode's random_action draws form a fresh stream distinct from
+                # the prior episode's. Same (base_seed, worker_id, episode_idx)
+                # reproduces the exact action SEQUENCE; the stream now ADVANCES per
+                # draw (fix above) so the action varies within the episode at the
+                # consecutive_action_steps cadence.
+                ep_counter["i"] = n_episodes
+                ep_rng["gen"] = np.random.default_rng(
+                    base_seed + worker_id * 1_000_003 + n_episodes
+                )
+
+                if is_multitarget:
+                    # Plan v12 multi-target heatup fan-out: one SOFA episode →
+                    # N+1 Episode objects (one per virtual env), each tagged
+                    # with target_branch_idx and individually pushed to the
+                    # buffer. runner.py's heatup-save block partitions on
+                    # target_branch_idx to emit 4 per-target .npz files.
+                    episode_list, n_steps_episode = self._play_episode_multitarget(
+                        env=self.env_train,
+                        action_function=random_action,
+                        consecutive_actions=self.consecutive_action_steps,
+                        seed=ep_seed,
+                        options=ep_options,
+                    )
+                    with self.step_counter.lock:
+                        self.step_counter.heatup += n_steps_episode
+                    n_steps += n_steps_episode
+                    n_episodes += 1
+                    for ep_k in episode_list:
+                        self.replay_buffer.push(ep_k)
+                        episodes_data.append(ep_k)
+                    if rolling and (n_episodes % heatup_save_every == 0):
+                        _flush_heatup_batch()
+                else:
+                    episode, n_steps_episode = self._play_episode(
+                        env=self.env_train,
+                        action_function=random_action,
+                        consecutive_actions=self.consecutive_action_steps,
+                        seed=ep_seed,
+                        options=ep_options,
+                    )
+
+                    with self.step_counter.lock:
+                        self.step_counter.heatup += n_steps_episode
+                    n_steps += n_steps_episode
+                    n_episodes += 1
+                    self.replay_buffer.push(episode)
+                    episodes_data.append(episode)
+        finally:
+            # Final partial (<heatup_save_every) batch — runs on episode_limit
+            # exhaustion, heatup_stop / docker-stop, OR an exception. This is the
+            # flush that captures the in-flight remainder on SIGTERM.
+            _flush_heatup_batch()
 
         t_duration = perf_counter() - t_start
         self._log_task_completion("heatup", n_steps, t_duration, n_episodes)
@@ -354,6 +598,13 @@ class Single(SingleEvalOnly, Agent):
             n_steps += n_steps_episode
             n_episodes += 1
             if push_to_buffer:
+                # Plan v11 — heuristic_seed produces demonstrations; tag the
+                # episode so PER's demo_priority_bonus protects them from
+                # being statistically forgotten as the buffer fills with
+                # explore data. Episode.to_replay() forwards is_demo to
+                # EpisodeReplay (replaybuffer.py fix); the buffer's push()
+                # then reads it via getattr.
+                episode.is_demo = True
                 self.replay_buffer.push(episode)
             episodes_data.append(episode)
 

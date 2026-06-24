@@ -112,9 +112,17 @@ def _wire_polylines_vcs(env):
     return out
 
 
-def _target_vcs(env) -> Optional[np.ndarray]:
+def _target_vcs(env, target_coord3d=None) -> Optional[np.ndarray]:
     try:
-        t3 = env.intervention.target.coordinates3d
+        # Plan v12 — version-aware snapshots: prefer an explicit per-grader
+        # target_coord3d (so an LVA-bucket snapshot marks the LVA daughter
+        # point, not the shared RCCA target). Fall back to a grader coord
+        # stamped on the env, then the shared intervention.target.
+        t3 = target_coord3d
+        if t3 is None:
+            t3 = getattr(env, "_grader_target_coord3d", None)
+        if t3 is None:
+            t3 = env.intervention.target.coordinates3d
         if t3 is None:
             return None
         return tracking3d_to_vessel_cs(
@@ -162,14 +170,21 @@ def _set_equal_aspect(ax, all_pts: np.ndarray) -> None:
 
 
 def _annotate_and_save(
-    fig, ax, env, episode, ep_step, reason, reward, target_branch, out_path
+    fig, ax, env, episode, ep_step, reason, reward, target_branch, out_path,
+    physical_final_branch=None,
 ):
     ax.set_xlabel("x (vessel-CS, mm)")
     ax.set_ylabel("y (vessel-CS, mm)")
     ax.set_zlabel("z (vessel-CS, mm)")
+    # Plan v12 — append the physical final branch (the daughter the wire
+    # actually ended in = the one that earned the +1.0 threading bonus)
+    # AFTER the reward field, per the user's bookkeeping request.
+    final_str = (
+        f" | final={physical_final_branch}" if physical_final_branch else ""
+    )
     title = (
         f"ep={episode} step={ep_step} pid={os.getpid()} | reason={reason}\n"
-        f"target={target_branch} | reward={reward:.3f}"
+        f"target={target_branch} | reward={reward:.3f}{final_str}"
     )
     ax.set_title(title, fontsize=9)
     ax.legend(loc="upper left", fontsize=7)
@@ -224,11 +239,16 @@ def _path_branch_names(env):
     return names
 
 
-def _render_mesh_view(env, episode, ep_step, reason, reward, out_path):
+def _render_mesh_view(env, episode, ep_step, reason, reward, out_path,
+                      physical_final_branch=None, target_short=None,
+                      target_coord3d=None):
     visu_mesh_path = getattr(env.intervention.vessel_tree, "visu_mesh_path", None)
     if not visu_mesh_path or not os.path.exists(visu_mesh_path):
         # Fall back to centerlines if mesh isn't available.
-        _render_centerlines_view(env, episode, ep_step, reason, reward, out_path)
+        _render_centerlines_view(env, episode, ep_step, reason, reward, out_path,
+                                 physical_final_branch=physical_final_branch,
+                                 target_short=target_short,
+                                 target_coord3d=target_coord3d)
         return
 
     cache = getattr(env, "_snapshot_mesh_cache", None)
@@ -268,7 +288,7 @@ def _render_mesh_view(env, episode, ep_step, reason, reward, out_path):
         wire_pts_for_bounds.append(poly)
 
     # Target
-    tgt = _target_vcs(env)
+    tgt = _target_vcs(env, target_coord3d=target_coord3d)
     if tgt is not None:
         ax.scatter(tgt[0], tgt[1], tgt[2],
                    color="#ffd400", s=80, marker="X",
@@ -282,12 +302,15 @@ def _render_mesh_view(env, episode, ep_step, reason, reward, out_path):
         bounds.append(np.atleast_2d(tgt))
     _set_equal_aspect(ax, np.concatenate(bounds, axis=0))
 
-    target_branch = _resolve_target_branch(env)
+    target_branch = target_short or _resolve_target_branch(env)
     _annotate_and_save(fig, ax, env, episode, ep_step, reason, reward,
-                       target_branch, out_path)
+                       target_branch, out_path,
+                       physical_final_branch=physical_final_branch)
 
 
-def _render_centerlines_view(env, episode, ep_step, reason, reward, out_path):
+def _render_centerlines_view(env, episode, ep_step, reason, reward, out_path,
+                             physical_final_branch=None, target_short=None,
+                             target_coord3d=None):
     fig = plt.figure(figsize=(8, 9))
     ax = fig.add_subplot(111, projection="3d")
 
@@ -308,7 +331,7 @@ def _render_centerlines_view(env, episode, ep_step, reason, reward, out_path):
                    color=color, s=22, edgecolors="black", linewidths=0.4)
         wire_pts_for_bounds.append(poly)
 
-    tgt = _target_vcs(env)
+    tgt = _target_vcs(env, target_coord3d=target_coord3d)
     if tgt is not None:
         ax.scatter(tgt[0], tgt[1], tgt[2],
                    color="#ffd400", s=80, marker="X",
@@ -322,9 +345,10 @@ def _render_centerlines_view(env, episode, ep_step, reason, reward, out_path):
     if bounds:
         _set_equal_aspect(ax, np.concatenate(bounds, axis=0))
 
-    target_branch = _resolve_target_branch(env)
+    target_branch = target_short or _resolve_target_branch(env)
     _annotate_and_save(fig, ax, env, episode, ep_step, reason, reward,
-                       target_branch, out_path)
+                       target_branch, out_path,
+                       physical_final_branch=physical_final_branch)
 
 
 def _classify_target_branch(env) -> str:
@@ -346,6 +370,9 @@ def save_snapshot(
     phase=None,
     base_dir_override: Optional[str] = None,
     mode_override: Optional[str] = None,
+    physical_final_branch: Optional[str] = None,
+    target_short: Optional[str] = None,
+    target_coord3d=None,
 ) -> Optional[str]:
     """Render and save an end-of-episode snapshot.
 
@@ -381,28 +408,42 @@ def save_snapshot(
     else:
         base_dir = os.environ.get("SNAPSHOT_DIR") or os.path.join(os.getcwd(), "snapshots")
     sub = reason if reason else "unknown"
-    target_branch = _classify_target_branch(env)
+    # Plan v12 redesign — bucket by the PHYSICAL outcome branch when the
+    # caller supplies it (MultiTargetEnv5 driver passes the target-independent
+    # classify_physical_branch tag). This makes RVA/LVA/LCCA buckets appear
+    # by where the wire ACTUALLY went, not just the requested RCCA target.
+    # Falls back to the requested target branch for single-target callers.
+    bucket = physical_final_branch or _classify_target_branch(env)
     if phase:
-        out_dir = os.path.join(base_dir, str(phase), target_branch, sub)
+        out_dir = os.path.join(base_dir, str(phase), bucket, sub)
     else:
-        out_dir = os.path.join(base_dir, target_branch, sub)
+        out_dir = os.path.join(base_dir, bucket, sub)
 
     try:
         _ensure_dir(out_dir)
     except Exception:
         return None
 
+    # Plan v12 — encode the physical final branch in the filename (after the
+    # reward) so the pruner can rank + filter without opening PNGs.
+    final_tag = f"_F{physical_final_branch}" if physical_final_branch else ""
     fname = (
         f"ep{episode:03d}_pid{os.getpid()}_step{ep_step}"
-        f"_R{reward:+.2f}_{sub}.png"
+        f"_R{reward:+.2f}{final_tag}_{sub}.png"
     )
     out_path = os.path.join(out_dir, fname)
 
     try:
         if mode == "mesh":
-            _render_mesh_view(env, episode, ep_step, reason, reward, out_path)
+            _render_mesh_view(env, episode, ep_step, reason, reward, out_path,
+                              physical_final_branch=physical_final_branch,
+                              target_short=target_short,
+                              target_coord3d=target_coord3d)
         elif mode == "centerlines":
-            _render_centerlines_view(env, episode, ep_step, reason, reward, out_path)
+            _render_centerlines_view(env, episode, ep_step, reason, reward, out_path,
+                                     physical_final_branch=physical_final_branch,
+                                     target_short=target_short,
+                                     target_coord3d=target_coord3d)
         else:
             return None
     except Exception:

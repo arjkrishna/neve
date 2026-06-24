@@ -132,4 +132,42 @@ class CheckpointRestoreWrapper(gym.Wrapper):
             # normal insertion point (z=345). Defensive: never crash.
         return self.env.reset(seed=seed, options=options)
 
+    # ------------------------------------------------------------------
+    # EveRLObject interop. agent.save_checkpoint() calls
+    # self.env_eval.get_config_dict() (eve_rl/agent/agent.py:327). gym.Wrapper
+    # does NOT forward custom EveRLObject methods, so without this pass-through
+    # the offline runner crashes on the first eval that triggers a checkpoint
+    # save. We delegate to the wrapped env (the bare BenchEnv5, which IS an
+    # EveRLObject) and merge in this wrapper's metadata so post-hoc analysis
+    # can tell the env_eval used a checkpoint-restore pool.
+    # ------------------------------------------------------------------
+    def get_config_dict(self):
+        """Delegate to wrapped env, augmenting with wrapper metadata.
+
+        Returns the inner env's config dict (or ``None`` if the inner env
+        doesn't implement get_config_dict) merged with this wrapper's
+        identifying fields: ``checkpoint_dir``, ``rng_seed``, and the
+        current number of files in the restore pool.
+        """
+        inner = (
+            self.env.get_config_dict()
+            if hasattr(self.env, "get_config_dict")
+            else None
+        )
+        meta = {
+            "_wrapper": "CheckpointRestoreWrapper",
+            "_checkpoint_dir": self.checkpoint_dir,
+            "_pattern": self._pattern,
+            "_rng_seed": self._rng_seed,
+            "_n_checkpoint_files": len(self.checkpoint_files),
+        }
+        if isinstance(inner, dict):
+            merged = dict(inner)
+            merged.update(meta)
+            return merged
+        # Inner env had no get_config_dict — still return a serializable
+        # dict so callers (save_checkpoint) don't get None and skip env
+        # metadata persistence.
+        return meta
+
     # Forward everything else untouched (gym.Wrapper does this by default).

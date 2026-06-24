@@ -153,6 +153,22 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         priority_mode: str = "td",
         balanced_fraction: float = 0.0,
         log_std_min: float = -20.0,
+        entropy_beta_per_dim=None,
+        action_mean_penalty: float = 0.0,
+        offline_mode: bool = False,
+        # Plan v11 Stage 1B — IQL-specific hyperparameters (only used when
+        # algo == "iql"). When algo != "iql" these are ignored.
+        iql_tau: float = 0.7,
+        iql_beta: float = 3.0,
+        iql_awr_max: float = 5.0,
+        lr_value: float = None,
+        # FIX 1 (RL_IMPROV_8 KL-anchor iteration) — KL-to-warmstart penalty
+        # for the IQL policy update. Only used when algo == "iql".
+        #   alpha_kl == 0.0 -> no penalty (default; back-compat).
+        #   alpha_kl > 0    -> requires kl_warmstart_state_dict (the frozen
+        #                      reference policy weights).
+        alpha_kl: float = 0.0,
+        kl_warmstart_state_dict: dict = None,
     ):
 
         obs_dict = env_train.observation_space.sample()
@@ -214,29 +230,79 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
             total_iters=lr_linear_end_steps,
         )
 
-        sac_model = eve_rl.model.SACModel(
-            lr_alpha=lr,
-            q1=q1,
-            q2=q2,
-            policy=policy,
-            q1_optimizer=q1_optim,
-            q2_optimizer=q2_optim,
-            policy_optimizer=policy_optim,
-            q1_scheduler=q1_scheduler,
-            q2_scheduler=q2_scheduler,
-            policy_scheduler=policy_scheduler,
-        )
+        # Plan v11 Stage 1B — choose algo / model construction by name.
+        # The SAC path covers "sac" + "awac" (AWAC is a flag inside the
+        # SAC algo). The IQL path constructs an IQLModel with an extra V
+        # network + its own algo class.
+        if algo == "iql":
+            v_base = eve_rl.network.component.MLP(hidden_layers)
+            v = eve_rl.network.VNetwork(v_base, n_observations, q1_embedder)
+            # Default V-network LR follows the critic LR if not provided —
+            # keeps the trainer CLI backward-compatible.
+            _lr_v = lr if lr_value is None else lr_value
+            v_optim = eve_rl.optim.Adam(v_base, lr=_lr_v)
+            v_scheduler = optim.lr_scheduler.LinearLR(
+                v_optim,
+                start_factor=1.0,
+                end_factor=lr_end_factor,
+                total_iters=lr_linear_end_steps,
+            )
+            iql_model = eve_rl.model.IQLModel(
+                q1=q1,
+                q2=q2,
+                v=v,
+                policy=policy,
+                q1_optimizer=q1_optim,
+                q2_optimizer=q2_optim,
+                v_optimizer=v_optim,
+                policy_optimizer=policy_optim,
+                q1_scheduler=q1_scheduler,
+                q2_scheduler=q2_scheduler,
+                v_scheduler=v_scheduler,
+                policy_scheduler=policy_scheduler,
+            )
+            algo = eve_rl.algo.IQL(
+                iql_model,
+                n_actions=n_actions,
+                gamma=gamma,
+                reward_scaling=reward_scaling,
+                stochastic_eval=stochastic_eval,
+                grad_clip=grad_clip,
+                iql_expectile_tau=iql_tau,
+                iql_beta=iql_beta,
+                iql_awr_max=iql_awr_max,
+                offline_mode=offline_mode,
+                # FIX 1 — KL-to-warmstart anchor (no-op when alpha_kl == 0).
+                alpha_kl=alpha_kl,
+                kl_warmstart_state_dict=kl_warmstart_state_dict,
+            )
+        else:
+            sac_model = eve_rl.model.SACModel(
+                lr_alpha=lr,
+                q1=q1,
+                q2=q2,
+                policy=policy,
+                q1_optimizer=q1_optim,
+                q2_optimizer=q2_optim,
+                policy_optimizer=policy_optim,
+                q1_scheduler=q1_scheduler,
+                q2_scheduler=q2_scheduler,
+                policy_scheduler=policy_scheduler,
+            )
 
-        algo = eve_rl.algo.SAC(
-            sac_model,
-            n_actions=n_actions,
-            gamma=gamma,
-            reward_scaling=reward_scaling,
-            stochastic_eval=stochastic_eval,
-            grad_clip=grad_clip,
-            algo=algo,
-            awac_lambda=awac_lambda,
-        )
+            algo = eve_rl.algo.SAC(
+                sac_model,
+                n_actions=n_actions,
+                gamma=gamma,
+                reward_scaling=reward_scaling,
+                stochastic_eval=stochastic_eval,
+                grad_clip=grad_clip,
+                algo=algo,
+                awac_lambda=awac_lambda,
+                entropy_beta_per_dim=entropy_beta_per_dim,
+                action_mean_penalty=action_mean_penalty,
+                offline_mode=offline_mode,
+            )
 
         # Plan v6 — replay-mode selects the buffer class.
         #   "episode" — VanillaEpisodeShared: stores whole episodes, sample()
@@ -413,3 +479,41 @@ def create_bench_agent(
         )
 
     return agent
+
+
+class OfflineDummyEnv:
+    """Plan v11 Stage 1 — shape-only env stub for offline RL.
+
+    `BenchAgentSingle` / `BenchAgentSynchron` infer `n_observations` and
+    `n_actions` from the env's `observation_space.sample()` (a Dict of
+    Boxes) and `action_space.sample()` (a flat Box). Stage 1 trains on
+    saved transitions only — no SOFA, no env — so we hand the agent
+    constructor an env whose ONLY job is to advertise the right shapes.
+
+    The Dict-with-one-key layout matches how the real env's flatten path
+    works (concat all Box values), so the SAC nets end up with the same
+    input dim as the buffer's stored flat_obs vectors.
+    """
+
+    def __init__(self, obs_dim: int, action_dim: int,
+                 action_low: float = -1.0, action_high: float = 1.0):
+        import gymnasium as gym
+        self.observation_space = gym.spaces.Dict({
+            "flat": gym.spaces.Box(
+                low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32,
+            ),
+        })
+        self.action_space = gym.spaces.Box(
+            low=action_low, high=action_high,
+            shape=(action_dim,), dtype=np.float32,
+        )
+
+    def reset(self, *args, **kwargs):
+        return {"flat": np.zeros(self.observation_space["flat"].shape, dtype=np.float32)}, {}
+
+    def step(self, action):
+        zero = {"flat": np.zeros(self.observation_space["flat"].shape, dtype=np.float32)}
+        return zero, 0.0, False, False, {}
+
+    def close(self):
+        return None

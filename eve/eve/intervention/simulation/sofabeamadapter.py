@@ -612,11 +612,26 @@ class SofaBeamAdapter(Simulation):
             )
             visu_ogl = visu_node.addChild("VisuOgl")
             visu_ogl.activated = True
+            # Honor an optional 4th (alpha) channel on device.color so a device
+            # can be rendered translucent (e.g. a see-through catheter that lets
+            # the coaxial guidewire inside it stay visible). The OglModel's
+            # `color` alone is unreliable here because the explicit `material`
+            # below also carries a Diffuse alpha; we set both so alpha < 1
+            # actually blends. For an opaque 3-tuple color, alpha defaults to
+            # 1.0 and the appearance is unchanged from before.
+            _dev_col = tuple(float(c) for c in device.color)
+            _dev_rgb = _dev_col[:3] if len(_dev_col) >= 3 else (0.0, 0.0, 0.0)
+            _dev_alpha = _dev_col[3] if len(_dev_col) >= 4 else 1.0
             visu_ogl.addObject(
                 "OglModel",
                 color=device.color,
                 quads="@../Container_" + device.name + ".quads",
-                material="texture Ambient 1 0.2 0.2 0.2 0.0 Diffuse 1 1.0 1.0 1.0 1.0 Specular 1 1.0 1.0 1.0 1.0 Emissive 0 0.15 0.05 0.05 0.0 Shininess 1 20",
+                material=(
+                    "texture Ambient 1 0.2 0.2 0.2 0.0 "
+                    f"Diffuse 1 {_dev_rgb[0]} {_dev_rgb[1]} {_dev_rgb[2]} {_dev_alpha} "
+                    "Specular 1 1.0 1.0 1.0 1.0 "
+                    "Emissive 0 0.15 0.05 0.05 0.0 Shininess 1 20"
+                ),
                 name="Visual",
             )
             visu_ogl.addObject(

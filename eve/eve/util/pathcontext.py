@@ -11,8 +11,16 @@ Usage in env5.py:
     # pass cache to ArcLengthProgress and LocalGuidance
     # call cache.invalidate() at the start of each env step
     # call cache.reset() after each env reset
+
+Plan v12 Stage 1 (multi-target heatup) multi-instance support:
+    pathfinders = [FixedPathfinder(intervention) for _ in range(4)]
+    # ... reset each with its daughter k's target_coord3d
+    caches = make_per_target_caches(pathfinders, intervention)
+    # caches[k] is bound to pathfinders[k]; no shared mutable state across
+    # caches (verified by assert_caches_independent()).
 """
 
+from typing import List, Sequence
 import numpy as np
 
 from ..util.coordtransform import tracking3d_to_vessel_cs
@@ -26,6 +34,102 @@ from ..util.polyline import (
 def _return_none():
     """Unpickle helper: returns None so PathProjectionCache dissolves on pickle."""
     return None
+
+
+# ============================================================================
+# Plan v12 redesign — target-INDEPENDENT physical-branch classifier.
+# ============================================================================
+# The MultiTargetEnv5 v0 bug: `final_branch_short` (which daughter the wire
+# physically ended in) was computed from each grader's OWN planned-path state
+# machine (PathProjectionCache._current_branch_idx). That state machine
+# commits to branches via junction-crossing history relative to ITS OWN
+# planned path, so the SAME physical tip classified up to 4 different ways
+# (data forensics: 4 graders agreed only 56/92 of length-aligned episodes).
+#
+# The physical branch a wire ends in is ONE geometric fact, independent of
+# any target. classify_physical_branch() computes it ONCE per SOFA tick from
+# the shared tip position via per-branch perpendicular (cross-track)
+# projection over ALL vessel-tree branches (the RL_IMPROV_7 Fix 10 metric,
+# geometrically stable at junctions). The driver broadcasts the single result
+# into all 4 graders' info['final_branch_short'] so it is identical across
+# the 4 per-target .npz files by construction.
+
+_DAUGHTER_TAGS = ("RCCA", "LCCA", "RVA", "LVA")
+
+
+def _physical_named_tag(name) -> str:
+    """Map a branch name to a coarse anatomy tag.
+
+    Named daughters → "RCCA"/"LCCA"/"RVA"/"LVA". Numbered trunk/bridge
+    curves: (2) and (0) → "trunk", (11) → "bridge" (the bif2 ostium).
+    Everything else → "other".
+    """
+    if not isinstance(name, str):
+        return "other"
+    for t in _DAUGHTER_TAGS:
+        if t in name:
+            return t
+    import re as _re
+    m = _re.search(r"\((\d+)\)", name)
+    if m:
+        n = int(m.group(1))
+        if n in (2, 0):
+            return "trunk"
+        if n == 11:
+            return "bridge"
+    return "other"
+
+
+def classify_physical_branch(intervention, prefer_named_within_mm: float = 8.0) -> str:
+    """Target-INDEPENDENT physical branch the guidewire TIP is currently in.
+
+    Returns one of "RCCA"|"LCCA"|"RVA"|"LVA"|"trunk"|"bridge"|"other".
+
+    Reads ONLY intervention geometry + the physical tip — NO pathfinder,
+    NO _current_branch_idx, NO planned-path state. So calling it once and
+    broadcasting the result to all 4 graders yields an identical
+    final_branch_short across the 4 per-target .npz files for the same
+    physical trajectory.
+
+    Method: project the tip (converted to vessel-CS) onto every branch's
+    centerline polyline and take the min perpendicular (cross-track)
+    distance branch. A "prefer named within N mm" snap: if a NAMED daughter
+    is within prefer_named_within_mm of the tip, return that daughter even
+    if a trunk/bridge curve is marginally closer (the terminal tip is deep
+    inside one daughter, far from any ostium, so this disambiguates cleanly).
+    """
+    vt = getattr(intervention, "vessel_tree", None)
+    if vt is None or not getattr(vt, "branches", None):
+        return "other"
+    fl = intervention.fluoroscopy
+    tip3d = fl.tracking3d[0]
+    tip_vessel_cs = tracking3d_to_vessel_cs(tip3d, fl.image_rot_zx, fl.image_center)
+
+    best_dist = float("inf")
+    best_name = None
+    best_named_dist = float("inf")
+    best_named_name = None
+    for branch in vt.branches:
+        coords = np.asarray(branch.coordinates)
+        if len(coords) < 2:
+            continue
+        cumlen = compute_cumulative_arclength(coords)
+        r = project_onto_polyline(tip_vessel_cs, coords, cumlen)
+        d = r.cross_track_dist
+        name = getattr(branch, "name", "") or ""
+        if d < best_dist:
+            best_dist = d
+            best_name = name
+        tag = _physical_named_tag(name)
+        if tag in _DAUGHTER_TAGS and d < best_named_dist:
+            best_named_dist = d
+            best_named_name = name
+
+    if best_named_name is not None and best_named_dist <= prefer_named_within_mm:
+        return _physical_named_tag(best_named_name)
+    if best_name is not None:
+        return _physical_named_tag(best_name)
+    return "other"
 
 
 # RL_IMPROV_8: path-aware on_path classification thresholds.
@@ -266,12 +370,20 @@ class PathProjectionCache:
         #   _target_daughter_branch_idx: cached at reset from
         #     _path_branch_sequence[-1]. The path's terminal branch IS the
         #     target daughter. Feature: is_on_target_daughter.
+        #   _ostium_branch_idx: cached at reset from _path_branch_sequence[-2]
+        #     — the LAST on-path bridge before the target daughter (the
+        #     commit fork: (11) for RCCA/RVA, (0) for LCCA, (18) for LVA).
+        #     Target-relative: the SAME physical (11) is the ostium for an
+        #     RCCA grader but a wrong-branch for an LCCA grader. Feature:
+        #     is_at_ostium. None when the path has no distinct bridge
+        #     (trunk → daughter directly, < 2 segments).
         #   _n_correct_commits / _n_wrong_commits: counters incremented in
         #     _maybe_emit_junction_commit. Per-episode totals exposed as
         #     normalized features so the agent knows what it has and
         #     hasn't accomplished at each fork.
         self._trunk_branch_idx = None
         self._target_daughter_branch_idx = None
+        self._ostium_branch_idx = None
         self._n_correct_commits = 0
         self._n_wrong_commits = 0
 
@@ -341,9 +453,16 @@ class PathProjectionCache:
         if self._path_branch_sequence:
             self._trunk_branch_idx = self._path_branch_sequence[0][2]
             self._target_daughter_branch_idx = self._path_branch_sequence[-1][2]
+            # Ostium = on-path branch immediately before the target daughter
+            # (the final pre-daughter commit fork). None if no distinct bridge.
+            if len(self._path_branch_sequence) >= 2:
+                self._ostium_branch_idx = self._path_branch_sequence[-2][2]
+            else:
+                self._ostium_branch_idx = None
         else:
             self._trunk_branch_idx = None
             self._target_daughter_branch_idx = None
+            self._ostium_branch_idx = None
         self.invalidate()
 
     def invalidate(self) -> None:
@@ -1483,3 +1602,82 @@ class PathProjectionCache:
         if self._dist_to_correct_entry is None:
             self._compute_correct_entry()
         return self._closest_correct_entry_coords
+
+
+# ============================================================================
+# Plan v12 Stage 1 — multi-target heatup support.
+# ============================================================================
+
+def make_per_target_caches(
+    pathfinders: Sequence,
+    intervention,
+    on_branch_flip_threshold: int = 5,
+) -> List["PathProjectionCache"]:
+    """Construct N independent PathProjectionCache instances — one per
+    daughter target in Plan v12 Stage 1's multi-target heatup harvest.
+
+    Each cache is bound to its own FixedPathfinder. After this call, each
+    pathfinder's reset(target_coord3d=daughter_k_coord) must have already
+    populated its path_points_vessel_cs; downstream env5 calls each cache's
+    reset() to populate the per-instance polyline / _path_branch_sequence /
+    _path_daughter_arclengths / _committed_forks state machine.
+
+    Returns:
+        List[PathProjectionCache] of length len(pathfinders). Every field
+        in every cache is freshly allocated by PathProjectionCache.__init__
+        — there is NO shared mutable state across instances (verified by
+        assert_caches_independent()).
+
+    Why a helper, not direct construction: the per-virtual-env state
+    machine carries 8+ mutable fields (_committed_forks set, _wrong_commit_fired
+    bool, _divergence_wrong_branch_arc/idx, _daughter_commit_events list,
+    etc.). Future maintainers must NOT accidentally share these across the
+    4 virtual envs in MultiTargetEnv5 — assert_caches_independent() is the
+    paranoid backstop.
+    """
+    if len(pathfinders) == 0:
+        raise ValueError("make_per_target_caches: pathfinders must be non-empty")
+    caches = [
+        PathProjectionCache(pf, intervention, on_branch_flip_threshold)
+        for pf in pathfinders
+    ]
+    return caches
+
+
+def assert_caches_independent(caches: Sequence["PathProjectionCache"]) -> None:
+    """Smoke-test assertion: no two PathProjectionCache instances share
+    mutable list/set/dict objects (would leak Plan v9 fork-reward bookkeeping
+    across virtual envs and break the per-daughter `+1`/`-0.05` invariant).
+
+    Raises AssertionError on first violation. Called by Stage 1 smoke test
+    immediately after make_per_target_caches() to catch any future regression
+    that introduces shared defaults.
+
+    Checks every mutable field that participates in the per-virtual-env
+    state machine (Decision #14):
+      _committed_forks (set), _daughter_commit_events (list),
+      _branch_on_path_masks (dict), _path_branch_idx_set (set),
+      _path_branch_sequence (list), _path_branch_sequence_with_junctions (list),
+      _junction_off_path_candidates (dict), _path_bp_set (set),
+      _bp_adjacency (dict), _branch_to_bp_pair (dict),
+      _bp_to_path_dist (dict), _bp_to_path_arclen (dict).
+    """
+    mutable_fields = [
+        "_committed_forks", "_daughter_commit_events",
+        "_branch_on_path_masks", "_path_branch_idx_set",
+        "_path_branch_sequence", "_path_branch_sequence_with_junctions",
+        "_junction_off_path_candidates", "_path_bp_set", "_bp_adjacency",
+        "_branch_to_bp_pair", "_bp_to_path_dist", "_bp_to_path_arclen",
+    ]
+    for i in range(len(caches)):
+        for j in range(i + 1, len(caches)):
+            for fld in mutable_fields:
+                a = getattr(caches[i], fld)
+                b = getattr(caches[j], fld)
+                assert a is not b, (
+                    f"PathProjectionCache field '{fld}' is SHARED between "
+                    f"cache[{i}] and cache[{j}] (id={id(a)}) — Plan v12 R15 "
+                    f"violation; fork-reward bookkeeping would leak across "
+                    f"virtual envs. Check PathProjectionCache.__init__ for "
+                    f"a mutable-default kwarg or class-level attribute."
+                )

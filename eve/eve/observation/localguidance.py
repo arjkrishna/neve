@@ -45,7 +45,23 @@ Features:
     25: is_in_trunk                   - 1 if state-machine _current_branch == trunk          {0, 1}
     26: is_on_target_daughter         - 1 if state-machine _current_branch == target daughter {0, 1}
     27: is_in_a_wrong_branch          - 1 if state-machine reports off-path (not in path set) {0, 1}
-    (Note: bridges / intermediate path segments → all 3 categorical = 0)
+
+    Plan v13 — per-daughter anatomy enrichment (target-relative; the SAME
+    physical branch means different things to different daughter graders):
+    28: is_at_ostium                  - 1 if _current_branch == the LAST on-path bridge
+                                        before the target daughter (the commit fork:
+                                        (11) RCCA/RVA, (0) LCCA, (18) LVA)                   {0, 1}
+    29: wrong_recovery_dist_norm      - OFF-PATH ONLY: routed retrace+reroute distance to
+                                        rejoin the planned path toward the next correct
+                                        daughter entry, clipped 200 mm / 200. 0 when
+                                        on-path; grows with how DEEP the wire has committed
+                                        into a wrong branch (small=recoverable, ~1=lost).
+                                        Same wrong branch is "small" just after diverging,
+                                        "large" once deep — recoverability is depth-aware,
+                                        not a fixed per-branch label.                        [0, 1]
+    (Categorical 25/28/26/27 = trunk / ostium / target / wrong are mutually
+    exclusive; approach bridges that are NOT the ostium — e.g. (0) for an
+    RCCA grader — fall through as all-zero.)
 """
 
 import numpy as np
@@ -69,12 +85,23 @@ _LOOKAHEAD_MM = 20.0
 _ON_PATH_THRESHOLD_MM = 5.0
 # Plan v5 — clip for arc-to/past-daughter features
 _MAX_DAUGHTER_ARC_MM = 100.0
+# Plan v13 — clip for the off-path recovery-distance feature (routed
+# retrace+reroute distance back to the planned path). 200 mm matches the
+# bifurcation-distance scale; a wire deep in a wrong daughter routes ~100-150
+# mm, so this gives a useful small→large spread without saturating early.
+_MAX_RECOVERY_DIST_MM = 200.0
 # Plan v5 (Tier 1) — clip for off-arc-since-divergence feature
 _MAX_OFF_ARC_MM = 50.0
 # Per-daughter env5 maxima for counter normalization (must match env5 constants)
 _OFF_BRANCH_TIMEOUT_STEPS = 50.0    # env5.py OFF_BRANCH_GRACE_STEPS
 _FOLD_STALL_TIMEOUT_STEPS = 20.0    # env5.py FOLD_STALL_STEPS
-_MAX_DAUGHTER_FORKS = 3.0           # max daughter forks per RCCA-style route
+# Plan v12 — fork-count normalizer is now PER-GRADER (read at step time from
+# the bound path_context's on-path junction count), NOT a fixed RCCA-route 3.0.
+# _n_correct_commits counts one per on-path junction crossing, so the route's
+# max is len(_path_branch_sequence_with_junctions). Daughters with a different
+# on-path junction count (e.g. LVA via (18), RVA via (19)) were mis-scaled by
+# the old constant. Fallback _DEFAULT below when the field is unavailable.
+_DEFAULT_DAUGHTER_FORKS = 3.0
 
 
 def _phase_to_onehot(phase: str) -> tuple:
@@ -204,7 +231,7 @@ class LocalGuidance(Observation):
         self._total_length: float = 0.0
         self._bifurc_arclengths: np.ndarray = np.empty(0)
 
-        self.obs = np.zeros(28, dtype=np.float32)
+        self.obs = np.zeros(30, dtype=np.float32)
 
     @property
     def space(self) -> gym.spaces.Box:
@@ -213,11 +240,11 @@ class LocalGuidance(Observation):
             [0.0, 0.0, -1.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.0,
              # 11  12   13   14   15   16   17    18
              0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.0,
-             # 19  20   21   22   23   24   25   26   27
-             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+             # 19  20   21   22   23   24   25   26   27   28   29
+             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             dtype=np.float32,
         )
-        high = np.ones(28, dtype=np.float32)
+        high = np.ones(30, dtype=np.float32)
         return gym.spaces.Box(low=low, high=high, dtype=np.float32)
 
     def reset(self, episode_nr: int = 0) -> None:
@@ -234,7 +261,7 @@ class LocalGuidance(Observation):
             self._curvature = np.empty(0)
             self._total_length = 0.0
             self._bifurc_arclengths = np.empty(0)
-            self.obs = np.zeros(28, dtype=np.float32)
+            self.obs = np.zeros(30, dtype=np.float32)
             return
 
         self._cumlen = compute_cumulative_arclength(self._polyline)
@@ -262,7 +289,7 @@ class LocalGuidance(Observation):
 
     def step(self) -> None:
         if self._total_length < 1e-6:
-            self.obs = np.zeros(28, dtype=np.float32)
+            self.obs = np.zeros(30, dtype=np.float32)
             return
 
         fluoro = self.intervention.fluoroscopy
@@ -383,29 +410,56 @@ class LocalGuidance(Observation):
         # Features 23-24: per-episode daughter-fork commit counters.
         n_correct = 0
         n_wrong = 0
+        denom = _DEFAULT_DAUGHTER_FORKS
         if self._path_context is not None:
             n_correct = int(getattr(self._path_context, "_n_correct_commits", 0))
             n_wrong = int(getattr(self._path_context, "_n_wrong_commits", 0))
-        forks_correct_norm = float(min(n_correct / _MAX_DAUGHTER_FORKS, 1.0))
-        forks_wrong_norm = float(min(n_wrong / _MAX_DAUGHTER_FORKS, 1.0))
+            # Plan v12 — per-grader denominator = THIS route's on-path junction
+            # count (one commit per on-path junction crossing).
+            seq = getattr(
+                self._path_context, "_path_branch_sequence_with_junctions", None
+            )
+            if seq:
+                denom = float(max(1, len(seq)))
+        forks_correct_norm = float(min(n_correct / denom, 1.0))
+        forks_wrong_norm = float(min(n_wrong / denom, 1.0))
 
-        # Features 25-27: 3-dim branch categorical (mutually exclusive).
+        # Features 25-28: 4-dim branch categorical (mutually exclusive),
+        # all TARGET-RELATIVE (computed from THIS grader's planned path).
         # is_in_trunk: current branch == cached trunk branch idx
+        # is_at_ostium: current branch == last on-path bridge before target
+        #   (the commit fork: (11) RCCA/RVA, (0) LCCA, (18) LVA)
         # is_on_target_daughter: current branch == cached target daughter idx
         # is_in_a_wrong_branch: state machine reports off-path
-        # (Bridges / intermediate path segments fall through as 0,0,0.)
+        # (Approach bridges that are NOT the ostium — e.g. (0) for an RCCA
+        #  grader — fall through as all-zero.)
+        # Feature 29 (wrong_recovery_dist_norm): OFF-PATH ONLY routed
+        # retrace+reroute distance to rejoin the planned path toward the next
+        # correct daughter entry. Reuses the already-computed d_correct
+        # (= get_routed_d_corr_to_next_daughter_entry()) so it costs nothing
+        # extra; 0 when on-path; grows with how deep the wire has committed
+        # into a wrong branch (depth-aware: small=recoverable, ~1=lost).
         is_in_trunk = 0.0
+        is_at_ostium = 0.0
         is_on_target_daughter = 0.0
         is_in_a_wrong_branch = 0.0
+        wrong_recovery_dist_norm = 0.0
         if self._path_context is not None:
             cur_idx = self._path_context._current_branch_idx
             trunk_idx = getattr(self._path_context, "_trunk_branch_idx", None)
             target_idx = getattr(self._path_context, "_target_daughter_branch_idx", None)
+            ostium_idx = getattr(self._path_context, "_ostium_branch_idx", None)
             on_planned = bool(getattr(self._path_context, "_on_planned_path", True))
             if not on_planned:
                 is_in_a_wrong_branch = 1.0
+                rec = d_correct if np.isfinite(d_correct) else _MAX_RECOVERY_DIST_MM
+                wrong_recovery_dist_norm = float(
+                    min(rec, _MAX_RECOVERY_DIST_MM) / _MAX_RECOVERY_DIST_MM
+                )
             elif cur_idx is not None and trunk_idx is not None and cur_idx == trunk_idx:
                 is_in_trunk = 1.0
+            elif cur_idx is not None and ostium_idx is not None and cur_idx == ostium_idx:
+                is_at_ostium = 1.0
             elif cur_idx is not None and target_idx is not None and cur_idx == target_idx:
                 is_on_target_daughter = 1.0
 
@@ -439,6 +493,8 @@ class LocalGuidance(Observation):
                 is_in_trunk,                                             # 25 {0,1} is_in_trunk
                 is_on_target_daughter,                                   # 26 {0,1} is_on_target_daughter
                 is_in_a_wrong_branch,                                    # 27 {0,1} is_in_a_wrong_branch
+                is_at_ostium,                                            # 28 {0,1} is_at_ostium
+                wrong_recovery_dist_norm,                                # 29 [0,1] wrong_recovery_dist_norm
             ],
             dtype=np.float32,
         )

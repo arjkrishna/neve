@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from math import inf
 import csv
 import json
@@ -163,12 +163,20 @@ class Runner(EveRLObject):
                 self.logger.warning(f"Failed to load replay buffer: {e}")
         return 0
 
-    def heatup(self, steps=None, episodes=None):
+    def heatup(
+        self,
+        steps=None,
+        episodes=None,
+        heatup_save_every: int = 0,
+        heatup_save_path=None,
+    ):
         episodes_r = self.agent.heatup(
             steps=steps,
             episodes=episodes,
             custom_action_low=self.heatup_action_low,
             custom_action_high=self.heatup_action_high,
+            heatup_save_every=heatup_save_every,
+            heatup_save_path=heatup_save_path,
         )
         return episodes_r
 
@@ -194,14 +202,76 @@ class Runner(EveRLObject):
     def update(self, n_steps: int):
         self.agent.update(n_steps)
 
+    def save_only(self):
+        """Plan v11 — save the checkpoint without running eval.
+
+        Used by offline_train(..., skip_inline_eval=True) for the
+        train-then-eval-later workflow: run the full training loop with
+        zero SOFA-eval overhead, save checkpoints at every cadence
+        boundary, then run --eval_only_checkpoint passes in parallel
+        afterward. Sidesteps the Synchron eval-hang that blocks
+        offline_train for 30-90 min per eval cycle.
+
+        Naming mirrors eval(): in offline mode uses step_counter.update
+        so checkpoints land at checkpoint10000.everl,
+        checkpoint20000.everl, ... — no overwrites.
+        """
+        explore_steps = self.step_counter.exploration
+        step_for_naming = (
+            self.step_counter.update
+            if getattr(self, "_is_offline_mode", False) and explore_steps == 0
+            else explore_steps
+        )
+        checkpoint_file = os.path.join(
+            self.checkpoint_folder, f"checkpoint{step_for_naming}.everl"
+        )
+        # Minimal eval_results metadata so downstream tooling that reads
+        # the .everl additional_info doesn't crash.
+        eval_results = {
+            "episodes": [],
+            "quality": None,
+            "reward": None,
+            "save_only": True,
+            "runner_state": {
+                "best_eval": self.best_eval.copy(),
+                "episode_summary_counter": self._episode_summary_counter,
+                "next_snapshot_step": self._next_snapshot_step,
+                "eval_count": self._eval_count,
+            },
+        }
+        self.agent.save_checkpoint(checkpoint_file, eval_results)
+        self.logger.info(
+            f"Saved checkpoint (no eval): {checkpoint_file}"
+        )
+
     def eval(
         self, *, episodes: Optional[int] = None, seeds: Optional[List[int]] = None
     ):
         explore_steps = self.step_counter.exploration
+        # Plan v11 — in offline-train mode, exploration counter never
+        # advances (no exploration). Naming every eval checkpoint
+        # `checkpoint0.everl` overwrites itself across the 10 evals
+        # (parity audit CRITICAL #5). Use update steps instead so each
+        # eval lands at a unique filename — checkpoint10000.everl,
+        # checkpoint20000.everl, etc. Online callers retain
+        # exploration-step naming (their exploration counter is
+        # non-zero).
+        step_for_naming = (
+            self.step_counter.update
+            if getattr(self, "_is_offline_mode", False) and explore_steps == 0
+            else explore_steps
+        )
         checkpoint_file = os.path.join(
-            self.checkpoint_folder, f"checkpoint{explore_steps}.everl"
+            self.checkpoint_folder, f"checkpoint{step_for_naming}.everl"
         )
         result_episodes = self.agent.evaluate(episodes=episodes, seeds=seeds)
+        # Plan v11 — log per-eval-cycle episode summaries to
+        # episode_summary.jsonl. Online flow logs explore episodes via
+        # explore_and_update(); eval episodes were never logged anywhere
+        # (parity audit CRITICAL #4). Calling it here logs only eval
+        # episodes — no double-logging of explore episodes.
+        if result_episodes:
+            self._log_episode_summaries(result_episodes)
         qualities, rewards = [], []
         results_for_info = {
             info_result_name: [] for info_result_name in self.info_results
@@ -342,6 +412,71 @@ class Runner(EveRLObject):
             # This ensures snapshots are saved at the actual milestone with correct weights
             self._maybe_save_policy_snapshot()
 
+    def offline_train(
+        self,
+        n_updates: int,
+        eval_every_updates: int,
+        eval_episodes: Optional[int] = None,
+        eval_seeds: Optional[List[int]] = None,
+        log_every_updates: int = 1000,
+    ):
+        """Plan v11 Stage 1 — pure-offline training loop.
+
+        Assumes the caller has already populated `agent.replay_buffer` from
+        saved transition archives (`buffer_filter.py` output). No
+        exploration is performed. Every `eval_every_updates`, calls
+        `self.eval(...)` which uses the eval-env subprocess to score the
+        policy and save a checkpoint; periodic replay-buffer saves are
+        suppressed (the offline buffer is fixed; resaving it every eval
+        wastes disk).
+
+        The loop exits when `agent.step_counter.update` has advanced by
+        `n_updates`.
+        """
+        # Plan v11 — flag this Runner as offline so eval() picks the
+        # update-step-based checkpoint naming (the exploration counter
+        # stays at 0; without this flag every eval would overwrite
+        # checkpoint0.everl — parity audit CRITICAL #5).
+        self._is_offline_mode = True
+        update_start = self.step_counter.update
+        target_updates = update_start + int(n_updates)
+        # Suppress periodic replay-buffer save — the buffer is static in
+        # offline mode (a re-save would just re-emit ~280k frozen
+        # transitions every eval).
+        self._replay_save_interval = 10**12
+        next_eval_at = update_start + int(eval_every_updates)
+        next_log_at = update_start + int(log_every_updates)
+        self.logger.info(
+            f"Offline-train: {n_updates} updates, eval every "
+            f"{eval_every_updates}; starting at update={update_start}."
+        )
+        # Drive the agent's update loop in chunks bounded by the next
+        # eval milestone. self.agent.update() blocks on the trainer
+        # subprocess to flush each chunk.
+        while self.step_counter.update < target_updates:
+            cur = self.step_counter.update
+            chunk = min(next_eval_at, target_updates) - cur
+            if chunk <= 0:
+                break
+            self.agent.update(steps=int(chunk))
+            done = self.step_counter.update
+            if done >= next_log_at:
+                self.logger.info(
+                    f"Offline-train: updates={done}/{target_updates}"
+                )
+                next_log_at = done + int(log_every_updates)
+            if done >= next_eval_at:
+                # Plan v11 — train-then-eval-later mode. When
+                # _skip_inline_eval is set, just save the checkpoint and
+                # skip the SOFA-eval entirely. Eval whichever checkpoints
+                # you want afterward via --eval_only_checkpoint passes,
+                # parallel docker containers, etc.
+                if getattr(self, "_skip_inline_eval", False):
+                    self.save_only()
+                else:
+                    self.eval(episodes=eval_episodes, seeds=eval_seeds)
+                next_eval_at = done + int(eval_every_updates)
+
     def training_run(
         self,
         heatup_steps: int,
@@ -355,6 +490,8 @@ class Runner(EveRLObject):
         pretrain_updates: int = 0,
         heatup_until_successes: int = 0,
         heatup_episode_limit: int = 0,
+        heatup_only: bool = False,
+        heatup_save_every: int = 0,
     ):
         # TODO: Log Training Run Infos
         # Plan v10 — heatup-until-N-threaded: instead of a fixed step budget,
@@ -392,23 +529,202 @@ class Runner(EveRLObject):
             self.logger.info(f"Heatup: {heatup_episode_limit} episodes (fixed).")
             heatup_episodes = self.heatup(episodes=heatup_episode_limit)
         else:
-            heatup_episodes = self.heatup(heatup_steps)
+            # Plan v12 Stage 2 — the indefinite --heatup_only path. When
+            # heatup_save_every>0 the workers stream per-daughter chunk files
+            # (Version A + Version B) every N episodes and return an EMPTY list
+            # (memory-safe), so the end-of-heatup save block below is a no-op
+            # for rolling runs; all data lives in the worker chunks on disk.
+            heatup_episodes = self.heatup(
+                heatup_steps,
+                heatup_save_every=heatup_save_every,
+                heatup_save_path=heatup_cache_save_path,
+            )
 
-        # Save heatup cache if requested (before training starts)
+        # Save heatup cache if requested (before training starts).
+        # Plan v12 — multi-target dispatch: when any Episode in
+        # `heatup_episodes` carries `target_branch_idx >= 0`, partition the
+        # list by target and save 4 per-target .npz files (one per virtual
+        # env) so Stage 3 can load whichever target it's training. Single-
+        # target legacy (target_branch_idx == -1 on every Episode) writes
+        # one .npz file as before.
         if heatup_cache_save_path and heatup_episodes:
             import os
             from ..util.experience_cache import save_episodes_npz
-            os.makedirs(os.path.dirname(heatup_cache_save_path) or ".", exist_ok=True)
-            tuples = [
-                (np.array(e.flat_obs), np.array(e.actions),
-                 np.array(e.rewards), np.array(e.terminals))
-                for e in heatup_episodes
-            ]
-            save_episodes_npz(heatup_cache_save_path, tuples)
-            self.logger.info(f"Saved heatup cache ({len(tuples)} episodes) to {heatup_cache_save_path}")
+
+            def _ep_metadata(ep) -> Dict[str, Any]:
+                """Plan v12 R17 — build per-Episode metadata from
+                `infos[-1]` STRICTLY (not from any runtime latch like
+                env5._reached_target_daughter which never resets). All
+                fields needed by Stage 3 PER balanced_fraction lane +
+                manual heatup inspection are populated here."""
+                last_info = ep.infos[-1] if ep.infos else {}
+                # Plan v12 redesign — is_clean from the PHYSICAL-tag formula
+                # (matches the user's success definition exactly):
+                #   success(T) = (wire physically ended in daughter T)
+                #               AND (T's +1.0 daughter-commit bonus fired)
+                #             = (final_branch_short == target_branch_short)
+                #               AND received_correct_daughter
+                # The old test (final_branch_idx == target_daughter_branch_idx)
+                # compared per-grader state-machine indices into each grader's
+                # own _branches_tuple — NOT comparable across graders, and the
+                # source of the 56/92 disagreement. final_branch_short is now
+                # the ONE target-independent physical branch (classify_physical_branch,
+                # broadcast to all 4 graders by MultiTargetEnv5.step).
+                fbs = str(last_info.get("final_branch_short", "unknown"))
+                tbs = str(last_info.get("target_branch_short", "unknown"))
+                rcd = bool(last_info.get("received_correct_daughter", False))
+                # Plan v12 — per-grader flags (NOT the shared-intervention
+                # success). grader_success = deep TargetReached on THIS
+                # daughter; grader_failure_timeout = off-branch/fold timeout.
+                grader_success = bool(last_info.get("grader_success", False))
+                grader_timeout = bool(last_info.get("grader_failure_timeout", False))
+                # is_clean = "threaded THIS daughter and did NOT fail as a
+                # wrong-branch/fold timeout". This is the user's "success
+                # version" (the version where the wire went, that kept
+                # recording, not the ones that timed out). It does NOT
+                # require the deep target (that is Challenge-2 = grader_success,
+                # exposed separately); random heatup rarely reaches it.
+                # Excluding grader_timeout repairs the mislabel where an
+                # overshoot/off-path episode that was still physically in the
+                # daughter was counted clean.
+                is_clean = (
+                    fbs == tbs
+                    and fbs not in ("unknown", "other")
+                    and rcd
+                    and not grader_timeout
+                )
+                return {
+                    "episode_return": float(ep.episode_reward),
+                    "reached_target_daughter": bool(is_clean),
+                    "is_demo": bool(getattr(ep, "is_demo", False)),
+                    # Plan v12 R17 — explicit is_clean alongside the
+                    # legacy reached_target_daughter alias so consumers
+                    # that grew up on either name work.
+                    "is_clean": bool(is_clean),
+                    "target_branch_idx": int(
+                        getattr(ep, "target_branch_idx", -1)
+                    ),
+                    # Per the user's "make it traceable" requirement —
+                    # which daughter the wire actually ended in, plus
+                    # this Episode's tracking-target and the +1.0 bonus
+                    # signal. Allows downstream filters like
+                    #   "RCCA-target episodes where wire actually went LCCA"
+                    #   "any episode where wire reached LVA"
+                    #   "successes = threaded AND not timeout"
+                    "final_branch_short": str(
+                        last_info.get("final_branch_short", "unknown")
+                    ),
+                    "target_branch_short": str(
+                        last_info.get("target_branch_short", "unknown")
+                    ),
+                    "received_correct_daughter": bool(
+                        last_info.get("received_correct_daughter", False)
+                    ),
+                    "received_wrong_daughter": bool(
+                        last_info.get("received_wrong_daughter", False)
+                    ),
+                    # Plan v12 — Challenge-2 deep-reach (per-grader) + failure
+                    # reason, for separate filtering of "threaded" vs "reached
+                    # deep target" vs "timed out".
+                    "grader_success": grader_success,
+                    "grader_failure_timeout": grader_timeout,
+                    # RL_IMPROV_8 OST — overshoot inside the correct daughter.
+                    # Folds into is_clean (grader_timeout excludes it) but stays
+                    # individually traceable for downstream filtering.
+                    "overshoot": bool(last_info.get("overshoot", False)),
+                }
+
+            # Partition by target_branch_idx (single-target = all -1 → one
+            # group; multi-target = up to 4 groups keyed 0..3).
+            from collections import defaultdict
+            buckets = defaultdict(list)
+            for ep in heatup_episodes:
+                tbi = int(getattr(ep, "target_branch_idx", -1))
+                buckets[tbi].append(ep)
+
+            os.makedirs(
+                os.path.dirname(heatup_cache_save_path) or ".", exist_ok=True
+            )
+
+            if len(buckets) == 1 and -1 in buckets:
+                # Single-target legacy path — preserve original filename.
+                eps = buckets[-1]
+                tuples = [
+                    (np.array(e.flat_obs), np.array(e.actions),
+                     np.array(e.rewards), np.array(e.terminals))
+                    for e in eps
+                ]
+                metadata = [_ep_metadata(e) for e in eps]
+                save_episodes_npz(
+                    heatup_cache_save_path, tuples, metadata=metadata,
+                )
+                self.logger.info(
+                    f"Saved heatup cache ({len(tuples)} episodes) to "
+                    f"{heatup_cache_save_path}"
+                )
+            else:
+                # Plan v12 multi-target: split into per-target .npz files
+                # by injecting `_<target_short>` before the .npz extension.
+                # The target_short tag comes from MultiTargetEnv5's ordered
+                # short names; fall back to the integer index when not
+                # available so the file is always uniquely named.
+                base, ext = os.path.splitext(heatup_cache_save_path)
+                # Try to read the daughter ordering from the env on the
+                # primary agent's main process. Worker-side runs don't
+                # have this attribute — use integer suffix as fallback.
+                ordered_shorts = None
+                try:
+                    env_train = getattr(self.agent, "env_train", None)
+                    if env_train is not None and hasattr(
+                        env_train, "_ordered_target_shorts"
+                    ):
+                        ordered_shorts = env_train._ordered_target_shorts()
+                except Exception:
+                    ordered_shorts = None
+
+                for tbi, eps in sorted(buckets.items()):
+                    if tbi < 0:
+                        suffix = "single"
+                    elif (
+                        ordered_shorts is not None
+                        and 0 <= tbi < len(ordered_shorts)
+                    ):
+                        suffix = ordered_shorts[tbi]
+                    else:
+                        suffix = f"t{tbi}"
+                    per_target_path = f"{base}_{suffix}{ext}"
+                    tuples = [
+                        (np.array(e.flat_obs), np.array(e.actions),
+                         np.array(e.rewards), np.array(e.terminals))
+                        for e in eps
+                    ]
+                    metadata = [_ep_metadata(e) for e in eps]
+                    save_episodes_npz(
+                        per_target_path, tuples, metadata=metadata,
+                    )
+                    n_clean = sum(1 for m in metadata if m["is_clean"])
+                    self.logger.info(
+                        f"Saved heatup cache target={suffix}: "
+                        f"{len(tuples)} eps ({n_clean} clean) to "
+                        f"{per_target_path}"
+                    )
 
         # Capture and set probe states after heatup
         self._capture_and_set_probe_states(heatup_episodes)
+
+        # Plan v12 Stage 2 — standalone heatup-only mode. After heatup
+        # completes and the per-target .npz files are saved, exit immediately
+        # without entering pretrain / explore / training loop. Used by the
+        # standalone heatup harvester launcher (--heatup_only flag in
+        # DualDeviceNav_train.py). Quality signal returned is (0.0, 0.0)
+        # so the caller doesn't trip eval thresholds.
+        if heatup_only:
+            self.logger.info(
+                f"Plan v12 --heatup_only: heatup harvest complete "
+                f"({len(heatup_episodes)} episodes); exiting before "
+                f"pretrain / training loop."
+            )
+            return 0.0, 0.0
 
         # Warm-start — pretrain critic+policy on the seeded (heuristic +
         # heatup) buffer before ANY exploration, so the first explore
