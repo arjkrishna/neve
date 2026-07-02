@@ -2,8 +2,13 @@
 
 **Audience:** an agent (or engineer) setting up and running this training job on a
 second computer. Read this top to bottom before launching. Author: the RL_IMPROV_8
-worktree session, 2026-07-02. Repo branch: `worktree-rl_improv_8`, at commit `c7a33e3`
-or later.
+worktree session, 2026-07-02. Repo branch: `worktree-rl_improv_8`.
+
+> **⚠️ PIN THE COMMIT: `git checkout c810959`.** Commits after `c810959`
+> introduce **obs-v3** (observation 78 → 96 dims, commit `a49c1c9`+), which is
+> **incompatible with the 78-dim seed `lcca_awac_seed_v1.npz`** this relaunch
+> loads — the buffer load will shape-error (or worse, silently mistrain).
+> The v2 relaunch described here must run at `c810959` exactly.
 
 ---
 
