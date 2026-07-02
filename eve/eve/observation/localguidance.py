@@ -1,6 +1,6 @@
 """Compact local guidance observation for path-aware navigation.
 
-Provides a 28-dimensional observation vector encoding the agent's
+Provides a 48-dimensional observation vector encoding the agent's
 relationship to the known correct path, replacing the much larger
 Centerlines2D observation (154+ dims).
 
@@ -62,6 +62,26 @@ Features:
     (Categorical 25/28/26/27 = trunk / ostium / target / wrong are mutually
     exclusive; approach bridges that are NOT the ostium — e.g. (0) for an
     RCCA grader — fall through as all-zero.)
+
+    Plan v13 obs-v3 — PathLookahead3D (the "zoom in on the planned path
+    locally" fix). Forensic of lcca_awac_v1 showed the LCCA/LVA fork
+    discrimination lives substantially in the tracking-y axis, which every
+    2D-projected feature above DROPS (monoplane x,z). The heuristic that
+    solved daughter entry used full-3D vessel-CS geometry; these features
+    give the policy the same visibility. All in VESSEL CS (one fixed frame):
+    30-32: waypoint_1 (dx,dy,dz)  - planned-path point at s+5mm, tip-relative,
+                                    /50mm, clipped                              [-1, 1]
+    33-35: waypoint_2 (dx,dy,dz)  - same at s+10mm                              [-1, 1]
+    36-38: waypoint_3 (dx,dy,dz)  - same at s+20mm                              [-1, 1]
+    39-41: waypoint_4 (dx,dy,dz)  - same at s+40mm (clamps to path end =
+                                    target, so the 3D target position enters
+                                    the obs through this feature)               [-1, 1]
+    42-44: bend_hat_3d (x,y,z)    - J-tip bend direction unit vector in vessel
+                                    CS (the y-component tells the agent which
+                                    way ADVANCING will curve in depth — the
+                                    axis the 2D bend_hat cannot see)            [-1, 1]
+    45-47: entry_dir_3d (x,y,z)   - unit vector tip -> next correct daughter
+                                    entry in vessel CS (3D version of 9-10)     [-1, 1]
 """
 
 import numpy as np
@@ -102,6 +122,14 @@ _FOLD_STALL_TIMEOUT_STEPS = 20.0    # env5.py FOLD_STALL_STEPS
 # on-path junction count (e.g. LVA via (18), RVA via (19)) were mis-scaled by
 # the old constant. Fallback _DEFAULT below when the field is unavailable.
 _DEFAULT_DAUGHTER_FORKS = 3.0
+# Plan v13 obs-v3 — PathLookahead3D: arclengths ahead of the tip projection at
+# which planned-path waypoints are sampled, and the tip-relative offset clip.
+# 5/10 mm cover the immediate hook curvature at a fork; 20/40 mm preview the
+# post-fork daughter direction. 50 mm clip keeps offsets in [-1, 1] while
+# leaving resolution at the 5-15 mm scale where the bif2 hook lives.
+_WAYPOINT_LOOKAHEADS_MM = (5.0, 10.0, 20.0, 40.0)
+_WAYPOINT_CLIP_MM = 50.0
+_N_OBS = 48  # 30 (v2 features) + 12 waypoints + 3 bend_hat_3d + 3 entry_dir_3d
 
 
 def _phase_to_onehot(phase: str) -> tuple:
@@ -129,19 +157,18 @@ def _phase_to_onehot(phase: str) -> tuple:
     return (1.0, 0.0, 0.0, 0.0)
 
 
-def _compute_bend_hat_2d(fluoro) -> tuple:
-    """J-tip bend direction projected to (x, z) image plane.
+def _compute_bend_hat_vessel3d(fluoro) -> np.ndarray:
+    """J-tip bend direction as a unit vector in VESSEL CS (3D).
 
     Mirrors the heuristic's closed-loop rotation algorithm
     (_compute_rotation_to_target in heuristic_policy_*.py): uses the
     first 3 tracked points (tip, tip-1, tip-2) and computes the
     second-difference vector ``p0 + p2 - 2*p1`` projected perpendicular
-    to the tangent. Returns (bx, bz) unit vector in tracking3d 2D, or
-    (0, 0) if undefined.
+    to the tangent. Returns the zero vector if undefined.
     """
     tracking = fluoro.tracking3d
     if tracking is None or len(tracking) < 3:
-        return 0.0, 0.0
+        return np.zeros(3)
     rzx = fluoro.image_rot_zx
     center = fluoro.image_center
     try:
@@ -149,20 +176,34 @@ def _compute_bend_hat_2d(fluoro) -> tuple:
         p1 = tracking3d_to_vessel_cs(tracking[1], rzx, center)
         p2 = tracking3d_to_vessel_cs(tracking[2], rzx, center)
     except Exception:
-        return 0.0, 0.0
+        return np.zeros(3)
     t_vec = p0 - p2
     t_norm = float(np.linalg.norm(t_vec))
     if t_norm < 1e-6:
-        return 0.0, 0.0
+        return np.zeros(3)
     t_hat = t_vec / t_norm
     bend_raw = p0 + p2 - 2.0 * p1
     bend = bend_raw - float(np.dot(bend_raw, t_hat)) * t_hat
     b_norm = float(np.linalg.norm(bend))
     if b_norm < 1e-3:
+        return np.zeros(3)
+    return bend / b_norm
+
+
+def _compute_bend_hat_2d(fluoro) -> tuple:
+    """J-tip bend direction projected to (x, z) image plane.
+
+    2D projection of :func:`_compute_bend_hat_vessel3d` — kept for
+    backward compatibility with features 17-18. Returns (bx, bz) unit
+    vector in tracking3d 2D, or (0, 0) if undefined.
+    """
+    bend_hat = _compute_bend_hat_vessel3d(fluoro)
+    if float(np.linalg.norm(bend_hat)) < 1e-8:
         return 0.0, 0.0
-    bend_hat = bend / b_norm
     # Project to tracking3d 2D (x, z) — same convention as path tangent_2d
-    bend_t = vessel_cs_to_tracking3d(bend_hat, rzx, (0.0, 0.0, 0.0), None)
+    bend_t = vessel_cs_to_tracking3d(
+        bend_hat, fluoro.image_rot_zx, (0.0, 0.0, 0.0), None
+    )
     bx, bz = float(bend_t[0]), float(bend_t[2])
     n = (bx * bx + bz * bz) ** 0.5
     if n < 1e-8:
@@ -194,8 +235,28 @@ def _entry_direction(
     return dx / norm, dz / norm
 
 
+def _entry_direction_3d(
+    tip_vessel: np.ndarray,
+    entry_coords: np.ndarray,
+    dist: float,
+) -> np.ndarray:
+    """Unit vector tip -> entry_coords in VESSEL CS (3D).
+
+    Plan v13 obs-v3 — the 3D version of :func:`_entry_direction`; keeps the
+    y (out-of-image-plane) component the 2D feature drops. Returns the zero
+    vector when dist is effectively infinite (no entry exists).
+    """
+    if dist >= _MAX_BIFURC_DIST_MM:
+        return np.zeros(3)
+    delta = entry_coords - tip_vessel
+    n = float(np.linalg.norm(delta))
+    if n < 1e-8:
+        return np.zeros(3)
+    return delta / n
+
+
 class LocalGuidance(Observation):
-    """Compact 28-dim observation encoding the agent's state relative to the path.
+    """Compact 48-dim observation encoding the agent's state relative to the path.
 
     Args:
         intervention: The intervention object.
@@ -231,7 +292,7 @@ class LocalGuidance(Observation):
         self._total_length: float = 0.0
         self._bifurc_arclengths: np.ndarray = np.empty(0)
 
-        self.obs = np.zeros(30, dtype=np.float32)
+        self.obs = np.zeros(_N_OBS, dtype=np.float32)
 
     @property
     def space(self) -> gym.spaces.Box:
@@ -241,10 +302,12 @@ class LocalGuidance(Observation):
              # 11  12   13   14   15   16   17    18
              0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.0,
              # 19  20   21   22   23   24   25   26   27   28   29
-             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            # 30-47 — Plan v13 obs-v3: 4×3 waypoints + bend_hat_3d + entry_dir_3d
+            + [-1.0] * 18,
             dtype=np.float32,
         )
-        high = np.ones(30, dtype=np.float32)
+        high = np.ones(_N_OBS, dtype=np.float32)
         return gym.spaces.Box(low=low, high=high, dtype=np.float32)
 
     def reset(self, episode_nr: int = 0) -> None:
@@ -261,7 +324,7 @@ class LocalGuidance(Observation):
             self._curvature = np.empty(0)
             self._total_length = 0.0
             self._bifurc_arclengths = np.empty(0)
-            self.obs = np.zeros(30, dtype=np.float32)
+            self.obs = np.zeros(_N_OBS, dtype=np.float32)
             return
 
         self._cumlen = compute_cumulative_arclength(self._polyline)
@@ -289,7 +352,7 @@ class LocalGuidance(Observation):
 
     def step(self) -> None:
         if self._total_length < 1e-6:
-            self.obs = np.zeros(30, dtype=np.float32)
+            self.obs = np.zeros(_N_OBS, dtype=np.float32)
             return
 
         fluoro = self.intervention.fluoroscopy
@@ -387,6 +450,25 @@ class LocalGuidance(Observation):
         bend_x, bend_z = _compute_bend_hat_2d(fluoro)
 
         # ----------------------------------------------------------------
+        # Plan v13 obs-v3 — PathLookahead3D (features 30-47), all VESSEL CS.
+        # ----------------------------------------------------------------
+        # Features 30-41: 4 planned-path waypoints at s+{5,10,20,40} mm,
+        # tip-relative, /50 mm, clipped. Gives the local path SHAPE ahead
+        # (the fork "hook" curve) including the y/depth component every
+        # 2D-projected feature drops. Clamps to path end (= target).
+        wp_offsets = []
+        for la in _WAYPOINT_LOOKAHEADS_MM:
+            wp = self._path_point_at_arclength(
+                min(proj.s + la, self._total_length)
+            )
+            off = np.clip((wp - tip_vessel) / _WAYPOINT_CLIP_MM, -1.0, 1.0)
+            wp_offsets.extend((float(off[0]), float(off[1]), float(off[2])))
+        # Features 42-44: J-tip bend direction in vessel CS (3D).
+        bend_hat_3d = _compute_bend_hat_vessel3d(fluoro)
+        # Features 45-47: 3D unit vector toward the next correct entry.
+        entry_dir_3d = _entry_direction_3d(tip_vessel, correct_coords, d_correct)
+
+        # ----------------------------------------------------------------
         # Plan v5 (Tier 1) — Markov-completing features (19-27)
         # ----------------------------------------------------------------
         # Feature 19: off-arc since divergence (mm clipped 50, /50).
@@ -403,7 +485,12 @@ class LocalGuidance(Observation):
         fold_steps = float(getattr(self.intervention, "_env_fold_stall_count", 0))
         ep_step = float(getattr(self.intervention, "_env_episode_step", 0))
         ep_max = float(getattr(self.intervention, "_env_max_steps", 600))
-        off_branch_norm = float(min(off_steps / _OFF_BRANCH_TIMEOUT_STEPS, 1.0))
+        # Plan v13 — normalize by the ACTUAL (env-var-overridable) grace max
+        # mirrored by env5; falls back to the historical 50.
+        off_max = float(getattr(
+            self.intervention, "_env_off_branch_max", _OFF_BRANCH_TIMEOUT_STEPS
+        ))
+        off_branch_norm = float(min(off_steps / max(off_max, 1.0), 1.0))
         fold_stall_norm = float(min(fold_steps / _FOLD_STALL_TIMEOUT_STEPS, 1.0))
         episode_step_norm = float(min(ep_step / max(ep_max, 1.0), 1.0))
 
@@ -495,13 +582,42 @@ class LocalGuidance(Observation):
                 is_in_a_wrong_branch,                                    # 27 {0,1} is_in_a_wrong_branch
                 is_at_ostium,                                            # 28 {0,1} is_at_ostium
                 wrong_recovery_dist_norm,                                # 29 [0,1] wrong_recovery_dist_norm
-            ],
+            ]
+            # Plan v13 obs-v3 — PathLookahead3D:
+            + wp_offsets                                                 # 30-41 [-1,1] 4×3 waypoints
+            + [float(bend_hat_3d[0]),                                    # 42 [-1,1] bend_hat_3d x
+               float(bend_hat_3d[1]),                                    # 43 [-1,1] bend_hat_3d y
+               float(bend_hat_3d[2]),                                    # 44 [-1,1] bend_hat_3d z
+               float(entry_dir_3d[0]),                                   # 45 [-1,1] entry_dir_3d x
+               float(entry_dir_3d[1]),                                   # 46 [-1,1] entry_dir_3d y
+               float(entry_dir_3d[2])],                                  # 47 [-1,1] entry_dir_3d z
             dtype=np.float32,
         )
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _path_point_at_arclength(self, s_q: float) -> np.ndarray:
+        """Interpolated planned-path point (vessel CS) at arclength ``s_q``.
+
+        Plan v13 obs-v3 helper for the PathLookahead3D waypoints. Clamps to
+        the polyline ends; assumes ``self._polyline``/``self._cumlen`` are
+        populated (guarded by the ``_total_length`` check in ``step``).
+        """
+        if len(self._polyline) < 2:
+            return self._polyline[0] if len(self._polyline) else np.zeros(3)
+        s_q = float(np.clip(s_q, 0.0, self._total_length))
+        idx = int(np.searchsorted(self._cumlen, s_q))
+        idx = max(1, min(idx, len(self._polyline) - 1))
+        s0 = float(self._cumlen[idx - 1])
+        s1 = float(self._cumlen[idx])
+        if s1 - s0 < 1e-9:
+            return self._polyline[idx]
+        t = (s_q - s0) / (s1 - s0)
+        return self._polyline[idx - 1] + t * (
+            self._polyline[idx] - self._polyline[idx - 1]
+        )
 
     def _compute_heading_error(
         self, fluoro, tangent_3d: np.ndarray, tip_vessel_cs: np.ndarray

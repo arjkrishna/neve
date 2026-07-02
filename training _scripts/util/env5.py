@@ -73,6 +73,16 @@ OFF_BRANCH_GRACE_STEPS = 50  # was 20; bumped in RL_IMPROV_7 §7 Fix 3 — with
                               # the counter no longer resets on spurious flips,
                               # so 20 was too short for retract recovery from
                               # bif2 wrong branches (~50 steps of retract needed).
+# Plan v13 (obs-v3 / recovery-enablement) — env-var override so per-run
+# experiments can extend the recovery horizon WITHOUT code edits. Rationale
+# (fable.md concern #1): ArcLengthProgress already pays +reward for off-path
+# retraction, but at ~1.3 mm/step retract vs up-to-50 mm off-path depth the
+# 50-step grace truncates (-5) before a deep recovery can physically finish,
+# so online exploration never completes a recovery for AWAC to clone.
+# Launchers set e.g. `-e EVE_OFF_BRANCH_GRACE_STEPS=150`. Default unchanged.
+OFF_BRANCH_GRACE_STEPS = int(
+    os.environ.get("EVE_OFF_BRANCH_GRACE_STEPS", OFF_BRANCH_GRACE_STEPS)
+)
 OFF_BRANCH_MIN_INSERTED_MM = 0.0  # was 50.0 workaround; now using true branch membership
 FAILURE_TRUNCATION_PENALTY = -5.0
 # RL_IMPROV_8 OST — overshoot penalty. When the 50-step off-path timeout fires
@@ -810,6 +820,11 @@ class BenchEnv5(eve.Env):
             # n_max_steps lives on the MaxSteps truncation component
             n_max = getattr(self._max_steps_trunc, 'n_max_steps', 600)
             self.intervention._env_max_steps = int(n_max) if n_max else 600
+            # Plan v13 — mirror the (env-var-overridable) grace max so the
+            # LocalGuidance off_branch_steps_norm feature normalizes by the
+            # ACTUAL timeout, not the hardcoded 50 (else the feature would
+            # saturate at 1.0 a third of the way to a 150-step timeout).
+            self.intervention._env_off_branch_max = int(OFF_BRANCH_GRACE_STEPS)
         except Exception:
             pass
 
