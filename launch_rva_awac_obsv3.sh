@@ -1,16 +1,16 @@
 #!/bin/bash
-# Plan v13 — LCCA AWAC v3: obs-v3 (PathLookahead3D) + recovery horizon + v2 stability stack.
+# Plan v13 — RVA AWAC obs-v3: obs-v3 (PathLookahead3D) + recovery horizon + v2 stability stack.
 #
 # vs v2 (launch_lcca_awac_v2.sh):
 #   1. obs-v3 (commit a49c1c9): LocalGuidance 30->48 — 4x 3D planned-path
 #      waypoints (s+5/10/20/40mm, tip-relative, vessel CS) + bend_hat_3d +
-#      entry_dir_3d. Root-cause fix for the structural LVA-confusion: the
+#      entry_dir_3d. Root-cause fix for the structural wrong-daughter confusion: the
 #      fork geometry lives partly in the y axis all 2D features dropped.
 #      Total obs 78 -> 96.
 #   2. EVE_OFF_BRANCH_GRACE_STEPS=150 (recovery horizon — matches the obs-v3
 #      harvest; lets online exploration COMPLETE off-path retractions so
 #      AWAC gets recovery data).
-#   3. Seed: lcca_awac_seed_obsv3.npz (96-dim, from heatup_z345_obsv3 via
+#   3. Seed: rva_awac_seed_obsv3.npz (96-dim, from heatup_z345_obsv3 via
 #      build_daughter_seed.py; recovery episodes kept unconditionally).
 #   4. --explore_steps_btw_eval 100000 (denser eval curve).
 # KEPT from v2 (the validated stability stack): --log_std_max 0.0,
@@ -20,9 +20,9 @@
 set -e
 export MSYS_NO_PATHCONV=1
 
-docker rm lcca_awac_v3 2>/dev/null || true
+docker rm rva_awac_obsv3 2>/dev/null || true
 
-docker run --name lcca_awac_v3 --gpus all --shm-size=24g --init -d \
+docker run --name rva_awac_obsv3 --gpus all --shm-size=24g --init -d \
   -e EVE_OFF_BRANCH_GRACE_STEPS=150 \
   -v "D:\neve\.claude\worktrees\rl_improv_8\training _scripts\heuristic_only_run.py:/opt/eve_training/training_scripts/heuristic_only_run.py" \
   -v "D:\neve\.claude\worktrees\rl_improv_8\training _scripts\heuristic_run_LCCA.py:/opt/eve_training/training_scripts/heuristic_run_LCCA.py" \
@@ -86,7 +86,7 @@ docker run --name lcca_awac_v3 --gpus all --shm-size=24g --init -d \
   eve-training-fixed \
   python3 /opt/eve_training/training_scripts/DualDeviceNav_train.py \
     --env_version 5 \
-    -n lcca_awac_v3 \
+    -n rva_awac_obsv3 \
     --insertion_z 345 \
     --replay_mode step \
     --per \
@@ -100,10 +100,10 @@ docker run --name lcca_awac_v3 --gpus all --shm-size=24g --init -d \
     --log_std_max 0.0 \
     --update_per_explore_step 0.5 \
     --replay_buffer_size 11000000 \
-    --heatup_cache_file /opt/eve_training/results/lcca_awac_seed_obsv3.npz \
+    --heatup_cache_file /opt/eve_training/results/rva_awac_seed_obsv3.npz \
     --pretrain_updates 10000 \
     --explore_steps_btw_eval 100000 \
-    --target_branches "Centerline curve - LCCA.mrk" \
+    --target_branches "Centerline curve - RVA.mrk" \
     --snapshots centerlines \
     -nw 16 -d cuda:0
 #
@@ -114,4 +114,4 @@ docker run --name lcca_awac_v3 --gpus all --shm-size=24g --init -d \
 #     DROPS below ~38% (EXP-2 working: the hook is being learned). If entropy is
 #     healthy but LVA stays ~38%, that is the signal EXP-3 (fork reward/obs,
 #     needs approval) is required.
-# Monitor:  docker logs -f lcca_awac_v3   |   Stop:  docker stop lcca_awac_v3
+# Monitor:  docker logs -f rva_awac_obsv3   |   Stop:  docker stop rva_awac_obsv3
