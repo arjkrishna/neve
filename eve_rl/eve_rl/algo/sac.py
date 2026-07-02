@@ -307,11 +307,13 @@ class SAC(Algo):
 
         self.model.update_target_q(self.tau)
 
-        if self.algo == "awac":
-            # AWAC has no entropy objective — alpha is unused; skip tuning.
-            alpha_loss = torch.zeros(1, device=self.device)
-        else:
-            alpha_loss = self._update_alpha(log_pi)
+        # Plan v11 anti-rail — auto-tuned entropy is now ALSO active for AWAC
+        # (the +alpha*log_pi term in the AWAC policy loss above). alpha adapts to
+        # hold the policy at target_entropy=-n_actions, the principled,
+        # data-free replacement for hand-picked per-dim entropy betas. (The old
+        # behaviour — AWAC with no entropy term — is what railed both prior runs
+        # by update ~2.5k.)
+        alpha_loss = self._update_alpha(log_pi)
 
         self.update_step += 1
         
@@ -432,7 +434,16 @@ class SAC(Algo):
             if padding_mask is not None:
                 logp = logp * padding_mask
                 weight = weight * padding_mask
-            per_sample_loss = -(weight * logp)
+            # Plan v11 anti-rail — PRIMARY mechanism: AWAC + auto-tuned max-
+            # entropy. Add the SAC entropy term (+alpha * log_pi of the policy's
+            # OWN sampled action, incl. the tanh Jacobian) with alpha auto-tuned
+            # to target_entropy = -n_actions in _update_alpha (now enabled for
+            # AWAC). This holds policy entropy at target — fighting BOTH log_std
+            # collapse AND mean-rail saturation — with NO hand-picked per-dim
+            # coefficients (the heatup data cannot derive them: actions are
+            # uniform-random, statistically identical for success and failure).
+            # alpha is detached here (its own gradient comes from _update_alpha).
+            per_sample_loss = -(weight * logp) + self.alpha.detach() * log_pi
         else:
             # SAC — entropy-regularized policy improvement.
             per_sample_loss = self.alpha * log_pi - min_q
@@ -443,6 +454,38 @@ class SAC(Algo):
             policy_loss = (is_weights * per_sample_loss).mean()
         else:
             policy_loss = per_sample_loss.mean()
+
+        # Plan v11 anti-rail regularizers — AWAC ONLY (SAC's own alpha*log_pi
+        # entropy term already prevents collapse). AWAC's advantage-weighted BC
+        # objective has NO entropy term, so without these the policy log_std
+        # collapses (entropy -> -12 during pretrain) and the squashed mean
+        # saturates at the +/-1 tanh rail (clamp_fraction -> 0.4-0.5: the
+        # documented cath-leading death-spiral). Two terms keep it off the rails:
+        #   (1) per-dim entropy bonus: subtract beta_i * mean_t(log_std_i) so
+        #       minimizing the loss RAISES log_std (per-dim, cath_trans weighted
+        #       heaviest — it was the saturating dim);
+        #   (2) mean-margin penalty: penalize the squashed mean approaching the
+        #       rail (push the pre-tanh mean toward 0). Per-dim log_std alone
+        #       does NOT stop mean-rail saturation (Plan v11 risk audit #3).
+        # Both are detach-free (grad flows to the policy) and gated to AWAC.
+        if self.algo == "awac" and (
+            self.entropy_beta_per_dim is not None
+            or self.action_mean_penalty > 0.0
+        ):
+            mean_b, log_std_b = self.model.policy(states)
+            if self.entropy_beta_per_dim is not None:
+                beta = torch.as_tensor(
+                    self.entropy_beta_per_dim,
+                    device=log_std_b.device,
+                    dtype=log_std_b.dtype,
+                )
+                policy_loss = policy_loss - (beta * log_std_b.mean(dim=0)).sum()
+            if self.action_mean_penalty > 0.0:
+                am = torch.tanh(mean_b).clamp(-0.99, 0.99)
+                policy_loss = (
+                    policy_loss
+                    + self.action_mean_penalty * torch.atanh(am).abs().mean()
+                )
 
         self.model.policy_optimizer.zero_grad()
         policy_loss.backward()

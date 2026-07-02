@@ -152,7 +152,8 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         demo_priority_bonus: float = 0.0,
         priority_mode: str = "td",
         balanced_fraction: float = 0.0,
-        log_std_min: float = -20.0,
+        log_std_min: float = -2.0,  # Plan v11 anti-rail default (was -20)
+        log_std_max: float = 2.0,  # Plan v12 anti-rail — cap the std CEILING
         entropy_beta_per_dim=None,
         action_mean_penalty: float = 0.0,
         offline_mode: bool = False,
@@ -218,6 +219,7 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         policy = eve_rl.network.GaussianPolicy(
             policy_base, n_observations, n_actions, q1_embedder,
             log_std_min=log_std_min,
+            log_std_max=log_std_max,
         )
         policy_optim = eve_rl.optim.Adam(
             policy_base,

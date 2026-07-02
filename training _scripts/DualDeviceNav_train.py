@@ -159,10 +159,14 @@ def main(args):
     # values for the multi-daughter LSTM setup; "step" uses canonical
     # step-SAC values (1e6-transition buffer, 256 batch, 1 update/step).
     if args.replay_mode == "step":
-        replay_buffer_size = 1_000_000
+        replay_buffer_size = (
+            int(args.replay_buffer_size)
+            if getattr(args, "replay_buffer_size", 0) and args.replay_buffer_size > 0
+            else 1_000_000
+        )
         batch_size = 256
         update_per_explore_step = 1.0
-        print("[Plan v6] replay_mode=step — buffer=1e6 transitions, "
+        print(f"[Plan v6] replay_mode=step — buffer={replay_buffer_size} transitions, "
               "batch=256, update_per_explore_step=1.0")
     else:
         replay_buffer_size = REPLAY_BUFFER_SIZE
@@ -478,6 +482,15 @@ def main(args):
         priority_mode=args.priority_mode,
         balanced_fraction=args.balanced_fraction,
         log_std_min=args.log_std_min,
+        log_std_max=args.log_std_max,
+        # Plan v11 anti-rail (AWAC). All-zero / empty -> None (disabled).
+        entropy_beta_per_dim=(
+            list(args.entropy_beta_per_dim)
+            if getattr(args, "entropy_beta_per_dim", None)
+            and any(b > 0 for b in args.entropy_beta_per_dim)
+            else None
+        ),
+        action_mean_penalty=float(getattr(args, "action_mean_penalty", 0.0)),
     )
 
     # Save config from unwrapped env (ActionCurriculumWrapper has no save_config)
@@ -821,7 +834,17 @@ def main(args):
     # Plan v10 — heatup also populates a non-empty seed buffer (especially
     # heatup-until-N), so it is a valid warm-start seed source on its own.
     heatup_runs = (args.heatup_until_successes > 0) or (heatup_steps_effective > 0)
-    seed_buffer_available = both_caches or seed_generated_this_run or heatup_runs
+    # Plan v12 — a loaded --heatup_cache_file (e.g. the curated LCCA seed) IS a
+    # valid warm-start seed on its own: its episodes were pushed to the replay
+    # buffer above (and heatup_steps_effective is then 0, so heatup_runs is
+    # False). Without this the pretrain on a heatup-cache seed is silently
+    # skipped.
+    heatup_cache_loaded = bool(
+        args.heatup_cache_file and os.path.isfile(args.heatup_cache_file)
+    )
+    seed_buffer_available = (
+        both_caches or seed_generated_this_run or heatup_runs or heatup_cache_loaded
+    )
     if pretrain_updates > 0 and not seed_buffer_available:
         print("[Plan v8/v9/v10] --pretrain_updates ignored — no seed buffer: "
               "need caches loaded, --heuristic_seeding > 0, or heatup to run.")
@@ -1127,6 +1150,18 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--replay_buffer_size",
+        type=int,
+        default=0,
+        help=(
+            "Override the step-mode replay-buffer capacity (transitions). "
+            "0 (default) = the mode default (1e6 for step). Set large when "
+            "seeding from a big heatup cache so the seed stays a small "
+            "fraction of capacity and the is_clean lane is not evicted "
+            "(Plan v12 LCCA: ~11e6 keeps the ~1.07M-transition seed <10%)."
+        ),
+    )
+    parser.add_argument(
         "--per",
         action="store_true",
         help=(
@@ -1167,12 +1202,54 @@ if __name__ == "__main__":
     parser.add_argument(
         "--log_std_min",
         type=float,
-        default=-20.0,
+        default=-2.0,
         help=(
-            "Plan v10 — hard floor on the GaussianPolicy log-std (entropy "
-            "floor). Default -20 preserves old behaviour; -2 (std~0.135) "
-            "keeps AWAC policy entropy near target and prevents the "
-            "deterministic collapse both prior runs hit by update ~2.5k."
+            "Plan v10/v11 anti-rail — hard floor on the GaussianPolicy log-std "
+            "(entropy floor). DEFAULT NOW -2 (std~0.135): keeps AWAC policy "
+            "entropy near target and prevents the deterministic collapse both "
+            "prior runs hit by update ~2.5k. Use -20 only to reproduce the "
+            "old collapse-prone behaviour."
+        ),
+    )
+    parser.add_argument(
+        "--log_std_max",
+        type=float,
+        default=2.0,
+        help=(
+            "Plan v12 anti-rail — hard CEILING on the GaussianPolicy log-std. "
+            "DEFAULT 2.0 (std~7.4, the SAC default) reproduces old behaviour. "
+            "The lcca_awac_v1 forensic showed the soft-collapse was a log_std "
+            "CEILING explosion (log_std->+2 on all 4 dims, std 1.0->2.0, "
+            "actions saturate from noise) — NOT a floor collapse. Set 0.0 "
+            "(std<=1.0) to cap std at the healthy level and prevent the "
+            "uniform-rail variance explosion."
+        ),
+    )
+    parser.add_argument(
+        "--entropy_beta_per_dim",
+        type=float,
+        nargs="+",
+        default=None,
+        help=(
+            "OPTIONAL per-action-dim entropy bonus for AWAC (a manual override "
+            "on top of the now-default auto-tuned entropy). Adds -beta_i * "
+            "mean(log_std_i) to the policy loss. Order [gw_trans, gw_rot, "
+            "cath_trans, cath_rot]. DEFAULT OFF — the principled anti-rail is "
+            "auto-tuned entropy (alpha -> target_entropy=-n_actions), so no "
+            "hand-picked betas are needed; the heatup data cannot derive them "
+            "anyway (actions are uniform-random). Use only for targeted tuning."
+        ),
+    )
+    parser.add_argument(
+        "--action_mean_penalty",
+        type=float,
+        default=0.0,
+        help=(
+            "OPTIONAL mean-margin penalty for AWAC (override on top of the "
+            "default auto-tuned entropy, which already counters the mean rail "
+            "via the tanh-Jacobian in log_pi). Adds amp * "
+            "mean(|atanh(tanh(mean).clamp(+/-0.99))|) to the policy loss. "
+            "DEFAULT 0.0 OFF. AWAC-only."
         ),
     )
     parser.add_argument(
