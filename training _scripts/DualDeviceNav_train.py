@@ -882,11 +882,22 @@ def main(args):
         except Exception:
             pass
 
+    # Plan v13 — CLI-overridable eval cadence. The 250k default gave only
+    # ~4 eval points per 1M explore steps (starved the v1/v2 verdicts twice);
+    # per-branch v3 runs set 100k for a usable eval curve.
+    explore_steps_btw_eval = (
+        float(args.explore_steps_btw_eval)
+        if getattr(args, "explore_steps_btw_eval", 0) and args.explore_steps_btw_eval > 0
+        else EXPLORE_STEPS_BTW_EVAL
+    )
+    if explore_steps_btw_eval != EXPLORE_STEPS_BTW_EVAL:
+        print(f"[Plan v13] eval cadence override: every {explore_steps_btw_eval:.0f} explore steps")
+
     try:
         reward, success = runner.training_run(
             heatup_steps_effective,
             TRAINING_STEPS,
-            EXPLORE_STEPS_BTW_EVAL,
+            explore_steps_btw_eval,
             CONSECUTIVE_EXPLORE_EPISODES,
             update_per_explore_step,
             eval_seeds=EVAL_SEEDS,
@@ -1209,6 +1220,16 @@ if __name__ == "__main__":
             "entropy near target and prevents the deterministic collapse both "
             "prior runs hit by update ~2.5k. Use -20 only to reproduce the "
             "old collapse-prone behaviour."
+        ),
+    )
+    parser.add_argument(
+        "--explore_steps_btw_eval",
+        type=float,
+        default=0.0,
+        help=(
+            "Plan v13 — explore steps between deterministic evals. 0 (default) "
+            "keeps the historical EXPLORE_STEPS_BTW_EVAL=250k. Per-branch v3 "
+            "runs use 100000 for a denser eval curve."
         ),
     )
     parser.add_argument(
