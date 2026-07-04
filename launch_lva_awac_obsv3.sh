@@ -24,6 +24,7 @@ docker rm lva_awac_obsv3 2>/dev/null || true
 
 docker run --name lva_awac_obsv3 --gpus all --shm-size=24g --init -d \
   -e EVE_OFF_BRANCH_GRACE_STEPS=150 \
+  -e EVE_FOLD_STALL_STEPS=60 \
   -v "D:\neve\.claude\worktrees\rl_improv_8\training _scripts\heuristic_only_run.py:/opt/eve_training/training_scripts/heuristic_only_run.py" \
   -v "D:\neve\.claude\worktrees\rl_improv_8\training _scripts\heuristic_run_LCCA.py:/opt/eve_training/training_scripts/heuristic_run_LCCA.py" \
   -v "D:\neve\.claude\worktrees\rl_improv_8\training _scripts\heuristic_run_LVA.py:/opt/eve_training/training_scripts/heuristic_run_LVA.py" \

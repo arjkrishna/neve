@@ -100,6 +100,14 @@ OVERSHOOT_PENALTY = -1.0
 # CORRECT_ENTRY_REWARD also removed — daughter commits now drive ±1 via
 # the state machine event queue (drained in step()), latched once per fork.
 FOLD_STALL_STEPS = 20          # kill stuck wires quickly to speed up cycle
+# Plan v13 (fold-recovery enablement) — env-var override, same pattern as
+# EVE_OFF_BRANCH_GRACE_STEPS. Rationale: the lcca_awac_obsv3 evals showed the
+# post-obs-v3 policy aims 100% at the correct bridge corridor but 85-93% of
+# eval episodes die as wire_fold_stall at p50=80 steps — the 20-step fold
+# guillotine truncates before a pull-back+re-push fold recovery (the standard
+# IR maneuver) can complete, so the policy can never learn it. Launchers set
+# e.g. `-e EVE_FOLD_STALL_STEPS=60`. Default unchanged.
+FOLD_STALL_STEPS = int(os.environ.get("EVE_FOLD_STALL_STEPS", FOLD_STALL_STEPS))
 FOLD_INSERTION_MM = 0.5        # min commanded gw insertion per step to count as inserting
 FOLD_ARCLENGTH_MM = 0.5        # min tip arclength progress per step to count as advancing
 
@@ -515,8 +523,13 @@ class BenchEnv5(eve.Env):
                     and not _gtimeout
                 )
                 _reason = str(getattr(self, "_last_reason", "unknown"))
+                # Plan v13 — mode=train|eval tag: train and eval envs of the
+                # same worker interleave in one worker_<pid>.log with no
+                # discriminator, which forced timestamp-window hacks when
+                # isolating eval episodes (the eval-#1 forensic). Now explicit.
                 self._step_logger.info(
                     f"EPISODE_OUTCOME | ep={self._episode_count} | "
+                    f"mode={self.mode} | "
                     f"target_branch={_tbs} | final_branch={_fbs} | reason={_reason} | "
                     f"is_clean={int(_clean)} | grader_success={int(_gsucc)} | "
                     f"grader_timeout={int(_gtimeout)} | overshoot={int(_ovs)} | "
@@ -825,6 +838,8 @@ class BenchEnv5(eve.Env):
             # ACTUAL timeout, not the hardcoded 50 (else the feature would
             # saturate at 1.0 a third of the way to a 150-step timeout).
             self.intervention._env_off_branch_max = int(OFF_BRANCH_GRACE_STEPS)
+            # Same for the fold-stall max (EVE_FOLD_STALL_STEPS knob).
+            self.intervention._env_fold_stall_max = int(FOLD_STALL_STEPS)
         except Exception:
             pass
 

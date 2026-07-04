@@ -491,7 +491,10 @@ class LocalGuidance(Observation):
             self.intervention, "_env_off_branch_max", _OFF_BRANCH_TIMEOUT_STEPS
         ))
         off_branch_norm = float(min(off_steps / max(off_max, 1.0), 1.0))
-        fold_stall_norm = float(min(fold_steps / _FOLD_STALL_TIMEOUT_STEPS, 1.0))
+        fold_max = float(getattr(
+            self.intervention, "_env_fold_stall_max", _FOLD_STALL_TIMEOUT_STEPS
+        ))
+        fold_stall_norm = float(min(fold_steps / max(fold_max, 1.0), 1.0))
         episode_step_norm = float(min(ep_step / max(ep_max, 1.0), 1.0))
 
         # Features 23-24: per-episode daughter-fork commit counters.
