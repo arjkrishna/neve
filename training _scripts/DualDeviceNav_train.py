@@ -569,7 +569,21 @@ def main(args):
               f"from: {args.warm_start_checkpoint}")
         agent.load_checkpoint(args.warm_start_checkpoint)
         print(f"[warm-start] resumed counters: explore={agent.step_counter.exploration} "
-              f"update={agent.step_counter.update}")
+              f"update={agent.step_counter.update}", flush=True)
+
+    # Plan v13 — native buffer resume: the missing caller for the symmetric
+    # save_buffer_to_file <-> load_buffer_from_file pair (runner.py's
+    # load_replay_buffer() was dead code and only looked in the CURRENT run's
+    # fresh checkpoint folder). Points the designed loader at an explicit
+    # path (a dead run's checkpoints/replay_buffer.npz). Restores the PER
+    # dump INCLUDING sum-tree priorities + is_clean/is_demo lanes — higher
+    # fidelity than converting through the episode cache. Capacity must
+    # match (--replay_buffer_size identical to the dead run).
+    if getattr(args, "load_replay_buffer", None):
+        print(f"[buffer-resume] loading PER dump: {args.load_replay_buffer}", flush=True)
+        n_loaded = agent.replay_buffer.load_buffer_from_file(args.load_replay_buffer)
+        print(f"[buffer-resume] restored {n_loaded} transitions "
+              f"(incl. priorities + clean lane)", flush=True)
 
     # Optional: seed replay buffer with heuristic episodes
     # Collects episodes using a centerline-following heuristic and pushes
@@ -1235,6 +1249,19 @@ if __name__ == "__main__":
             "entropy near target and prevents the deterministic collapse both "
             "prior runs hit by update ~2.5k. Use -20 only to reproduce the "
             "old collapse-prone behaviour."
+        ),
+    )
+    parser.add_argument(
+        "--load_replay_buffer",
+        type=str,
+        default=None,
+        help=(
+            "Plan v13 — native buffer resume: load a runner-saved PER dump "
+            "(checkpoints/replay_buffer.npz) via load_buffer_from_file, "
+            "restoring transitions + sum-tree priorities + clean/demo lanes. "
+            "Pair with --warm_start_checkpoint for a full run resume. "
+            "Requires identical --replay_buffer_size. Do NOT also pass the "
+            "same data via --heatup_cache_file."
         ),
     )
     parser.add_argument(
