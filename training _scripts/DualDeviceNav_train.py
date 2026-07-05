@@ -556,6 +556,21 @@ def main(args):
         agent.close()
         return
 
+    # Plan v13 — TRUE-RESUME warm start (built after the lcca_awac_obsv3
+    # post-eval deadlock). agent.load_checkpoint restores networks +
+    # optimizer (Adam moments) + scheduler (LR position) + step/episode
+    # counters from an .everl, so combined with --heatup_cache_file pointed
+    # at the run's saved replay_buffer.npz this resumes a wedged run almost
+    # exactly (only PER priorities + post-last-buffer-save experience lost).
+    # The explore counter resuming means LR schedule, eval cadence and total
+    # budget continue where the dead run left off.
+    if getattr(args, "warm_start_checkpoint", None):
+        print(f"[warm-start] loading FULL agent state (nets+optim+sched+counters) "
+              f"from: {args.warm_start_checkpoint}")
+        agent.load_checkpoint(args.warm_start_checkpoint)
+        print(f"[warm-start] resumed counters: explore={agent.step_counter.exploration} "
+              f"update={agent.step_counter.update}")
+
     # Optional: seed replay buffer with heuristic episodes
     # Collects episodes using a centerline-following heuristic and pushes
     # them into the agent's replay buffer BEFORE SAC training starts.
@@ -1220,6 +1235,17 @@ if __name__ == "__main__":
             "entropy near target and prevents the deterministic collapse both "
             "prior runs hit by update ~2.5k. Use -20 only to reproduce the "
             "old collapse-prone behaviour."
+        ),
+    )
+    parser.add_argument(
+        "--warm_start_checkpoint",
+        type=str,
+        default=None,
+        help=(
+            "Plan v13 — TRUE-RESUME: load full agent state (networks + Adam "
+            "moments + LR scheduler + step/episode counters) from an .everl "
+            "before training. Pair with --heatup_cache_file pointed at the "
+            "same run's saved replay_buffer.npz to resume a dead/wedged run."
         ),
     )
     parser.add_argument(
