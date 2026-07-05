@@ -1,6 +1,7 @@
 from torch import optim
 import eve_rl
 import eve
+import os
 import numpy as np
 
 
@@ -348,7 +349,8 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
             worker_device=worker_device,
             n_worker=n_worker,
             normalize_actions=True,
-            timeout_worker_after_reaching_limit=180,
+            timeout_worker_after_reaching_limit=float(
+                os.environ.get("EVE_WORKER_FINISH_TIMEOUT_S", 180)),
             diagnostics_config=diagnostics_config,
         )
 
@@ -467,7 +469,8 @@ def create_bench_agent(
             worker_device=device_worker,
             n_worker=n_worker,
             normalize_actions=True,
-            timeout_worker_after_reaching_limit=180,
+            timeout_worker_after_reaching_limit=float(
+                os.environ.get("EVE_WORKER_FINISH_TIMEOUT_S", 180)),
         )
     else:
         agent = eve_rl.agent.Single(
