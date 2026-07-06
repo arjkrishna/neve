@@ -11,6 +11,7 @@ priority update — negligible overhead (~1 ms/step) versus the SOFA env
 step. A naive parallel priority array with ``np.random.choice(p=...)``
 would be O(N) per sample (~ms on a 1e6 buffer) — rejected.
 """
+import os
 import random
 import numpy as np
 import torch
@@ -149,6 +150,16 @@ class PERVanillaStep(ReplayBuffer):
         # flat_obs has N+1 entries so flat_obs[i:i+2] is valid.
         is_demo = bool(getattr(episode, "is_demo", False))
         reached = bool(getattr(episode, "reached_target_daughter", False))
+        # Plan v13 — EVE_FREEZE_CLEAN_LANE: block NEW episodes from the
+        # balanced clean lane (loaded/restored flags are untouched). Breaks
+        # the self-cloning feedback loop found in the 2g forensic: the policy's
+        # own noisy successes flooded the 60%-weighted lane (674 new cleans =
+        # 50.2% of lane), turning the AWAC loss into BC on the policy's own
+        # rail-saturated behavior -> mean-rail saturation (|mu| x2.4) ->
+        # deterministic eval collapse 33.7%->6.1% while noisy rollouts rose.
+        # With the freeze, the lane stays the diverse pre-resume seed cleans.
+        if reached and os.environ.get("EVE_FREEZE_CLEAN_LANE", "") not in ("", "0"):
+            reached = False
         ep_return = float(getattr(episode, "episode_return", 0.0))
         priority = self._initial_priority(is_demo, reached, ep_return)
         for i in range(len(episode)):
