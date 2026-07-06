@@ -150,16 +150,34 @@ class PERVanillaStep(ReplayBuffer):
         # flat_obs has N+1 entries so flat_obs[i:i+2] is valid.
         is_demo = bool(getattr(episode, "is_demo", False))
         reached = bool(getattr(episode, "reached_target_daughter", False))
-        # Plan v13 — EVE_FREEZE_CLEAN_LANE: block NEW episodes from the
-        # balanced clean lane (loaded/restored flags are untouched). Breaks
-        # the self-cloning feedback loop found in the 2g forensic: the policy's
-        # own noisy successes flooded the 60%-weighted lane (674 new cleans =
-        # 50.2% of lane), turning the AWAC loss into BC on the policy's own
-        # rail-saturated behavior -> mean-rail saturation (|mu| x2.4) ->
-        # deterministic eval collapse 33.7%->6.1% while noisy rollouts rose.
-        # With the freeze, the lane stays the diverse pre-resume seed cleans.
-        if reached and os.environ.get("EVE_FREEZE_CLEAN_LANE", "") not in ("", "0"):
-            reached = False
+        # Plan v13 — clean-lane admission control (2g forensic: the policy's
+        # own noisy successes flooded the 60%-weighted lane — 674 new cleans
+        # = 50.2%, rail-saturated 23-24% of steps vs the seed's ~10% — turning
+        # the AWAC loss into BC on the policy's own bang-bang noise samples
+        # -> mean-rail saturation (|mu| x2.4) -> deterministic eval collapse
+        # 33.7%->6.1% while noisy rollouts rose).
+        # Two knobs (loaded/restored flags are never touched):
+        #   EVE_FREEZE_CLEAN_LANE=1   — hard freeze: NO new episodes admitted.
+        #     Blunt: also locks genuinely-learned new skills out of the lane.
+        #   EVE_CLEAN_RAIL_MAX=<f>    — nuanced filter: admit a new success
+        #     iff its railed-step fraction (any |a_dim| > 0.95, normalized)
+        #     <= f. Seed-diverse cleans measure ~0.10; the poison cohort
+        #     0.23-0.24. f~0.15 keeps the skill flywheel turning (recoveries,
+        #     smooth entries enter the lane) while excluding bang-bang flukes
+        #     that only worked as noise. Rejected episodes still enter the
+        #     buffer normally — just not the amplified lane.
+        if reached:
+            if os.environ.get("EVE_FREEZE_CLEAN_LANE", "") not in ("", "0"):
+                reached = False
+            else:
+                _rail_max = float(os.environ.get("EVE_CLEAN_RAIL_MAX", "0") or 0)
+                if _rail_max > 0 and len(episode) > 0:
+                    _a = np.asarray(episode.actions, dtype=np.float32)
+                    _rail_frac = float(
+                        np.mean(np.any(np.abs(_a) > 0.95, axis=-1))
+                    )
+                    if _rail_frac > _rail_max:
+                        reached = False
         ep_return = float(getattr(episode, "episode_return", 0.0))
         priority = self._initial_priority(is_demo, reached, ep_return)
         for i in range(len(episode)):
