@@ -393,7 +393,9 @@ class Runner(EveRLObject):
             # max(0.0, ...) is a hard guard: a negative update budget
             # deadlocks explore_and_update — it must never be passed down.
             update_steps = max(0.0, (
-                self.step_counter.exploration * update_steps_per_explore_step
+                (self.step_counter.exploration
+                 - getattr(self, "_explore_step_baseline", 0))
+                * update_steps_per_explore_step
                 - (self.step_counter.update
                    - getattr(self, "_pretrain_update_baseline", 0))
             ))
@@ -731,6 +733,16 @@ class Runner(EveRLObject):
         # episodes are driven by a policy that has already learned from the
         # demonstrations rather than a random network. Skipped when 0.
         self._pretrain_update_baseline = 0
+        # Plan v13 — baseline the EXPLORATION counter too. With a resumed run
+        # (--warm_start_checkpoint restores step counters) exploration starts
+        # at e.g. 804k while updates-since-baseline start at 0, so the budget
+        # formula `exploration*ratio - updates_since_baseline` handed the
+        # first explore_and_update a ~402k-update mega-task — hours of
+        # updates on a static buffer (the exact diverge-the-critic regime
+        # the comment below warns about). Stalled runs 2d/2e/2f at their
+        # first segment boundary. Both sides of the subtraction must count
+        # only steps accrued THIS session.
+        self._explore_step_baseline = self.step_counter.exploration
         if pretrain_updates > 0:
             self.logger.info(
                 f"Warm-start: {pretrain_updates} pretraining updates on the "
