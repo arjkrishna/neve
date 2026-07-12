@@ -326,9 +326,6 @@ The labels are pulled from the **full-width `states`** (which still carry the pr
 
 ---
 
-## 10. `MLP.forward` — ReLU after the input layer
-
-**File:** [eve_rl/eve_rl/network/component/mlp.py](eve_rl/eve_rl/network/component/mlp.py#L83). Resolves a long-standing `# TODO: Add F.relu after input layer`: `state = F.relu(self._input_layer(obs_batch))` (was a bare linear projection). Affects every MLP body/embedder — including the new FF-mode `policy_embedder` and the Q/policy bases — giving the input projection a nonlinearity instead of collapsing two adjacent linear maps. Behavioral change for any run using MLP components (not the default LSTM embedder path).
 
 
 ---
@@ -588,7 +585,7 @@ The Gen-4 stack above (mesh-invariant obs + asymmetric critic + procedural
 anatomy + recovery) was validated on the `rcca_procedural_v1` run. It
 **worked, then failed in a specific and instructive way** — and the
 forensic that dissected the failure is the reason the fix package exists.
-The code changes are documented in the next sections (§ALGO); this section
+The code changes are documented in the implementation subsections below; this section
 is the **mechanism and evidence** that motivate them.
 
 ## The v1 freeze-collapse — what happened
@@ -673,27 +670,45 @@ once success probability dips.
 | **F7** | `--eval_after_pretrain` — one held-out eval + `checkpoint0` before any exploration | banks a pretrain-only baseline (v1 had no reference; all its checkpoints were mid/post-collapse) |
 | **F8** | deterministic start-state probe in the monitor | v1's freeze was invisible in explore returns |
 
-The **implementation** of F1–F7 is documented in §ALGO (code) and §HARVEST
+The **implementation** of F1–F7 is documented in the subsections below (code) and Part F §7
 (launcher `launch_rcca_procedural_v2.sh`). F5's non-fix is deliberate and
 recorded so it is not "re-fixed" later.
 
 ---
 
 
-## Fix package — implementation (code)
+## Fix package (F1–F8) — implementation (code)
 
-The `lcca_awac_v1` run "froze": the policy stopped moving and every eval flat-lined at ~8.2%. Forensics traced a four-link chain, and this package adds one configurable knob per link (all defaults preserve legacy behavior) plus the surrounding infra fixes. None of these touch `is_on_correct_path()`, the env reward computation, the observation layout, or the terminal conditions — they are stabilization knobs, buffer-admission filters, and algo/IPC plumbing. The reward-shaping and obs-tail definitions themselves (`buckle_reward.py`, `PrivilegedState`, `DualDeviceNavRCCAVaried`) live in the env/obs subsystem; here we cover only the algo/network/agent plumbing that consumes them, all gated OFF by default.
+The `rcca_procedural_v1` run froze (held-out evals 8.2% → 13.3% → **3.1%**,
+deterministic speed → 0.95 mm/s) then IPC-deadlocked; the forensic above
+traced the chain. **This subsection covers ONLY the F-package** — the fixes
+motivated directly by that forensic. Two adjacent groups follow it and are
+deliberately separated: **companion deep-review algo fixes** (implemented in
+this same worktree, largely *before* the collapse — they map to Part A's
+provenance rows) and **Gen-4 cross-cutting plumbing** (algo-side view of
+machinery whose primary documentation is Parts B/C/F). All defaults preserve
+legacy behavior; none of these touch `is_on_correct_path()`, the env reward
+computation, the observation layout, or the terminal conditions.
 
 **Freeze chain → fix map**
 
-| v1 freeze link | mechanism | fix section(s) |
+| v1 freeze link | mechanism | fix |
 |---|---|---|
-| std ceiling-pin | `log_std` ran to +2 on all 4 dims, σ pinned high (1→2), actions saturate from noise | §4 (soft tanh band + `log_std_max` cap; launchers pass 0.0) |
-| alpha decay→floor→whipsaw | α decayed to the −10 floor over 165k updates (entropy term vanished), then whipsawed to 0.45 | §1 (`log_alpha_min` raises the floor), §3 (α re-derived from `log_alpha`) |
-| entropy crushes the MEAN | with σ ceiling-pinned, α's only entropy lever was `|mean|→0` (the freeze) | §1 (`log_alpha_max` caps α), §4 (σ cap restores the variance lever), §5 (`action_mean_penalty`) |
-| inert AWAC weights ≈ 1 | advantages collapse → `exp(A/λ)≈1` → AWAC degrades to BC and clones the policy's own railed successes | §7 (clean-lane rail filter breaks self-cloning), §6 (leaky BC floor keeps advantage-weighted gradient alive) |
+| std ceiling-pin | `log_std` pinned at the configured ceiling (σ=1.0) on 100% of states from u≈39k — the entropy controller had no variance headroom | (pre-existing knob: the soft `log_std` band, Companion §3; the run's `(-2, 0)` band is the operating choice) |
+| alpha decay→floor→whipsaw | α decayed to the −10 floor over 165k updates (entropy term vanished), then whipsawed to 0.45 | **F1** = §1 (`log_alpha_min` raises the floor, `log_alpha_max` caps the correction) |
+| entropy crushes the MEAN | with σ ceiling-pinned, α's only entropy lever was `\|mean\|→0` (the freeze) | **F1** = §1 (cap), **F3** = §2 (`action_mean_penalty`) |
+| inert AWAC weights ≈ 1 | `exp(A/λ)≈1` at λ=3 vs a flat critic → AWAC degrades to BC; nothing opposes the mean-crush; railed self-successes get cloned | **F2** = `--awac_lambda 3.0→1.0` (launcher flag, no code change), **F4** = §3 (clean-lane rail filter) |
+| silent IPC deadlock | no-timeout `_model_queue.get()` hung in `anon_pipe_read` after eval3 | **F6** = §4 (timeout guard) |
+| no pre-collapse reference | v1's only checkpoints were mid/post-collapse; eval1 had no baseline | **F7** = §5 (`eval_after_pretrain`) |
 
-## 1. Configurable `log_alpha` clamp rails (SAC/AWAC auto-alpha)
+Not in code, for the record: **F5** (store the executed/clamped action) was
+**deliberately dropped** — the buffer's commanded action is correct for
+off-policy Q; env clamping at actuator limits is true dynamics, not a
+mislabel. **F8** (deterministic start-state freeze probe) is monitor-side
+tooling (`probe_deterministic.py` in the monitoring scratchpad +
+`saved/v1_collapse_forensics/`), not run code.
+
+## 1. [F1] Configurable `log_alpha` clamp rails (SAC/AWAC auto-alpha)
 
 **Context.** The auto-alpha regulator integrates `log_alpha` with hard `.clamp_()` rails that were hardcoded `(-10, 2)`. In v1 those rails permitted the decay→floor→whipsaw cycle: α ran down to the −10 floor (α≈4.5e-5, entropy term effectively off), entropy ground to 0.14, then α violently corrected up to 0.45 and — with σ ceiling-pinned — spent that budget crushing the action mean.
 
@@ -701,47 +716,15 @@ The `lcca_awac_v1` run "froze": the policy stopped moving and every eval flat-li
 
 **Rationale.** A higher floor (e.g. −5 → α_min 0.0067) keeps the entropy term alive so entropy never craters and α never needs a violent correction; a low ceiling (e.g. −2.3 → α_max 0.100) caps how hard the entropy term can push, so with σ saturated the term can no longer dominate the BC/advantage objective and mean-crush. Defaults `(-10, 2)` reproduce legacy behavior exactly.
 
-## 2. `target_entropy` setpoint override + native-float serialization fix
-
-**Context.** The auto-alpha setpoint was hardcoded `self.target_entropy = -torch.ones(1) * n_actions`. For a 4-dim tanh-Gaussian in the healthy `(-2, 0)` σ-band the operating entropy is ~+2.5, so the −4 default leaves the regulator a huge dead zone — α decays to ~0 and only re-engages after the policy is already railed below −4.
-
-**The change.** [sac.py:178](eve_rl/eve_rl/algo/sac.py#L178) adds `target_entropy: Optional[float] = None`; when provided it is stored as a **native float** (`self.target_entropy = float(...)`, [L265](eve_rl/eve_rl/algo/sac.py#L265)), else falls back to `-float(n_actions)`. The `.item()` reads become `float(self.target_entropy)` ([L433](eve_rl/eve_rl/algo/sac.py#L433)) and `to()` no longer moves it to device ([L870](eve_rl/eve_rl/algo/sac.py#L870)). CLI `--target_entropy` (default `None`) at [DualDeviceNav_train.py:1488](training%20_scripts/DualDeviceNav_train.py#L1488), threaded through all three agent ctors ([agent.py:186](training%20_scripts/util/agent.py#L186), [:383](training%20_scripts/util/agent.py#L383), [:463](training%20_scripts/util/agent.py#L463)).
-
-**Rationale.** Native-float (not `torch.Tensor`) is required because the eve_rl `ConfigHandler` `getattr`'s every `__init__` param name when serializing to `config.yaml`/`.everl` and raises on a Tensor; a float also broadcasts fine in `_update_alpha`. Setting e.g. `+1.0` holds the regulator inside the healthy band instead of inert.
-
-## 3. `alpha` re-derived from `log_alpha` each update + masked alpha loss + explicit detach
-
-**Context.** `self.alpha` (a cached tensor) could go stale relative to `self.model.log_alpha` after a checkpoint load, and `_update_alpha`'s mean over `log_pi` mixed in padded episode steps.
-
-**The change.** [sac.py:346](eve_rl/eve_rl/algo/sac.py#L346) re-derives `self.alpha = self.model.log_alpha.exp().detach()` at the top of every `update()` (comment: init/ctor value may be stale after a checkpoint-loaded `log_alpha`). `_update_alpha` now takes `padding_mask` and, when present, computes a masked mean `(log_alpha * delta * mask).sum() / mask.sum().clamp(min=1.0)` ([L456](eve_rl/eve_rl/algo/sac.py#L456)) — `log_pi` arrives pre-multiplied by the mask, so padded entries otherwise carry a spurious constant `-target_entropy`. Post-step `self.alpha` is `.detach()`ed ([L476](eve_rl/eve_rl/algo/sac.py#L476)), and both AWAC and SAC policy-loss branches use `self.alpha.detach()` explicitly ([L525](eve_rl/eve_rl/algo/sac.py#L525), [L531](eve_rl/eve_rl/algo/sac.py#L531)) so correctness is independent of `_update_alpha`'s `zero_grad` ordering.
-
-**Rationale.** Keeps the entropy temperature and its target consistent across checkpoint restore and padded batches; the detach hygiene prevents α's gradient from leaking into the policy update.
-
-## 4. Soft tanh-rescale `log_std` band (replaces the hard clamp)
-
-**Context.** `GaussianPolicy.forward` bounded `log_std` with `torch.clamp(log_std, min, max)`, which has **zero gradient outside the band** — a railed head becomes a one-way ratchet, movable only by shared-trunk drift, and cannot be pulled back off the σ ceiling.
-
-**The change.** [gaussianpolicy.py:77](eve_rl/eve_rl/network/gaussianpolicy.py#L77) (and the `forward_play` mirror at [L95](eve_rl/eve_rl/network/gaussianpolicy.py#L95)) replaces the clamp with a tanh rescale `log_std = min + 0.5*(max-min)*(tanh(raw)+1)` — bounded in `(min, max)` with nonzero gradient everywhere; a raw pre-squash 0 maps to the band **midpoint**. Because of that remap the ctor default `log_std_min` moves `-20 → -2` ([L22](eve_rl/eve_rl/network/gaussianpolicy.py#L22)) so a fresh head (raw≈0) initializes at the `(-2,2)` midpoint `log_std=0` (σ≈1), matching the old hard-clamp init; the legacy `(-20,2)` would have initialized collapsed at `log_std=-9` (σ≈1.2e-4). CLI `--log_std_min`/`--log_std_max` help text rewritten to describe the soft band; launchers pass `--log_std_max 0.0` for the validated `(-2, 0)` operational band that caps the v1 ceiling-explosion.
-
-**Rationale.** This is a deliberate parameterization change (NOT byte-identical to the old clamp) — it is the mechanism that lets a ceiling-pinned σ recover. Defaults are chosen so init σ is unchanged.
-
-## 5. `action_mean_penalty` |atanh| loss + per-dim entropy bonus (Plan v11 anti-rail scaffold)
+## 2. [F3] `action_mean_penalty` |atanh| loss + per-dim entropy bonus (Plan v11 anti-rail scaffold)
 
 **Context.** AWAC's advantage-weighted BC objective has no entropy term, so the squashed mean saturates at the ±1 tanh rail (clamp_fraction → 0.4–0.5). Per-dim `log_std` alone does not stop mean-rail saturation (Plan v11 risk audit #3).
 
 **The change (pre-existing scaffold, now the deliberate mean lever).** [sac.py:553](eve_rl/eve_rl/algo/sac.py#L553), AWAC-only: (1) a per-dim entropy bonus subtracts `Σ beta_i * mean_t(log_std_i)` (minimizing the loss RAISES log_std, cath_trans weighted heaviest), and (2) an `action_mean_penalty` term adds `coef * |atanh(clamp(tanh(mean), ±0.99))|.abs().mean()` ([L565](eve_rl/eve_rl/algo/sac.py#L565)), pushing the pre-tanh mean toward 0. AWAC weight saturation is logged every update (`_awac_weight_saturation`, `_awac_weight_max/_mean`, [L507](eve_rl/eve_rl/algo/sac.py#L507)); `weight = exp(advantage/awac_lambda).clamp(max=20.0)` ([L500](eve_rl/eve_rl/algo/sac.py#L500)). CLI `--action_mean_penalty` and `--entropy_beta_per_dim` remain the tuning surface.
 
-**Rationale.** This is the *controlled, bounded* way to keep the mean off the rail — the counterpart to §1's cap on the *uncontrolled* alpha mean-crush. Both are `coef=0`/`None`-gated (`action_mean_penalty 0.0` = off).
+**Rationale.** This is the *controlled, bounded* way to keep the mean off the rail — the counterpart to §1's cap on the *uncontrolled* alpha mean-crush. Both are `coef=0`/`None`-gated (`action_mean_penalty 0.0` = off). The v2 launcher activates it at `0.005`.
 
-## 6. Leaky log-prob floor + NaN sanitize in `GaussianPolicy.log_prob`
-
-**The bug.** The Plan v8 hard floor `log_prob.sum(-1).clamp(min=-20.0)` zeroes the BC gradient on exactly the demos the policy is farthest from — precisely the high-advantage demos AWAC most needs to clone. And `torch.where(lp>=floor, …)` would take the FALSE branch for a NaN `lp` and pass it straight into the BC loss, poisoning the run.
-
-**Fix.** [gaussianpolicy.py:125](eve_rl/eve_rl/network/gaussianpolicy.py#L125) makes the floor **leaky**: below `floor=-20` the value keeps a 5% gradient (`lp_leaky = floor + 0.05*(lp-floor)`, direction preserved, magnitude damped 20×) down to a `hard_min=-30` bound (so worst-case per-sample loss ≤ 600 at weight ≤ 20). NaN/±Inf are sanitized first via `torch.nan_to_num(lp, nan=-30, posinf=0, neginf=-30)` ([L130](eve_rl/eve_rl/network/gaussianpolicy.py#L130)) so the floor is a real safety net, not a NaN passthrough.
-
-**Rationale.** Restores an advantage-weighted BC gradient on the far demos (attacking the "AWAC degrades to inert BC" link) while still bounding the loss; the NaN guard closes the poisoning path the soft σ-bound makes unlikely but not impossible.
-
-## 7. Clean-lane rail admission filter (`EVE_CLEAN_RAIL_MAX`)
+## 3. [F4] Clean-lane rail admission filter (`EVE_CLEAN_RAIL_MAX`)
 
 **Context.** The AWAC BC term clones the balanced "clean lane" of successes. When the policy starts producing its own bang-bang (railed) noise-successes and those re-enter the clean lane, the policy clones its own saturation → the mean rails further (the self-cloning loop behind the "inert AWAC weights" link).
 
@@ -749,35 +732,7 @@ The `lcca_awac_v1` run "froze": the policy stopped moving and every eval flat-li
 
 **Rationale / correctness note.** The filter must flip **`reached` itself** ([L185](eve_rl/eve_rl/replaybuffer/pervanillastep.py#L185)), not just skip the initial clean-tree write — because `update_priorities()` re-adds any `is_clean` slot to the clean_tree on every TD-priority update, so a tree-only exclusion would be silently re-admitted. Reference calibration: seed-diverse cleans ~0.10 railed vs a self-cloned poison cohort at 0.23–0.24, so a 0.15 threshold separates them. Malformed actions → `railed_frac 0.0` → admit (legacy-safe).
 
-## 8. Per-dim exploration noise + tanh-domain clip (SAC + IQL, all sites)
-
-**The bug.** `action += np.random.normal(0, self.exploration_action_noise)` — a size-less `np.random.normal` returns ONE scalar shared by every action dim (perfectly correlated exploration), and the sum could push the stored action outside the tanh domain `[-1, 1]`.
-
-**Fix.** All four SAC exploration sites ([sac.py:290](eve_rl/eve_rl/algo/sac.py#L290) plus `SACPlayOnly.get_exploration_action`/`get_action_exploration`) and both IQL sites ([iql.py:75](eve_rl/eve_rl/algo/iql.py#L75), [:232](eve_rl/eve_rl/algo/iql.py#L232)) now add `np.random.normal(0.0, noise, size=action.shape)` then `np.clip(action, -1.0, 1.0)`. In `get_action_exploration` only the action is clipped; `mean`/`log_std` are returned raw.
-
-**Rationale.** Independent per-dim exploration; the buffer never stores an out-of-domain action that `log_prob`'s `atanh` would blow up on.
-
-## 9. Wire up the previously-dead `reward_scaling` in the Bellman target (SAC + IQL)
-
-**The bug.** Both critics accepted a `reward_scaling` ctor param but never applied it: `expected_q = rewards + (1-dones)*gamma*next_q` used the raw reward. The param was inert.
-
-**Fix.** [sac.py:699](eve_rl/eve_rl/algo/sac.py#L699) and [iql.py:417](eve_rl/eve_rl/algo/iql.py#L417) now compute `expected_q = rewards * self.reward_scaling + (1-dones)*gamma*next_q`. Identity at the default `1.0` (which all current configs use), so no behavior change — but the knob is now functional.
-
-## 10. MLP input-layer ReLU
-
-**The change.** [mlp.py:83](eve_rl/eve_rl/network/component/mlp.py#L83) resolves the long-standing `# TODO: Add F.relu after input layer` — `state = F.relu(self._input_layer(obs_batch))`. Previously the input layer was linear and only the hidden layers had ReLU, so the input projection was wasted (composed linearly with the first hidden layer).
-
-**Rationale.** A genuine nonlinearity at the input restores the first layer's representational capacity. This affects every MLP body/critic; it is a network-capacity change, not a stabilization knob — flagged for the record.
-
-## 11. Asymmetric (privileged) critic + auxiliary privileged-label head
-
-**Context.** Gen-4 appends a privileged tail (`PrivilegedState`, defined in the obs subsystem) as the LAST key of env5's flat ObsDict. The critics may consume it, but a deployable policy must not depend on sim-only state.
-
-**The change.** (a) [gaussianpolicy.py:63](eve_rl/eve_rl/network/gaussianpolicy.py#L63) — `forward`/`forward_play` slice `obs_batch[..., :self.n_observations]` at one chokepoint, so the policy is built `n_obs_total - privileged_obs_dim` wide and never sees the tail. (b) [gaussianpolicy.py:30](eve_rl/eve_rl/network/gaussianpolicy.py#L30) — `n_aux > 0` adds a third body output head whose forward output is stashed in `self._last_aux`; [sac.py:582](eve_rl/eve_rl/algo/sac.py#L582) adds `aux_coef * MSE(_last_aux, states.index_select(-1, aux_label_indices))` to the policy loss (padding-masked), teaching the policy to *predict* contact/buckle labels from its deployable prefix without seeing them. (c) [agent.py](training%20_scripts/util/agent.py#L206) adds `privileged_obs_dim` (policy width = flat − tail; policy gets its OWN embedder instance since the asymmetric widths break head-sharing), validates `aux_label_rel_indices` against the tail bounds at construction, and converts them to absolute flat-obs indices ([L242](training%20_scripts/util/agent.py#L242)). (d) CLI `--aux_coef` / `--aux_labels` ([DualDeviceNav_train.py:1631](training%20_scripts/DualDeviceNav_train.py#L1631), [:1643](training%20_scripts/DualDeviceNav_train.py#L1643)); `privileged_obs_dim = PrivilegedState.N_DIMS` only for env v5 ([:628](training%20_scripts/DualDeviceNav_train.py#L628)); cache-load obs-dim guards compare against the CRITIC width `agent.algo.model.q1.n_observations` so the sliced policy width doesn't false-fail a valid cache.
-
-**Rationale.** Asymmetric critic + representation shaping without breaking deployability. `aux_coef 0.0` / empty `--aux_labels` / `n_aux 0` = byte-identical legacy behavior; the policy always slices to the deployable prefix, so the observation the policy consumes is unchanged.
-
-## 12. IPC deadlock guard on `_model_queue.get()`
+## 4. [F6] IPC deadlock guard on `_model_queue.get()`
 
 **The bug.** The v1 run hung FOREVER after eval3: the main thread blocked in a no-timeout `self._model_queue.get()` (stuck in `anon_pipe_read`) when a subprocess went unresponsive (host suspend / clock-jump mid-IPC) — a silent all-night hang with no error.
 
@@ -785,15 +740,100 @@ The `lcca_awac_v1` run "froze": the policy stopped moving and every eval flat-li
 
 **Rationale.** Converts a silent deadlock into a loud, actionable crash that an operator or docker restart-policy can act on.
 
-## 13. `eval_after_pretrain` — pretrain-only baseline checkpoint (`checkpoint0`)
+## 5. [F7] `eval_after_pretrain` — pretrain-only baseline checkpoint (`checkpoint0`)
 
 **Context.** v1 had no reference for its eval1 (8.2%) and its only checkpoints were mid/post-collapse — there was no clean pretrained snapshot to fall back to.
 
 **The change.** [runner.py:501](eve_rl/eve_rl/runner/runner.py#L501) adds `eval_after_pretrain: bool = False`; when set, immediately after the warm-start pretrain (before any exploration) it logs "Post-pretrain BASELINE eval" and runs `self.eval(...)` ([L757](eve_rl/eve_rl/runner/runner.py#L757)). Because the explore counter is still 0, the banked checkpoint is named `checkpoint0*`. CLI `--eval_after_pretrain` ([DualDeviceNav_train.py:1527](training%20_scripts/DualDeviceNav_train.py#L1527)), wired at [:1154](training%20_scripts/DualDeviceNav_train.py#L1154).
 
-**Rationale.** Establishes the held-out quality of the pretrained policy as the reference for every later online eval, and banks a clean pre-collapse checkpoint. Costs ~1 eval (~30 min) of wall-clock; default off.
+**Rationale.** Establishes the held-out quality of the pretrained policy as the reference for every later online eval, and banks a clean pre-collapse checkpoint. Costs ~1 eval (~30 min) of wall-clock; default off. (v2 empirical baseline: 6.1% / 0.54 mm/s — the pretrain-BC attractor the freeze regresses to.)
 
-## 14. `env_train_factory` — per-worker training-env factory (Gen-4 procedural anatomy)
+---
+
+## Companion algo fixes from the deep review (same worktree, largely pre-collapse)
+
+These were implemented in the same RL_IMPROV_15 worktree but are driven by
+the **deep-review findings (Part A.1)**, not the freeze forensic — most
+landed *before* the collapse and were active in v1. Each maps to a Part A
+row (noted in the title).
+
+## C1. `target_entropy` setpoint override + native-float serialization fix (Part A: F5-adjacent)
+
+**Context.** The auto-alpha setpoint was hardcoded `self.target_entropy = -torch.ones(1) * n_actions`. For a 4-dim tanh-Gaussian in the healthy `(-2, 0)` σ-band the operating entropy is ~+2.5, so the −4 default leaves the regulator a huge dead zone — α decays to ~0 and only re-engages after the policy is already railed below −4.
+
+**The change.** [sac.py:178](eve_rl/eve_rl/algo/sac.py#L178) adds `target_entropy: Optional[float] = None`; when provided it is stored as a **native float** (`self.target_entropy = float(...)`, [L265](eve_rl/eve_rl/algo/sac.py#L265)), else falls back to `-float(n_actions)`. The `.item()` reads become `float(self.target_entropy)` ([L433](eve_rl/eve_rl/algo/sac.py#L433)) and `to()` no longer moves it to device ([L870](eve_rl/eve_rl/algo/sac.py#L870)). CLI `--target_entropy` (default `None`) at [DualDeviceNav_train.py:1488](training%20_scripts/DualDeviceNav_train.py#L1488), threaded through all three agent ctors ([agent.py:186](training%20_scripts/util/agent.py#L186), [:383](training%20_scripts/util/agent.py#L383), [:463](training%20_scripts/util/agent.py#L463)).
+
+**Rationale.** Native-float (not `torch.Tensor`) is required because the eve_rl `ConfigHandler` `getattr`'s every `__init__` param name when serializing to `config.yaml`/`.everl` and raises on a Tensor; a float also broadcasts fine in `_update_alpha`. Setting e.g. `+1.0` holds the regulator inside the healthy band instead of inert.
+
+## C2. `alpha` re-derived from `log_alpha` each update + masked alpha loss + explicit detach (Part A: F2/F3/F4)
+
+**Context.** `self.alpha` (a cached tensor) could go stale relative to `self.model.log_alpha` after a checkpoint load, and `_update_alpha`'s mean over `log_pi` mixed in padded episode steps.
+
+**The change.** [sac.py:346](eve_rl/eve_rl/algo/sac.py#L346) re-derives `self.alpha = self.model.log_alpha.exp().detach()` at the top of every `update()` (comment: init/ctor value may be stale after a checkpoint-loaded `log_alpha`). `_update_alpha` now takes `padding_mask` and, when present, computes a masked mean `(log_alpha * delta * mask).sum() / mask.sum().clamp(min=1.0)` ([L456](eve_rl/eve_rl/algo/sac.py#L456)) — `log_pi` arrives pre-multiplied by the mask, so padded entries otherwise carry a spurious constant `-target_entropy`. Post-step `self.alpha` is `.detach()`ed ([L476](eve_rl/eve_rl/algo/sac.py#L476)), and both AWAC and SAC policy-loss branches use `self.alpha.detach()` explicitly ([L525](eve_rl/eve_rl/algo/sac.py#L525), [L531](eve_rl/eve_rl/algo/sac.py#L531)) so correctness is independent of `_update_alpha`'s `zero_grad` ordering.
+
+**Rationale.** Keeps the entropy temperature and its target consistent across checkpoint restore and padded batches; the detach hygiene prevents α's gradient from leaking into the policy update.
+
+## C3. Soft tanh-rescale `log_std` band (replaces the hard clamp) (Part A: C1)
+
+**Context.** `GaussianPolicy.forward` bounded `log_std` with `torch.clamp(log_std, min, max)`, which has **zero gradient outside the band** — a railed head becomes a one-way ratchet, movable only by shared-trunk drift, and cannot be pulled back off the σ ceiling.
+
+**The change.** [gaussianpolicy.py:77](eve_rl/eve_rl/network/gaussianpolicy.py#L77) (and the `forward_play` mirror at [L95](eve_rl/eve_rl/network/gaussianpolicy.py#L95)) replaces the clamp with a tanh rescale `log_std = min + 0.5*(max-min)*(tanh(raw)+1)` — bounded in `(min, max)` with nonzero gradient everywhere; a raw pre-squash 0 maps to the band **midpoint**. Because of that remap the ctor default `log_std_min` moves `-20 → -2` ([L22](eve_rl/eve_rl/network/gaussianpolicy.py#L22)) so a fresh head (raw≈0) initializes at the `(-2,2)` midpoint `log_std=0` (σ≈1), matching the old hard-clamp init; the legacy `(-20,2)` would have initialized collapsed at `log_std=-9` (σ≈1.2e-4). CLI `--log_std_min`/`--log_std_max` help text rewritten to describe the soft band; launchers pass `--log_std_max 0.0` for the validated `(-2, 0)` operational band that caps the v1 ceiling-explosion.
+
+**Rationale.** This is a deliberate parameterization change (NOT byte-identical to the old clamp) — it is the mechanism that lets a ceiling-pinned σ recover. Defaults are chosen so init σ is unchanged.
+
+## C4. Leaky log-prob floor + NaN sanitize in `GaussianPolicy.log_prob` (Part A: B1)
+
+**The bug.** The Plan v8 hard floor `log_prob.sum(-1).clamp(min=-20.0)` zeroes the BC gradient on exactly the demos the policy is farthest from — precisely the high-advantage demos AWAC most needs to clone. And `torch.where(lp>=floor, …)` would take the FALSE branch for a NaN `lp` and pass it straight into the BC loss, poisoning the run.
+
+**Fix.** [gaussianpolicy.py:125](eve_rl/eve_rl/network/gaussianpolicy.py#L125) makes the floor **leaky**: below `floor=-20` the value keeps a 5% gradient (`lp_leaky = floor + 0.05*(lp-floor)`, direction preserved, magnitude damped 20×) down to a `hard_min=-30` bound (so worst-case per-sample loss ≤ 600 at weight ≤ 20). NaN/±Inf are sanitized first via `torch.nan_to_num(lp, nan=-30, posinf=0, neginf=-30)` ([L130](eve_rl/eve_rl/network/gaussianpolicy.py#L130)) so the floor is a real safety net, not a NaN passthrough.
+
+**Rationale.** Restores an advantage-weighted BC gradient on the far demos (attacking the "AWAC degrades to inert BC" link) while still bounding the loss; the NaN guard closes the poisoning path the soft σ-bound makes unlikely but not impossible.
+
+## C5. Per-dim exploration noise + tanh-domain clip (SAC + IQL, all sites) (Part A: H4)
+
+**The bug.** `action += np.random.normal(0, self.exploration_action_noise)` — a size-less `np.random.normal` returns ONE scalar shared by every action dim (perfectly correlated exploration), and the sum could push the stored action outside the tanh domain `[-1, 1]`.
+
+**Fix.** All four SAC exploration sites ([sac.py:290](eve_rl/eve_rl/algo/sac.py#L290) plus `SACPlayOnly.get_exploration_action`/`get_action_exploration`) and both IQL sites ([iql.py:75](eve_rl/eve_rl/algo/iql.py#L75), [:232](eve_rl/eve_rl/algo/iql.py#L232)) now add `np.random.normal(0.0, noise, size=action.shape)` then `np.clip(action, -1.0, 1.0)`. In `get_action_exploration` only the action is clipped; `mean`/`log_std` are returned raw.
+
+**Rationale.** Independent per-dim exploration; the buffer never stores an out-of-domain action that `log_prob`'s `atanh` would blow up on.
+
+## C6. Wire up the previously-dead `reward_scaling` in the Bellman target (SAC + IQL) (Part A: A2)
+
+**The bug.** Both critics accepted a `reward_scaling` ctor param but never applied it: `expected_q = rewards + (1-dones)*gamma*next_q` used the raw reward. The param was inert.
+
+**Fix.** [sac.py:699](eve_rl/eve_rl/algo/sac.py#L699) and [iql.py:417](eve_rl/eve_rl/algo/iql.py#L417) now compute `expected_q = rewards * self.reward_scaling + (1-dones)*gamma*next_q`. Identity at the default `1.0` (which all current configs use), so no behavior change — but the knob is now functional.
+
+## C7. MLP input-layer ReLU (Part A: J2)
+
+**The change.** [mlp.py:83](eve_rl/eve_rl/network/component/mlp.py#L83) resolves the long-standing `# TODO: Add F.relu after input layer` — `state = F.relu(self._input_layer(obs_batch))`. Previously the input layer was linear and only the hidden layers had ReLU, so the input projection was wasted (composed linearly with the first hidden layer).
+
+**Rationale.** A genuine nonlinearity at the input restores the first layer's representational capacity. Affects every MLP body/embedder — including the new FF-mode `policy_embedder` and the Q/policy bases (a behavioral change for any run using MLP components; the default LSTM-embedder path is untouched). A network-capacity change, not a stabilization knob — flagged for the record.
+
+## C8. Per-worker explore-target RNG reseed (Part A: P3-B2)
+
+**The bug.** The intervention's target sampler creates `_rng = random.Random()` once in the parent; the deepcopy that ships the master env to each worker clones that exact RNG state, and unseeded explore resets never reseed it — so all workers sampled the IDENTICAL explore-target sequence.
+
+**Fix.** [singelagentprocess.py:50](eve_rl/eve_rl/agent/singelagentprocess.py#L50) adds `_reseed_env_target_rng(env, seed_int)` (unwraps to `.intervention.target`, replaces `_rng` with a fresh `random.Random(seed_int)`); `run()` calls it on `env_train` only with a per-worker seed `hash((base_seed, worker_id, pid, "target_rng")) & 0xFFFFFFFF` ([L235](eve_rl/eve_rl/agent/singelagentprocess.py#L235)). `env_eval` is deliberately left alone — eval resets pass explicit seeds and reseeding would blur eval provenance. Logs success/skip.
+
+**Rationale.** Decorrelates explore targets across workers without disturbing seeded eval determinism.
+
+---
+
+## Gen-4 cross-cutting plumbing (algo-side view; primary docs in Parts B / C / F)
+
+These three pieces of machinery are consumed by the algo layer but belong
+to the Gen-4 workstream; their full treatment is elsewhere in this doc —
+kept here only for the algo-side wiring detail.
+
+## P1. Asymmetric (privileged) critic + auxiliary privileged-label head — *primary doc: Part B §5–§9*
+
+**Context.** Gen-4 appends a privileged tail (`PrivilegedState`, defined in the obs subsystem) as the LAST key of env5's flat ObsDict. The critics may consume it, but a deployable policy must not depend on sim-only state.
+
+**The change.** (a) [gaussianpolicy.py:63](eve_rl/eve_rl/network/gaussianpolicy.py#L63) — `forward`/`forward_play` slice `obs_batch[..., :self.n_observations]` at one chokepoint, so the policy is built `n_obs_total - privileged_obs_dim` wide and never sees the tail. (b) [gaussianpolicy.py:30](eve_rl/eve_rl/network/gaussianpolicy.py#L30) — `n_aux > 0` adds a third body output head whose forward output is stashed in `self._last_aux`; [sac.py:582](eve_rl/eve_rl/algo/sac.py#L582) adds `aux_coef * MSE(_last_aux, states.index_select(-1, aux_label_indices))` to the policy loss (padding-masked), teaching the policy to *predict* contact/buckle labels from its deployable prefix without seeing them. (c) [agent.py](training%20_scripts/util/agent.py#L206) adds `privileged_obs_dim` (policy width = flat − tail; policy gets its OWN embedder instance since the asymmetric widths break head-sharing), validates `aux_label_rel_indices` against the tail bounds at construction, and converts them to absolute flat-obs indices ([L242](training%20_scripts/util/agent.py#L242)). (d) CLI `--aux_coef` / `--aux_labels` ([DualDeviceNav_train.py:1631](training%20_scripts/DualDeviceNav_train.py#L1631), [:1643](training%20_scripts/DualDeviceNav_train.py#L1643)); `privileged_obs_dim = PrivilegedState.N_DIMS` only for env v5 ([:628](training%20_scripts/DualDeviceNav_train.py#L628)); cache-load obs-dim guards compare against the CRITIC width `agent.algo.model.q1.n_observations` so the sliced policy width doesn't false-fail a valid cache.
+
+**Rationale.** Asymmetric critic + representation shaping without breaking deployability. `aux_coef 0.0` / empty `--aux_labels` / `n_aux 0` = byte-identical legacy behavior; the policy always slices to the deployable prefix, so the observation the policy consumes is unchanged.
+
+## P2. `env_train_factory` — per-worker training-env factory — *primary doc: Part C*
 
 **Context.** `Synchron` gives every worker a `deepcopy(self.env_train)` — identical anatomy. Gen-4 procedural training needs worker *i* to run a distinctly-seeded vessel.
 
@@ -801,21 +841,13 @@ The `lcca_awac_v1` run "froze": the policy stopped moving and every eval flat-li
 
 **Rationale.** Isolated, serialization-safe hook for per-worker anatomy variation with no change to the legacy single-master path.
 
-## 15. Reward-version cache stamp (`meta_buckle_coef`) + fail-fast load guards
+## P3. Reward-version cache stamp (`meta_buckle_coef`) + fail-fast load guards — *primary doc: Part F §1*
 
 **Context.** Cached episode REWARDS are baked at harvest time. A cache scored with the anti-buckle potential (`buckle_reward_coef != 0`) has an identical obs layout to a coef=0 cache, so the existing obs-dim guard cannot catch a mismatch — the buffer would silently mix two reward MDPs, biasing the critic/advantages.
 
 **The change.** [experience_cache.py:34](eve_rl/eve_rl/util/experience_cache.py#L34) reads the run's coefficient from env var `EVE_RL_BUCKLE_COEF` and every `save_episodes_npz` stamps `meta_buckle_coef` into the archive ([L94](eve_rl/eve_rl/util/experience_cache.py#L94)); `cache_buckle_coef(path)` reads it back ([L304](eve_rl/eve_rl/util/experience_cache.py#L304), absent field → 0.0). The training script exports `os.environ["EVE_RL_BUCKLE_COEF"]` before any worker spawns (so rolling-flush workers inherit it) and the heuristic- and heatup-cache load paths ([DualDeviceNav_train.py:293](training%20_scripts/DualDeviceNav_train.py#L293), [:352](training%20_scripts/DualDeviceNav_train.py#L352)) raise if `|cache_coef - run_coef| > 1e-9`.
 
 **Rationale.** Prevents a silent reward-MDP mix. Absent env var and absent field both mean 0.0, so pre-Gen-4 caches stay valid for coef=0 runs (`--buckle_reward_coef` default 0.0 = OFF = frozen legacy reward).
-
-## 16. Per-worker explore-target RNG reseed (RL_IMPROV_10 B1)
-
-**The bug.** The intervention's target sampler creates `_rng = random.Random()` once in the parent; the deepcopy that ships the master env to each worker clones that exact RNG state, and unseeded explore resets never reseed it — so all workers sampled the IDENTICAL explore-target sequence.
-
-**Fix.** [singelagentprocess.py:50](eve_rl/eve_rl/agent/singelagentprocess.py#L50) adds `_reseed_env_target_rng(env, seed_int)` (unwraps to `.intervention.target`, replaces `_rng` with a fresh `random.Random(seed_int)`); `run()` calls it on `env_train` only with a per-worker seed `hash((base_seed, worker_id, pid, "target_rng")) & 0xFFFFFFFF` ([L235](eve_rl/eve_rl/agent/singelagentprocess.py#L235)). `env_eval` is deliberately left alone — eval resets pass explicit seeds and reseeding would blur eval provenance. Logs success/skip.
-
-**Rationale.** Decorrelates explore targets across workers without disturbing seeded eval determinism.
 
 
 ---
@@ -1217,7 +1249,7 @@ IPC-guard). Forensic extracts preserved in `saved/v1_collapse_forensics/`.
 | [`training _scripts/util/agent.py`](training%20_scripts/util/agent.py) | §7 `privileged_obs_dim`/`n_obs_policy`, separate `policy_embedder`; §9 `aux_coef`/`aux_label_rel_indices` validation → `aux_label_abs`, `n_aux` |
 | [`eve_rl/eve_rl/network/gaussianpolicy.py`](eve_rl/eve_rl/network/gaussianpolicy.py) | §8 privileged-tail slice `[...,:n_observations]`, `n_aux` head + `_last_aux` |
 | [`eve_rl/eve_rl/algo/sac.py`](eve_rl/eve_rl/algo/sac.py) | §9 aux MSE loss (`aux_coef`, `aux_label_indices`, padding-masked, labels from full-width states) |
-| [`eve_rl/eve_rl/network/component/mlp.py`](eve_rl/eve_rl/network/component/mlp.py) | §10 ReLU after input layer |
+| [`eve_rl/eve_rl/network/component/mlp.py`](eve_rl/eve_rl/network/component/mlp.py) | Part E C7 — ReLU after input layer |
 | [`training _scripts/DualDeviceNav_train.py`](training%20_scripts/DualDeviceNav_train.py) | §7 `privileged_obs_dim` wiring, §9 `--aux_coef`/`--aux_labels`/`_parse_aux_labels` |
 | [`eve/eve/intervention/vesseltree/rccavariedfrommesh.py`](eve/eve/intervention/vesseltree/rccavariedfrommesh.py) | §1 (RCCA-only bell-envelope perturbation, RVA proximal co-perturb, (11)-bridge insertion, re-mesh+temp cleanup), §2 (`mesh_fingerprint` s{seed}g{gen}, `_generation`, `regenerate_to_fingerprint`, `pin_next`, `parse_fingerprint`), §3 (ConfigHandler `self.<param>`, `branch_list=None`) |
 | [`eve/eve/intervention/vesseltree/aorticarcharteries/carotidsiphon.py`](eve/eve/intervention/vesseltree/aorticarcharteries/carotidsiphon.py) | §5 (`right_carotid_siphon`, `SiphonParams`/`SampledSiphon`, Bouthillier C1–C7 CHS points, tortuosity meshing clip) — built, not wired to active run |
