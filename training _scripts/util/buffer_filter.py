@@ -85,10 +85,16 @@ class FilterConfig:
     # the last daughter fork.
     late_task_threshold_norm: float = 0.0
     # Flattened observation index of the `arc_past_last_daughter` feature.
-    # env5 layout: tracking[0..40), target[40..42), last_action[42..44),
-    # guidance[44..72), inserted_lengths[72..74). Within guidance, the
-    # `arc_past_last_daughter` slot is feature index 12 → flat index 56.
-    late_task_obs_index: int = 56
+    # Gen-4 env5 layout: tracking[0..40), target[40..42), last_action[42..46),
+    # guidance[46..97), privileged[97..121). Within the 51-dim guidance the
+    # `arc_past_last_daughter` slot is feature index 12 → flat index 58
+    # (unchanged by the #5 log-depth channel, which appended at guidance
+    # END — indices 46..95 are stable across the 50→51 growth).
+    # (The prior comment/value 56 assumed the old last_action=2/guidance=28
+    # layout — stale since Gen-3; corrected here for Gen-4 offline archives.
+    # Only used by the *_strict offline filters, which must run on
+    # Gen-4-format PER archives for this index to be meaningful.)
+    late_task_obs_index: int = 58
     # Use first frame of obs_pairs (i.e. obs_pairs[:, 0]) when scoring
     # the late-task gate. obs_pairs is (N, 2, obs_dim) — [0]=s, [1]=s'.
     late_task_use_next_state: bool = False

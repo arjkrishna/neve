@@ -79,9 +79,16 @@ class SACPlayOnly(AlgoPlayOnly):
             normal = Normal(mean, std)
             action = torch.tanh(normal.sample())
             action = action.squeeze(0).squeeze(0).cpu().detach().numpy()
-            action += np.random.normal(0, self.exploration_action_noise)
+            # Per-dim noise (a size-less np.random.normal returns ONE scalar
+            # shared by all action dims — perfectly correlated exploration);
+            # clip so the buffer never stores actions outside the tanh
+            # domain [-1, 1].
+            action = action + np.random.normal(
+                0.0, self.exploration_action_noise, size=action.shape
+            )
+            action = np.clip(action, -1.0, 1.0)
         return action
-    
+
     def get_action_exploration(self, flat_state: np.ndarray) -> np.ndarray:
         with torch.no_grad():
             torch_state = torch.as_tensor(
@@ -93,7 +100,13 @@ class SACPlayOnly(AlgoPlayOnly):
             normal = Normal(mean, std)
             action = torch.tanh(normal.sample())
             action = action.squeeze(0).squeeze(0).cpu().detach().numpy()
-            action += np.random.normal(0, self.exploration_action_noise)
+            # Per-dim noise + clip to the tanh domain [-1, 1] (see
+            # get_exploration_action); only the action is clipped — mean and
+            # log_std are returned raw.
+            action = action + np.random.normal(
+                0.0, self.exploration_action_noise, size=action.shape
+            )
+            action = np.clip(action, -1.0, 1.0)
         return action, mean, log_std
 
     def get_eval_action(self, flat_state: np.ndarray) -> np.ndarray:
@@ -162,6 +175,27 @@ class SAC(Algo):
         entropy_beta_per_dim: Optional[List[float]] = None,
         action_mean_penalty: float = 0.0,
         offline_mode: bool = False,
+        target_entropy: Optional[float] = None,
+        # RL_IMPROV_15 collapse forensics — configurable log_alpha rails.
+        # The v1 freeze: alpha decayed to the -10 floor over 165k updates
+        # (entropy term vanished -> entropy ground down), then whipsawed
+        # back to 0.45; with log_std pinned at its CEILING the entropy
+        # controller's only remaining lever was crushing the action MEAN
+        # toward 0 (the freeze). A higher floor keeps the entropy term
+        # alive (no deep decay -> no whipsaw); a low ceiling caps alpha so
+        # the entropy term can never dominate the BC/advantage term and
+        # mean-crush again. Defaults preserve the old (-10, 2) behavior.
+        log_alpha_min: float = -10.0,
+        log_alpha_max: float = 2.0,
+        # Gen-4 — auxiliary privileged-label supervision on the policy.
+        # aux_label_indices are ABSOLUTE flat-obs indices (into the
+        # privileged tail beyond the policy's input slice); the policy
+        # predicts them from its deployable prefix via its n_aux head and
+        # an MSE term (weight aux_coef) is added to the policy loss —
+        # representation shaping toward inferring contact/buckle state
+        # from deployable signals. aux_coef 0.0 = off (byte-identical).
+        aux_coef: float = 0.0,
+        aux_label_indices: Optional[List[int]] = None,
     ):
         self.logger = logging.getLogger(self.__module__)
         # HYPERPARAMETERS
@@ -189,11 +223,23 @@ class SAC(Algo):
             list(entropy_beta_per_dim) if entropy_beta_per_dim else None
         )
         self.action_mean_penalty = float(action_mean_penalty)
+        # RL_IMPROV_15 — log_alpha clamp rails (see __init__ docnote).
+        self.log_alpha_min = float(log_alpha_min)
+        self.log_alpha_max = float(log_alpha_max)
+        if self.log_alpha_min > self.log_alpha_max:
+            raise ValueError(
+                f"log_alpha_min ({self.log_alpha_min}) > log_alpha_max "
+                f"({self.log_alpha_max})"
+            )
         # Plan v11 Stage 1 — offline_mode flag. Surfaces in update() so
         # the trainer can route around any online-only telemetry hooks.
         # No behavior change today; reserved for hooks the IQL/CQL/BC
         # branches will introduce.
         self.offline_mode = bool(offline_mode)
+        self.aux_coef = float(aux_coef)
+        self.aux_label_indices = (
+            list(aux_label_indices) if aux_label_indices else None
+        )
         # Model
         self.model = model
 
@@ -207,7 +253,19 @@ class SAC(Algo):
 
         # ENTROPY TEMPERATURE
         self.alpha = torch.ones(1)
-        self.target_entropy = -torch.ones(1) * n_actions
+        # Entropy setpoint for the auto-alpha regulator. With a tanh-Gaussian
+        # whose healthy operating entropy is ~+2.6, the SAC default
+        # -n_actions leaves the regulator a huge dead zone: alpha decays to
+        # ~0 and only re-engages after the policy is already railed below
+        # -4. Exposing the setpoint lets runs hold it near the healthy band
+        # (e.g. +1.0 for 4 dims with log_std band (-2, 0)). Stored as a
+        # native float — the confighandler getattr's every __init__ param
+        # name when serializing to config.yaml/.everl and raises on
+        # torch.Tensor; a float broadcasts fine in _update_alpha.
+        if target_entropy is not None:
+            self.target_entropy = float(target_entropy)
+        else:
+            self.target_entropy = -float(n_actions)
 
         # DIAGNOSTICS: Store metrics from last update for logging
         self.last_metrics: Dict[str, float] = {}
@@ -232,7 +290,14 @@ class SAC(Algo):
             normal = Normal(mean, std)
             action = torch.tanh(normal.sample())
             action = action.squeeze(0).squeeze(0).cpu().detach().numpy()
-            action += np.random.normal(0, self.exploration_action_noise)
+            # Per-dim noise (a size-less np.random.normal returns ONE scalar
+            # shared by all action dims — perfectly correlated exploration);
+            # clip so the buffer never stores actions outside the tanh
+            # domain [-1, 1].
+            action = action + np.random.normal(
+                0.0, self.exploration_action_noise, size=action.shape
+            )
+            action = np.clip(action, -1.0, 1.0)
         return action
 
     def get_eval_action(self, flat_state: np.ndarray) -> np.ndarray:
@@ -278,6 +343,8 @@ class SAC(Algo):
                 dtype=torch.float32, device=self.device
             ).view(-1, 1, 1)
 
+        self.alpha = self.model.log_alpha.exp().detach()  # re-derive from (possibly checkpoint-loaded) log_alpha; init/ctor value may be stale.
+
         seq_length = actions.shape[1]
         states = torch.narrow(all_states, dim=1, start=0, length=seq_length)
 
@@ -309,11 +376,11 @@ class SAC(Algo):
 
         # Plan v11 anti-rail — auto-tuned entropy is now ALSO active for AWAC
         # (the +alpha*log_pi term in the AWAC policy loss above). alpha adapts to
-        # hold the policy at target_entropy=-n_actions, the principled,
+        # hold the policy at target_entropy (default -n_actions), the principled,
         # data-free replacement for hand-picked per-dim entropy betas. (The old
         # behaviour — AWAC with no entropy term — is what railed both prior runs
         # by update ~2.5k.)
-        alpha_loss = self._update_alpha(log_pi)
+        alpha_loss = self._update_alpha(log_pi, padding_mask)
 
         self.update_step += 1
         
@@ -363,7 +430,7 @@ class SAC(Algo):
             # Fix #6: clamp_fraction for direct saturation detection
             "clamp_fraction": self._clamp_fraction,
             # NEW: Enhanced diagnostics
-            "target_entropy": self.target_entropy.item(),
+            "target_entropy": float(self.target_entropy),
             "log_alpha": self.model.log_alpha.item(),
             # NaN/Inf counters
             "nonfinite_q_loss_count": self._nonfinite_q_loss_count,
@@ -386,15 +453,27 @@ class SAC(Algo):
             policy_loss.detach().cpu().numpy(),
         ]
 
-    def _update_alpha(self, log_pi) -> torch.Tensor:
-        alpha_loss = (
-            self.model.log_alpha * (-log_pi - self.target_entropy).detach()
-        ).mean()
+    def _update_alpha(self, log_pi, padding_mask=None) -> torch.Tensor:
+        delta = (-log_pi - self.target_entropy).detach()
+        # log_pi arrives pre-multiplied by padding_mask, so padded entries
+        # carry a spurious constant -target_entropy; the masked mean
+        # excludes them.
+        if padding_mask is not None:
+            alpha_loss = (
+                self.model.log_alpha * delta * padding_mask
+            ).sum() / padding_mask.sum().clamp(min=1.0)
+        else:
+            alpha_loss = (self.model.log_alpha * delta).mean()
         self.model.alpha_optimizer.zero_grad()
         alpha_loss.backward()
         self.model.alpha_optimizer.step()
+        with torch.no_grad():
+            # Hard rails; prevents unbounded integration in either direction.
+            # RL_IMPROV_15 — bounds are configurable: the v1 (-10, 2) rails
+            # allowed the alpha decay->whipsaw->mean-crush freeze cycle.
+            self.model.log_alpha.clamp_(self.log_alpha_min, self.log_alpha_max)
 
-        self.alpha = self.model.log_alpha.exp()
+        self.alpha = self.model.log_alpha.exp().detach()
         return alpha_loss
 
     def _update_policy(self, actions, padding_mask, states, is_weights=None):
@@ -437,7 +516,7 @@ class SAC(Algo):
             # Plan v11 anti-rail — PRIMARY mechanism: AWAC + auto-tuned max-
             # entropy. Add the SAC entropy term (+alpha * log_pi of the policy's
             # OWN sampled action, incl. the tanh Jacobian) with alpha auto-tuned
-            # to target_entropy = -n_actions in _update_alpha (now enabled for
+            # to target_entropy (default -n_actions) in _update_alpha (now enabled for
             # AWAC). This holds policy entropy at target — fighting BOTH log_std
             # collapse AND mean-rail saturation — with NO hand-picked per-dim
             # coefficients (the heatup data cannot derive them: actions are
@@ -445,8 +524,11 @@ class SAC(Algo):
             # alpha is detached here (its own gradient comes from _update_alpha).
             per_sample_loss = -(weight * logp) + self.alpha.detach() * log_pi
         else:
-            # SAC — entropy-regularized policy improvement.
-            per_sample_loss = self.alpha * log_pi - min_q
+            # SAC — entropy-regularized policy improvement. alpha is already
+            # detached (re-derived at the top of update()); the explicit
+            # detach keeps correctness independent of _update_alpha's
+            # zero_grad ordering.
+            per_sample_loss = self.alpha.detach() * log_pi - min_q
 
         # PER: per-sample IS weighting of the policy objective. Guarded —
         # uniform batches (is_weights is None) use the plain mean as before.
@@ -486,6 +568,36 @@ class SAC(Algo):
                     policy_loss
                     + self.action_mean_penalty * torch.atanh(am).abs().mean()
                 )
+
+        # Gen-4 — auxiliary privileged-label supervision. The policy's aux
+        # head predicted self.model.policy._last_aux during the
+        # _get_update_action(states) forward above (same states; the AWAC
+        # log_prob call re-runs the same forward, so the stash is current
+        # either way). Labels are the true privileged values already inside
+        # the full-width flat obs; the policy itself never SEES them (its
+        # forward slices [..., :n_observations]) — it only learns to
+        # predict them. In padded episode mode the aux head still predicts
+        # non-zero on the zero-padded steps, so mask them out for parity
+        # with the other losses (step mode: padding_mask is None -> exact).
+        if (
+            self.aux_coef > 0.0
+            and self.aux_label_indices
+            and getattr(self.model.policy, "_last_aux", None) is not None
+        ):
+            aux_pred = self.model.policy._last_aux
+            idx = torch.as_tensor(
+                self.aux_label_indices, dtype=torch.long, device=states.device
+            )
+            aux_labels = states.index_select(-1, idx).detach()
+            aux_se = (aux_pred - aux_labels).pow(2)
+            if padding_mask is not None:
+                aux_se = aux_se * padding_mask
+                aux_mse = aux_se.sum() / padding_mask.sum().clamp(min=1.0) / (
+                    aux_se.shape[-1]
+                )
+            else:
+                aux_mse = aux_se.mean()
+            policy_loss = policy_loss + self.aux_coef * aux_mse
 
         self.model.policy_optimizer.zero_grad()
         policy_loss.backward()
@@ -584,7 +696,12 @@ class SAC(Algo):
             )
         # only use next_state for next_q_target
         next_target_q = torch.narrow(next_target_q, dim=1, start=1, length=seq_length)
-        expected_q = rewards + (1 - dones) * self.gamma * next_target_q
+        # reward_scaling scales the raw reward in the Bellman target
+        # (identity at the default 1.0, which current configs use).
+        expected_q = (
+            rewards * self.reward_scaling
+            + (1 - dones) * self.gamma * next_target_q
+        )
         if padding_mask is not None:
             expected_q *= padding_mask
         return expected_q
@@ -750,7 +867,7 @@ class SAC(Algo):
     def to(self, device: torch.device):
         super().to(device)
         self.alpha = self.alpha.to(device)
-        self.target_entropy = self.target_entropy.to(device)
+        # target_entropy is a native float (see __init__) — device-free.
         self.model.to(device)
 
     def reset(self) -> None:

@@ -4,7 +4,7 @@ Used by ArcLengthProgress reward and LocalGuidance observation to project
 device tip positions onto the correct-path polyline.
 """
 
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 import numpy as np
 
 
@@ -79,20 +79,92 @@ def compute_curvature(tangents: np.ndarray, cumlen: np.ndarray) -> np.ndarray:
     return angles / avg_lengths
 
 
+def _project_onto_segment_range(
+    point: np.ndarray,
+    polyline: np.ndarray,
+    cumlen: np.ndarray,
+    i0: int,
+    i1: int,
+) -> ProjectionResult:
+    """Segment-wise closest-point scan over segments [i0, i1).
+
+    Indices stay GLOBAL: the returned segment_idx and s are expressed in
+    the full polyline's segment/arclength coordinates regardless of the
+    scanned sub-range.
+    """
+    # Vectorized projection onto the selected segments at once
+    p0 = polyline[i0:i1]  # (M, 3)
+    p1 = polyline[i0 + 1:i1 + 1]  # (M, 3)
+    d = p1 - p0  # segment direction vectors (M, 3)
+    seg_len_sq = np.sum(d * d, axis=1)  # (M,)
+
+    # Compute t parameter for each segment
+    v = point - p0  # (M, 3)
+    t_raw = np.sum(v * d, axis=1) / np.maximum(seg_len_sq, 1e-16)  # (M,)
+    t_clamped = np.clip(t_raw, 0.0, 1.0)  # (M,)
+
+    # Projected points on each segment
+    proj_points = p0 + t_clamped[:, np.newaxis] * d  # (M, 3)
+
+    # Distances from query point to each projected point
+    dists = np.linalg.norm(point - proj_points, axis=1)  # (M,)
+
+    # Find the closest segment (global index = local + range offset)
+    best_local = int(np.argmin(dists))
+    best_idx = i0 + best_local
+    best_t = float(t_clamped[best_local])
+    best_proj = proj_points[best_local]
+    best_dist = float(dists[best_local])
+
+    # Arclength at the projection
+    s = float(cumlen[best_idx] + best_t * (cumlen[best_idx + 1] - cumlen[best_idx]))
+
+    return ProjectionResult(
+        s=s,
+        cross_track_dist=best_dist,
+        proj_point=best_proj,
+        segment_idx=best_idx,
+        t=best_t,
+    )
+
+
 def project_onto_polyline(
     point: np.ndarray,
     polyline: np.ndarray,
     cumlen: np.ndarray,
+    prev_s: Optional[float] = None,
+    window_mm: Optional[float] = None,
+    fallback_dist_mm: float = 15.0,
 ) -> ProjectionResult:
     """Project a point onto a polyline via segment-wise closest-point.
 
     For each segment (p0, p1), computes the closest point on the segment
     to the query point, then returns the overall closest projection.
 
+    Hairpin failure mode: a global argmin over ALL segments is ambiguous
+    where the polyline folds back on itself (carotid siphon) — the two
+    limbs of the hairpin are spatially adjacent, so sub-mm tip jitter
+    flips the winning segment between limbs and the arclength ``s`` jumps
+    by the full loop length. When ``prev_s`` and ``window_mm`` are given,
+    the search is restricted to segments overlapping the arclength window
+    ``[prev_s - window_mm, prev_s + window_mm]``, which keeps consecutive
+    projections continuous across the hairpin.
+
+    Fallback rule: if the windowed best cross-track distance exceeds
+    ``fallback_dist_mm``, the point has genuinely left the window
+    neighborhood (e.g. an elastic snap or a SOFA state restore) and
+    continuity must yield to correctness — the full scan runs instead.
+
     Args:
         point: (3,) query point.
         polyline: (N, 3) polyline vertices.
         cumlen: (N,) cumulative arclength (from compute_cumulative_arclength).
+        prev_s: previous projection arclength for windowed continuity.
+            None (default) scans all segments.
+        window_mm: half-width of the arclength search window around
+            ``prev_s``. None (default) scans all segments.
+        fallback_dist_mm: max windowed cross-track distance before the
+            full scan takes over.
 
     Returns:
         ProjectionResult with arclength, cross-track distance, projected
@@ -109,36 +181,21 @@ def project_onto_polyline(
             t=0.0,
         )
 
-    # Vectorized projection onto all segments at once
-    p0 = polyline[:-1]  # (M, 3)
-    p1 = polyline[1:]  # (M, 3)
-    d = p1 - p0  # segment direction vectors (M, 3)
-    seg_len_sq = np.sum(d * d, axis=1)  # (M,)
+    n_seg = len(polyline) - 1
 
-    # Compute t parameter for each segment
-    v = point - p0  # (M, 3)
-    t_raw = np.sum(v * d, axis=1) / np.maximum(seg_len_sq, 1e-16)  # (M,)
-    t_clamped = np.clip(t_raw, 0.0, 1.0)  # (M,)
+    if prev_s is not None and window_mm is not None:
+        # Windowed scan: segments overlapping [prev_s - w, prev_s + w].
+        # Segment i spans arclengths [cumlen[i], cumlen[i+1]].
+        i0 = max(
+            0, int(np.searchsorted(cumlen, prev_s - window_mm, side="left")) - 1
+        )
+        i1 = min(
+            n_seg, int(np.searchsorted(cumlen, prev_s + window_mm, side="right"))
+        )
+        if i1 > i0:
+            result = _project_onto_segment_range(point, polyline, cumlen, i0, i1)
+            if result.cross_track_dist <= fallback_dist_mm:
+                return result
+        # Window empty or windowed best too far — fall back to full scan.
 
-    # Projected points on each segment
-    proj_points = p0 + t_clamped[:, np.newaxis] * d  # (M, 3)
-
-    # Distances from query point to each projected point
-    dists = np.linalg.norm(point - proj_points, axis=1)  # (M,)
-
-    # Find the closest segment
-    best_idx = int(np.argmin(dists))
-    best_t = float(t_clamped[best_idx])
-    best_proj = proj_points[best_idx]
-    best_dist = float(dists[best_idx])
-
-    # Arclength at the projection
-    s = float(cumlen[best_idx] + best_t * (cumlen[best_idx + 1] - cumlen[best_idx]))
-
-    return ProjectionResult(
-        s=s,
-        cross_track_dist=best_dist,
-        proj_point=best_proj,
-        segment_idx=best_idx,
-        t=best_t,
-    )
+    return _project_onto_segment_range(point, polyline, cumlen, 0, n_seg)

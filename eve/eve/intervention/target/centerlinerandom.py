@@ -17,6 +17,7 @@ class CenterlineRandom(Target):
         threshold: float,
         branches: Optional[List[str]] = None,
         min_distance_between_possible_targets: Optional[float] = None,
+        min_arclength_from_start: Optional[float] = None,
     ) -> None:
         self.vessel_tree = vessel_tree
         self.fluoroscopy = fluoroscopy
@@ -25,6 +26,12 @@ class CenterlineRandom(Target):
         self.min_distance_between_possible_targets = (
             min_distance_between_possible_targets
         )
+        # When set, exclude centerline points within this arclength (mm) of
+        # each branch's START from the target pool — so targets are not
+        # sampled near a branch entry (e.g. skip trivial near-ostium RCCA
+        # targets so the wire must navigate into the siphon). None = no
+        # exclusion (backward-compatible).
+        self.min_arclength_from_start = min_arclength_from_start
         self.reached = False
         self.coordinates3d = np.zeros((3,), dtype=np.float32)
 
@@ -66,6 +73,17 @@ class CenterlineRandom(Target):
             return list(self.branches)
         return []
 
+    def _arclength_from_start_mask(self, points: np.ndarray) -> np.ndarray:
+        """Boolean mask keeping points at least ``min_arclength_from_start`` mm
+        (cumulative arclength along the ordered centerline) from the branch's
+        first point. All-True when the filter is disabled."""
+        n = len(points)
+        if self.min_arclength_from_start is None or n < 2:
+            return np.ones(n, dtype=bool)
+        seg = np.linalg.norm(np.diff(points, axis=0), axis=1)
+        cumlen = np.concatenate(([0.0], np.cumsum(seg)))
+        return cumlen >= float(self.min_arclength_from_start)
+
     def _init_centerline_point_cloud(self):
         if self.branches is None:
             branch_keys = self.vessel_tree.keys()
@@ -77,17 +95,23 @@ class CenterlineRandom(Target):
         potential_targets = np.empty((0, 3))
         for branch in branch_keys:
             points = self.vessel_tree[branch].coordinates
+            # Near-start exclusion (per branch, along its own arclength).
+            points = points[self._arclength_from_start_mask(points)]
             potential_targets = np.vstack((potential_targets, points))
 
         in_excluded = self._in_excluded_branches(potential_targets, excluded_branches)
         outside_forbidden = np.invert(in_excluded)
         self._potential_targets = potential_targets[outside_forbidden]
 
-        # Build per-branch target pools (filtered by excluded-branch overlap)
+        # Build per-branch target pools (filtered by excluded-branch overlap
+        # AND the near-start arclength exclusion).
         self._branch_targets = {}
         for branch_name in branch_keys:
             points = self.vessel_tree[branch_name].coordinates
-            mask = np.invert(self._in_excluded_branches(points, excluded_branches))
+            arc_ok = self._arclength_from_start_mask(points)
+            mask = np.invert(
+                self._in_excluded_branches(points, excluded_branches)
+            ) & arc_ok
             valid = points[mask]
             if len(valid) > 0:
                 self._branch_targets[branch_name] = list(valid)

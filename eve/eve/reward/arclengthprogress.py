@@ -126,26 +126,18 @@ class ArcLengthProgress(Reward):
         # has a correct delta when wire returns to path.
         if on_path:
             delta_s = self._prev_d_rem - d_rem_curr
-            pf = self.progress_factor
-            # Plan v9 Change 4b — double the progress reward when the
-            # wire is inside the target daughter AND moving forward
-            # (delta_s > 0). Replaces the originally-drafted +0.005/step
-            # constant RCCA bonus, which would have rewarded mere dwell.
-            # Doubling on forward motion only: deeper threading -> more
-            # reward; freezing in shallow RCCA -> no reward; backward
-            # motion still penalised at the standard 1x rate.
-            try:
-                pc = self._path_context
-                if (delta_s > 0
-                        and pc is not None
-                        and pc._current_branch_idx is not None
-                        and pc._target_daughter_branch_idx is not None
-                        and int(pc._current_branch_idx)
-                            == int(pc._target_daughter_branch_idx)):
-                    pf *= 2.0
-            except Exception:
-                pass
-            r_progress = pf * delta_s
+            # RL_IMPROV_15 — 1x SYMMETRIC progress only. The former Plan v9
+            # Change 4b "2x forward-only inside the target daughter" doubling
+            # was NOT potential-based: forward paid 2x while backward paid 1x,
+            # so every oscillation cycle banked +progress_factor*Δs. Under
+            # relax_failure_truncations (episode runs the full 600 steps) a
+            # wire merely dithering in the RCCA farmed ~3-4 return — ≈ a real
+            # success — without ever threading the target. At a flat 1x the
+            # per-step reward telescopes to progress_factor*(s_final -
+            # s_initial): a round trip nets EXACTLY zero, and the episode sum
+            # is bounded by the net arclength actually advanced (~2.0 over the
+            # full path), earned only by genuinely progressing.
+            r_progress = self.progress_factor * delta_s
             # Reset off-arc baseline so a subsequent off-path transition
             # captures a fresh baseline from the new divergence point.
             self._prev_off_arc = 0.0

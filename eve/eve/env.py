@@ -67,6 +67,7 @@ class Env(gym.Env, EveObject):
         self.intervention.step(action)
         self.pathfinder.step()
         self.interim_target.step()
+        self._on_intervention_stepped()
         self.observation.step()
         self.reward.step()
         self.terminal.step()
@@ -79,6 +80,13 @@ class Env(gym.Env, EveObject):
             deepcopy(self.truncation.truncated),
             deepcopy(self.info.info),
         )
+
+    def _on_intervention_stepped(self) -> None:
+        """Hook called after the intervention (and path/interim-target
+        bookkeeping) advances, before observation/reward/terminal/truncation
+        compute. Default no-op; subclasses use it to refresh derived state
+        (e.g. a path-following state machine) so same-step consumers see
+        fresh values."""
 
     def reset(
         self,

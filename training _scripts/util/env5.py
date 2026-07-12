@@ -26,6 +26,22 @@ from eve.util.pathcontext import (
     classify_physical_branch,
 )
 
+# Gen-4 anti-buckle potential (privileged reward shaping). Guarded import:
+# env5.py is bind-mounted into containers whose launchers predate
+# buckle_reward.py — those run with buckle_reward_coef=0 and must not
+# crash on a missing module. A launcher that DOES request the term
+# (coef != 0) without mounting the module fails fast in BenchEnv5.__init__
+# (silently skipping the term would score that run's transitions under a
+# different reward than intended — the exact seed/train mismatch this
+# design avoids).
+try:
+    from util.buckle_reward import buckle_potential
+except ImportError:
+    try:  # imported with util/ itself on sys.path
+        from buckle_reward import buckle_potential
+    except ImportError:
+        buckle_potential = None
+
 
 # Plan v12 — daughter short-tag derivation. Used to populate
 # `info["final_branch_short"]` so per-Episode downstream filtering
@@ -75,6 +91,12 @@ OFF_BRANCH_GRACE_STEPS = 50  # was 20; bumped in RL_IMPROV_7 §7 Fix 3 — with
                               # bif2 wrong branches (~50 steps of retract needed).
 OFF_BRANCH_MIN_INSERTED_MM = 0.0  # was 50.0 workaround; now using true branch membership
 FAILURE_TRUNCATION_PENALTY = -5.0
+# RL_IMPROV_15 — pure max_steps timeout penalty. Previously a max_steps
+# truncation carried NO penalty, so a wire that loitered to the horizon kept
+# all its accumulated shaping with nothing to offset it (the "max_steps
+# farm"). -3 makes a timeout unambiguously worse than a success (+3) and worse
+# than a clean early exit, while staying softer than a hard failure (-5).
+MAX_STEPS_PENALTY = -3.0
 # RL_IMPROV_8 OST — overshoot penalty. When the 50-step off-path timeout fires
 # but the wire's TIP is physically still inside the CORRECT target daughter
 # (classify_physical_branch == target tag), the wire overshot the target INSIDE
@@ -92,6 +114,30 @@ OVERSHOOT_PENALTY = -1.0
 FOLD_STALL_STEPS = 20          # kill stuck wires quickly to speed up cycle
 FOLD_INSERTION_MM = 0.5        # min commanded gw insertion per step to count as inserting
 FOLD_ARCLENGTH_MM = 0.5        # min tip arclength progress per step to count as advancing
+# Gen-4 — stuck-state checkpoint pool triggers (STUCK_CHECKPOINT_DIR).
+# Fire BEFORE the kill thresholds (20 / 50) so the captured state is
+# stuck-but-recoverable — the whole point of the recovery curriculum.
+STUCK_FOLD_TRIGGER = 10
+STUCK_OFF_BRANCH_TRIGGER = 25
+# RL_IMPROV_15 — off-path RETRACTION discount. The uniform -0.007/step
+# off-path tax also taxed the recovery the policy is supposed to learn:
+# backing OUT of a wrong branch paid the same per-step price as pushing
+# DEEPER. While the wire is off-path AND actively withdrawing, the tax
+# drops to -0.002/step (still negative: off-path time is never free, and
+# entering always pays full 0.007/step, so no closed loop can profit —
+# a wrong-branch round trip nets at most -0.007*k_in - 0.002*k_out).
+# GATED two ways:
+#   * counter >= MIN_OFF_STEPS: the wire must be genuinely INSIDE the
+#     wrong path (>= 3 consecutive off-path steps BEFORE this one, per
+#     _off_branch_steps, which updates after this reward) — boundary
+#     flicker keeps paying full tax, so there is no incentive to dance
+#     on the classification edge.
+#   * executed retraction only: this step's ACHIEVED gw insertion delta
+#     <= -MIN_MM (holding still, or a below-zero-masked retract command
+#     that moved nothing, pays full tax — no camping discount).
+OFF_PATH_RETRACT_TAX = -0.002
+OFF_PATH_RETRACT_MIN_OFF_STEPS = 3
+OFF_PATH_RETRACT_MIN_MM = 0.1
 
 
 def setup_step_logger(name="step_logger"):
@@ -189,7 +235,41 @@ class BenchEnv5(eve.Env):
         n_max_steps=600,
         default_target_branch: str = None,
         target_coord3d=None,
+        relax_failure_truncations: bool = False,
+        buckle_reward_coef: float = 0.0,
     ) -> None:
+        # Gen-4 recovery training — when True, the fold-stall and off-path
+        # detectors keep counting (they remain observation features and
+        # stuck-pool triggers) but no longer TRUNCATE RL episodes; only
+        # MaxSteps/VesselEnd/SimError end them. You cannot learn recovery
+        # (retract, unbuckle, re-approach) from states the env kills you
+        # for entering: truncation + the -5 + terminated=True taught the
+        # critic V(buckled) = penalty-and-nothing-after. Heuristic-mode
+        # aborts are unaffected (demo harvesting keeps its own timeouts).
+        self.relax_failure_truncations = bool(relax_failure_truncations)
+        # Gen-4 privileged reward shaping — anti-buckle potential (see
+        # util/buckle_reward.py for the full design note). Each step adds
+        # coef * (phi_t - phi_{t-1}) where phi is a pure function of
+        # (gw slack, SOFA contact-impulse proxy). Delta / potential form:
+        # closed loops net exactly zero (not farmable), episode sum
+        # telescopes to phi_end - phi_start, so unbuckling earns back
+        # exactly what buckling cost — and restored stuck-pool episodes
+        # that recover net POSITIVE. 0.0 = off (frozen legacy reward).
+        # Applied in BOTH RL and heuristic modes so heuristic demo
+        # transitions are scored under the same MDP as explore transitions
+        # (the heuristic's actions never read reward, so its behavior is
+        # unchanged). coef=1.0 puts the slack channel at parity with the
+        # 0.01/mm arclength-progress factor.
+        self.buckle_reward_coef = float(buckle_reward_coef)
+        if self.buckle_reward_coef != 0.0 and buckle_potential is None:
+            raise ImportError(
+                "buckle_reward_coef != 0 but util/buckle_reward.py is not "
+                "importable — the launcher must bind-mount "
+                "training_scripts/util/buckle_reward.py"
+            )
+        self._buckle_phi_prev = None  # None -> first step delta = 0
+        self._buckle_prev_raw = (0.0, 0.0)  # (slack_mm, contact_mm) fallback
+        self._last_buckle_phi = 0.0  # STEP-log diagnostic
         self.mode = mode
         self.visualisation = visualisation
         # Plan v12 redesign — when set, this grader grades against a FROZEN
@@ -222,6 +302,12 @@ class BenchEnv5(eve.Env):
         self._episode_start_time = None
         self._episode_total_reward = 0.0
         self._prev_inserted = [0.0, 0.0]
+        # Gen-4 — last step's commanded-vs-achieved insertion mismatch
+        # (mirrored to the intervention for obs feature 44 / privileged 21)
+        # + per-episode stuck-checkpoint latch (STUCK_CHECKPOINT_DIR pool).
+        self._last_slip_mm = 0.0
+        self._stuck_ckpt_saved_this_ep = False
+        self._stuck_ckpt_count = 0  # lifetime cap (per-worker pool bound)
         self._step_logger.info(
             f"=== BenchEnv5 initialized (mode={mode}, visualisation={visualisation}) ==="
         )
@@ -249,28 +335,34 @@ class BenchEnv5(eve.Env):
         # velocity reads 0 at episode start (correct for a stationary
         # wire). Memory wraps the per-episode normalizer (each frame
         # normalized, then stacked).
+        # Gen-4 mesh-invariance — tip-relative wire shape at a FIXED mm
+        # scale (rows 1..9 = offsets from tip /135; row 0 = per-step tip
+        # displacement /4). Replaces NormalizeTracking2DEpisode, whose
+        # reference quantities were the MESH'S OWN bounding box (size /
+        # aspect / absolute placement — the dominant memorization channel,
+        # and anisotropic per mesh). Memory still stacks 2 frames (FILL)
+        # so shape-change reads 0 at reset.
         tracking = eve.observation.Tracking2D(intervention, n_points=10, resolution=15)
-        tracking = eve.observation.wrapper.NormalizeTracking2DEpisode(
-            tracking, intervention
-        )
+        tracking = eve.observation.TipRelativeTracking2D(tracking)
         tracking = eve.observation.wrapper.Memory(
             tracking,
             n_steps=2,
             reset_mode=eve.observation.wrapper.MemoryResetMode.FILL,
         )
 
-        # Plan v12 — grader mode: Target2D reads the frozen target_coord3d
-        # so obs[40:42] is target-coherent for THIS grader's daughter.
-        # Keep a ref to the INNER Target2D so set_grader_target() can update
-        # its coord per episode (it's wrapped below).
-        _inner_target2d = eve.observation.Target2D(
+        # Gen-4 — clipped tip->target offset replaces the absolute
+        # bbox-normalized target coordinate (on one mesh the 4 daughters
+        # form 4 recognizable clusters = a route key; across meshes a
+        # mesh-identity fingerprint). Far targets saturate at +-1; routing
+        # is carried by the guidance block. Grader mode: keep a ref so
+        # set_grader_target() can update .target_coord3d per episode
+        # (same attribute contract as the old Target2D).
+        _inner_target = eve.observation.TargetTipOffset2D(
             intervention,
             target_coord3d=self._grader_target_coord3d,
         )
-        self._grader_target2d_inner = _inner_target2d if self._is_grader else None
-        target_state = eve.observation.wrapper.NormalizeTracking2DEpisode(
-            _inner_target2d, intervention
-        )
+        self._grader_target2d_inner = _inner_target if self._is_grader else None
+        target_state = _inner_target
 
         last_action = eve.observation.LastAction(intervention)
         last_action = eve.observation.wrapper.Normalize(last_action)
@@ -281,14 +373,21 @@ class BenchEnv5(eve.Env):
             path_context=self._path_context,
         )
 
-        # Plan v5 — total inserted length of each device (guidewire +
-        # catheter). Removes the integration-history non-Markov gap: two
-        # wires with identical tracked-point positions but different total
-        # insertion respond differently to a retract command. Single-frame
-        # (no Memory) — insertion velocity is already covered by
-        # last_action's gw_trans / cath_trans commands.
-        inserted_lengths = eve.observation.InsertionLengths(intervention)
-        inserted_lengths = eve.observation.wrapper.Normalize(inserted_lengths)
+        # Gen-4 — the absolute InsertionLengths pair (/900 device length)
+        # was a per-mesh odometer (landmarks live at fixed insertion
+        # depths under a fixed insertion point). Its physically meaningful
+        # content now lives in guidance: gw slack (43, inserted - tip
+        # arclength) and the gw-cath gap (32).
+        #
+        # Privileged tail — sim-side state for the asymmetric critic
+        # (SOFA forces/velocities/contact proxy, rotations, catheter tip,
+        # ground-truth branch, counters). MUST stay the LAST ObsDict entry:
+        # it rides inside flat_obs through buffer/PER/caches unchanged and
+        # the policy slices it off internally (GaussianPolicy keeps
+        # [..., :n_observations]); only the critics consume full width.
+        privileged = eve.observation.PrivilegedState(
+            intervention, path_context=self._path_context
+        )
 
         observation = eve.observation.ObsDict(
             {
@@ -296,7 +395,7 @@ class BenchEnv5(eve.Env):
                 "target": target_state,
                 "last_action": last_action,
                 "guidance": guidance,
-                "inserted_lengths": inserted_lengths,
+                "privileged": privileged,
             }
         )
 
@@ -344,9 +443,16 @@ class BenchEnv5(eve.Env):
         sim_error = eve.truncation.SimError(intervention)
 
         if mode == "train":
-            truncation = eve.truncation.Combination(
-                [max_steps, vessel_end, sim_error]
-            )
+            # RL_IMPROV_15 — under relax_failure_truncations, vessel_end also
+            # does NOT truncate (consistent with fold/off-path). A wire that
+            # overshoots a branch terminus is capped by stop_device_at_tree_end
+            # and can RETRACT back onto the path; truncating it would deny that
+            # recovery — the exact thing relax is meant to allow. MaxSteps and
+            # SimError still end the episode.
+            trunc_components = [max_steps, sim_error]
+            if not relax_failure_truncations:
+                trunc_components.insert(1, vessel_end)
+            truncation = eve.truncation.Combination(trunc_components)
         else:
             truncation = max_steps
 
@@ -495,8 +601,11 @@ class BenchEnv5(eve.Env):
                     getattr(getattr(self, "_target_terminal", None), "terminal", False)
                 )
                 _gtimeout = bool(
-                    (self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS and not _ovs)
-                    or self._fold_stall_count >= FOLD_STALL_STEPS
+                    not self.relax_failure_truncations
+                    and (
+                        (self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS and not _ovs)
+                        or self._fold_stall_count >= FOLD_STALL_STEPS
+                    )
                 )
                 _clean = bool(
                     _fbs == _tbs
@@ -568,6 +677,18 @@ class BenchEnv5(eve.Env):
         self._fold_stall_count = 0
         self._prev_tip_s = 0.0
         self._prev_inserted_gw = 0.0
+        self._last_delta_gw = 0.0  # RL_IMPROV_15 — off-path retract discount
+        # Gen-4 — per-episode slip + stuck-checkpoint latch resets.
+        self._last_slip_mm = 0.0
+        self._stuck_ckpt_saved_this_ep = False
+        # Gen-4 anti-buckle potential — drop the baseline so the first step
+        # of the new episode gets delta = 0. Crucially this also covers
+        # SOFA-restored episodes (stuck-pool / bif11 checkpoints): a state
+        # restored ALREADY buckled must not be spiked with the full phi on
+        # step 1 — it re-baselines there, and recovering nets positive.
+        self._buckle_phi_prev = None
+        self._buckle_prev_raw = (0.0, 0.0)
+        self._last_buckle_phi = 0.0
         # Fold-detector d_corr bypass: if the tip is closing on the correct
         # entry (arclength d_corr decreasing), don't count this step as
         # folding even if path-projection delta is slow. Switched from
@@ -628,14 +749,30 @@ class BenchEnv5(eve.Env):
         result = super().reset(seed=seed, options=options)
 
         if ckpt is not None:
-            self.intervention.simulation.restore_checkpoint(ckpt)
             # Plan v10 — SOFA first-restore quirk: the FIRST restore after a
-            # worker's scene build sets the controller xtip but does NOT apply
+            # scene BUILD sets the controller xtip but does NOT apply
             # dof_positions (the wire ends up un-restored ~z=345, so each
             # worker's/respawn's first episode fails before the trunk top —
             # confirmed: 9/16 ep1 started at z<392, branch (18), vs ep2+ at
-            # the fork). Apply the restore a SECOND time on the worker's first
-            # restore so the wire geometry actually takes.
+            # the fork). Apply the restore a SECOND time so the wire geometry
+            # actually takes.
+            #
+            # Gen-4 (#3/#6) — the quirk is per-SCENE-BUILD, not per-worker.
+            # Under --procedural_rcca (and the escapability screener, which
+            # reuses one env across pinned meshes) the mesh regenerates and
+            # SOFA rebuilds on many resets, so the SECOND checkpoint onward
+            # would single-apply into a fresh scene and re-fire the quirk.
+            # Re-arm the warm-up whenever the scene mesh changed since our
+            # last restore (airtight: RCCAVariedFromMesh mints a new temp
+            # mesh_path on every _generate, so a rebuild always flips this).
+            # Fixed-mesh runs never change mesh_path → byte-identical to the
+            # prior warmup-once behavior.
+            _scene_mesh = getattr(self.intervention.vessel_tree, "mesh_path", None)
+            if _scene_mesh != getattr(self, "_last_restore_scene_mesh", None):
+                self._restore_warmed_up = False
+            self._last_restore_scene_mesh = _scene_mesh
+
+            self.intervention.simulation.restore_checkpoint(ckpt)
             if not getattr(self, "_restore_warmed_up", False):
                 self.intervention.simulation.restore_checkpoint(ckpt)
                 self._restore_warmed_up = True
@@ -644,6 +781,14 @@ class BenchEnv5(eve.Env):
             # features) reflect the restored tip state rather than the
             # zero-insertion state that super().reset() computed.
             self._path_context.invalidate()
+            # Defense against the restore teleport pinning the windowed
+            # projection to the pre-restore arclength: clear projection
+            # continuity explicitly. The observation/reward re-resets below
+            # normally reach PathProjectionCache.reset() themselves, but they
+            # are wrapped in try/except — this guarantees the continuity
+            # anchor is dropped even if those re-resets fail.
+            if hasattr(self._path_context, "reset_projection_continuity"):
+                self._path_context.reset_projection_continuity()
             ep_nr = max(0, self._episode_count - 1)
             try:
                 self.observation.reset(ep_nr)
@@ -773,6 +918,25 @@ class BenchEnv5(eve.Env):
         info["heuristic_abort_reason"] = reason
 
     # ------------------------------------------------------------------
+    # Post-intervention hook (called inside eve.Env.step)
+    # ------------------------------------------------------------------
+    def _on_intervention_stepped(self):
+        """Refresh the projection cache + branch state machine for THIS step.
+
+        Runs after the SOFA step, before observation/reward, so every
+        same-step consumer (LocalGuidance branch features, ArcLengthProgress
+        on-path gate, path-segment step reward, off-path detector) sees THIS
+        step's classification. The heuristic's view is unchanged: it reads
+        the state machine between steps, and the machine still advances
+        exactly once per step.
+        """
+        self._path_context.invalidate()
+        try:
+            self._path_context.update_branch_state()
+        except Exception as e:
+            self._step_logger.warning(f"update_branch_state failed: {e}")
+
+    # ------------------------------------------------------------------
     # Step
     # ------------------------------------------------------------------
     def step(self, action):
@@ -783,8 +947,9 @@ class BenchEnv5(eve.Env):
         else:
             time_since_last = 0.0
 
-        # Invalidate projection cache — forces recomputation on first access
-        self._path_context.invalidate()
+        # Projection-cache invalidation + state-machine advance now happen in
+        # _on_intervention_stepped() (inside super().step(), right after the
+        # SOFA step) so observation/reward consumers see THIS step's state.
 
         # Plan v5 — mirror heuristic phase from env to intervention so the
         # LocalGuidance observation (which holds intervention but not env)
@@ -807,6 +972,14 @@ class BenchEnv5(eve.Env):
             self.intervention._env_off_branch_steps = int(self._off_branch_steps)
             self.intervention._env_fold_stall_count = int(self._fold_stall_count)
             self.intervention._env_episode_step = int(self._episode_step_count)
+            # Gen-4 — raw slip (last step's delta_gw - delta_s, mm) for obs
+            # feature 44 / privileged 21, and the target daughter short tag
+            # for the privileged branch one-hot. Same last-step convention
+            # as the counters above.
+            self.intervention._env_slip_mm = float(self._last_slip_mm)
+            self.intervention._env_target_branch_short = getattr(
+                self, "_target_branch_short", None
+            )
             # n_max_steps lives on the MaxSteps truncation component
             n_max = getattr(self._max_steps_trunc, 'n_max_steps', 600)
             self.intervention._env_max_steps = int(n_max) if n_max else 600
@@ -833,12 +1006,20 @@ class BenchEnv5(eve.Env):
         inserted_gw = self.intervention.device_lengths_inserted[0]
         delta_gw = inserted_gw - self._prev_inserted_gw
         self._prev_inserted_gw = inserted_gw
+        # RL_IMPROV_15 — stash the EXECUTED insertion delta for the off-path
+        # retraction discount in _compute_path_segment_step_reward (executed,
+        # not commanded: a masked retract command that moved nothing must not
+        # earn the discount).
+        self._last_delta_gw = float(delta_gw)
 
         # ---- Detector: wire_fold_stall (both modes) ----
         if not terminated and not truncated:
             tip_s = self._path_context.get_projection().s
             delta_s = tip_s - self._prev_tip_s
             self._prev_tip_s = tip_s
+            # Gen-4 — stash the raw fold-detector signal for next step's
+            # obs mirror (feature 44 / privileged 21).
+            self._last_slip_mm = float(delta_gw - delta_s)
 
             # d_corr bypass: cancel the fold increment if the tip is
             # closing on the next correct junction (arclength d_corr
@@ -867,17 +1048,18 @@ class BenchEnv5(eve.Env):
             if self._fold_stall_count >= FOLD_STALL_STEPS:
                 if self._heuristic_mode:
                     self._heuristic_abort("wire_fold_stall", info)
-                truncated = True
+                    truncated = True
+                elif not self.relax_failure_truncations:
+                    truncated = True
+                # Gen-4 relaxed mode: counter keeps ratcheting (obs feature
+                # 21 / stuck-pool trigger) but the RL episode continues —
+                # recovery must be learnable from buckled states.
 
-        # ---- State-machine update (RL_IMPROV_8 v2) ----
-        # Drives _current_branch_idx and _on_planned_path from this step's
-        # projection. Must run before is_on_correct_path() / is_on_correct_branch()
-        # so those queries see the fresh state. The projection cache was
-        # populated during super().step() by ArcLengthProgress + LocalGuidance.
-        try:
-            self._path_context.update_branch_state()
-        except Exception as e:
-            self._step_logger.warning(f"update_branch_state failed: {e}")
+        # ---- State machine (RL_IMPROV_8 v2) ----
+        # update_branch_state() already ran this step in
+        # _on_intervention_stepped() (inside super().step()), so
+        # is_on_correct_path() / is_on_correct_branch() below read fresh
+        # state, and the commit events it emitted are drained below.
 
         # ---- Plan v9 Change 4: path-segment-conditioned step reward ----
         # Per-step penalty depends on which segment of the planned path
@@ -889,6 +1071,22 @@ class BenchEnv5(eve.Env):
             self._step_logger.warning(
                 f"path-segment step reward failed: {e}"
             )
+
+        # ---- Gen-4: anti-buckle potential shaping (privileged reward) ----
+        # coef * (phi_t - phi_{t-1}); phi from (gw slack, contact proxy).
+        # Applied on terminal steps too — the episode sum then telescopes
+        # to phi_end - phi_start regardless of how the episode ends.
+        if self.buckle_reward_coef != 0.0:
+            try:
+                phi = self._compute_buckle_potential()
+                if self._buckle_phi_prev is not None:
+                    reward += self.buckle_reward_coef * (
+                        phi - self._buckle_phi_prev
+                    )
+                self._buckle_phi_prev = phi
+                self._last_buckle_phi = phi
+            except Exception as e:
+                self._step_logger.warning(f"buckle reward failed: {e}")
 
         # ---- Plan v5: drain state-machine daughter-commit events ----
         # update_branch_state may have emitted (j_arc, +1|-1) events when
@@ -1059,9 +1257,38 @@ class BenchEnv5(eve.Env):
                             pass
                     if self._heuristic_mode:
                         self._heuristic_abort("wrong_branch_timeout", info)
-                    truncated = True
+                        truncated = True
+                    elif not self.relax_failure_truncations:
+                        truncated = True
+                    # Gen-4 relaxed mode: no RL truncation — the symmetric
+                    # off-path shaping (retract toward the divergence point
+                    # earns positive reward) prices the recovery; MaxSteps
+                    # ends hopeless episodes.
             else:
                 self._off_branch_steps = 0
+
+        # ---- Gen-4: stuck-state checkpoint pool (recovery curriculum) ----
+        # Env-var gated (STUCK_CHECKPOINT_DIR). Snapshot the FULL SOFA state
+        # the first time an episode crosses a stuck threshold — early enough
+        # (fold==10 of 20, off-path==25 of 50) that recovery is still
+        # plausible. Restored later via CheckpointRestoreWrapper to train
+        # dedicated recovery episodes that START buckled: short episodes,
+        # dense recovery signal, no wall-clock spent walking into trouble
+        # (the restore-at-fork mechanism re-aimed at recovery skills).
+        # Unconditional on outcome (failures ARE the product), one per
+        # episode, RL mode only.
+        if not self._heuristic_mode and not self._stuck_ckpt_saved_this_ep:
+            stuck_dir = os.environ.get("STUCK_CHECKPOINT_DIR")
+            if stuck_dir and (
+                self._fold_stall_count == STUCK_FOLD_TRIGGER
+                or self._off_branch_steps == STUCK_OFF_BRANCH_TRIGGER
+            ):
+                reason = (
+                    "fold" if self._fold_stall_count == STUCK_FOLD_TRIGGER
+                    else "offpath"
+                )
+                self._stuck_ckpt_saved_this_ep = True
+                self._save_stuck_checkpoint(stuck_dir, reason)
 
         # ---- Plan v5: +1 daughter-entry reward replaced by state-machine
         # commit events drained above (after update_branch_state). The old
@@ -1070,8 +1297,16 @@ class BenchEnv5(eve.Env):
         # +1 only on actual state-machine commit and -1 on wrong-daughter
         # commit at the same fork.
 
-        # ---- Failure truncation penalty (both modes) ----
-        if truncated and not terminated and (
+        # ---- Truncation penalties (both modes) ----
+        # RL_IMPROV_15 — check max_steps FIRST. Under relax_failure_truncations
+        # the fold/off counters keep climbing WITHOUT causing truncation, so a
+        # pure timeout must be priced as a timeout (-3), not mis-charged the
+        # -5 hard-failure penalty just because the wire had folded earlier.
+        if truncated and not terminated and getattr(
+            self._max_steps_trunc, "truncated", False
+        ):
+            reward += MAX_STEPS_PENALTY
+        elif truncated and not terminated and (
             self._vessel_end_trunc.truncated
             or self._fold_stall_count >= FOLD_STALL_STEPS
             or self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS
@@ -1269,6 +1504,7 @@ class BenchEnv5(eve.Env):
                 f"term={terminated} | trunc={truncated} | "
                 f"{sofa_info} | delta_ins=[{delta_ins[0]:.2f},{delta_ins[1]:.2f}]"
                 f" | heading_err={_head_err:+.3f} | cross_tr={_cross_tr:+.2f}"
+                f" | buckle_phi={getattr(self, '_last_buckle_phi', 0.0):+.3f}"
                 f"{shared_str}{grader_str}{heur_str}"
             )
             self._step_logger.info(log_msg)
@@ -1356,10 +1592,19 @@ class BenchEnv5(eve.Env):
             # wrong-branch failure-timeout. Excluding it here lets is_clean (which
             # excludes grader_failure_timeout) fold an OST reach into the clean
             # lane; info["overshoot"] keeps it individually traceable.
+            # RL_IMPROV_15 — under relax, fold/off-path do NOT failure-truncate
+            # (recoverable, episode runs to max_steps), so this is NOT a
+            # grader failure-timeout regardless of the still-climbing counters.
+            # Leaving it counter-driven mislabels recovery episodes and (via
+            # is_clean = ... and not grader_failure_timeout) wrongly drops
+            # clean RCCA threads from the seed's demo lane.
             info["grader_failure_timeout"] = bool(
-                (self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS
-                 and not getattr(self, "_overshoot_truncation", False))
-                or self._fold_stall_count >= FOLD_STALL_STEPS
+                not self.relax_failure_truncations
+                and (
+                    (self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS
+                     and not getattr(self, "_overshoot_truncation", False))
+                    or self._fold_stall_count >= FOLD_STALL_STEPS
+                )
             )
             info["overshoot"] = bool(getattr(self, "_overshoot_truncation", False))
         except Exception:
@@ -1450,6 +1695,54 @@ class BenchEnv5(eve.Env):
         return obs, reward, terminated, truncated, info
 
     # ------------------------------------------------------------------
+    # Gen-4 — anti-buckle potential (privileged reward shaping)
+    # ------------------------------------------------------------------
+
+    def _compute_buckle_potential(self) -> float:
+        """phi(slack, contact) for the shaping delta in step().
+
+        Signals (each falls back to ITS previous value on read failure, so
+        a transient accessor failure contributes delta = 0 for that channel
+        instead of a fake jump to/from zero):
+          slack_mm   = inserted_gw - proj.s  (this grader's planned path)
+          contact_mm = mean |position - free_position| over all SOFA beam
+                       nodes (collision constraint correction; same
+                       accessor as PrivilegedState dims 5-6)
+        """
+        prev_slack, prev_contact = self._buckle_prev_raw
+
+        slack_mm = prev_slack
+        try:
+            inserted_gw = float(self.intervention.device_lengths_inserted[0])
+            proj_s = float(self._path_context.get_projection().s)
+            s = inserted_gw - proj_s
+            if np.isfinite(s):
+                slack_mm = s
+        except Exception:
+            pass
+
+        contact_mm = prev_contact
+        try:
+            ic = self.intervention.simulation._instruments_combined
+            if ic is not None:
+                dofs = ic.DOFs
+                pos = np.asarray(dofs.position.value)[:, 0:3]
+                free_pos = getattr(dofs, "free_position", None)
+                if free_pos is not None:
+                    fp = np.asarray(free_pos.value)[:, 0:3]
+                    if fp.shape == pos.shape and len(pos) > 0:
+                        c = float(
+                            np.mean(np.linalg.norm(pos - fp, axis=1))
+                        )
+                        if np.isfinite(c):
+                            contact_mm = c
+        except Exception:
+            pass
+
+        self._buckle_prev_raw = (slack_mm, contact_mm)
+        return buckle_potential(slack_mm, contact_mm)
+
+    # ------------------------------------------------------------------
     # Plan v9 Change 4 — path-segment-conditioned per-step reward
     # ------------------------------------------------------------------
     # Replaces the uniform -0.001 Step penalty with branch-aware values:
@@ -1460,6 +1753,10 @@ class BenchEnv5(eve.Env):
     #     Change 4b's 2x progress doubling, NOT a per-step bonus)
     #   wrong daughter (RVA/LCCA/LVA when target is the other):  -0.007
     #   anything else (fallback): -0.001 (old uniform value, defensive)
+    # RL_IMPROV_15: any OFF-PATH step drops to -0.002 while the wire is
+    #   genuinely RETRACTING after >=3 consecutive off-path steps
+    #   (executed gw delta <= -0.1mm; OFF_PATH_RETRACT_* constants) —
+    #   recovery priced below persistence, entering/holding at full tax.
     # ------------------------------------------------------------------
 
     def _classify_branch_segment(self, branch_idx: int) -> str:
@@ -1563,7 +1860,10 @@ class BenchEnv5(eve.Env):
           (0) on-path part  : -0.002 (flat; still progressing to (11))
           (11) bridge       : 0.0
           target daughter   : 0.0 (depth reward via Change 4b progress 2x)
-        Off-path (anything): -0.007.
+        Off-path (anything): -0.007 — EXCEPT (RL_IMPROV_15) -0.002 while
+        genuinely retracting after >=3 consecutive off-path steps (executed
+        gw delta <= -0.1 mm; see OFF_PATH_RETRACT_* constants). Recovery is
+        priced below persistence; entering/holding always pay full tax.
         """
         try:
             self._ensure_path_segment_cache()
@@ -1576,6 +1876,16 @@ class BenchEnv5(eve.Env):
             except Exception:
                 on_path = True
             if not on_path:
+                # RL_IMPROV_15 — retraction discount (see constants block):
+                # a wire that is well INSIDE the wrong path (>=3 prior
+                # off-path steps) and actually withdrawing this step pays
+                # -0.002 instead of -0.007. Entering/holding/flickering pay
+                # full tax, so recovery is cheaper than persistence but
+                # off-path time is never profitable.
+                if (self._off_branch_steps >= OFF_PATH_RETRACT_MIN_OFF_STEPS
+                        and getattr(self, "_last_delta_gw", 0.0)
+                        <= -OFF_PATH_RETRACT_MIN_MM):
+                    return OFF_PATH_RETRACT_TAX
                 return -0.007
             idx = pc._current_branch_idx
             if idx is None:
@@ -1733,6 +2043,96 @@ class BenchEnv5(eve.Env):
         except Exception as e:
             self._step_logger.warning(f"_save_rva_checkpoint exception: {e}")
 
+    def _save_stuck_checkpoint(self, out_dir: str, reason: str) -> None:
+        """Gen-4 — capture SOFA state at the stuck-trigger crossing (fold
+        counter == STUCK_FOLD_TRIGGER or off-path == STUCK_OFF_BRANCH_-
+        TRIGGER) into the STUCK_CHECKPOINT_DIR recovery pool. Same fuller-
+        format save + json sidecar as _save_rva_checkpoint; one per episode,
+        bounded at STUCK_CHECKPOINT_MAX_PER_WORKER snapshots (default 200 —
+        16 workers x 200 x ~0.5MB caps the pool at a few GB, not unbounded)."""
+        # Per-worker cap: each worker has its own env instance, so an
+        # instance counter bounds the pool without globbing the dir.
+        cap = int(os.environ.get("STUCK_CHECKPOINT_MAX_PER_WORKER", "200"))
+        if getattr(self, "_stuck_ckpt_count", 0) >= cap:
+            return
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+            sim = self.intervention.simulation
+            state = sim.save_checkpoint()
+            # Guard against a ragged tracking3d -> object-dtype array, which
+            # np.savez stores but the allow_pickle=False restore load rejects
+            # (corrupting the pool entry). Only save a regular numeric array.
+            _t3d = np.asarray(self.intervention.fluoroscopy.tracking3d)
+            if _t3d.dtype != object:
+                state["tracking3d"] = np.array(_t3d, copy=True)
+            proj_s = 0.0
+            try:
+                proj_s = float(self._path_context.get_projection().s)
+            except Exception:
+                pass
+            # Gen-4 recovery-restore mesh matching — tag the checkpoint with
+            # the CURRENT mesh identity. A stuck checkpoint is mesh-bound
+            # SOFA state; under --procedural_rcca each worker/generation has
+            # a different siphon, so a shared pool mixes meshes. The tag lets
+            # CheckpointRestoreWrapper restore each state ONLY into the exact
+            # mesh it was captured on (fixed-mesh runs have no fingerprint →
+            # "fixed", so the pool stays single-mesh and this is a no-op).
+            mesh_fp = "fixed"
+            try:
+                _vt = getattr(self.intervention, "vessel_tree", None)
+                _fp = getattr(_vt, "mesh_fingerprint", None)
+                if _fp:
+                    mesh_fp = re.sub(r"[^A-Za-z0-9]", "", str(_fp))
+            except Exception:
+                mesh_fp = "fixed"
+            pid = os.getpid()
+            base = (
+                f"stuck_{reason}_mesh-{mesh_fp}_pid{pid}"
+                f"_ep{self._episode_count:04d}"
+                f"_step{self._episode_step_count:04d}"
+            )
+            np.savez(os.path.join(out_dir, base + ".npz"), **state)
+            inserted_lengths = None
+            try:
+                inserted_lengths = [
+                    float(x) for x in self.intervention.device_lengths_inserted
+                ]
+            except Exception:
+                pass
+            # Gen-4 #6 — the buckle bow at capture, so the escapability
+            # screener can gate on restore fidelity (a sprung / popped restore
+            # will not reproduce this slack). = fed gw length minus tip
+            # arclength, the same quantity feature 43 / the buckle reward use.
+            slack_at_capture = None
+            if inserted_lengths is not None:
+                slack_at_capture = float(inserted_lengths[0]) - float(proj_s)
+            meta = {
+                "pid": pid,
+                "reason": reason,
+                "mesh_fingerprint": mesh_fp,
+                "episode_idx": self._episode_count,
+                "step_idx": self._episode_step_count,
+                "target_branch": self._target_branch_short,
+                "fold_stall_count": int(self._fold_stall_count),
+                "off_branch_steps": int(self._off_branch_steps),
+                "inserted_lengths": inserted_lengths,
+                "proj_s_at_capture": proj_s,
+                "slack_at_capture": slack_at_capture,
+                "reset_seed": self._reset_seed,
+                "wall_time": time.time(),
+            }
+            import json as _json
+            with open(os.path.join(out_dir, base + ".json"), "w") as f:
+                _json.dump(meta, f, indent=2)
+            self._step_logger.info(
+                f"STUCK_CHECKPOINT | reason={reason} | ep={self._episode_count} | "
+                f"ep_step={self._episode_step_count} | fold={self._fold_stall_count} | "
+                f"off={self._off_branch_steps} | file={base}.npz"
+            )
+            self._stuck_ckpt_count = getattr(self, "_stuck_ckpt_count", 0) + 1
+        except Exception as e:
+            self._step_logger.warning(f"_save_stuck_checkpoint exception: {e}")
+
     def _resolve_termination_reason(self, terminated: bool, truncated: bool) -> str:
         """Map env state into a single short label for snapshot subdirs.
 
@@ -1744,8 +2144,16 @@ class BenchEnv5(eve.Env):
             return "success"
         if self._heuristic_abort_reason:
             return str(self._heuristic_abort_reason)
+        # RL_IMPROV_15 — under relax_failure_truncations these counters keep
+        # climbing but DO NOT cause truncation (fold/off-path are recoverable,
+        # the episode runs to max_steps). Labelling by the counter would then
+        # mis-report a max_steps recovery episode as "wire_fold_stall" /
+        # "wrong_branch_timeout" (the WBT-in-snapshots the user saw). Skip the
+        # counter-based labels under relax and fall through to the ACTUAL
+        # truncation source (max_steps / vessel_end / sim_error) below.
         try:
-            if self._fold_stall_count >= FOLD_STALL_STEPS:
+            if (not self.relax_failure_truncations
+                    and self._fold_stall_count >= FOLD_STALL_STEPS):
                 return "wire_fold_stall"
         except Exception:
             pass
@@ -1754,7 +2162,8 @@ class BenchEnv5(eve.Env):
             # was intentionally driving the wire off-path inside a daughter
             # region (e.g., LVA's Phase C override), don't mis-categorize the
             # episode as wrong_branch_timeout. Treat as max_steps instead.
-            if (self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS
+            if (not self.relax_failure_truncations
+                    and self._off_branch_steps >= OFF_BRANCH_GRACE_STEPS
                     and not getattr(self, "_heur_suppress_wrong_branch", False)):
                 # RL_IMPROV_8 OST — same off-path timeout, but if the tip was
                 # physically in the target daughter this is an overshoot. Use the
@@ -1839,6 +2248,7 @@ class MultiTargetEnv5(gym.Env):
         n_max_steps: int = 600,
         primary_target_short: str = "RCCA",
         secondary_target_shorts: Optional[Sequence[str]] = None,
+        buckle_reward_coef: float = 0.0,
     ) -> None:
         if primary_target_short not in self.DAUGHTER_SHORT_NAMES:
             raise ValueError(
@@ -1873,6 +2283,9 @@ class MultiTargetEnv5(gym.Env):
             default_target_branch=self.DAUGHTER_CENTERLINE_TEMPLATES[
                 primary_target_short
             ],
+            # Gen-4 — harvest transitions must be scored under the SAME
+            # reward as training, or AWAC pretrains on a different MDP.
+            buckle_reward_coef=buckle_reward_coef,
         )
         self.primary._suppress_internal_snapshot = True
 
@@ -1888,6 +2301,7 @@ class MultiTargetEnv5(gym.Env):
                 visualisation=False,
                 n_max_steps=n_max_steps,
                 target_coord3d=np.zeros(3, dtype=np.float64),  # placeholder
+                buckle_reward_coef=buckle_reward_coef,
             )
             g._suppress_internal_snapshot = True
             g._grader_short = s

@@ -79,9 +79,8 @@ class MLP(Component):
     def device(self) -> torch.device:  # pylint: disable=no-member
         return self._layers[0].weight.device
 
-    # TODO: Add F.relu after input layer
     def forward(self, obs_batch: torch.Tensor, *args, **kwds) -> torch.Tensor:
-        state = self._input_layer(obs_batch)
+        state = F.relu(self._input_layer(obs_batch))
         for layer in self._layers:
             state = layer(state)
             state = F.relu(state)

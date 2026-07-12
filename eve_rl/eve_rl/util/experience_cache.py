@@ -15,9 +15,30 @@ File contents:
 """
 
 import logging
+import os
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Gen-4 — reward-version stamp. Cached episode REWARDS are baked at harvest
+# time; a cache scored with the anti-buckle potential (env5
+# buckle_reward_coef != 0) must only be consumed by a run using the SAME
+# coefficient, or the replay buffer silently mixes two reward MDPs (the
+# obs-dim guard cannot catch this — the obs layout is identical). The
+# training script exports the coefficient via this env var (inherited by
+# the worker processes doing rolling flushes) and every save stamps it into
+# the archive as `meta_buckle_coef`; the cache-load guards in
+# DualDeviceNav_train compare it against the run's --buckle_reward_coef.
+# Absent env var / absent field both mean 0.0 (pre-buckle caches stay valid
+# for coef=0 runs).
+_BUCKLE_COEF_ENV = "EVE_RL_BUCKLE_COEF"
+
+
+def _current_buckle_coef() -> float:
+    try:
+        return float(os.environ.get(_BUCKLE_COEF_ENV, "0") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def save_episodes_npz(path, episodes, position=0, metadata=None):
@@ -69,6 +90,8 @@ def save_episodes_npz(path, episodes, position=0, metadata=None):
         rewards=all_rewards,
         terminals=all_terminals,
         position=np.int32(position),
+        # Gen-4 — reward-version stamp (see _BUCKLE_COEF_ENV note above).
+        meta_buckle_coef=np.float64(_current_buckle_coef()),
     )
     if metadata is not None:
         save_kwargs["meta_return"] = np.array(
@@ -276,6 +299,15 @@ def save_heatup_batch(
             written[path] = len(eps)
 
     return written
+
+
+def cache_buckle_coef(path) -> float:
+    """The buckle_reward_coef the cache's rewards were scored under.
+    0.0 for pre-Gen-4 archives that predate the stamp."""
+    with np.load(path) as data:
+        if "meta_buckle_coef" in data.files:
+            return float(data["meta_buckle_coef"])
+    return 0.0
 
 
 def load_episodes_npz(path):

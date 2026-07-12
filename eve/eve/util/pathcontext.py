@@ -20,7 +20,7 @@ Plan v12 Stage 1 (multi-target heatup) multi-instance support:
     # caches (verified by assert_caches_independent()).
 """
 
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 import numpy as np
 
 from ..util.coordtransform import tracking3d_to_vessel_cs
@@ -161,6 +161,17 @@ MAX_RADIUS_CEILING_MM = 12.0
 # COMMIT_HYSTERESIS_MM of arclength past a junction before the
 # _current_branch_idx state flips to the next on-path branch.
 COMMIT_HYSTERESIS_MM = 10.0
+
+# Hairpin-safe windowed planned-path projection (carotid siphon). The
+# planned-path projection restricts its segment search to +/- the window
+# around the previous step's arclength. The window must exceed max
+# per-step tip travel (~4 mm) with margin, and slides up to 30 mm/step so
+# brief lags self-correct. If the windowed best cross-track exceeds the
+# fallback distance the full scan runs: 15 mm stays below the ~20 mm+
+# limb separation at which the global scan is safe, while siphon limb
+# separation (~5-10 mm) stays protected.
+PROJECTION_WINDOW_MM = 30.0
+PROJECTION_FALLBACK_DIST_MM = 15.0
 
 # Plan v9 (reward-only) — a wrong-daughter commit fires -0.05 only when the
 # wire has genuinely gone DEEP into a wrong branch: off-path arclength since
@@ -309,6 +320,15 @@ class PathProjectionCache:
         # invalidate() calls (steps); reset only in reset().
         self._last_on_path_arclen = 0.0
 
+        # Windowed-projection continuity anchor: arclength of the previous
+        # step's planned-path projection. Persists across invalidate()
+        # calls (invalidate runs every step; continuity must survive it);
+        # cleared in reset() and by reset_projection_continuity(). None
+        # means "no anchor" — the next projection is a full scan. Applies
+        # ONLY to the planned-path projection in get_projection(); the
+        # per-branch projections keep the default full-scan behavior.
+        self._last_planned_s = None
+
         # RL_IMPROV_8 v2 (state-machine + radius-aware) — episode state.
         #   _current_branch_idx: idx into _branches_tuple. Updated by
         #     update_branch_state() on committed junction crossings.
@@ -337,6 +357,13 @@ class PathProjectionCache:
         self._path_branch_sequence = []
         self._path_branch_sequence_with_junctions = []
         self._junction_off_path_candidates = {}
+
+        # Fork-disambiguation geometry: list of (j_arc, planned_dir,
+        # sister_dir) per on-path junction, consumed by LocalGuidance via
+        # get_next_junction_fork_geometry(). None = not built yet; built
+        # lazily on first call after each reset() (each build allocates a
+        # fresh list, so instances never share it).
+        self._fork_geometry = None
 
         # RL_IMPROV_8 §39 (Plan v5) — off-path drift shaping + state-machine
         # daughter-commit events.
@@ -423,6 +450,10 @@ class PathProjectionCache:
         self._stable_on_path = None
         self._pending_path_flip_count = 0
         self._last_on_path_arclen = 0.0  # wire starts at insertion = arclength 0
+        # New episode = new wire position/path: drop the windowed-projection
+        # continuity anchor and the per-episode fork geometry.
+        self._last_planned_s = None
+        self._fork_geometry = None
         # State machine: wire starts on the first segment of the planned
         # path (typically the trunk for high-insert configs). on_planned_path
         # starts True; the very first update_branch_state() call will flip
@@ -502,7 +533,13 @@ class PathProjectionCache:
         return self._tip_vessel_cs
 
     def get_projection(self) -> ProjectionResult:
-        """Return projection result, computing once per step."""
+        """Return projection result, computing once per step.
+
+        The planned-path projection is windowed around the previous step's
+        arclength (hairpin-safe: prevents the carotid-siphon limb flip —
+        see project_onto_polyline). First projection of an episode has no
+        anchor and runs the full scan.
+        """
         if self._projection is None:
             if self._total_length < 1e-6:
                 self._projection = ProjectionResult(
@@ -515,9 +552,26 @@ class PathProjectionCache:
             else:
                 tip = self.get_tip_vessel_cs()
                 self._projection = project_onto_polyline(
-                    tip, self._polyline, self._cumlen
+                    tip,
+                    self._polyline,
+                    self._cumlen,
+                    prev_s=self._last_planned_s,
+                    window_mm=PROJECTION_WINDOW_MM,
+                    fallback_dist_mm=PROJECTION_FALLBACK_DIST_MM,
                 )
+                self._last_planned_s = self._projection.s
         return self._projection
+
+    def reset_projection_continuity(self) -> None:
+        """Drop the windowed-projection continuity anchor.
+
+        env5 calls this after a mid-episode SOFA state restore: the wire
+        teleports, so the arclength window must not pin the projection to
+        the pre-restore arclength. Per-episode resets already clear the
+        anchor via reset() (invoked from the observation/reward resets
+        inside env reset).
+        """
+        self._last_planned_s = None
 
     # ------------------------------------------------------------------
     # Branch membership (built at reset, queried per step)
@@ -1037,6 +1091,124 @@ class PathProjectionCache:
             out.append((float(j_arc), prev_name, next_name))
         return out
 
+    def _build_fork_geometry(self):
+        """Fork-disambiguation geometry, one entry per on-path junction in
+        ``_path_branch_sequence_with_junctions``, sorted by arclength:
+        ``(j_arc, planned_dir, sister_dir)``.
+
+        - ``planned_dir``: unit vector (vessel-CS) from the junction point
+          to the 15 mm interior point of the branch the planned sequence
+          enters AT that junction. If the interior direction degenerates,
+          the local path tangent 2 mm past the junction is the proxy.
+        - ``sister_dir``: same construction for the junction's off-path
+          candidate branch with MAXIMUM dot product against planned_dir
+          (the most confusable sister). None when the junction has no
+          off-path candidates.
+
+        Built once per episode (lazily on first getter call); consumed by
+        LocalGuidance via get_next_junction_fork_geometry().
+        """
+        out = []
+        if (len(self._polyline) < 2
+                or len(self._cumlen) < 2
+                or not self._path_branch_sequence_with_junctions):
+            return out
+        for j_arc, _prev_idx, next_idx in self._path_branch_sequence_with_junctions:
+            j_arc = float(j_arc)
+            # Junction point: interpolate the planned polyline at j_arc
+            # (same searchsorted pattern as get_planned_path_tangent_at).
+            idx = int(np.searchsorted(self._cumlen, j_arc) - 1)
+            idx = max(0, min(idx, len(self._polyline) - 2))
+            seg_len = float(self._cumlen[idx + 1] - self._cumlen[idx])
+            if seg_len > 1e-9:
+                t = (j_arc - float(self._cumlen[idx])) / seg_len
+            else:
+                t = 0.0
+            t = min(max(t, 0.0), 1.0)
+            junction_point = (
+                np.asarray(self._polyline[idx], dtype=np.float64)
+                + t * (np.asarray(self._polyline[idx + 1], dtype=np.float64)
+                       - np.asarray(self._polyline[idx], dtype=np.float64))
+            )
+
+            # planned_dir: junction point → interior of the branch the
+            # planned sequence enters at this junction.
+            planned_dir = None
+            if 0 <= next_idx < len(self._branches_tuple):
+                interior = _branch_interior_point(
+                    self._branches_tuple[next_idx], junction_point,
+                    offset_mm=15.0,
+                )
+                vec = np.asarray(interior, dtype=np.float64) - junction_point
+                norm = float(np.linalg.norm(vec))
+                if norm >= 1e-6:
+                    planned_dir = vec / norm
+            if planned_dir is None:
+                # Degenerate interior point — local path tangent just past
+                # the junction is the best available proxy.
+                planned_dir = self.get_planned_path_tangent_at(j_arc + 2.0)
+
+            # sister_dir: off-path candidates were keyed by their nearest
+            # polyline-point arclength, which may differ from j_arc by
+            # rounding — match the closest key within 1 mm.
+            sister_dir = None
+            if self._junction_off_path_candidates:
+                closest_arc = min(
+                    self._junction_off_path_candidates.keys(),
+                    key=lambda a: abs(a - j_arc),
+                )
+                if abs(closest_arc - j_arc) <= 1.0:
+                    best_dot = -float("inf")
+                    candidates = self._junction_off_path_candidates[closest_arc]
+                    for b_idx in candidates:
+                        if not 0 <= b_idx < len(self._branches_tuple):
+                            continue
+                        interior = _branch_interior_point(
+                            self._branches_tuple[b_idx], junction_point,
+                            offset_mm=15.0,
+                        )
+                        vec = np.asarray(interior, dtype=np.float64) - junction_point
+                        norm = float(np.linalg.norm(vec))
+                        if norm < 1e-6:
+                            continue
+                        vec = vec / norm
+                        dot = float(np.dot(vec, planned_dir))
+                        if dot > best_dot:
+                            best_dot = dot
+                            sister_dir = vec
+            out.append((j_arc, planned_dir, sister_dir))
+        out.sort(key=lambda entry: entry[0])
+        return out
+
+    def get_next_junction_fork_geometry(self) -> Optional[dict]:
+        """Fork geometry of the FIRST on-path junction ahead of the tip's
+        current planned-path projection:
+        ``{"j_arc": float, "planned_dir": (3,) unit np.ndarray,
+        "sister_dir": (3,) unit np.ndarray or None}``, all vectors in
+        vessel-CS. Returns None when past the last junction or when the
+        path context is not ready.
+
+        Observation-support code (consumed by LocalGuidance): handles all
+        exceptions internally — must never crash env.step. Cheap per step:
+        a scan over <= 4 precomputed junction entries.
+        """
+        try:
+            if self._fork_geometry is None:
+                self._fork_geometry = self._build_fork_geometry()
+            if not self._fork_geometry:
+                return None
+            s = float(self.get_projection().s)
+            for j_arc, planned_dir, sister_dir in self._fork_geometry:
+                if j_arc > s + 1e-6:
+                    return {
+                        "j_arc": float(j_arc),
+                        "planned_dir": planned_dir,
+                        "sister_dir": sister_dir,
+                    }
+            return None
+        except Exception:
+            return None
+
     def get_local_radius(self) -> float:
         """Vessel radius at the wire's nearest centerline point on the
         current branch (state-machine determined). Falls back to a default
@@ -1068,6 +1240,46 @@ class PathProjectionCache:
         """Cross-track tolerance derived from local vessel radius:
         ``max(MIN_TOLERANCE_MM, K_RADIUS * local_radius)``."""
         return max(MIN_TOLERANCE_MM, K_RADIUS * self.get_local_radius())
+
+    def get_local_radius_at_arclength(self, s: float) -> float:
+        """Vessel radius at planned-path arclength ``s`` (radius PREVIEW —
+        e.g. the corridor calibre 20 mm ahead of the wire). Interpolates
+        the planned-polyline point at ``s``, resolves which on-path branch
+        owns that arclength, and reads the nearest branch-polyline radius.
+        Same clamping as :meth:`get_local_radius`; DEFAULT_RADIUS_MM on
+        any degenerate input. Pure read — no state-machine interaction."""
+        try:
+            if len(self._polyline) < 2 or len(self._cumlen) < 2:
+                return DEFAULT_RADIUS_MM
+            s_query = float(np.clip(s, 0.0, self._total_length))
+            idx = int(np.searchsorted(self._cumlen, s_query) - 1)
+            idx = max(0, min(idx, len(self._polyline) - 2))
+            seg_len = self._cumlen[idx + 1] - self._cumlen[idx]
+            t = 0.0 if seg_len < 1e-9 else (
+                (s_query - self._cumlen[idx]) / seg_len
+            )
+            point = self._polyline[idx] + t * (
+                self._polyline[idx + 1] - self._polyline[idx]
+            )
+            branch_idx = self._branch_at_arclength(s_query)
+            if branch_idx >= len(self._branch_polylines):
+                return DEFAULT_RADIUS_MM
+            coords = self._branch_polylines[branch_idx]
+            radii = self._branch_radii[branch_idx]
+            if radii is None or len(radii) == 0 or len(coords) == 0:
+                return DEFAULT_RADIUS_MM
+            nearest_idx = int(
+                np.argmin(np.linalg.norm(coords - point, axis=1))
+            )
+            if nearest_idx >= len(radii):
+                return DEFAULT_RADIUS_MM
+            return float(np.clip(
+                radii[nearest_idx],
+                MIN_RADIUS_FLOOR_MM,
+                MAX_RADIUS_CEILING_MM,
+            ))
+        except Exception:
+            return DEFAULT_RADIUS_MM
 
     def _branch_at_arclength(self, s: float) -> int:
         """Look up which on-path branch the planned-path polyline lies on
@@ -1237,6 +1449,10 @@ class PathProjectionCache:
             # Back on-path → re-arm so the next genuine deep wrong-commit
             # can fire again.
             self._wrong_commit_fired = False
+
+        # Drop the memoized on-path verdict so same-step readers recompute
+        # from the just-updated state (the projection itself is still valid).
+        self._is_on_correct_path = None
 
     # ------------------------------------------------------------------
     # Plan v5 helpers — daughter-commit events + off-path divergence
@@ -1668,12 +1884,17 @@ def assert_caches_independent(caches: Sequence["PathProjectionCache"]) -> None:
         "_path_branch_sequence", "_path_branch_sequence_with_junctions",
         "_junction_off_path_candidates", "_path_bp_set", "_bp_adjacency",
         "_branch_to_bp_pair", "_bp_to_path_dist", "_bp_to_path_arclen",
+        # Gen-4 — lazily built per instance (None until first access). The
+        # None-skip below keeps this from false-positiving before build.
+        "_fork_geometry",
     ]
     for i in range(len(caches)):
         for j in range(i + 1, len(caches)):
             for fld in mutable_fields:
-                a = getattr(caches[i], fld)
-                b = getattr(caches[j], fld)
+                a = getattr(caches[i], fld, None)
+                b = getattr(caches[j], fld, None)
+                if a is None or b is None:
+                    continue  # not-yet-built (or absent) — nothing to share
                 assert a is not b, (
                     f"PathProjectionCache field '{fld}' is SHARED between "
                     f"cache[{i}] and cache[{j}] (id={id(a)}) — Plan v12 R15 "

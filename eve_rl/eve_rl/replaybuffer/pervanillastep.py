@@ -11,6 +11,8 @@ priority update — negligible overhead (~1 ms/step) versus the SOFA env
 step. A naive parallel priority array with ``np.random.choice(p=...)``
 would be O(N) per sample (~ms on a 1e6 buffer) — rejected.
 """
+import logging
+import os
 import random
 import numpy as np
 import torch
@@ -112,6 +114,21 @@ class PERVanillaStep(ReplayBuffer):
         self.priority_mode = priority_mode
         self.balanced_fraction = balanced_fraction
         self._balanced = balanced_fraction > 0.0
+        # RL_IMPROV_15 anti-rail (ported from the LCCA anti-rail branch,
+        # EVE_CLEAN_RAIL_MAX) — clean-lane admission filter. A newly
+        # collected success enters the balanced clean lane ONLY if its
+        # railed-step fraction (fraction of steps with any action dim
+        # |a| > 0.95, normalized units) is <= this threshold. Rejected
+        # successes still enter the normal buffer (critic data) with
+        # is_clean=False — they are just excluded from the amplified lane
+        # the AWAC BC term clones, breaking the self-cloning loop
+        # (policy clones its own bang-bang noise-successes -> mean rails).
+        # Unset/empty env var = disabled (legacy behavior). Reference
+        # calibration: seed-diverse cleans ~0.10 railed, self-cloned
+        # poison cohort 0.23-0.24 -> threshold 0.15 separates them.
+        _rail_max = os.environ.get("EVE_CLEAN_RAIL_MAX", "").strip()
+        self.clean_rail_max = float(_rail_max) if _rail_max else None
+        self._clean_rail_rejected = 0  # episodes kept out of the clean lane
 
         self.buffer = []
         self.position = 0
@@ -151,6 +168,29 @@ class PERVanillaStep(ReplayBuffer):
         reached = bool(getattr(episode, "reached_target_daughter", False))
         ep_return = float(getattr(episode, "episode_return", 0.0))
         priority = self._initial_priority(is_demo, reached, ep_return)
+        # RL_IMPROV_15 anti-rail — clean-lane admission filter (see
+        # __init__). NB: must flip `reached` itself (not just the initial
+        # clean_tree write) because update_priorities() re-adds any
+        # is_clean slot to the clean_tree on every TD-priority update.
+        if reached and self.clean_rail_max is not None and len(episode) > 0:
+            try:
+                acts = np.asarray(episode.actions, dtype=np.float64)
+                railed_frac = float(
+                    (np.abs(acts) > 0.95).any(axis=tuple(range(1, acts.ndim)))
+                    .mean()
+                )
+            except Exception:
+                railed_frac = 0.0  # malformed actions -> admit (legacy)
+            if railed_frac > self.clean_rail_max:
+                reached = False
+                self._clean_rail_rejected += 1
+                logging.getLogger(self.__module__).info(
+                    "CLEAN_RAIL_FILTER: success episode rejected from clean "
+                    "lane (railed_frac=%.3f > %.3f; return=%.2f; total "
+                    "rejected=%d) — kept in general buffer.",
+                    railed_frac, self.clean_rail_max, ep_return,
+                    self._clean_rail_rejected,
+                )
         for i in range(len(episode)):
             if len(self.buffer) < self.capacity:
                 self.buffer.append(None)

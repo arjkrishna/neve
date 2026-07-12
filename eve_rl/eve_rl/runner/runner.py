@@ -492,6 +492,13 @@ class Runner(EveRLObject):
         heatup_episode_limit: int = 0,
         heatup_only: bool = False,
         heatup_save_every: int = 0,
+        # RL_IMPROV_15 — run one eval + checkpoint immediately after the
+        # warm-start pretrain, before any exploration. Establishes the
+        # pretrain-only held-out BASELINE (v1 had no reference for its
+        # eval1 8.2%) and banks a clean pretrained checkpoint (v1's only
+        # checkpoints were mid/post-collapse). explore counter is 0 here,
+        # so the checkpoint is named checkpoint0*.
+        eval_after_pretrain: bool = False,
     ):
         # TODO: Log Training Run Infos
         # Plan v10 — heatup-until-N-threaded: instead of a fixed step budget,
@@ -745,6 +752,15 @@ class Runner(EveRLObject):
             # pretrain_updates) and the first explore_and_update hangs on a
             # negative update budget.
             self._pretrain_update_baseline = self.step_counter.update
+
+            # RL_IMPROV_15 — pretrain-only baseline eval (see param note).
+            if eval_after_pretrain:
+                self.logger.info(
+                    "Post-pretrain BASELINE eval (explore=0) — held-out "
+                    "quality of the pretrained policy before any online "
+                    "learning."
+                )
+                self.eval(episodes=eval_episodes, seeds=eval_seeds)
 
         next_eval_step_limt = (
             self.agent.step_counter.exploration + explore_steps_between_eval

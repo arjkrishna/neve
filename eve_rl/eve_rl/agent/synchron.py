@@ -298,11 +298,29 @@ class Synchron(SynchronEvalOnly, Agent):
         normalize_actions: bool = True,
         timeout_worker_after_reaching_limit: float = 90,
         diagnostics_config: Optional[Dict] = None,
+        env_train_factory=None,
     ) -> None:
         self.algo = algo
         self.algo.to(torch.device("cpu"))
         self.env_train = env_train
         self.env_eval = env_eval
+        # Per-worker training-env factory (Gen-4 procedural anatomy). When
+        # set, worker i's train env is env_train_factory(i) instead of a
+        # deepcopy of the single master env_train — so each worker can run a
+        # DIFFERENT vessel (e.g. a distinctly-seeded DualDeviceNavProcedural
+        # that re-randomizes every N episodes). env_train is still used for
+        # network sizing / config; env_eval stays shared (a fixed held-out
+        # anatomy is the honest generalization metric). None = legacy
+        # (deepcopy the master) behavior.
+        #
+        # Held under a PRIVATE name: a factory is a function/closure, and the
+        # eve_rl ConfigHandler (runner.save_config) serializes every __init__
+        # param via getattr(self, name) — a raw function raises
+        # NotImplementedError. Expose the param name as None (the eve
+        # placeholder convention) so config save records a placeholder; the
+        # real factory lives in self._env_train_factory.
+        self._env_train_factory = env_train_factory
+        self.env_train_factory = None
         self.worker_device = worker_device
         self.trainer_device = trainer_device
         self.consecutive_action_steps = consecutive_action_steps
@@ -696,10 +714,14 @@ class Synchron(SynchronEvalOnly, Agent):
         # worker exits its heatup loop + runs its final-batch flush.
         if getattr(self, "_heatup_stop", None) is None:
             self._heatup_stop = mp.Event()
+        if self._env_train_factory is not None:
+            worker_env_train = self._env_train_factory(i)
+        else:
+            worker_env_train = deepcopy(self.env_train)
         return SingleAgentProcess(
             i,
             self.algo.to_play_only(),
-            deepcopy(self.env_train),
+            worker_env_train,
             deepcopy(self.env_eval),
             self.replay_buffer.copy(),
             self.worker_device,

@@ -67,7 +67,14 @@ class IQLPlayOnly(AlgoPlayOnly):
             std = log_std.exp()
             action = torch.tanh(Normal(mean, std).sample())
             action = action.squeeze(0).squeeze(0).cpu().detach().numpy()
-            action += np.random.normal(0, self.exploration_action_noise)
+            # Per-dim noise (a size-less np.random.normal returns ONE scalar
+            # shared by all action dims — perfectly correlated exploration);
+            # clip so the buffer never stores actions outside the tanh
+            # domain [-1, 1].
+            action = action + np.random.normal(
+                0.0, self.exploration_action_noise, size=action.shape
+            )
+            action = np.clip(action, -1.0, 1.0)
         return action
 
     def get_eval_action(self, flat_state: np.ndarray) -> np.ndarray:
@@ -217,7 +224,14 @@ class IQL(Algo):
             std = log_std.exp()
             action = torch.tanh(Normal(mean, std).sample())
             action = action.squeeze(0).squeeze(0).cpu().detach().numpy()
-            action += np.random.normal(0, self.exploration_action_noise)
+            # Per-dim noise (a size-less np.random.normal returns ONE scalar
+            # shared by all action dims — perfectly correlated exploration);
+            # clip so the buffer never stores actions outside the tanh
+            # domain [-1, 1].
+            action = action + np.random.normal(
+                0.0, self.exploration_action_noise, size=action.shape
+            )
+            action = np.clip(action, -1.0, 1.0)
         return action
 
     def get_eval_action(self, flat_state: np.ndarray) -> np.ndarray:
@@ -400,10 +414,15 @@ class IQL(Algo):
         return v_loss
 
     def _get_expected_q(self, next_states, rewards, dones, padding_mask):
-        """IQL critic target: r + gamma * (1-done) * V(s')."""
+        """IQL critic target: r * reward_scaling + gamma * (1-done) * V(s')."""
         with torch.no_grad():
             next_v = self.model.v(next_states)
-        expected_q = rewards + (1 - dones) * self.gamma * next_v
+        # reward_scaling scales the raw reward in the Bellman target
+        # (identity at the default 1.0, which current configs use).
+        expected_q = (
+            rewards * self.reward_scaling
+            + (1 - dones) * self.gamma * next_v
+        )
         if padding_mask is not None:
             expected_q = expected_q * padding_mask
         return expected_q

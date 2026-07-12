@@ -153,6 +153,16 @@ class DualDeviceNav(eve.intervention.MonoPlaneStatic):
             ],
         )
 
+        # Symmetric velocity limits (review finding 2.4): omitting
+        # velocity_limit_low makes MonoPlaneStatic default to
+        # -velocity_limits = [[-30,-1.5],[-30,-1.5]]. The old asymmetric
+        # [-10,+30] translation band put "policy output 0" at +10 mm/s
+        # forward on BOTH devices (hold required a=-0.5) — a built-in
+        # advance bias that suppressed retraction in exploration and
+        # harvest. Symmetric bounds make a=0 = hold and retraction as
+        # reachable as advance. NOTE: changes the [-1,1]->mm/s mapping,
+        # so replay buffers/demos recorded under the old space are
+        # invalid (Gen-3 re-harvest).
         super().__init__(
             vessel_tree,
             [device1, device2],
@@ -161,7 +171,6 @@ class DualDeviceNav(eve.intervention.MonoPlaneStatic):
             target,
             stop_device_at_tree_end,
             normalize_action,
-            velocity_limit_low=np.array([[-10.0, -1.5], [-10.0, -1.5]]),
         )
 
 
@@ -396,6 +405,8 @@ class DualDeviceNavCustom(eve.intervention.MonoPlaneStatic):
             branches=target_branches,
         )
 
+        # Symmetric velocity limits — same rationale as DualDeviceNav
+        # (review finding 2.4): default -velocity_limits so a=0 = hold.
         super().__init__(
             vessel_tree,
             [device1, device2],
@@ -404,5 +415,4 @@ class DualDeviceNavCustom(eve.intervention.MonoPlaneStatic):
             target,
             stop_device_at_tree_end,
             normalize_action,
-            velocity_limit_low=np.array([[-10.0, -1.5], [-10.0, -1.5]]),
         )

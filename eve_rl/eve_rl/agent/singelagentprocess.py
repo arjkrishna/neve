@@ -47,6 +47,43 @@ def _move_state_dict_to_cpu(state_dict):
         return state_dict
 
 
+def _reseed_env_target_rng(env, seed_int):
+    """
+    Reseed the env's explore-target RNG with a per-worker seed.
+
+    The intervention's target sampler (eve centerlinerandom.py) creates
+    its `_rng = random.Random()` ONCE in the parent process; the deepcopy
+    that ships the master env to every worker clones that exact RNG state,
+    and unseeded explore resets never reseed it — so without this reseed
+    all workers sample the IDENTICAL target sequence.
+
+    Args:
+        env: The (possibly wrapped) training env.
+        seed_int: Seed for the fresh random.Random instance.
+
+    Returns:
+        True if a target RNG was found and reseeded, False otherwise.
+    """
+    try:
+        base = getattr(env, "unwrapped", env)
+        # unwrap common single-level wrappers
+        for _ in range(3):
+            if hasattr(base, "intervention"):
+                break
+            inner = getattr(base, "env", None)
+            if inner is None:
+                break
+            base = inner
+        target = getattr(getattr(base, "intervention", None), "target", None)
+        if target is not None and hasattr(target, "_rng"):
+            import random as _random
+            target._rng = _random.Random(seed_int)
+            return True
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    return False
+
+
 def file_handler_callback(handler: logging.FileHandler):
     handler_dict = {
         handler.name: {
@@ -182,6 +219,23 @@ def run(
         logger.info(
             f"Plan v12 R16 — worker RNG: _worker_id={_worker_id}, "
             f"_heatup_base_seed={_base_seed}, _worker_seed={_worker_seed}"
+        )
+
+        # RL_IMPROV_10 B1 — per-worker explore-target RNG reseed. The
+        # env's target sampler `_rng` is a deepcopy clone of the parent's
+        # (see _reseed_env_target_rng); unseeded explore resets never
+        # reseed it, so every worker would draw the identical target
+        # sequence. Reseed env_train ONLY from the same per-worker
+        # material as the R16 block above. env_eval is deliberately left
+        # alone: eval resets always pass explicit seeds, and reseeding
+        # its RNG would blur eval provenance.
+        _target_seed = hash(
+            (_base_seed, _worker_id, os.getpid(), "target_rng")
+        ) & 0xFFFFFFFF
+        _target_reseeded = _reseed_env_target_rng(env_train, _target_seed)
+        logger.info(
+            f"RL_IMPROV_10 B1 — worker {name}: env_train target RNG reseed "
+            f"{'succeeded' if _target_reseeded else 'skipped (no target._rng found)'}"
         )
 
         # Initialize diagnostics logger for trainer subprocess
@@ -559,10 +613,29 @@ class SingleAgentProcess(Agent):
             result = []
         return result
 
+    def _model_queue_get(self, what: str):
+        # RL_IMPROV_15 deadlock guard — the v1 run hung FOREVER on a
+        # no-timeout _model_queue.get() (main thread in anon_pipe_read;
+        # trigger: host suspend/clock-jump mid-IPC right after eval3).
+        # A generous timeout + loud RuntimeError turns a silent all-night
+        # hang into a visible crash the operator (or docker restart
+        # policy) can act on. Override via EVE_RL_MODEL_QUEUE_TIMEOUT_S.
+        timeout_s = float(os.environ.get("EVE_RL_MODEL_QUEUE_TIMEOUT_S", "900"))
+        try:
+            return self._model_queue.get(timeout=timeout_s)
+        except queue.Empty:
+            log = (
+                f"IPC TIMEOUT: {self.name} did not answer '{what}' within "
+                f"{timeout_s:.0f}s — subprocess unresponsive (deadlock "
+                f"guard). Raising instead of hanging forever."
+            )
+            self.logger.error(log)
+            raise RuntimeError(log)
+
     def state_dicts_network(self, destination: Dict[str, Any] = None) -> Dict[str, Any]:
         try:
             self._task_queue.put(["state_dicts_network", destination])
-            return self._model_queue.get()
+            return self._model_queue_get("state_dicts_network")
         except ValueError:
             self.close()
             return None
@@ -576,7 +649,7 @@ class SingleAgentProcess(Agent):
     def state_dicts_optimizer(self) -> Dict[str, Any]:
         try:
             self._task_queue.put(["state_dicts_optimizer"])
-            return self._model_queue.get()
+            return self._model_queue_get("state_dicts_optimizer")
         except ValueError:
             self.close()
             return None
@@ -590,7 +663,7 @@ class SingleAgentProcess(Agent):
     def state_dicts_scheduler(self) -> Dict[str, Any]:
         try:
             self._task_queue.put(["state_dicts_scheduler"])
-            return self._model_queue.get()
+            return self._model_queue_get("state_dicts_scheduler")
         except ValueError:
             self.close()
             return None

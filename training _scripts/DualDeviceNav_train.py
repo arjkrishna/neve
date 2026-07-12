@@ -10,6 +10,15 @@ from util.env2 import BenchEnv2  # NEW: Centerline-aware environment with waypoi
 from util.env3 import BenchEnv3  # NEW: Tuned rewards for better balance
 from util.env4 import BenchEnv4  # Arclength progress + local guidance
 from util.env5 import BenchEnv5  # Optimized env4 with shared projection cache
+from eve.observation import PrivilegedState  # Gen-4 asymmetric-critic tail
+
+
+def _parse_aux_labels(spec: str):
+    """Parse --aux_labels: comma-separated ints RELATIVE to the privileged
+    tail (e.g. "6,21,20" = max contact proxy, slip, fold counter). "" -> None."""
+    if not spec:
+        return None
+    return [int(tok) for tok in str(spec).split(",") if tok.strip() != ""]
 from util.agent import BenchAgentSynchron
 from eve_rl import Runner
 from eve_bench import DualDeviceNav
@@ -173,27 +182,35 @@ def main(args):
         batch_size = BATCH_SIZE
         update_per_explore_step = UPDATE_PER_EXPLORE_STEP
 
+    # Plan v8 — --update_per_explore_step overrides the replay-mode
+    # default. Resolved HERE, before the PER beta schedule and buffer
+    # construction below, which need the effective update:explore ratio.
+    if args.update_per_explore_step is not None:
+        update_per_explore_step = args.update_per_explore_step
+        print(f"[Plan v8] update_per_explore_step overridden = "
+              f"{update_per_explore_step}")
+
     # Plan v7 — PER is an orthogonal on/off switch on step mode. It is
     # step-only: enabling it with episode mode is a configuration error.
     if args.per and args.replay_mode != "step":
         raise ValueError(
             "--per requires --replay_mode step (PER is a step-buffer feature)."
         )
-    # beta anneals beta_start → 1.0 over the whole training run.
-    per_beta_steps = float(TRAINING_STEPS)
+    # beta anneals beta_start → 1.0 over the whole training run. beta
+    # advances once per UPDATE (buffer.sample call), NOT per explore
+    # step, and total updates = TRAINING_STEPS * update_per_explore_step
+    # — so the denominator must be scaled by the effective update ratio
+    # (RL_IMPROV_10 B2; a bare TRAINING_STEPS denominator never lets
+    # beta reach 1.0 at update ratios < 1).
+    per_beta_steps = float(TRAINING_STEPS) * update_per_explore_step
     if args.per:
         print(f"[Plan v7] PER enabled — alpha={args.per_alpha}, "
               f"beta_start={args.per_beta_start}, beta_steps={per_beta_steps:.0f}")
 
-    # Plan v8 — stabilization-suite knobs. --update_per_explore_step
-    # overrides the replay-mode default; the PER-buffer knobs
+    # Plan v8 — stabilization-suite knobs. The PER-buffer knobs
     # (demo_priority_bonus / priority_mode / balanced_fraction) are
     # step-only and need PER (except balanced_fraction, which also works on
     # the uniform step buffer).
-    if args.update_per_explore_step is not None:
-        update_per_explore_step = args.update_per_explore_step
-        print(f"[Plan v8] update_per_explore_step overridden = "
-              f"{update_per_explore_step}")
     if args.replay_mode != "step":
         if args.demo_priority_bonus > 0 or args.priority_mode != "td" \
                 or args.balanced_fraction > 0:
@@ -356,8 +373,106 @@ def main(args):
     if args.env_version == 5 and default_tb is not None:
         env_kwargs["default_target_branch"] = default_tb
         print(f"[Plan v5] single-daughter scoping: default_target_branch={default_tb}")
+    # Gen-4 recovery training — fold-stall / off-path detectors keep
+    # counting (obs features + stuck-pool triggers) but no longer truncate
+    # RL episodes; MaxSteps/VesselEnd/SimError end them. Applied to BOTH
+    # env_train and env_eval (same MDP; eval failures now run to MaxSteps
+    # — slower eval, consistent measurement). Heuristic-mode aborts are
+    # unaffected either way.
+    if args.env_version == 5 and getattr(args, "relax_failure_truncations", False):
+        env_kwargs["relax_failure_truncations"] = True
+        print("[Gen-4] relax_failure_truncations: fold/off-path detectors "
+              "no longer truncate RL episodes (counters + stuck-pool only)")
+    # Gen-4 privileged reward shaping — anti-buckle potential (gw slack +
+    # SOFA contact proxy, delta form; util/buckle_reward.py). Applied to
+    # train AND eval (same MDP; success metric unaffected — the term only
+    # reshapes per-step reward, telescoping to phi_end - phi_start).
+    _buckle_coef = float(getattr(args, "buckle_reward_coef", 0.0) or 0.0)
+    if args.env_version == 5 and _buckle_coef != 0.0:
+        env_kwargs["buckle_reward_coef"] = _buckle_coef
+        print(f"[Gen-4] anti-buckle potential shaping ON: "
+              f"coef={_buckle_coef} (slack + contact channels)")
+    # Reward-version stamp for experience caches: every save (including the
+    # worker-side rolling heatup flushes, which inherit this env var) embeds
+    # the coef its rewards were scored under; the cache-load guards below
+    # fail fast on a mismatch. Set BEFORE any worker process is created.
+    os.environ["EVE_RL_BUCKLE_COEF"] = repr(_buckle_coef)
 
-    intervention = DualDeviceNav(insertion_z=args.insertion_z)
+    # Gen-4 procedural anatomy — per-worker RCCA->siphon variation. Each
+    # worker gets a distinctly-seeded DualDeviceNavProcedural that
+    # re-randomizes the vessel every --procedural_change_every episodes.
+    # env_train here is a representative instance (used for network sizing /
+    # config only; the workers get factory(i)). Full-trunk from z=root, NO
+    # restore (a regenerating mesh invalidates restore checkpoints), NO
+    # insertion_z. Mutually exclusive with --checkpoint_dir.
+    procedural_env_factory = None
+    if getattr(args, "procedural_rcca", False):
+        if args.env_version != 5:
+            raise ValueError("--procedural_rcca requires --env_version 5.")
+        if args.checkpoint_dir:
+            # Gen-4 (#3) — procedural + restore is now mesh-SAFE. Stuck
+            # checkpoints are tagged with the mesh they were captured on
+            # (env5._save_stuck_checkpoint) and CheckpointRestoreWrapper
+            # pins each worker's vessel tree to the checkpoint's exact mesh
+            # (pin_next -> regenerate_to_fingerprint) BEFORE the SOFA restore,
+            # so dof_positions land in the geometry they came from. The pool
+            # MUST be a mesh-fingerprinted stuck harvest (from a prior
+            # --procedural_rcca STUCK_CHECKPOINT_DIR run); untagged/fixed-mesh
+            # checkpoints are correctly ineligible on a procedural tree and
+            # the episode falls through to the ostium start. Under restore the
+            # pin overrides the per-worker seed, so the checkpoint (not the
+            # worker id) dictates the mesh and procedural_change_every is inert.
+            print(
+                "[Gen-4 #3] --procedural_rcca + --checkpoint_dir: mesh-matched "
+                "recovery-curriculum restore ON — each worker's tree is pinned "
+                "to the picked checkpoint's mesh. Pool must be a "
+                "mesh-fingerprinted stuck harvest (else nothing is eligible "
+                "and episodes start at the ostium)."
+            )
+        # Correct design: keep the LOADED arch fixed, vary ONLY the RCCA,
+        # start FIXED at the RCCA ostium. DualDeviceNavRCCAVaried re-meshes
+        # the loaded centerlines with a per-worker-perturbed RCCA (same
+        # vessel-CS frame as DualDeviceNav -> obs-compatible / warm-startable;
+        # the wire never navigates the arch, so re-meshing it is immaterial).
+        from eve_bench import DualDeviceNavRCCAVaried
+        _proc_base_seed = int(getattr(args, "procedural_seed", 12345))
+        _proc_change = int(getattr(args, "procedural_change_every", 10))
+
+        # Factory returns a FULL env (BenchEnv5 wrapping a distinctly-seeded
+        # RCCA-varied intervention). Worker i -> seed base+i.
+        def procedural_env_factory(worker_id):
+            interv = DualDeviceNavRCCAVaried(
+                seed=_proc_base_seed + worker_id,
+                episodes_between_change=_proc_change,
+            )
+            env = BenchEnv5(
+                intervention=interv, mode="train", visualisation=False,
+                **env_kwargs
+            )
+            # Gen-4 (#3) — per-worker mesh-matched restore for the procedural
+            # recovery curriculum. The wrapper must sit on the WORKER'S own
+            # env (not the master template that line ~507 wraps for sizing),
+            # so pin_next regenerates THIS worker's tree in-process. Distinct
+            # rng_seed per worker so the per-episode checkpoint picks diverge.
+            if args.checkpoint_dir:
+                from util.checkpoint_restore import CheckpointRestoreWrapper
+                env = CheckpointRestoreWrapper(
+                    env,
+                    checkpoint_dir=args.checkpoint_dir,
+                    rng_seed=42 + worker_id,
+                )
+            return env
+        # Representative instance for network sizing / config save only.
+        intervention = DualDeviceNavRCCAVaried(
+            seed=_proc_base_seed, episodes_between_change=_proc_change
+        )
+        print(
+            f"[Gen-4] varied-RCCA (loaded arch fixed, start@ostium): "
+            f"base_seed={_proc_base_seed}, change_every={_proc_change} eps, "
+            f"per-worker seeds {_proc_base_seed}..{_proc_base_seed + n_worker - 1}"
+        )
+    else:
+        intervention = DualDeviceNav(insertion_z=args.insertion_z)
 
     # Plan v12 Stage 1 — multi-target heatup harvester. When
     # --multi_target_heatup is set, swap BenchEnv5 (single-target) for
@@ -394,6 +509,8 @@ def main(args):
             mode="train",
             visualisation=False,
             primary_target_short=primary_short,
+            # Harvest transitions must be scored under the training reward.
+            buckle_reward_coef=_buckle_coef,
         )
         print(
             f"[Plan v12] MultiTargetEnv5: primary={primary_short}, "
@@ -430,7 +547,18 @@ def main(args):
             f".npz files in {args.checkpoint_dir}"
         )
 
-    intervention_eval = DualDeviceNav(insertion_z=args.insertion_z)
+    if getattr(args, "procedural_rcca", False):
+        # Held-out RCCA anatomy: a FIXED varied-RCCA vessel whose seed is
+        # disjoint from every worker's (base-1) and which never
+        # re-randomizes during a run. The train-worker-average vs held-out
+        # gap is the generalization metric.
+        from eve_bench import DualDeviceNavRCCAVaried
+        intervention_eval = DualDeviceNavRCCAVaried(
+            seed=int(getattr(args, "procedural_seed", 12345)) - 1,
+            episodes_between_change=10 ** 9,
+        )
+    else:
+        intervention_eval = DualDeviceNav(insertion_z=args.insertion_z)
     env_eval = EnvClass(
         intervention=intervention_eval, mode="eval", visualisation=False, **env_kwargs
     )
@@ -483,6 +611,9 @@ def main(args):
         balanced_fraction=args.balanced_fraction,
         log_std_min=args.log_std_min,
         log_std_max=args.log_std_max,
+        # RL_IMPROV_10 B3 — auto-alpha entropy setpoint; None -> SAC
+        # default (-n_actions).
+        target_entropy=getattr(args, "target_entropy", None),
         # Plan v11 anti-rail (AWAC). All-zero / empty -> None (disabled).
         entropy_beta_per_dim=(
             list(args.entropy_beta_per_dim)
@@ -491,6 +622,30 @@ def main(args):
             else None
         ),
         action_mean_penalty=float(getattr(args, "action_mean_penalty", 0.0)),
+        # RL_IMPROV_15 collapse forensics — log_alpha clamp rails. v1 froze
+        # via alpha decay-to-floor (-10) -> whipsaw recovery -> entropy term
+        # crushing the action mean (std was ceiling-pinned, so the mean was
+        # the only entropy lever). Tighter rails keep the entropy term
+        # alive-but-bounded. Defaults preserve legacy (-10, 2).
+        log_alpha_min=float(getattr(args, "log_alpha_min", -10.0)),
+        log_alpha_max=float(getattr(args, "log_alpha_max", 2.0)),
+        # Gen-4 asymmetric critic — env5's ObsDict appends a privileged
+        # tail (PrivilegedState, LAST key); the critics consume the full
+        # flat obs while the policy is built (total - tail) wide and
+        # slices internally. env v4 and earlier have no tail (dim 0).
+        privileged_obs_dim=(
+            PrivilegedState.N_DIMS if args.env_version == 5 else 0
+        ),
+        # Gen-4 aux heads — indices RELATIVE to the privileged tail; the
+        # policy predicts those privileged values from its deployable
+        # prefix (MSE, weight aux_coef). Empty/0.0 = off.
+        aux_coef=float(getattr(args, "aux_coef", 0.0)),
+        aux_label_rel_indices=_parse_aux_labels(
+            getattr(args, "aux_labels", "")
+        ),
+        # Gen-4 procedural anatomy — per-worker env factory (None unless
+        # --procedural_rcca). Worker i gets a distinctly-seeded vessel.
+        env_train_factory=procedural_env_factory,
     )
 
     # Save config from unwrapped env (ActionCurriculumWrapper has no save_config)
@@ -501,7 +656,15 @@ def main(args):
     infos = list(env_eval_unwrapped.info.info.keys())
     runner = Runner(
         agent=agent,
-        heatup_action_low=[[-10.0, -1.5], [-10.0, -1.5]],
+        # Heatup sampling bounds are PHYSICAL (mm/s, rad/s); the sampled
+        # action is inverse-normalized against the live env action space
+        # before storage (eve_rl single.py random_action). Symmetric
+        # translation bounds (with the 2.4 symmetric action space) make
+        # the random harvest retract as often as it advances — retraction
+        # transitions were previously rare (bounds [-10,+30], mean +10).
+        # Trade-off: a zero-mean walk penetrates less deeply; if harvest
+        # depth suffers, re-bias low toward e.g. -15 rather than -30.
+        heatup_action_low=[[-30.0, -1.5], [-30.0, -1.5]],
         heatup_action_high=[[30.0, 1.5], [30.0, 1.5]],
         agent_parameter_for_result_file=custom_parameters,
         checkpoint_folder=checkpoint_folder,
@@ -571,6 +734,41 @@ def main(args):
             episodes_tuples, _, cache_meta = load_episodes_npz(
                 args.heuristic_cache_file
             )
+            # Gen-3 obs change (guidance 30->39, flat 78->87) — a cache built
+            # under an older observation layout loads silently here and only
+            # crashes at the first update batch with an opaque matmul shape
+            # error far from the cause. Fail fast at load time instead.
+            if episodes_tuples:
+                try:
+                    # Gen-4 — compare against the CRITIC width (full flat obs incl. the
+                    # privileged tail); the policy is now the SLICED width and would
+                    # false-fail a valid cache.
+                    _expected_obs = int(agent.algo.model.q1.n_observations)
+                except Exception:
+                    _expected_obs = None
+                _cache_obs = int(np.asarray(episodes_tuples[0][0]).shape[-1])
+                if _expected_obs and _cache_obs != _expected_obs:
+                    raise ValueError(
+                        f"Heuristic cache obs dim {_cache_obs} != network obs "
+                        f"dim {_expected_obs} ({args.heuristic_cache_file}). "
+                        "The cache was harvested under a different observation "
+                        "layout — regenerate it with the current code."
+                    )
+            # Gen-4 — reward-version guard. Cached REWARDS are baked at
+            # harvest; the obs-dim check above cannot catch a
+            # buckle_reward_coef mismatch (identical layout, different
+            # scoring). A silent mismatch mixes two reward MDPs in one
+            # buffer, biasing the critic/advantages. Absent stamp = 0.0
+            # (pre-buckle cache) — valid only for a coef=0 run.
+            from eve_rl.util.experience_cache import cache_buckle_coef
+            _cache_coef = cache_buckle_coef(args.heuristic_cache_file)
+            if abs(_cache_coef - _buckle_coef) > 1e-9:
+                raise ValueError(
+                    f"Heuristic cache reward version mismatch: cache scored "
+                    f"with buckle_reward_coef={_cache_coef}, this run uses "
+                    f"{_buckle_coef} ({args.heuristic_cache_file}). Pass "
+                    f"--buckle_reward_coef {_cache_coef} or re-harvest."
+                )
             n_pushed = 0
             for i, ep_tuple in enumerate(episodes_tuples):
                 flat_obs, actions, rewards, terminals = ep_tuple
@@ -768,6 +966,21 @@ def main(args):
                 )
                 print(f"Saved heuristic cache to {args.save_heuristic_cache}")
 
+    # Gen-4 harvester — --seed_only: after heuristic seeding + cache save,
+    # exit BEFORE heatup/training. The saved --save_heuristic_cache .npz is
+    # the deliverable (a Gen-4 121-dim RCCA demo seed for a later training
+    # run to load via --heuristic_cache_file). Combine with --procedural_rcca
+    # to harvest on the per-worker VARIED anatomy (on-distribution demos), or
+    # run on the fixed mesh for the reliably-threading tuned heuristic.
+    if getattr(args, "seed_only", False):
+        if not args.save_heuristic_cache:
+            print("[seed-only] WARNING: --save_heuristic_cache not set; the "
+                  "harvested seed will be lost on exit.")
+        print("[seed-only] harvest + cache save complete; exiting before "
+              "heatup/training.")
+        agent.close()
+        return
+
     # Load heatup cache if provided (skips heatup phase)
     heatup_steps_effective = HEATUP_STEPS
     if args.heatup_cache_file and os.path.isfile(args.heatup_cache_file):
@@ -776,6 +989,36 @@ def main(args):
 
         print(f"Loading heatup cache from {args.heatup_cache_file}...")
         episodes_tuples, _, heatup_meta = load_episodes_npz(args.heatup_cache_file)
+        # Same fail-fast obs-dim guard as the heuristic-cache load above: a
+        # stale seed (e.g. the 78-dim lcca_awac_seed_v1.npz after the Gen-3
+        # 87-dim obs change) must fail HERE, not at the first update batch.
+        if episodes_tuples:
+            try:
+                # Gen-4 — compare against the CRITIC width (full flat obs
+                # incl. the privileged tail); the policy is the SLICED width
+                # and would false-fail a valid cache.
+                _expected_obs = int(agent.algo.model.q1.n_observations)
+            except Exception:
+                _expected_obs = None
+            _cache_obs = int(np.asarray(episodes_tuples[0][0]).shape[-1])
+            if _expected_obs and _cache_obs != _expected_obs:
+                raise ValueError(
+                    f"Heatup cache obs dim {_cache_obs} != network obs dim "
+                    f"{_expected_obs} ({args.heatup_cache_file}). The cache "
+                    "was harvested under a different observation layout — "
+                    "regenerate it with the current code."
+                )
+        # Gen-4 — reward-version guard (mirror of the heuristic-cache site):
+        # cached rewards must be scored under THIS run's buckle_reward_coef.
+        from eve_rl.util.experience_cache import cache_buckle_coef
+        _cache_coef = cache_buckle_coef(args.heatup_cache_file)
+        if abs(_cache_coef - _buckle_coef) > 1e-9:
+            raise ValueError(
+                f"Heatup cache reward version mismatch: cache scored with "
+                f"buckle_reward_coef={_cache_coef}, this run uses "
+                f"{_buckle_coef} ({args.heatup_cache_file}). Pass "
+                f"--buckle_reward_coef {_cache_coef} or re-harvest."
+            )
         n_pushed = 0
         for i, ep_tuple in enumerate(episodes_tuples):
             flat_obs, actions, rewards, terminals = ep_tuple
@@ -906,6 +1149,9 @@ def main(args):
                 int(getattr(args, "heatup_save_every", 0) or 0)
                 if getattr(args, "heatup_only", False) else 0
             ),
+            # RL_IMPROV_15 — pretrain-only baseline eval + checkpoint before
+            # any exploration (reference point for all later evals).
+            eval_after_pretrain=getattr(args, "eval_after_pretrain", False),
         )
     finally:
         agent.close()
@@ -994,6 +1240,17 @@ if __name__ == "__main__":
         type=int,
         default=0,
         help="Number of heuristic episodes to seed replay buffer (0=disabled, recommended: 500)",
+    )
+    parser.add_argument(
+        "--seed_only",
+        action="store_true",
+        help=(
+            "Gen-4 harvester mode: run heuristic seeding (+ --save_heuristic_"
+            "cache) and EXIT before heatup/training. Produces a Gen-4 121-dim "
+            "RCCA demo seed .npz for a later run to load via "
+            "--heuristic_cache_file. Combine with --procedural_rcca to harvest "
+            "on the per-worker varied anatomy."
+        ),
     )
     parser.add_argument(
         "--min_success_rate",
@@ -1158,7 +1415,7 @@ if __name__ == "__main__":
             "0 (default) = the mode default (1e6 for step). Set large when "
             "seeding from a big heatup cache so the seed stays a small "
             "fraction of capacity and the is_clean lane is not evicted "
-            "(Plan v12 LCCA: ~11e6 keeps the ~1.07M-transition seed <10%)."
+            "(Plan v12 LCCA: ~11e6 keeps the ~1.07M-transition seed <10%%)."
         ),
     )
     parser.add_argument(
@@ -1204,11 +1461,13 @@ if __name__ == "__main__":
         type=float,
         default=-2.0,
         help=(
-            "Plan v10/v11 anti-rail — hard floor on the GaussianPolicy log-std "
-            "(entropy floor). DEFAULT NOW -2 (std~0.135): keeps AWAC policy "
-            "entropy near target and prevents the deterministic collapse both "
-            "prior runs hit by update ~2.5k. Use -20 only to reproduce the "
-            "old collapse-prone behaviour."
+            "Anti-rail — FLOOR of the GaussianPolicy log-std band. The band "
+            "is SOFTLY enforced by a tanh rescale (raw pre-activation 0 maps "
+            "to the band MIDPOINT), not a hard clamp. (-2, 0) is the "
+            "validated operational band: floor std~0.135 keeps AWAC policy "
+            "entropy near target and prevents deterministic collapse. NB the "
+            "old default band (-20, +2) would initialize at log_std=-9 "
+            "(std~1e-4, collapsed) under the tanh parameterization."
         ),
     )
     parser.add_argument(
@@ -1216,13 +1475,25 @@ if __name__ == "__main__":
         type=float,
         default=2.0,
         help=(
-            "Plan v12 anti-rail — hard CEILING on the GaussianPolicy log-std. "
-            "DEFAULT 2.0 (std~7.4, the SAC default) reproduces old behaviour. "
-            "The lcca_awac_v1 forensic showed the soft-collapse was a log_std "
-            "CEILING explosion (log_std->+2 on all 4 dims, std 1.0->2.0, "
-            "actions saturate from noise) — NOT a floor collapse. Set 0.0 "
-            "(std<=1.0) to cap std at the healthy level and prevent the "
-            "uniform-rail variance explosion."
+            "Anti-rail — CEILING of the GaussianPolicy log-std band, softly "
+            "enforced by the same tanh rescale (raw 0 maps to the band "
+            "midpoint). Default 2.0 keeps the (-2, 2) midpoint-0 band so a "
+            "fresh policy initializes at std~1; pass 0.0 (as the LCCA/RCCA "
+            "AWAC launchers do) for the validated (-2, 0) band that caps the "
+            "lcca_awac_v1 failure mode where log_std ran to the ceiling on "
+            "all 4 dims and actions saturated from noise."
+        ),
+    )
+    parser.add_argument(
+        "--target_entropy",
+        type=float,
+        default=None,
+        help=(
+            "Override the SAC/AWAC auto-alpha entropy setpoint (default: "
+            "-n_actions). For this 4-dim tanh-Gaussian with log_std band "
+            "(-2, 0) the healthy operating entropy is ~+2.5, so the -4 "
+            "default leaves the regulator inert until the policy is already "
+            "railed; ~+1.0 keeps it engaged."
         ),
     )
     parser.add_argument(
@@ -1250,6 +1521,132 @@ if __name__ == "__main__":
             "via the tanh-Jacobian in log_pi). Adds amp * "
             "mean(|atanh(tanh(mean).clamp(+/-0.99))|) to the policy loss. "
             "DEFAULT 0.0 OFF. AWAC-only."
+        ),
+    )
+    parser.add_argument(
+        "--eval_after_pretrain",
+        action="store_true",
+        help=(
+            "RL_IMPROV_15 — run one held-out eval (+ checkpoint) right "
+            "after the warm-start pretrain, BEFORE any exploration. "
+            "Establishes the pretrain-only baseline quality so the first "
+            "online eval has a reference, and banks a clean pretrained "
+            "checkpoint. Costs ~1 eval (~30 min) of wall-clock."
+        ),
+    )
+    parser.add_argument(
+        "--log_alpha_min",
+        type=float,
+        default=-10.0,
+        help=(
+            "RL_IMPROV_15 — floor of the log_alpha clamp (SAC/AWAC "
+            "auto-alpha). The v1 collapse: alpha decayed to the -10 floor "
+            "over 165k updates (entropy term vanished), entropy ground down "
+            "to 0.14, then alpha whipsawed to 0.45 and — with log_std "
+            "ceiling-pinned — crushed the action MEAN toward zero (the "
+            "freeze). A higher floor (e.g. -5 -> alpha_min 0.0067) keeps "
+            "the entropy term alive so entropy never craters and alpha "
+            "never needs a violent correction. DEFAULT -10 (legacy)."
+        ),
+    )
+    parser.add_argument(
+        "--log_alpha_max",
+        type=float,
+        default=2.0,
+        help=(
+            "RL_IMPROV_15 — ceiling of the log_alpha clamp. Caps how hard "
+            "the entropy term can push the policy; with std saturated at "
+            "its log_std_max ceiling the ONLY entropy lever left is "
+            "shrinking |mean|, so an uncapped alpha mean-crushes the "
+            "policy (v1 froze at alpha~0.45; healthy learning was seen at "
+            "alpha<=0.1). E.g. -2.3 -> alpha_max 0.100. DEFAULT 2.0 "
+            "(legacy, alpha_max 7.4)."
+        ),
+    )
+    parser.add_argument(
+        "--relax_failure_truncations",
+        action="store_true",
+        help=(
+            "Gen-4 recovery training — fold-stall / off-path detectors keep "
+            "counting (obs features 20-21/44 + STUCK_CHECKPOINT_DIR pool "
+            "triggers) but no longer truncate RL episodes; MaxSteps/VesselEnd/"
+            "SimError end them. You cannot learn recovery (retract, unbuckle, "
+            "re-approach) from states the env kills you for entering. "
+            "Heuristic-mode demo aborts are unaffected. Failure episodes run "
+            "2-3x longer — pair with a stuck-pool restore curriculum "
+            "(STUCK_CHECKPOINT_DIR harvest, then --checkpoint_dir on the pool)."
+        ),
+    )
+    parser.add_argument(
+        "--buckle_reward_coef",
+        type=float,
+        default=0.0,
+        help=(
+            "Gen-4 privileged reward shaping — anti-buckle potential. Adds "
+            "coef*(phi_t - phi_{t-1}) per step, phi in [-1,0] from gw slack "
+            "(inserted_gw - proj.s, 5mm dead-band, 40mm cap) + SOFA contact "
+            "proxy mean|pos - free_pos| (2mm cap), equal weights "
+            "(util/buckle_reward.py). Potential/delta form: closed loops net "
+            "exactly zero (not farmable); forming a buckle costs up to -coef, "
+            "recovering earns it back; stuck-pool restored episodes that "
+            "unbuckle net POSITIVE (the recovery incentive the audit found "
+            "missing). Reward is env-computed so using the critic-only "
+            "contact signal is legitimate (privileged reward). 1.0 = slack "
+            "channel at parity with the 0.01/mm progress factor; 0.5 "
+            "recommended first run. DEFAULT 0.0 OFF (frozen legacy reward)."
+        ),
+    )
+    parser.add_argument(
+        "--procedural_rcca",
+        action="store_true",
+        help=(
+            "Gen-4 varied-RCCA anatomy — keep the LOADED DualDeviceNav arch "
+            "FIXED and vary ONLY the RCCA->RICA->siphon per worker "
+            "(DualDeviceNavRCCAVaried: the loaded RCCA centerline is "
+            "perturbed distally, anchored at the real ostium; the whole tree "
+            "is re-meshed, same vessel-CS frame as DualDeviceNav so obs "
+            "match / a fixed-mesh policy can warm-start). The wire START is "
+            "FIXED at the RCCA ostium (identical every worker) - this "
+            "isolates the siphon-navigation problem (no arch/fork-commit). "
+            "Worker i seeded --procedural_seed + i; eval = fixed held-out "
+            "RCCA (seed base-1). Re-randomizes every "
+            "--procedural_change_every episodes. Env v5 only. Invalidates "
+            "fixed-mesh caches/checkpoints. May be combined with "
+            "--checkpoint_dir for a mesh-matched recovery curriculum (#3): "
+            "each worker's tree is pinned to the restored checkpoint's mesh, "
+            "so the pool must be a mesh-fingerprinted stuck harvest."
+        ),
+    )
+    parser.add_argument(
+        "--procedural_seed", type=int, default=12345,
+        help="Base RNG seed for --procedural_rcca (worker i uses base+i).",
+    )
+    parser.add_argument(
+        "--procedural_change_every", type=int, default=10,
+        help="Regenerate each worker's procedural vessel every N episodes "
+             "(default 10). Each regen triggers a SOFA scene rebuild "
+             "(~seconds), amortized over N minutes-long episodes.",
+    )
+    parser.add_argument(
+        "--aux_coef",
+        type=float,
+        default=0.0,
+        help=(
+            "Gen-4 auxiliary privileged-label supervision weight. > 0 adds a "
+            "policy head predicting privileged-tail values (see --aux_labels) "
+            "from the deployable obs prefix, MSE-weighted into the policy "
+            "loss — representation shaping toward inferring contact/buckle "
+            "state. DEFAULT 0.0 OFF."
+        ),
+    )
+    parser.add_argument(
+        "--aux_labels",
+        type=str,
+        default="",
+        help=(
+            "Comma-separated indices RELATIVE to the privileged tail for "
+            "--aux_coef supervision (PrivilegedState layout: e.g. '6,21,20' "
+            "= max contact proxy, slip, fold counter). Empty = off."
         ),
     )
     parser.add_argument(

@@ -23,6 +23,16 @@ class BenchAgentSingle(eve_rl.agent.Single):
         consecutive_action_steps,
         stochastic_eval: bool = False,
         ff_only: bool = False,
+        # Log-std band must reach EVERY GaussianPolicy site, not only the
+        # Synchron one — same defaults as BenchAgentSynchron.
+        log_std_min: float = -2.0,
+        log_std_max: float = 2.0,
+        # Auto-alpha entropy setpoint override; None -> SAC default
+        # (-n_actions).
+        target_entropy: float = None,
+        # Gen-4 asymmetric critic — see BenchAgentSynchron. Policy width =
+        # flat obs width minus the privileged tail; own embedder instance.
+        privileged_obs_dim: int = 0,
     ):
 
         obs_dict = env_train.observation_space.sample()
@@ -30,16 +40,24 @@ class BenchAgentSingle(eve_rl.agent.Single):
         obs_np = np.concatenate(obs_list)
 
         n_observations = obs_np.shape[0]
+        n_obs_policy = n_observations - int(privileged_obs_dim)
         n_actions = env_train.action_space.sample().flatten().shape[0]
         if embedder_layers and embedder_nodes and not ff_only:
             q1_embedder = eve_rl.network.component.LSTM(
                 n_layer=embedder_layers, n_nodes=embedder_nodes
             )
+            policy_embedder = eve_rl.network.component.LSTM(
+                n_layer=embedder_layers, n_nodes=embedder_nodes
+            )
         elif embedder_layers and embedder_nodes and ff_only:
             hidden_layers = [embedder_nodes] * embedder_layers
             q1_embedder = eve_rl.network.component.MLP(hidden_layers=hidden_layers)
+            policy_embedder = eve_rl.network.component.MLP(
+                hidden_layers=hidden_layers
+            )
         else:
             q1_embedder = eve_rl.network.component.ComponentDummy()
+            policy_embedder = eve_rl.network.component.ComponentDummy()
 
         q1_base = eve_rl.network.component.MLP(hidden_layers)
         q2_base = eve_rl.network.component.MLP(hidden_layers)
@@ -70,7 +88,9 @@ class BenchAgentSingle(eve_rl.agent.Single):
         )
 
         policy = eve_rl.network.GaussianPolicy(
-            policy_base, n_observations, n_actions, q1_embedder
+            policy_base, n_obs_policy, n_actions, policy_embedder,
+            log_std_min=log_std_min,
+            log_std_max=log_std_max,
         )
         policy_optim = eve_rl.optim.Adam(
             policy_base,
@@ -102,6 +122,7 @@ class BenchAgentSingle(eve_rl.agent.Single):
             gamma=gamma,
             reward_scaling=reward_scaling,
             stochastic_eval=stochastic_eval,
+            target_entropy=target_entropy,
         )
 
         replay_buffer = eve_rl.replaybuffer.VanillaEpisodeShared(
@@ -156,6 +177,13 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         log_std_max: float = 2.0,  # Plan v12 anti-rail — cap the std CEILING
         entropy_beta_per_dim=None,
         action_mean_penalty: float = 0.0,
+        # RL_IMPROV_15 collapse forensics — configurable log_alpha clamp
+        # rails (SAC/AWAC auto-alpha). Defaults = legacy (-10, 2).
+        log_alpha_min: float = -10.0,
+        log_alpha_max: float = 2.0,
+        # Auto-alpha entropy setpoint override; None -> SAC default
+        # (-n_actions). SAC/AWAC only — IQL has no entropy regulator.
+        target_entropy: float = None,
         offline_mode: bool = False,
         # Plan v11 Stage 1B — IQL-specific hyperparameters (only used when
         # algo == "iql"). When algo != "iql" these are ignored.
@@ -170,6 +198,23 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         #                      reference policy weights).
         alpha_kl: float = 0.0,
         kl_warmstart_state_dict: dict = None,
+        # Gen-4 asymmetric critic — width of the privileged tail appended
+        # LAST in the env's ObsDict. Critics (and IQL V) consume the FULL
+        # flat obs; the policy is built n_obs_total - privileged_obs_dim
+        # wide and slices its input internally, so a deployed policy never
+        # depends on sim-only state. 0 = symmetric (legacy).
+        privileged_obs_dim: int = 0,
+        # Gen-4 aux heads — indices RELATIVE to the privileged tail start;
+        # converted to absolute flat-obs indices here. The policy predicts
+        # these privileged values from its deployable prefix (MSE weight
+        # aux_coef). Empty/0.0 = off.
+        aux_coef: float = 0.0,
+        aux_label_rel_indices=None,
+        # Gen-4 procedural anatomy — per-worker training-env factory. When
+        # set, worker i gets env_train_factory(i) (e.g. a distinctly-seeded
+        # DualDeviceNavProcedural) instead of a deepcopy of the master
+        # env_train. env_eval stays the shared held-out anatomy.
+        env_train_factory=None,
     ):
 
         obs_dict = env_train.observation_space.sample()
@@ -177,16 +222,45 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         obs_np = np.concatenate(obs_list)
 
         n_observations = obs_np.shape[0]
+        n_obs_policy = n_observations - int(privileged_obs_dim)
+        if n_obs_policy <= 0:
+            raise ValueError(
+                f"privileged_obs_dim={privileged_obs_dim} >= flat obs "
+                f"width {n_observations}"
+            )
+        aux_label_rel_indices = list(aux_label_rel_indices or [])
+        # Validate at CONSTRUCTION (not at the first update, hours in): an
+        # out-of-range index would crash index_select mid-training; a
+        # NEGATIVE index would silently supervise against a deployable-obs
+        # column (invisible garbage). Bound to the privileged tail.
+        for _i in aux_label_rel_indices:
+            if not (0 <= int(_i) < int(privileged_obs_dim)):
+                raise ValueError(
+                    f"aux label rel index {_i} outside "
+                    f"[0, privileged_obs_dim={privileged_obs_dim})"
+                )
+        aux_label_abs = [n_obs_policy + int(i) for i in aux_label_rel_indices]
         n_actions = env_train.action_space.sample().flatten().shape[0]
         if embedder_layers and embedder_nodes and not ff_only:
             q1_embedder = eve_rl.network.component.LSTM(
                 n_layer=embedder_layers, n_nodes=embedder_nodes
             )
+            policy_embedder = eve_rl.network.component.LSTM(
+                n_layer=embedder_layers, n_nodes=embedder_nodes
+            )
         elif embedder_layers and embedder_nodes and ff_only:
             hidden_layers = [embedder_nodes] * embedder_layers
             q1_embedder = eve_rl.network.component.MLP(hidden_layers=hidden_layers)
+            policy_embedder = eve_rl.network.component.MLP(
+                hidden_layers=hidden_layers
+            )
         else:
             q1_embedder = eve_rl.network.component.ComponentDummy()
+            policy_embedder = eve_rl.network.component.ComponentDummy()
+        # The policy gets its OWN embedder instance: with the asymmetric
+        # widths a shared head would raise on the n_inputs re-set (and the
+        # old sharing meant only q1's optimizer ever stepped it while all
+        # three losses fed it gradients).
 
         q1_base = eve_rl.network.component.MLP(hidden_layers)
         q2_base = eve_rl.network.component.MLP(hidden_layers)
@@ -217,9 +291,10 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         )
 
         policy = eve_rl.network.GaussianPolicy(
-            policy_base, n_observations, n_actions, q1_embedder,
+            policy_base, n_obs_policy, n_actions, policy_embedder,
             log_std_min=log_std_min,
             log_std_max=log_std_max,
+            n_aux=len(aux_label_abs),
         )
         policy_optim = eve_rl.optim.Adam(
             policy_base,
@@ -303,7 +378,12 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
                 awac_lambda=awac_lambda,
                 entropy_beta_per_dim=entropy_beta_per_dim,
                 action_mean_penalty=action_mean_penalty,
+                log_alpha_min=log_alpha_min,
+                log_alpha_max=log_alpha_max,
+                target_entropy=target_entropy,
                 offline_mode=offline_mode,
+                aux_coef=aux_coef,
+                aux_label_indices=aux_label_abs or None,
             )
 
         # Plan v6 — replay-mode selects the buffer class.
@@ -350,6 +430,7 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
             normalize_actions=True,
             timeout_worker_after_reaching_limit=180,
             diagnostics_config=diagnostics_config,
+            env_train_factory=env_train_factory,
         )
 
 
@@ -373,22 +454,39 @@ def create_bench_agent(
     stochastic_eval: bool = False,
     single: bool = False,
     ff_only: bool = False,
+    # Log-std band must reach EVERY GaussianPolicy site, not only the
+    # Synchron one — same defaults as BenchAgentSynchron.
+    log_std_min: float = -2.0,
+    log_std_max: float = 2.0,
+    # Auto-alpha entropy setpoint override; None -> SAC default
+    # (-n_actions).
+    target_entropy: float = None,
+    # Gen-4 asymmetric critic — see BenchAgentSynchron.
+    privileged_obs_dim: int = 0,
 ):
     obs_dict = train_env.observation_space.sample()
     obs_list = [obs.flatten() for obs in obs_dict.values()]
     obs_np = np.concatenate(obs_list)
 
     n_observations = obs_np.shape[0]
+    n_obs_policy = n_observations - int(privileged_obs_dim)
     n_actions = train_env.action_space.sample().flatten().shape[0]
     if embedder_layers and embedder_nodes and not ff_only:
         q1_embedder = eve_rl.network.component.LSTM(
             n_layer=embedder_layers, n_nodes=embedder_nodes
         )
+        policy_embedder = eve_rl.network.component.LSTM(
+            n_layer=embedder_layers, n_nodes=embedder_nodes
+        )
     elif embedder_layers and embedder_nodes and ff_only:
         hidden_layers = [embedder_nodes] * embedder_layers
         q1_embedder = eve_rl.network.component.MLP(hidden_layers=hidden_layers)
+        policy_embedder = eve_rl.network.component.MLP(
+            hidden_layers=hidden_layers
+        )
     else:
         q1_embedder = eve_rl.network.component.ComponentDummy()
+        policy_embedder = eve_rl.network.component.ComponentDummy()
 
     q1_base = eve_rl.network.component.MLP(hidden_layers)
     q2_base = eve_rl.network.component.MLP(hidden_layers)
@@ -419,7 +517,9 @@ def create_bench_agent(
     )
 
     policy = eve_rl.network.GaussianPolicy(
-        policy_base, n_observations, n_actions, q1_embedder
+        policy_base, n_obs_policy, n_actions, policy_embedder,
+        log_std_min=log_std_min,
+        log_std_max=log_std_max,
     )
     policy_optim = eve_rl.optim.Adam(
         policy_base,
@@ -451,6 +551,7 @@ def create_bench_agent(
         gamma=gamma,
         reward_scaling=reward_scaling,
         stochastic_eval=stochastic_eval,
+        target_entropy=target_entropy,
     )
 
     replay_buffer = eve_rl.replaybuffer.VanillaEpisodeShared(

@@ -18,13 +18,44 @@ Usage:
 
 import glob
 import os
-from typing import Any, Dict, Optional
+import re
+from typing import Any, Dict, List, Optional
 
 import gymnasium as gym
 import numpy as np
 
 
 _REQUIRED_KEYS = ("xtip", "rotation_instrument", "index_first_node", "dof_positions")
+
+# Gen-4 recovery-restore mesh matching. Stuck checkpoints saved by env5 embed
+# the mesh they were captured on as ``_mesh-<fp>_`` in the filename (fp =
+# RCCAVariedFromMesh.mesh_fingerprint, e.g. ``s12345g3``). A checkpoint is
+# mesh-bound SOFA state, so it may only be restored into that exact mesh.
+# Legacy checkpoints (fixed DualDeviceNav: RVA, pre-bif11, pre-Gen-4 stuck)
+# carry no tag and are treated as ``fixed``.
+_MESH_TAG_RE = re.compile(r"_mesh-([A-Za-z0-9]+)_")
+_FIXED_FP = "fixed"
+
+
+def _mesh_fp_of_file(path: str) -> str:
+    """Parse the mesh fingerprint from a checkpoint filename; ``fixed`` if
+    untagged (legacy / fixed-mesh checkpoints)."""
+    m = _MESH_TAG_RE.search(os.path.basename(path))
+    return m.group(1) if m else _FIXED_FP
+
+
+def _find_vessel_tree(env):
+    """Unwrap gym.Wrapper layers to the intervention's vessel tree, or None."""
+    cur = env
+    for _ in range(16):  # bounded unwrap
+        interv = getattr(cur, "intervention", None)
+        if interv is not None:
+            return getattr(interv, "vessel_tree", None)
+        nxt = getattr(cur, "env", None)
+        if nxt is None or nxt is cur:
+            break
+        cur = nxt
+    return None
 
 
 class CheckpointRestoreWrapper(gym.Wrapper):
@@ -52,6 +83,7 @@ class CheckpointRestoreWrapper(gym.Wrapper):
         checkpoint_dir: str,
         rng_seed: Optional[int] = None,
         pattern: str = "*.npz",
+        mesh_match: bool = True,
     ):
         super().__init__(env)
         self.checkpoint_dir = checkpoint_dir
@@ -59,6 +91,14 @@ class CheckpointRestoreWrapper(gym.Wrapper):
         self._rng_seed = rng_seed
         self._rng = None  # lazy, per-process seeded on first use
         self._validated = False
+        # Gen-4 — restrict each restore to a mesh-consistent checkpoint.
+        # For a FIXED-mesh env (no RCCAVariedFromMesh) every checkpoint parses
+        # to "fixed" and this is a pure no-op (identical to legacy behavior).
+        # For a PROCEDURAL env the wrapper pins the vessel tree to the picked
+        # checkpoint's mesh before reset so the SOFA restore lands in the
+        # geometry it was captured on. mesh_match=False restores the old
+        # unconditional random pick (unsafe on a mixed-mesh pool).
+        self.mesh_match = bool(mesh_match)
 
         # Plan v9 Change 8 — lazy scan. The pool may be EMPTY at
         # construction time when caches + checkpoints are generated in
@@ -86,22 +126,25 @@ class CheckpointRestoreWrapper(gym.Wrapper):
         return len(self.checkpoint_files)
 
     def _pick_index(self, seed: Optional[int],
-                    explicit_id: Optional[int] = None) -> int:
+                    explicit_id: Optional[int] = None,
+                    n: Optional[int] = None) -> int:
         # Plan v3: schedule may pass `options["checkpoint_id"]` to pick
         # a SPECIFIC checkpoint deterministically (factorial grid testing).
-        # Falls back to seed-based random pick otherwise.
+        # Falls back to seed-based random pick otherwise. `n` is the size of
+        # the candidate list being indexed (the mesh-eligible subset); it
+        # defaults to the full pool for backward compatibility.
+        if n is None:
+            n = len(self.checkpoint_files)
         if explicit_id is not None:
-            return int(explicit_id) % len(self.checkpoint_files)
+            return int(explicit_id) % n
         if seed is not None:
             # Per-episode, per-worker reproducible: unique seeds from the
             # schedule produce unique checkpoint picks.
-            return int(
-                np.random.default_rng(seed).integers(0, len(self.checkpoint_files))
-            )
+            return int(np.random.default_rng(seed).integers(0, n))
         if self._rng is None:
             base = self._rng_seed if self._rng_seed is not None else 0
             self._rng = np.random.default_rng(base + os.getpid())
-        return int(self._rng.integers(0, len(self.checkpoint_files)))
+        return int(self._rng.integers(0, n))
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None):
         options = dict(options) if options else {}
@@ -120,17 +163,60 @@ class CheckpointRestoreWrapper(gym.Wrapper):
             # seeding since construction; rescan if we still have none.
             if not self.checkpoint_files:
                 self._rescan()
-            if self.checkpoint_files:
+            candidates = self._eligible_checkpoints()
+            if candidates:
                 explicit_id = options.get("checkpoint_id")
-                idx = self._pick_index(seed, explicit_id=explicit_id)
-                path = self.checkpoint_files[idx]
+                idx = self._pick_index(seed, explicit_id=explicit_id,
+                                       n=len(candidates))
+                path = candidates[idx]
+                # Procedural mesh matching: pin the vessel tree to this
+                # checkpoint's mesh BEFORE reset rebuilds the SOFA scene, so
+                # the restored dof_positions land in the geometry they were
+                # captured on. No-op for fixed-mesh checkpoints/envs.
+                self._pin_mesh_for(path)
                 with np.load(path) as data:
                     options["restore_checkpoint"] = {k: np.array(data[k]) for k in data.files}
                 options["_restore_checkpoint_file"] = os.path.basename(path)
                 options["_restore_checkpoint_idx"] = int(idx)
-            # else: pool still empty -> fall through; episode starts at the
-            # normal insertion point (z=345). Defensive: never crash.
+            # else: no mesh-eligible checkpoint -> fall through; episode
+            # starts at the normal insertion point. Defensive: never crash,
+            # and NEVER restore a mesh-mismatched (invalid) state.
         return self.env.reset(seed=seed, options=options)
+
+    # ------------------------------------------------------------------
+    # Gen-4 mesh matching helpers
+    # ------------------------------------------------------------------
+    def _eligible_checkpoints(self) -> List[str]:
+        """Checkpoints that can be validly restored into the current env.
+
+        - mesh_match off        -> the whole pool (legacy behavior).
+        - fixed-mesh env        -> only "fixed" (untagged) checkpoints; a
+          fixed vessel tree cannot host a procedurally-varied siphon.
+        - procedural env (tree  -> only fingerprinted checkpoints (the wrapper
+          exposes regenerate)      pins the tree to each one's mesh). Untagged
+                                   "fixed" states are excluded — restoring one
+                                   into a varied siphon is the invalid teleport
+                                   this whole mechanism prevents.
+        """
+        files = self.checkpoint_files
+        if not self.mesh_match or not files:
+            return list(files)
+        tree = _find_vessel_tree(self.env)
+        can_pin = tree is not None and hasattr(tree, "regenerate_to_fingerprint")
+        if can_pin:
+            return [f for f in files if _mesh_fp_of_file(f) != _FIXED_FP]
+        cur_fp = getattr(tree, "mesh_fingerprint", _FIXED_FP) if tree else _FIXED_FP
+        return [f for f in files if _mesh_fp_of_file(f) == cur_fp]
+
+    def _pin_mesh_for(self, path: str) -> None:
+        """If the env's vessel tree supports pinning and the checkpoint is
+        fingerprinted, make the next reset regenerate that exact mesh."""
+        fp = _mesh_fp_of_file(path)
+        if fp == _FIXED_FP:
+            return
+        tree = _find_vessel_tree(self.env)
+        if tree is not None and hasattr(tree, "pin_next"):
+            tree.pin_next(fp)
 
     # ------------------------------------------------------------------
     # EveRLObject interop. agent.save_checkpoint() calls
