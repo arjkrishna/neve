@@ -1,36 +1,46 @@
 #!/bin/bash
-# Plan v12 — LCCA AWAC v2: EXP-1 (log_std CEILING cap) + EXP-2 (clean-lane up-weight).
+# Gen-4 — RCCA PROCEDURAL-OSTIUM harvester (matched seed for
+# launch_rcca_procedural_v1.sh). RANDOM actions on the SAME per-worker VARIED
+# siphon anatomy the training run uses: --procedural_rcca starts every worker
+# at the fixed RCCA ostium and regenerates that worker's siphon every
+# --procedural_change_every episodes DURING the harvest, so the seed spans the
+# same mesh distribution as training (not one fixed mesh). Single-target RCCA
+# (the ostium start cannot reach the other daughters, so multi-target does not
+# apply).
 #
-# Built from launch_lcca_awac_v1.sh. v1 SOFT-COLLAPSED to ~7% eval. The 6-cluster
-# forensic (lcca-lva-investigation) found:
-#   * The stability bug is a log_std CEILING explosion (log_std->+2 on all 4 dims,
-#     std 1.0->2.0, actions saturate from NOISE) — NOT a floor collapse. Plan v11
-#     fixed log_std_min=-2 but left log_std_max=+2 untouched. EXP-1 caps it.
-#   * LVA-confusion (38%) is STRUCTURAL, present at full strength when entropy was
-#     healthy (eval 10.2%) — the policy never learns the LCCA-ostium "hook"
-#     (tip-x ~73->~50 at the z~400 fork): successes hook 100%, LVA failures 6%.
-#   * The is_clean lane is 100% LCCA-success (= hook-executors) with ZERO LVA
-#     leakage, but only 0.3-weighted. EXP-2 doubles it to 0.6 to put far more
-#     gradient mass on the missing hook behaviour.
+# Matched to v1.sh so the seed transitions are drawn from the SAME MDP:
+#   --relax_failure_truncations : fold/off-path do NOT truncate → buckled
+#       transitions carry done=False (not a grounded terminal), matching
+#       training, and the long episodes capture live retract/unbuckle attempts.
+#   --buckle_reward_coef 0.5    : rewards scored with the anti-buckle potential,
+#       so the seed reward == the training reward. STAMPED into the .npz
+#       (meta_buckle_coef via EVE_RL_BUCKLE_COEF); v1.sh fails fast at load if
+#       its --buckle_reward_coef differs.
 #
-# ONLY changes vs v1 (NO reward / observation / terminal / dynamics changes):
-#   EXP-1:  --log_std_max 0.0        (was default +2.0; caps std at the healthy ~1.0)
-#   EXP-2:  --balanced_fraction 0.6  (was 0.3; clean lane already 100% LCCA-hook)
-# Everything else byte-for-byte v1: same curated seed, AWAC lambda=3.0, step PER,
-# grad_clip 1.0, log_std_min -2, MLP 256x256, lr 3e-4, pretrain 10000, 11M buffer.
+# BOUNDED harvest (--heatup_episodes) so the single-target path writes ONE
+# consolidated seed .npz at --save_heatup_cache (no rolling chunks, no
+# concatenation — runner.py single-target legacy save). Bump --heatup_episodes
+# for a bigger seed; each is a full relaxed episode so they run long.
+#
+# Output (single file): saved/rcca_proc_heatup/seed.npz
+#   → load into v1.sh with --heatup_cache_file (already wired there).
+# NOTE: random heatup rarely THREADS the tortuous siphon — this seed is
+# action-space COVERAGE + rare reaches + buckle/recovery transitions, NOT
+# clean demos. It bootstraps the buffer for AWAC; the recovery SKILL is
+# learned online during v1.sh's explore phase (live in-situ buckling).
+#
+# Fixed-mesh z=345 multi-target variant (the OLD config, for a fixed-mesh
+# z=345 run): swap --procedural_rcca/--procedural_seed/--procedural_change_every
+# for --insertion_z 345 --multi_target_heatup, and it rolling-saves per-daughter
+# chunks (heatup_targetpart_RCCA_* / heatup_endedin_RCCA_*) needing concat.
 
 set -e
 export MSYS_NO_PATHCONV=1
 
-docker rm lcca_awac_v2 2>/dev/null || true
+docker rm rcca_proc_harvest 2>/dev/null || true
 
-docker run --name lcca_awac_v2 --gpus all --shm-size=24g --init -d \
-  -v "D:\Arjun\workspace\neve\training _scripts\heuristic_only_run.py:/opt/eve_training/training_scripts/heuristic_only_run.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\heuristic_run_LCCA.py:/opt/eve_training/training_scripts/heuristic_run_LCCA.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\heuristic_run_LVA.py:/opt/eve_training/training_scripts/heuristic_run_LVA.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\heuristic_run_RCCA.py:/opt/eve_training/training_scripts/heuristic_run_RCCA.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\heuristic_run_RVA.py:/opt/eve_training/training_scripts/heuristic_run_RVA.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\collect_sofa_checkpoints.py:/opt/eve_training/training_scripts/collect_sofa_checkpoints.py" \
+docker run --name rcca_proc_harvest --gpus all --shm-size=24g --init -d \
+  -e EVE_RL_EVAL_HARD_TIMEOUT_MIN=525600 \
   -v "D:\Arjun\workspace\neve\training _scripts\DualDeviceNav_train.py:/opt/eve_training/training_scripts/DualDeviceNav_train.py" \
   -v "D:\Arjun\workspace\neve\training _scripts\util\env.py:/opt/eve_training/training_scripts/util/env.py" \
   -v "D:\Arjun\workspace\neve\training _scripts\util\env2.py:/opt/eve_training/training_scripts/util/env2.py" \
@@ -40,13 +50,9 @@ docker run --name lcca_awac_v2 --gpus all --shm-size=24g --init -d \
   -v "D:\Arjun\workspace\neve\training _scripts\util\util.py:/opt/eve_training/training_scripts/util/util.py" \
   -v "D:\Arjun\workspace\neve\training _scripts\util\agent.py:/opt/eve_training/training_scripts/util/agent.py" \
   -v "D:\Arjun\workspace\neve\training _scripts\util\action_curriculum.py:/opt/eve_training/training_scripts/util/action_curriculum.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\heuristic_controller.py:/opt/eve_training/training_scripts/util/heuristic_controller.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\heuristic_policy.py:/opt/eve_training/training_scripts/util/heuristic_policy.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\heuristic_policy_rva.py:/opt/eve_training/training_scripts/util/heuristic_policy_rva.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\heuristic_policy_lcca.py:/opt/eve_training/training_scripts/util/heuristic_policy_lcca.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\heuristic_policy_rcca.py:/opt/eve_training/training_scripts/util/heuristic_policy_rcca.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\heuristic_policy_lva.py:/opt/eve_training/training_scripts/util/heuristic_policy_lva.py" \
   -v "D:\Arjun\workspace\neve\training _scripts\util\checkpoint_restore.py:/opt/eve_training/training_scripts/util/checkpoint_restore.py" \
+  -v "D:\Arjun\workspace\neve\training _scripts\util\buffer_filter.py:/opt/eve_training/training_scripts/util/buffer_filter.py" \
+  -v "D:\Arjun\workspace\neve\training _scripts\util\buckle_reward.py:/opt/eve_training/training_scripts/util/buckle_reward.py" \
   -v "D:\Arjun\workspace\neve\training _scripts\util\snapshot.py:/opt/eve_training/training_scripts/util/snapshot.py" \
   -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\util\diagnostics_logger.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/diagnostics_logger.py" \
   -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\util\probe_evaluator.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/probe_evaluator.py" \
@@ -71,8 +77,8 @@ docker run --name lcca_awac_v2 --gpus all --shm-size=24g --init -d \
   -v "D:\Arjun\workspace\neve\eve\eve\util\pathcontext.py:/usr/local/lib/python3.8/dist-packages/eve/util/pathcontext.py" \
   -v "D:\Arjun\workspace\neve\eve\eve\util\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/util/__init__.py" \
   -v "D:\Arjun\workspace\neve\eve\eve\reward\arclengthprogress.py:/usr/local/lib/python3.8/dist-packages/eve/reward/arclengthprogress.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\reward\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/reward/__init__.py" \
   -v "D:\Arjun\workspace\neve\eve\eve\reward\waypointprogress.py:/usr/local/lib/python3.8/dist-packages/eve/reward/waypointprogress.py" \
+  -v "D:\Arjun\workspace\neve\eve\eve\reward\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/reward/__init__.py" \
   -v "D:\Arjun\workspace\neve\eve\eve\observation\localguidance.py:/usr/local/lib/python3.8/dist-packages/eve/observation/localguidance.py" \
   -v "D:\Arjun\workspace\neve\eve\eve\observation\meshinvariant.py:/usr/local/lib/python3.8/dist-packages/eve/observation/meshinvariant.py" \
   -v "D:\Arjun\workspace\neve\eve\eve\observation\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/observation/__init__.py" \
@@ -84,37 +90,58 @@ docker run --name lcca_awac_v2 --gpus all --shm-size=24g --init -d \
   -v "D:\Arjun\workspace\neve\eve\eve\intervention\monoplanestatic.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/monoplanestatic.py" \
   -v "D:\Arjun\workspace\neve\eve\eve\intervention\simulation\sofabeamadapter.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/simulation/sofabeamadapter.py" \
   -v "D:\Arjun\workspace\neve\eve\eve\intervention\target\centerlinerandom.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/target/centerlinerandom.py" \
+  -v "D:\Arjun\workspace\neve\eve\eve\intervention\vesseltree\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/__init__.py" \
+  -v "D:\Arjun\workspace\neve\eve\eve\intervention\vesseltree\rccavariedfrommesh.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/rccavariedfrommesh.py" \
+  -v "D:\Arjun\workspace\neve\eve\eve\intervention\vesseltree\rccaprocedural.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/rccaprocedural.py" \
+  -v "D:\Arjun\workspace\neve\eve\eve\intervention\vesseltree\aorticarcharteries\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/aorticarcharteries/__init__.py" \
+  -v "D:\Arjun\workspace\neve\eve\eve\intervention\vesseltree\aorticarcharteries\carotidsiphon.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/aorticarcharteries/carotidsiphon.py" \
+  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\__init__.py:/opt/eve_training/eve_bench/eve_bench/__init__.py" \
   -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenav.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenav.py" \
   -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenav.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenav.py" \
+  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenavrccavaried.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenavrccavaried.py" \
+  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenavrccavaried.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenavrccavaried.py" \
+  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenavprocedural.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenavprocedural.py" \
+  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenavprocedural.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenavprocedural.py" \
+  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\archvariety.py:/usr/local/lib/python3.8/dist-packages/eve_bench/archvariety.py" \
+  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\archvariety.py:/opt/eve_training/eve_bench/eve_bench/archvariety.py" \
+  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\basicwirenav.py:/usr/local/lib/python3.8/dist-packages/eve_bench/basicwirenav.py" \
+  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\basicwirenav.py:/opt/eve_training/eve_bench/eve_bench/basicwirenav.py" \
   -v "D:\Arjun\workspace\neve\saved:/opt/eve_training/results" \
   eve-training-fixed \
   python3 /opt/eve_training/training_scripts/DualDeviceNav_train.py \
     --env_version 5 \
-    -n lcca_awac_v2 \
-    --insertion_z 345 \
+    -n rcca_proc_harvest \
+    --procedural_rcca \
+    --procedural_seed 12345 \
+    --procedural_change_every 10 \
+    --relax_failure_truncations \
+    --buckle_reward_coef 0.5 \
+    --heatup_only \
+    --heatup_episodes 480 \
+    --save_heatup_cache /opt/eve_training/results/rcca_proc_heatup/seed.npz \
+    --target_branches "Centerline curve - RCCA.mrk" \
+    --base_seed 42 \
     --replay_mode step \
     --per \
     --algo awac \
-    --balanced_fraction 0.6 \
+    --balanced_fraction 0.3 \
     --grad_clip 1.0 \
     --hidden 256 256 \
     --embedder_layers 0 \
     --learning_rate 0.0003 \
     --log_std_min -2 \
     --log_std_max 0.0 \
-    --update_per_explore_step 0.5 \
-    --replay_buffer_size 11000000 \
-    --heatup_cache_file /opt/eve_training/results/lcca_awac_seed_v1.npz \
-    --pretrain_updates 10000 \
-    --target_branches "Centerline curve - LCCA.mrk" \
+    --pretrain_updates 0 \
     --snapshots centerlines \
     -nw 16 -d cuda:0
 #
-# EXP-1 + EXP-2 (Plan v12, post-forensic). Decisive checks once running:
-#   * entropy_proxy stays POSITIVE and clamp_fraction stays single-digit through
-#     pretrain + first 50k online (EXP-1 working: log_std can no longer exceed 0).
-#   * eval Quality climbs ABOVE the v1 ~7% plateau and the LVA-ending fraction
-#     DROPS below ~38% (EXP-2 working: the hook is being learned). If entropy is
-#     healthy but LVA stays ~38%, that is the signal EXP-3 (fork reward/obs,
-#     needs approval) is required.
-# Monitor:  docker logs -f lcca_awac_v2   |   Stop:  docker stop lcca_awac_v2
+# --procedural_change_every 10 : each worker re-randomizes its siphon every 10
+#   episodes DURING the harvest → over 480 episodes / 16 workers = 30 ep/worker
+#   = ~3 meshes/worker (bump --heatup_episodes / lower change_every for more
+#   mesh variety). --procedural_seed 12345 matches v1.sh so the harvest meshes
+#   overlap the training meshes.
+# Startup: 16 distinct "[Gen-4] varied-RCCA" seeds, a per-worker marching-cubes
+# build every 10 eps. Runs 480 episodes then writes ONE seed.npz and exits.
+# Then TRAIN:  bash launch_rcca_procedural_v1.sh   (already loads this seed via
+#   --heatup_cache_file; coefs match at 0.5 so the reward-version guard passes).
+# Monitor: docker logs -f rcca_proc_harvest   |   Seed: saved/rcca_proc_heatup/seed.npz
