@@ -172,6 +172,16 @@ class SAC(Algo):
         grad_clip: float = 0.0,
         algo: str = "sac",
         awac_lambda: float = 3.0,
+        # RL_IMPROV_16 E1b — batch-normalized AWAC advantages. The v2
+        # investigation showed adv std ~0.09 with lambda=1.0 gives weights
+        # spanning only [0.72, 1.25] ~= uniform BC: the critic's correctly
+        # signed retract-when-stuck preference (weight edge ~10% in the
+        # buckled-slack tail) cannot transmit to the policy. When tau > 0,
+        # weight = exp((adv / adv.std()) / tau).clamp(20) — self-calibrating
+        # as the critic sharpens (a fixed lambda drifts as adv std grows).
+        # tau=2.0 targets a p99/p1 weight ratio ~e^2.5 ~= 12 (band 5-20x).
+        # 0.0 = OFF (legacy exp(adv/lambda) path, byte-identical).
+        awac_adv_norm_tau: float = 0.0,
         entropy_beta_per_dim: Optional[List[float]] = None,
         action_mean_penalty: float = 0.0,
         offline_mode: bool = False,
@@ -196,6 +206,14 @@ class SAC(Algo):
         # from deployable signals. aux_coef 0.0 = off (byte-identical).
         aux_coef: float = 0.0,
         aux_label_indices: Optional[List[int]] = None,
+        # RL_IMPROV_16 E2.2 — z-score the aux labels AT LOSS TIME (running
+        # EMA mean/var per label). The v2 contact labels have std ~1e-3 in
+        # normalized units, so aux_coef*MSE ~= 5e-8 — zero shaping pressure
+        # on the shared trunk. Loss-time normalization fixes the gradient
+        # scale WITHOUT touching the stored obs (cache-compatible; an
+        # obs-side rescale would silently mix two obs versions in the
+        # buffer). False = OFF (legacy raw-MSE, byte-identical).
+        aux_label_znorm: bool = False,
     ):
         self.logger = logging.getLogger(self.__module__)
         # HYPERPARAMETERS
@@ -211,6 +229,13 @@ class SAC(Algo):
         self.grad_clip = grad_clip
         self.algo = algo
         self.awac_lambda = awac_lambda
+        # RL_IMPROV_16 E1b/E2.2 (see __init__ docnotes).
+        self.awac_adv_norm_tau = float(awac_adv_norm_tau)
+        self.aux_label_znorm = bool(aux_label_znorm)
+        self._aux_znorm_mu = None   # running EMA mean per aux label
+        self._aux_znorm_var = None  # running EMA var per aux label
+        self._aux_loss_value = 0.0
+        self._awac_weight_p99p1 = 0.0
         # Plan v11 Stage 1 — scaffold per-dim entropy bonus + mean-margin
         # penalty (Direction 1, applied in Stage 2 to fight the cath_trans
         # mean-rail collapse). Default all zero → no-op in Stage 1 / SAC /
@@ -446,6 +471,9 @@ class SAC(Algo):
             )
             self.last_metrics["awac_weight_max"] = self._awac_weight_max
             self.last_metrics["awac_weight_mean"] = self._awac_weight_mean
+            # RL_IMPROV_16 — E1b gate metric + E2.3 aux-loss visibility.
+            self.last_metrics["awac_weight_p99p1"] = self._awac_weight_p99p1
+            self.last_metrics["aux_loss"] = self._aux_loss_value
         
         return [
             q1_loss.detach().cpu().numpy(),
@@ -497,7 +525,17 @@ class SAC(Algo):
                 q2_buf = self.model.q2(states, actions)
                 q_buf = torch.min(q1_buf, q2_buf)
                 advantage = q_buf - min_q.detach()
-                weight = torch.exp(advantage / self.awac_lambda).clamp(max=20.0)
+                # RL_IMPROV_16 E1b — batch-normalized advantages (see
+                # __init__). tau=0 keeps the legacy fixed-lambda path.
+                if self.awac_adv_norm_tau > 0.0:
+                    adv_std = advantage.std().clamp_min(1e-4)
+                    weight = torch.exp(
+                        (advantage / adv_std) / self.awac_adv_norm_tau
+                    ).clamp(max=20.0)
+                else:
+                    weight = torch.exp(
+                        advantage / self.awac_lambda
+                    ).clamp(max=20.0)
                 # Plan v11 risk audit #1 — log AWAC weight saturation
                 # EVERY AWAC update. If >80 % of weights are < 0.05 the
                 # advantage signal has collapsed onto a few demos and
@@ -509,6 +547,18 @@ class SAC(Algo):
                 )
                 self._awac_weight_max = float(weight.max().item())
                 self._awac_weight_mean = float(weight.mean().item())
+                # RL_IMPROV_16 E1b gate metric — weight p99/p1 ratio.
+                # Target band 5-20x; ~1.7x = BC-degenerate (the v2
+                # failure), >>20x = over-sharp (cloning too few demos).
+                w_q = torch.quantile(
+                    weight, torch.tensor(
+                        [0.01, 0.99], device=weight.device,
+                        dtype=weight.dtype,
+                    )
+                )
+                self._awac_weight_p99p1 = float(
+                    (w_q[1] / w_q[0].clamp_min(1e-6)).item()
+                )
             logp = self.model.policy.log_prob(states, actions)
             if padding_mask is not None:
                 logp = logp * padding_mask
@@ -589,6 +639,34 @@ class SAC(Algo):
                 self.aux_label_indices, dtype=torch.long, device=states.device
             )
             aux_labels = states.index_select(-1, idx).detach()
+            # RL_IMPROV_16 E2.2 — loss-time z-scoring (see __init__). EMA
+            # stats persist across updates (not checkpointed — they
+            # re-converge within ~100 batches after a warm start, and the
+            # aux term is representation shaping, not a value estimate).
+            if self.aux_label_znorm:
+                flat_labels = aux_labels.reshape(-1, aux_labels.shape[-1])
+                with torch.no_grad():
+                    b_mu = flat_labels.mean(dim=0)
+                    b_var = flat_labels.var(dim=0, unbiased=False)
+                    if self._aux_znorm_mu is None:
+                        self._aux_znorm_mu = b_mu
+                        self._aux_znorm_var = b_var
+                    else:
+                        self._aux_znorm_mu = (
+                            0.99 * self._aux_znorm_mu + 0.01 * b_mu
+                        )
+                        self._aux_znorm_var = (
+                            0.99 * self._aux_znorm_var + 0.01 * b_var
+                        )
+                    # Dead labels (e.g. an all-zero channel) keep sd at 1
+                    # so they contribute ~0 loss instead of exploding.
+                    sd = self._aux_znorm_var.sqrt()
+                    sd = torch.where(
+                        sd > 1e-6, sd, torch.ones_like(sd)
+                    )
+                    mu = self._aux_znorm_mu
+                aux_pred = (aux_pred - mu) / sd
+                aux_labels = (aux_labels - mu) / sd
             aux_se = (aux_pred - aux_labels).pow(2)
             if padding_mask is not None:
                 aux_se = aux_se * padding_mask
@@ -598,6 +676,9 @@ class SAC(Algo):
             else:
                 aux_mse = aux_se.mean()
             policy_loss = policy_loss + self.aux_coef * aux_mse
+            # RL_IMPROV_16 E2.3 — the aux loss was invisible for the whole
+            # v2 run (silently ~0); surface it in the trainer CSV.
+            self._aux_loss_value = float(aux_mse.detach().item())
 
         self.model.policy_optimizer.zero_grad()
         policy_loss.backward()

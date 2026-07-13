@@ -181,6 +181,18 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         # rails (SAC/AWAC auto-alpha). Defaults = legacy (-10, 2).
         log_alpha_min: float = -10.0,
         log_alpha_max: float = 2.0,
+        # RL_IMPROV_16 E1b/E2.2 — AWAC advantage normalization + aux-label
+        # z-scoring (see sac.py docnotes). Defaults OFF = legacy.
+        awac_adv_norm_tau: float = 0.0,
+        aux_label_znorm: bool = False,
+        # RL_IMPROV_16 E3 — stuck-lane sampling knobs (see pervanillastep
+        # docnote; indices are flat-obs positions computed by the training
+        # script from the env5 Gen-4 layout). Defaults OFF = legacy.
+        stuck_fraction: float = 0.0,
+        stuck_slack_index: int = -1,
+        stuck_slack_thresh: float = 0.174,
+        stuck_contact_index: int = -1,
+        stuck_contact_thresh: float = 0.0026,
         # Auto-alpha entropy setpoint override; None -> SAC default
         # (-n_actions). SAC/AWAC only — IQL has no entropy regulator.
         target_entropy: float = None,
@@ -376,6 +388,8 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
                 grad_clip=grad_clip,
                 algo=algo,
                 awac_lambda=awac_lambda,
+                awac_adv_norm_tau=awac_adv_norm_tau,
+                aux_label_znorm=aux_label_znorm,
                 entropy_beta_per_dim=entropy_beta_per_dim,
                 action_mean_penalty=action_mean_penalty,
                 log_alpha_min=log_alpha_min,
@@ -407,6 +421,11 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
                 demo_priority_bonus=demo_priority_bonus,
                 priority_mode=priority_mode,
                 balanced_fraction=balanced_fraction,
+                stuck_fraction=stuck_fraction,
+                stuck_slack_index=stuck_slack_index,
+                stuck_slack_thresh=stuck_slack_thresh,
+                stuck_contact_index=stuck_contact_index,
+                stuck_contact_thresh=stuck_contact_thresh,
             )
         elif replay_mode == "step":
             replay_buffer = eve_rl.replaybuffer.VanillaStepShared(

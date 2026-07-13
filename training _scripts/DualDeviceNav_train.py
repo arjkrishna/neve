@@ -578,6 +578,15 @@ def main(args):
             f"[Plan v10] eval restore enabled: {len(env_eval.checkpoint_files)} "
             f".npz files in {args.checkpoint_dir} (eval starts from the 5 states)"
         )
+    # RL_IMPROV_16 E3 — stuck-lane guard: the flat-obs indices passed below
+    # are Gen-4 env5 layout constants (121-flat), so refuse on other envs.
+    _stuck_fraction = float(getattr(args, "stuck_fraction", 0.0))
+    if _stuck_fraction > 0.0 and args.env_version != 5:
+        raise SystemExit(
+            "--stuck_fraction requires --env_version 5 (the stuck-lane "
+            "flat-obs indices 89/103 are Gen-4 121-flat layout constants)."
+        )
+
     agent = BenchAgentSynchron(
         trainer_device,
         worker_device,
@@ -629,6 +638,21 @@ def main(args):
         # alive-but-bounded. Defaults preserve legacy (-10, 2).
         log_alpha_min=float(getattr(args, "log_alpha_min", -10.0)),
         log_alpha_max=float(getattr(args, "log_alpha_max", 2.0)),
+        # RL_IMPROV_16 E1b/E2.2 — advantage normalization + aux z-scoring.
+        awac_adv_norm_tau=float(getattr(args, "awac_adv_norm_tau", 0.0)),
+        aux_label_znorm=bool(getattr(args, "aux_label_znorm", False)),
+        # RL_IMPROV_16 E3 — stuck-lane sampling. Flat-obs indices are
+        # env5 Gen-4 layout constants (verified by the 2026-07-12 obs
+        # audit): tracking 40 + target 2 + last_action 4 = guidance
+        # offset 46; gw_slack = guidance feat 43 -> flat 89; contact_max
+        # = privileged rel 6 -> flat (121-24)+6 = 103. Guarded to env v5.
+        stuck_fraction=_stuck_fraction,
+        stuck_slack_index=(89 if _stuck_fraction > 0.0 else -1),
+        stuck_slack_thresh=float(getattr(args, "stuck_slack_thresh", 0.174)),
+        stuck_contact_index=(103 if _stuck_fraction > 0.0 else -1),
+        stuck_contact_thresh=float(
+            getattr(args, "stuck_contact_thresh", 0.0026)
+        ),
         # Gen-4 asymmetric critic — env5's ObsDict appends a privileged
         # tail (PrivilegedState, LAST key); the critics consume the full
         # flat obs while the policy is built (total - tail) wide and
@@ -1532,6 +1556,66 @@ if __name__ == "__main__":
             "Establishes the pretrain-only baseline quality so the first "
             "online eval has a reference, and banks a clean pretrained "
             "checkpoint. Costs ~1 eval (~30 min) of wall-clock."
+        ),
+    )
+    parser.add_argument(
+        "--awac_adv_norm_tau",
+        type=float,
+        default=0.0,
+        help=(
+            "RL_IMPROV_16 E1b — batch-normalized AWAC advantages: weight = "
+            "exp((adv/adv.std())/tau).clamp(20). The v2 run's adv std "
+            "(~0.09) with lambda=1.0 gave weights in [0.72,1.25] ~= "
+            "uniform BC — the critic's retract-when-stuck preference "
+            "couldn't transmit. tau=2.0 targets weight p99/p1 ~12 (band "
+            "5-20x; monitor the new awac_weight_p99p1 CSV column). "
+            "Self-calibrating as the critic sharpens. 0.0 = OFF (legacy "
+            "exp(adv/awac_lambda))."
+        ),
+    )
+    parser.add_argument(
+        "--aux_label_znorm",
+        action="store_true",
+        help=(
+            "RL_IMPROV_16 E2.2 — z-score aux labels at LOSS time (running "
+            "EMA mean/var per label). v2's contact labels had std ~1e-3 -> "
+            "aux_coef*MSE ~5e-8 = no shaping pressure. Loss-time "
+            "normalization fixes the gradient scale WITHOUT touching the "
+            "stored obs (seed caches stay valid). Monitor the new "
+            "aux_loss CSV column (~O(1) when active)."
+        ),
+    )
+    parser.add_argument(
+        "--stuck_fraction",
+        type=float,
+        default=0.0,
+        help=(
+            "RL_IMPROV_16 E3 — fraction of each batch drawn from the "
+            "stuck-state lane (transitions whose state obs shows gw_slack "
+            "> --stuck_slack_thresh OR contact_max > "
+            "--stuck_contact_thresh). Stuck states are ~10%%/1%% of the "
+            "buffer and gradient-starved; 0.15 gives retract-when-stuck "
+            "learning real batch share. Composes with balanced_fraction "
+            "(e.g. 0.3 clean + 0.15 stuck + 0.55 general). env v5 only. "
+            "0.0 = OFF."
+        ),
+    )
+    parser.add_argument(
+        "--stuck_slack_thresh",
+        type=float,
+        default=0.174,
+        help=(
+            "E3 stuck-lane gw_slack threshold (normalized units; 0.174 = "
+            "buckled tail ~= top 10%% of the v2 buffer = >8.7mm slack)."
+        ),
+    )
+    parser.add_argument(
+        "--stuck_contact_thresh",
+        type=float,
+        default=0.0026,
+        help=(
+            "E3 stuck-lane contact_max threshold (normalized; 0.0026 ~= "
+            "top decile of the v2 buffer's live contact-proxy channel)."
         ),
     )
     parser.add_argument(

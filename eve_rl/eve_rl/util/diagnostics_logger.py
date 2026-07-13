@@ -270,6 +270,11 @@ class DiagnosticsLogger:
         "awac_weight_saturation",
         "awac_weight_max",
         "awac_weight_mean",
+        # RL_IMPROV_16 — E1b weight-spread gate (p99/p1; target 5-20x,
+        # ~1.7x = BC-degenerate as in v2) + E2.3 aux-distillation loss
+        # visibility (was silently ~0 for the whole v2 run).
+        "awac_weight_p99p1",
+        "aux_loss",
         # FIX 3 (RL_IMPROV_8 KL-anchor iteration) — IQL publishes the
         # equivalent advantage-weight saturation metrics under the
         # `awr_weight_*` namespace (iql.py last_metrics keys). Before

@@ -65,6 +65,13 @@ class PERVanillaStepShared(VanillaStepShared):
         demo_priority_bonus: float = 0.0,
         priority_mode: str = "td",
         balanced_fraction: float = 0.0,
+        # RL_IMPROV_16 E3 — stuck-lane knobs, forwarded verbatim to the
+        # internal PERVanillaStep (see its __init__ docnote). Defaults OFF.
+        stuck_fraction: float = 0.0,
+        stuck_slack_index: int = -1,
+        stuck_slack_thresh: float = 0.174,
+        stuck_contact_index: int = -1,
+        stuck_contact_thresh: float = 0.0026,
     ):
         # NB: deliberately do NOT call VanillaStepShared.__init__ — it would
         # start the subprocess before the priority queue exists. Replicate
@@ -91,6 +98,13 @@ class PERVanillaStepShared(VanillaStepShared):
         self.demo_priority_bonus = demo_priority_bonus
         self.priority_mode = priority_mode
         self.balanced_fraction = balanced_fraction
+        # RL_IMPROV_16 E3 — stuck lane (stored BEFORE the process spawn so
+        # the subprocess ctor sees them).
+        self.stuck_fraction = stuck_fraction
+        self.stuck_slack_index = stuck_slack_index
+        self.stuck_slack_thresh = stuck_slack_thresh
+        self.stuck_contact_index = stuck_contact_index
+        self.stuck_contact_thresh = stuck_contact_thresh
         # Third queue — trainer → subprocess priority updates. Created
         # before spawn so the subprocess inherits it.
         self._priority_update_queue = mp.SimpleQueue()
@@ -109,6 +123,11 @@ class PERVanillaStepShared(VanillaStepShared):
             demo_priority_bonus=self.demo_priority_bonus,
             priority_mode=self.priority_mode,
             balanced_fraction=self.balanced_fraction,
+            stuck_fraction=self.stuck_fraction,
+            stuck_slack_index=self.stuck_slack_index,
+            stuck_slack_thresh=self.stuck_slack_thresh,
+            stuck_contact_index=self.stuck_contact_index,
+            stuck_contact_thresh=self.stuck_contact_thresh,
         )
         self.loop(internal_replay_buffer)
 

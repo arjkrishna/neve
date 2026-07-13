@@ -103,6 +103,22 @@ class PERVanillaStep(ReplayBuffer):
         demo_priority_bonus: float = 0.0,
         priority_mode: str = "td",
         balanced_fraction: float = 0.0,
+        # RL_IMPROV_16 E3 — stuckness-balanced sampling lane. Stuck states
+        # (buckled slack / high contact) are ~10%/1% of the buffer, so the
+        # retract-when-stuck behavior is gradient-starved even with correct
+        # AWAC weights. A third lane draws `stuck_fraction` of each batch
+        # from transitions whose STATE obs shows stuckness:
+        #   flat_obs[stuck_slack_index]   > stuck_slack_thresh   OR
+        #   flat_obs[stuck_contact_index] > stuck_contact_thresh
+        # The indices are env-layout-specific and are passed in by the
+        # training script (env5 Gen-4 121-flat: slack=89, contact_max=103);
+        # -1 disables that criterion. stuck_fraction 0.0 = lane OFF
+        # (legacy behavior, byte-identical).
+        stuck_fraction: float = 0.0,
+        stuck_slack_index: int = -1,
+        stuck_slack_thresh: float = 0.174,
+        stuck_contact_index: int = -1,
+        stuck_contact_thresh: float = 0.0026,
     ):
         self.capacity = int(capacity)
         self._batch_size = batch_size
@@ -129,6 +145,18 @@ class PERVanillaStep(ReplayBuffer):
         _rail_max = os.environ.get("EVE_CLEAN_RAIL_MAX", "").strip()
         self.clean_rail_max = float(_rail_max) if _rail_max else None
         self._clean_rail_rejected = 0  # episodes kept out of the clean lane
+        # RL_IMPROV_16 E3 — stuck lane state (see __init__ docnote).
+        self.stuck_fraction = float(stuck_fraction)
+        self.stuck_slack_index = int(stuck_slack_index)
+        self.stuck_slack_thresh = float(stuck_slack_thresh)
+        self.stuck_contact_index = int(stuck_contact_index)
+        self.stuck_contact_thresh = float(stuck_contact_thresh)
+        self._stuck = (
+            self.stuck_fraction > 0.0
+            and (self.stuck_slack_index >= 0 or self.stuck_contact_index >= 0)
+        )
+        self.is_stuck = np.zeros(self.capacity, dtype=bool)
+        self.stuck_tree = SumTree(self.capacity) if self._stuck else None
 
         self.buffer = []
         self.position = 0
@@ -205,6 +233,21 @@ class PERVanillaStep(ReplayBuffer):
             self.is_demo[pos] = is_demo
             self.is_clean[pos] = reached
             self.episode_returns[pos] = ep_return
+            # RL_IMPROV_16 E3 — per-transition stuckness flag from the
+            # STATE obs (immutable per slot, like is_clean, so
+            # update_priorities() lane maintenance stays consistent).
+            if self._stuck:
+                st = episode.flat_obs[i]
+                stuck = False
+                if 0 <= self.stuck_slack_index < len(st):
+                    stuck = st[self.stuck_slack_index] > self.stuck_slack_thresh
+                if not stuck and 0 <= self.stuck_contact_index < len(st):
+                    stuck = (
+                        st[self.stuck_contact_index]
+                        > self.stuck_contact_thresh
+                    )
+                self.is_stuck[pos] = bool(stuck)
+                self.stuck_tree.update(pos, priority if stuck else 0.0)
             self.tree.update(pos, priority)
             if self._balanced:
                 self.clean_tree.update(pos, priority if reached else 0.0)
@@ -235,6 +278,8 @@ class PERVanillaStep(ReplayBuffer):
             "tree": self.tree.tree,
             "is_demo": self.is_demo,
             "is_clean": self.is_clean,
+            # RL_IMPROV_16 E3 — stuck-lane membership (rebuild like clean).
+            "is_stuck": self.is_stuck,
             "episode_returns": self.episode_returns,
             "max_priority": np.array(self.max_priority, dtype=np.float64),
             "sample_count": np.array(self._sample_count, dtype=np.int64),
@@ -274,6 +319,18 @@ class PERVanillaStep(ReplayBuffer):
                 if self.is_clean[i]:
                     leaf_pri = float(self.tree.tree[i + self.capacity - 1])
                     self.clean_tree.update(i, leaf_pri)
+        # RL_IMPROV_16 E3 — rebuild the stuck lane. Back-compat: an old
+        # export (no is_stuck field) loads with an empty lane, and the
+        # flags are recomputed only for transitions pushed AFTER the load
+        # — acceptable for a seed-cache (heatup data is rarely stuck).
+        if self._stuck:
+            if "is_stuck" in data:
+                self.is_stuck = np.array(data["is_stuck"], dtype=bool)
+            self.stuck_tree = SumTree(self.capacity)
+            for i in range(n):
+                if self.is_stuck[i]:
+                    leaf_pri = float(self.tree.tree[i + self.capacity - 1])
+                    self.stuck_tree.update(i, leaf_pri)
         return n
 
     def _draw(self, tree, count, beta, n):
@@ -307,27 +364,37 @@ class PERVanillaStep(ReplayBuffer):
 
         # Plan v8 — balanced two-stream sampling: a fixed fraction of the
         # batch from the "clean" sub-tree, the rest from the full buffer.
+        # RL_IMPROV_16 E3 — optional third "stuck" lane (see __init__).
         n_clean = 0
         if self._balanced and self.clean_tree.total() > 0:
             n_clean = int(round(self.balanced_fraction * self.batch_size))
-        n_general = self.batch_size - n_clean
+        n_stuck = 0
+        if self._stuck and self.stuck_tree.total() > 0:
+            n_stuck = int(round(self.stuck_fraction * self.batch_size))
+        n_general = self.batch_size - n_clean - n_stuck
 
         idx_g, smp_g, w_g = self._draw(self.tree, n_general, beta, n)
         if n_clean > 0:
             idx_c, smp_c, w_c = self._draw(self.clean_tree, n_clean, beta, n)
         else:
             idx_c, smp_c, w_c = [], [], []
+        if n_stuck > 0:
+            idx_s, smp_s, w_s = self._draw(self.stuck_tree, n_stuck, beta, n)
+        else:
+            idx_s, smp_s, w_s = [], [], []
         # Backfill from the general tree if a stream came up short.
-        deficit = self.batch_size - len(smp_g) - len(smp_c)
+        deficit = (
+            self.batch_size - len(smp_g) - len(smp_c) - len(smp_s)
+        )
         if deficit > 0:
             idx_d, smp_d, w_d = self._draw(self.tree, deficit, beta, n)
             idx_g += idx_d
             smp_g += smp_d
             w_g += w_d
 
-        indices = idx_g + idx_c
-        samples = smp_g + smp_c
-        weights = np.asarray(w_g + w_c, dtype=np.float64)
+        indices = idx_g + idx_c + idx_s
+        samples = smp_g + smp_c + smp_s
+        weights = np.asarray(w_g + w_c + w_s, dtype=np.float64)
         weights = weights / max(weights.max(), 1e-12)
 
         # Stack transition tuples — same layout as VanillaStep.sample().
@@ -364,6 +431,10 @@ class PERVanillaStep(ReplayBuffer):
             self.tree.update(idx, p)
             if self._balanced and self.is_clean[idx]:
                 self.clean_tree.update(idx, p)
+            # RL_IMPROV_16 E3 — keep the stuck lane's priorities in sync
+            # (is_stuck is immutable per slot, mirroring is_clean).
+            if self._stuck and self.is_stuck[idx]:
+                self.stuck_tree.update(idx, p)
 
     def bulk_import_arrays(self, arrays: dict) -> int:
         """Plan v11 Stage 1 — fast offline-buffer load from
