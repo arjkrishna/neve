@@ -4,6 +4,8 @@ from time import perf_counter, sleep
 from typing import Any, Dict, List, Optional, Tuple
 from math import inf
 import logging
+import os
+import threading
 import torch
 import queue
 import multiprocessing as mp
@@ -350,7 +352,96 @@ class Synchron(SynchronEvalOnly, Agent):
         self._eval_seeds = None
         self._eval_options = None
 
+        # RL_IMPROV_16 (deadlock hardening) — trainer-result deadline for the
+        # explore_and_update collection loop. v1 AND v2 both deadlocked at the
+        # SAME seam (right after the 3rd eval): the loop's worker branch has a
+        # timeout+restart but the TRAINER branch did not, so when the trainer's
+        # update-result was lost in the mp.Queue the loop spun on
+        # `get(timeout=0.5)` forever (main thread poll_schedule_timeout, all
+        # subprocesses idle). If the trainer result does not arrive within this
+        # many seconds of a cycle starting, the trainer is force-restarted
+        # (same recovery as the exception path) and the cycle proceeds.
+        self._trainer_result_timeout_s = float(
+            os.environ.get("EVE_RL_TRAINER_RESULT_TIMEOUT_S", "1800")
+        )
+
+        # RL_IMPROV_16 — catch-all progress WATCHDOG. A daemon thread that
+        # hard-exits the process if NONE of the shared step counters advance
+        # for `EVE_RL_WATCHDOG_STALL_S` seconds — converting any IPC deadlock
+        # (not just the one above) into a clean, visible crash a restart policy
+        # or operator can act on, instead of a silent all-night hang. Set
+        # ABOVE the trainer-result deadline so the graceful trainer-restart
+        # always fires first; the watchdog only trips if that fails too. 0=off.
+        self._watchdog_stall_s = float(
+            os.environ.get("EVE_RL_WATCHDOG_STALL_S", "2400")
+        )
+        if self._watchdog_stall_s > 0:
+            self._watchdog_thread = threading.Thread(
+                target=self._progress_watchdog, name="progress_watchdog",
+                daemon=True,
+            )
+            self._watchdog_thread.start()
+
         self.logger.info("Synchron Agent initialized")
+
+    def _progress_watchdog(self) -> None:
+        """RL_IMPROV_16 — hard-exit on a total-progress stall (see __init__)."""
+        sc = self.step_counter
+
+        def _snapshot():
+            # Sum of every phase counter; a genuine hang freezes ALL of them,
+            # while eval advances `evaluation`, the first explore cycle
+            # advances `exploration`, etc. — so no false trigger per phase.
+            return (
+                int(getattr(sc, "heatup", 0))
+                + int(getattr(sc, "exploration", 0))
+                + int(getattr(sc, "update", 0))
+                + int(getattr(sc, "evaluation", 0))
+            )
+
+        last_val = _snapshot()
+        last_move = perf_counter()
+        poll = min(60.0, max(5.0, self._watchdog_stall_s / 10.0))
+        while True:
+            sleep(poll)
+            try:
+                cur = _snapshot()
+            except Exception:
+                continue  # counter transiently unreadable — do not act
+            now = perf_counter()
+            if cur != last_val:
+                last_val = cur
+                last_move = now
+                continue
+            stalled = now - last_move
+            if stalled >= self._watchdog_stall_s:
+                # Best-effort thread-state dump for post-mortem, then die.
+                try:
+                    tids = os.listdir(f"/proc/{os.getpid()}/task")
+                    wch = {}
+                    for t in tids:
+                        try:
+                            with open(f"/proc/{os.getpid()}/task/{t}/wchan") as f:
+                                w = f.read().strip()
+                            wch[w] = wch.get(w, 0) + 1
+                        except Exception:
+                            pass
+                    self.logger.error(
+                        "WATCHDOG: no step-counter progress for %.0fs "
+                        "(>= %.0fs) — IPC deadlock. main-proc thread wchans: "
+                        "%s. Hard-exiting (os._exit 42).",
+                        stalled, self._watchdog_stall_s, wch,
+                    )
+                except Exception:
+                    self.logger.error(
+                        "WATCHDOG: stall %.0fs — hard-exiting.", stalled
+                    )
+                for h in list(self.logger.handlers):
+                    try:
+                        h.flush()
+                    except Exception:
+                        pass
+                os._exit(42)
 
     def heatup(
         self,
@@ -615,6 +706,20 @@ class Synchron(SynchronEvalOnly, Agent):
                     got_trainer_results = True
                     n_steps_update = self.step_counter.update - update_steps_start
                     t_duration_update = perf_counter() - t_start
+                # RL_IMPROV_16 deadlock fix — bound the trainer wait exactly
+                # like the worker branch above. Without this, a lost/never-sent
+                # trainer update-result spins this loop forever (the v1+v2
+                # post-eval3 deadlock). On deadline, force-restart the trainer
+                # (same recovery as an exception) and let the cycle finish; the
+                # skipped updates are re-earned by the next cycle's budget.
+                elif perf_counter() - t_start > self._trainer_result_timeout_s:
+                    self._restart_trainer(
+                        f"no update-result within "
+                        f"{self._trainer_result_timeout_s:.0f}s (deadlock guard)"
+                    )
+                    got_trainer_results = True
+                    n_steps_update = self.step_counter.update - update_steps_start
+                    t_duration_update = perf_counter() - t_start
 
             if got_worker_results and got_trainer_results:
                 break
@@ -692,19 +797,29 @@ class Synchron(SynchronEvalOnly, Agent):
             )
         return new_agent
 
+    def _restart_trainer(self, reason: str) -> None:
+        """RL_IMPROV_16 — close + recreate the trainer subprocess and reload
+        its weights/optimizer/scheduler from the main-process algo. Used by
+        both the exception path and the explore_and_update trainer-result
+        deadline (a silently-unresponsive trainer looks identical to a crashed
+        one from the main's side, and this is the recovery both need)."""
+        self.logger.warning("Restarting Trainer because of %s", reason)
+        try:
+            self.trainer.close()
+        except Exception:
+            pass
+        self.trainer = self._create_trainer_agent()
+        self.trainer.load_state_dicts_network(self.algo.state_dicts_network())
+        self.trainer.load_state_dicts_optimizer(self.algo.state_dicts_optimizer())
+        self.trainer.load_state_dicts_scheduler(self.algo.state_dicts_scheduler())
+        self.update_error = True
+
     def _get_trainer_results(self, timeout: Optional[float] = None):
         result = self.trainer.get_result(timeout=timeout)
         if isinstance(result, queue.Empty):
             return None
         if isinstance(result, Exception):
-            log_warn = f"Restaring Trainer because of Exception {result}"
-            self.logger.warning(log_warn)
-            self.trainer.close()
-            self.trainer = self._create_trainer_agent()
-            self.trainer.load_state_dicts_network(self.algo.state_dicts_network())
-            self.trainer.load_state_dicts_optimizer(self.algo.state_dicts_optimizer())
-            self.trainer.load_state_dicts_scheduler(self.algo.state_dicts_scheduler())
-            self.update_error = True
+            self._restart_trainer(f"Exception {result}")
             return []
         return result
 

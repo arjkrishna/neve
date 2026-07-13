@@ -51,6 +51,8 @@ docker rm rcca_procedural_v3a 2>/dev/null || true
 docker run --name rcca_procedural_v3a --gpus all --shm-size=24g --init -d \
   -e EVE_CLEAN_RAIL_MAX=0.15 \
   -e EVE_RL_MODEL_QUEUE_TIMEOUT_S=900 \
+  -e EVE_RL_TRAINER_RESULT_TIMEOUT_S=1800 \
+  -e EVE_RL_WATCHDOG_STALL_S=2400 \
   -e STUCK_CHECKPOINT_DIR=/opt/eve_training/results/rcca_v3_stuck \
   -v "D:\Arjun\workspace\neve\training _scripts\DualDeviceNav_train.py:/opt/eve_training/training_scripts/DualDeviceNav_train.py" \
   -v "D:\Arjun\workspace\neve\training _scripts\util\env.py:/opt/eve_training/training_scripts/util/env.py" \

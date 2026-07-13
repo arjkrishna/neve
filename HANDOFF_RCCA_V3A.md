@@ -141,6 +141,7 @@ interleaving into the step logs every ~250k explore steps; rare `vessel_end` at
 | **THE headline gate** | probe **retract-vs-slack**: the slack-tail bin's `P(retract)` minus the base bin should be **positive and GROWING** across snapshots (v2 was flat, decaying +13pp→+8pp) | flat/decaying = E1+E3 insufficient → escalate to v3b (E4 restore curriculum) |
 | **Freeze probe** | mean\|a0\| ratio ≥ 2× the run's own pretrain baseline, not falling | ratio → 1 with eval speed falling = freeze (should be impossible with the v2 fix package intact) |
 | **IPC guard** | `IPC TIMEOUT` count = 0 | any occurrence = a subprocess hung; the guard crashed it visibly — inspect, do not blind-restart |
+| **Deadlock recovery (NEW)** | `Restarting Trainer because of … deadlock guard` = the trainer-result deadline fired and the run **self-recovered** (continues) — expected at eval3 if the v1/v2 race recurs. `WATCHDOG … Hard-exiting (os._exit 42)` = the catch-all fired: the container exits code 42 after a total stall; **restart it** (progress up to the last checkpoint is safe). | container exit 42 + a `WATCHDOG` line = a hang the trainer-restart didn't cover — capture the logged thread-wchan dump before relaunching |
 
 ---
 
