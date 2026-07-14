@@ -172,6 +172,15 @@ class PERVanillaStep(ReplayBuffer):
         # here so they are sampled at least once.
         self.max_priority = 1.0
         self._sample_count = 0  # drives beta annealing
+        # RL_IMPROV_16 (incremental save / resume) — monotonic count of
+        # transitions EVER pushed (never wraps; slot = idx % capacity), and
+        # the watermark up to which chunks have been persisted. The
+        # incremental format = append-only transition chunks keyed by this
+        # monotonic index + one small, atomically-replaced state file for
+        # everything that DRIFTS after push (sum-tree priorities, lane
+        # flags, position, counters). See save_incremental_to_dir().
+        self._total_pushed = 0
+        self._last_incremental_saved = 0
 
     @property
     def batch_size(self) -> int:
@@ -252,6 +261,158 @@ class PERVanillaStep(ReplayBuffer):
             if self._balanced:
                 self.clean_tree.update(pos, priority if reached else 0.0)
             self.position = int((pos + 1) % self.capacity)
+            # RL_IMPROV_16 — monotonic push counter (incremental save).
+            self._total_pushed += 1
+
+    # ------------------------------------------------------------------
+    # RL_IMPROV_16 — incremental save / load (the resume-grade format).
+    #
+    # WHY: the legacy per-eval save re-serializes the ENTIRE buffer
+    # (~1-2 GB at Gen-4 scale) inside the sample-serving subprocess —
+    # wasteful (the file is only ever read once, on resume) and the
+    # direct trigger of the post-eval stall window behind the v1/v2
+    # eval3 deadlocks. The buffer splits into two unequal halves:
+    #   * transitions (obs/actions/rewards/terminals): ~97% of the bytes,
+    #     APPEND-ONLY in monotonic push order (slot = idx % capacity) —
+    #     saved once, as chunks, never rewritten;
+    #   * everything that drifts (sum-tree priorities, lane flags,
+    #     position, counters): ~3% of the bytes — re-dumped in full every
+    #     save, atomically (tmp + os.replace).
+    # A load replays the chunks in monotonic order (later chunks
+    # overwrite wrapped slots exactly as the ring did) then applies the
+    # state file — byte-faithful to a legacy full save.
+    # ------------------------------------------------------------------
+
+    _STATE_FILE = "replay_state.npz"
+
+    def save_incremental_to_dir(self, dir_path: str) -> int:
+        """Persist new transitions since the last call + the full small
+        state. Returns the number of newly-persisted transitions."""
+        os.makedirs(dir_path, exist_ok=True)
+        start = self._last_incremental_saved
+        end = self._total_pushed
+        if end - start > self.capacity:
+            # More unsaved pushes than the ring holds — the oldest unsaved
+            # ones were already overwritten in memory; persist what exists.
+            start = end - self.capacity
+        n_new = end - start
+        if n_new > 0:
+            slots = [i % self.capacity for i in range(start, end)]
+            chunk = {
+                "start": np.array(start, dtype=np.int64),
+                "end": np.array(end, dtype=np.int64),
+                "obs_pairs": np.stack([self.buffer[s][0] for s in slots]),
+                "actions": np.stack(
+                    [np.asarray(self.buffer[s][1]) for s in slots]
+                ),
+                "rewards": np.array(
+                    [self.buffer[s][2] for s in slots], dtype=np.float32
+                ),
+                "terminals": np.array([self.buffer[s][3] for s in slots]),
+            }
+            chunk_path = os.path.join(
+                dir_path, f"chunk_{start:012d}_{end:012d}.npz"
+            )
+            np.savez(chunk_path, **chunk)
+        state = {
+            "total_pushed": np.array(end, dtype=np.int64),
+            "capacity": np.array(self.capacity, dtype=np.int64),
+            "position": np.array(self.position, dtype=np.int64),
+            "n": np.array(len(self.buffer), dtype=np.int64),
+            "tree": self.tree.tree,
+            "is_demo": self.is_demo,
+            "is_clean": self.is_clean,
+            "is_stuck": self.is_stuck,
+            "episode_returns": self.episode_returns,
+            "max_priority": np.array(self.max_priority, dtype=np.float64),
+            "sample_count": np.array(self._sample_count, dtype=np.int64),
+        }
+        tmp_path = os.path.join(dir_path, "replay_state.tmp.npz")
+        np.savez(tmp_path, **state)
+        os.replace(tmp_path, os.path.join(dir_path, self._STATE_FILE))
+        self._last_incremental_saved = end
+        return n_new
+
+    def load_incremental_from_dir(self, dir_path: str) -> int:
+        """Rebuild the buffer from an incremental-save directory. Returns
+        the number of transitions restored. Raises on geometry mismatch or
+        missing chunk coverage (a partial dir must not silently load)."""
+        import glob as _glob
+
+        state_path = os.path.join(dir_path, self._STATE_FILE)
+        with np.load(state_path, allow_pickle=False) as st:
+            if int(st["capacity"]) != self.capacity:
+                raise ValueError(
+                    f"replay capacity mismatch: dir={int(st['capacity'])} "
+                    f"buffer={self.capacity}"
+                )
+            total = int(st["total_pushed"])
+            n = int(st["n"])
+            tree = np.array(st["tree"], dtype=np.float64)
+            is_demo = np.array(st["is_demo"], dtype=bool)
+            is_clean = np.array(st["is_clean"], dtype=bool)
+            is_stuck = (
+                np.array(st["is_stuck"], dtype=bool)
+                if "is_stuck" in st
+                else np.zeros(self.capacity, dtype=bool)
+            )
+            episode_returns = np.array(
+                st["episode_returns"], dtype=np.float64
+            )
+            position = int(st["position"])
+            max_priority = float(st["max_priority"])
+            sample_count = int(st["sample_count"])
+
+        window_start = total - n  # oldest monotonic index still live
+        self.buffer = [None] * n
+        chunk_paths = sorted(
+            _glob.glob(os.path.join(dir_path, "chunk_*.npz"))
+        )
+        for cp in chunk_paths:
+            with np.load(cp, allow_pickle=False) as d:
+                cs, ce = int(d["start"]), int(d["end"])
+                if ce <= window_start:
+                    continue  # fully overwritten by later pushes
+                obs_pairs = d["obs_pairs"]
+                actions = d["actions"]
+                rewards = d["rewards"]
+                terminals = d["terminals"]
+                for k, m in enumerate(range(cs, ce)):
+                    if m < window_start or m >= total:
+                        continue
+                    self.buffer[m % self.capacity] = (
+                        obs_pairs[k], actions[k], rewards[k], terminals[k],
+                    )
+        missing = sum(1 for b in self.buffer if b is None)
+        if missing:
+            raise ValueError(
+                f"incremental load incomplete: {missing}/{n} slots have no "
+                f"covering chunk in {dir_path} — refusing a partial buffer."
+            )
+        self.position = position
+        self.tree.tree = tree
+        self.is_demo = is_demo
+        self.is_clean = is_clean
+        self.is_stuck = is_stuck
+        self.episode_returns = episode_returns
+        self.max_priority = max_priority
+        self._sample_count = sample_count
+        self._total_pushed = total
+        self._last_incremental_saved = total
+        # Rebuild the lane sub-trees from flags + main-tree leaves.
+        if self._balanced:
+            self.clean_tree = SumTree(self.capacity)
+            for i in range(n):
+                if self.is_clean[i]:
+                    leaf = float(self.tree.tree[i + self.capacity - 1])
+                    self.clean_tree.update(i, leaf)
+        if self._stuck:
+            self.stuck_tree = SumTree(self.capacity)
+            for i in range(n):
+                if self.is_stuck[i]:
+                    leaf = float(self.tree.tree[i + self.capacity - 1])
+                    self.stuck_tree.update(i, leaf)
+        return n
 
     def export_all(self) -> dict:
         """Plan v10 — serialize the full PER buffer state to a dict of
@@ -283,6 +444,9 @@ class PERVanillaStep(ReplayBuffer):
             "episode_returns": self.episode_returns,
             "max_priority": np.array(self.max_priority, dtype=np.float64),
             "sample_count": np.array(self._sample_count, dtype=np.int64),
+            # RL_IMPROV_16 — monotonic push counter (incremental-save
+            # bookkeeping survives a legacy round-trip).
+            "total_pushed": np.array(self._total_pushed, dtype=np.int64),
         }
 
     def import_all(self, data) -> int:
@@ -331,6 +495,20 @@ class PERVanillaStep(ReplayBuffer):
                 if self.is_stuck[i]:
                     leaf_pri = float(self.tree.tree[i + self.capacity - 1])
                     self.stuck_tree.update(i, leaf_pri)
+        # RL_IMPROV_16 — seed the monotonic counter so incremental saves
+        # made AFTER a legacy monolithic load keep the slot = idx % capacity
+        # invariant (unwrapped: total = n; wrapped: total ≡ position mod
+        # capacity). The whole loaded content counts as unsaved so the
+        # first incremental save persists it as one bootstrap chunk.
+        if "total_pushed" in data:
+            self._total_pushed = int(data["total_pushed"])
+        elif n < self.capacity:
+            self._total_pushed = n
+        else:
+            self._total_pushed = self.capacity + self.position
+        self._last_incremental_saved = max(
+            0, self._total_pushed - min(self._total_pushed, self.capacity)
+        )
         return n
 
     def _draw(self, tree, count, beta, n):

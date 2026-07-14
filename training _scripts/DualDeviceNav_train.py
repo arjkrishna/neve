@@ -104,6 +104,33 @@ def main(args):
     step-version-RL variants, eval-only invocations) can call this
     after building their own argparse Namespace."""
 
+    # RL_IMPROV_16 — --resume is a continuation of a finished/killed run:
+    # it replaces every seeding/warm-start phase, so combining it with any
+    # of them is a config error (and heuristic seeding would run BEFORE
+    # the resume-load, silently polluting the restored buffer).
+    if getattr(args, "resume", None):
+        _bad = [
+            ("--heuristic_seeding > 0", args.heuristic_seeding > 0),
+            ("--heatup_only", bool(getattr(args, "heatup_only", False))),
+            ("--heatup_until_successes", args.heatup_until_successes > 0),
+            ("--eval_only_checkpoint", bool(args.eval_only_checkpoint)),
+            (
+                "--multi_target_heatup",
+                bool(getattr(args, "multi_target_heatup", False)),
+            ),
+            ("--seed_only", bool(getattr(args, "seed_only", False))),
+        ]
+        _hit = [name for name, cond in _bad if cond]
+        if _hit:
+            raise SystemExit(
+                f"--resume is incompatible with: {', '.join(_hit)} "
+                f"(resume replaces all seeding/warm-start phases)."
+            )
+        if not os.path.isdir(os.path.join(args.resume, "checkpoints")):
+            raise SystemExit(
+                f"--resume: {args.resume} has no checkpoints/ folder."
+            )
+
     # Plan v9 — in 'sofa_restore' mode the two flags are COMPLEMENTARY,
     # not exclusive: --insertion_z is the start for heuristic-seeding
     # episodes (which bypass restore) and the fallback when the pool is
@@ -1005,9 +1032,52 @@ def main(args):
         agent.close()
         return
 
+    # RL_IMPROV_16 — --resume <run_dir>: continue a previous run. Loads the
+    # latest agent checkpoint (nets + optimizers + schedulers + step/episode
+    # counters, distributed to trainer + all workers by Synchron
+    # .load_checkpoint) and the replay buffer (incremental dir preferred,
+    # legacy replay_buffer.npz fallback), then skips seeding/heatup/pretrain
+    # entirely and enters training_run(resume=True), which re-bases the
+    # online update budget to the restored counters. Results (checkpoints,
+    # evals, logs) continue in THIS run's new timestamped folder; the
+    # resumed-from folder is read-only.
+    _resume_dir = getattr(args, "resume", None)
+    if _resume_dir:
+        _res_ckpt_dir = os.path.join(_resume_dir, "checkpoints")
+        _cands = sorted(
+            (
+                f for f in os.listdir(_res_ckpt_dir)
+                if f.startswith("checkpoint") and f.endswith(".everl")
+            ),
+            key=lambda f: int("".join(filter(str.isdigit, f)) or 0),
+        )
+        if not _cands:
+            raise SystemExit(
+                f"--resume: no checkpoint*.everl in {_res_ckpt_dir}"
+            )
+        _res_ckpt = os.path.join(_res_ckpt_dir, _cands[-1])
+        print(f"[RESUME] loading agent checkpoint {_res_ckpt}")
+        agent.load_checkpoint(_res_ckpt)
+        n_res = runner.load_replay_buffer(from_folder=_res_ckpt_dir)
+        if n_res <= 0:
+            raise SystemExit(
+                f"--resume: no replay buffer restored from {_res_ckpt_dir} "
+                f"(need replay_incremental/ or replay_buffer.npz). A resume "
+                f"without the buffer would retrain the critic on thin air."
+            )
+        print(
+            f"[RESUME] restored {n_res} transitions; counters: "
+            f"explore={agent.step_counter.exploration} "
+            f"update={agent.step_counter.update}"
+        )
+
     # Load heatup cache if provided (skips heatup phase)
     heatup_steps_effective = HEATUP_STEPS
-    if args.heatup_cache_file and os.path.isfile(args.heatup_cache_file):
+    if (
+        not _resume_dir
+        and args.heatup_cache_file
+        and os.path.isfile(args.heatup_cache_file)
+    ):
         from eve_rl.replaybuffer import EpisodeReplay
         from eve_rl.util.experience_cache import load_episodes_npz
 
@@ -1112,6 +1182,13 @@ def main(args):
     seed_buffer_available = (
         both_caches or seed_generated_this_run or heatup_runs or heatup_cache_loaded
     )
+    # RL_IMPROV_16 — resume: the buffer + counters are already restored;
+    # no heatup, no pretrain (10k fresh updates on a resumed policy would
+    # perturb it), regardless of what the other flags imply.
+    if _resume_dir:
+        heatup_steps_effective = 0
+        pretrain_updates = 0
+        seed_buffer_available = False
     if pretrain_updates > 0 and not seed_buffer_available:
         print("[Plan v8/v9/v10] --pretrain_updates ignored — no seed buffer: "
               "need caches loaded, --heuristic_seeding > 0, or heatup to run.")
@@ -1176,6 +1253,10 @@ def main(args):
             # RL_IMPROV_15 — pretrain-only baseline eval + checkpoint before
             # any exploration (reference point for all later evals).
             eval_after_pretrain=getattr(args, "eval_after_pretrain", False),
+            # RL_IMPROV_16 — resume: counters/buffer restored above; the
+            # runner re-bases the update budget and goes straight to the
+            # explore/eval loop.
+            resume=bool(_resume_dir),
         )
     finally:
         agent.close()
@@ -1545,6 +1626,24 @@ if __name__ == "__main__":
             "via the tanh-Jacobian in log_pi). Adds amp * "
             "mean(|atanh(tanh(mean).clamp(+/-0.99))|) to the policy loss. "
             "DEFAULT 0.0 OFF. AWAC-only."
+        ),
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help=(
+            "RL_IMPROV_16 — continue a previous run: path to its "
+            "timestamped run dir (the one containing checkpoints/). Loads "
+            "the latest checkpoint*.everl (nets+optimizers+schedulers+"
+            "step/episode counters) and the replay buffer (incremental "
+            "replay_incremental/ preferred, legacy replay_buffer.npz "
+            "fallback), skips seeding/heatup/pretrain, re-bases the "
+            "online update budget, and continues explore/eval cycles in "
+            "a NEW timestamped run dir. Incompatible with the seeding/"
+            "heatup-only/eval-only flags. Pass the SAME env/reward/obs "
+            "flags as the original run — the checkpoint does not restore "
+            "CLI configuration."
         ),
     )
     parser.add_argument(

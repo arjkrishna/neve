@@ -95,7 +95,29 @@ def forward_mu_aux(sd, x):
 
 # ---- probe states: prefer the run's own buffer; else any cached probes ----
 buf_path = os.path.join(run, "checkpoints", "replay_buffer.npz")
+inc_dir = os.path.join(run, "checkpoints", "replay_incremental")
 obs = acts = None
+
+
+def _load_from_chunks(inc_dir, max_rows=200_000):
+    """RL_IMPROV_16 — incremental-save fallback: concat the NEWEST chunks
+    (highest monotonic start) until max_rows; enough for probe sampling."""
+    chunks = sorted(
+        glob.glob(os.path.join(inc_dir, "chunk_*.npz")), reverse=True
+    )
+    if not chunks:
+        return None, None
+    obs_l, term_l, rows = [], [], 0
+    for cp in chunks:
+        with np.load(cp, allow_pickle=False) as d:
+            obs_l.append(np.asarray(d["obs_pairs"])[:, 0].astype(np.float32))
+            term_l.append(np.asarray(d["terminals"]).ravel())
+            rows += obs_l[-1].shape[0]
+        if rows >= max_rows:
+            break
+    return np.concatenate(obs_l[::-1]), np.concatenate(term_l[::-1])
+
+
 if os.path.isfile(buf_path):
     with np.load(buf_path, allow_pickle=False) as d:
         n = d["actions"].shape[0]
@@ -107,6 +129,23 @@ if os.path.isfile(buf_path):
         starts = starts[starts < n]
         spick = np.sort(rng.choice(starts, size=min(512, len(starts)), replace=False))
         start_obs = d["obs_pairs"][spick, 0].astype(np.float32)
+elif os.path.isfile(os.path.join(inc_dir, "replay_state.npz")):
+    all_obs, all_terms = _load_from_chunks(inc_dir)
+    if all_obs is not None:
+        n = all_obs.shape[0]
+        rng = np.random.RandomState(1)
+        pick = np.sort(rng.choice(n, size=min(16384, n), replace=False))
+        obs = all_obs[pick]
+        terms = all_terms.astype(bool)
+        starts = np.where(terms)[0] + 1
+        starts = starts[starts < n]
+        spick = np.sort(
+            rng.choice(starts, size=min(512, len(starts)), replace=False)
+        )
+        start_obs = all_obs[spick]
+        print(f"PROBE: sampled from incremental chunks (newest {n} rows)")
+    else:
+        start_obs = None
 else:
     cached = glob.glob(os.path.join(RESULTS, "probe_start_states*.npz"))
     start_obs = np.load(cached[0])["obs"] if cached else None
