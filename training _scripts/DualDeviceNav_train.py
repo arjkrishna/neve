@@ -419,6 +419,29 @@ def main(args):
         env_kwargs["buckle_reward_coef"] = _buckle_coef
         print(f"[Gen-4] anti-buckle potential shaping ON: "
               f"coef={_buckle_coef} (slack + contact channels)")
+    # RL_IMPROV_18 P2 — residual-on-heuristic teacher. env5-only. Applied
+    # to train AND eval envs (same MDP: eval measures heuristic+residual).
+    if getattr(args, "residual_heuristic", False):
+        if args.env_version != 5:
+            raise ValueError("--residual_heuristic requires --env_version 5")
+        env_kwargs["residual_heuristic"] = True
+        env_kwargs["residual_scale"] = float(args.residual_scale)
+        env_kwargs["heur_action_obs"] = bool(args.heur_action_obs)
+        print(f"[P2] residual-on-heuristic ON: scale={args.residual_scale} "
+              f"heur_action_obs={bool(args.heur_action_obs)}")
+    elif getattr(args, "heur_action_obs", False):
+        raise ValueError("--heur_action_obs requires --residual_heuristic")
+    if getattr(args, "privileged_actor", False):
+        if args.env_version != 5:
+            raise ValueError("--privileged_actor requires --env_version 5")
+        if float(getattr(args, "aux_coef", 0.0)) != 0.0:
+            # aux heads predict the privileged tail FROM the deployable
+            # prefix; with a full-width policy the labels are inputs and
+            # the rel->abs index math (n_obs_policy + i) lands out of
+            # range. Teacher runs must disable aux.
+            raise ValueError("--privileged_actor requires --aux_coef 0")
+        print("[P2] privileged ACTOR: policy consumes the full obs "
+              "(privileged tail included; slice becomes a no-op)")
     # Reward-version stamp for experience caches: every save (including the
     # worker-side rolling heatup flushes, which inherit this env var) embeds
     # the coef its rewards were scored under; the cache-load guards below
@@ -681,7 +704,12 @@ def main(args):
         stuck_fraction=_stuck_fraction,
         stuck_slack_index=(89 if _stuck_fraction > 0.0 else -1),
         stuck_slack_thresh=float(getattr(args, "stuck_slack_thresh", 0.174)),
-        stuck_contact_index=(103 if _stuck_fraction > 0.0 else -1),
+        # P2 note: heur_action_obs inserts 4 dims AFTER guidance (slack 89
+        # unchanged) but BEFORE privileged -> contact_max shifts 103->107.
+        stuck_contact_index=(
+            ((107 if getattr(args, "heur_action_obs", False) else 103)
+             if _stuck_fraction > 0.0 else -1)
+        ),
         stuck_contact_thresh=float(
             getattr(args, "stuck_contact_thresh", 0.0026)
         ),
@@ -689,8 +717,12 @@ def main(args):
         # tail (PrivilegedState, LAST key); the critics consume the full
         # flat obs while the policy is built (total - tail) wide and
         # slices internally. env v4 and earlier have no tail (dim 0).
+        # RL_IMPROV_18 P2 — privileged ACTOR: 0 makes n_obs_policy equal
+        # the full width, so GaussianPolicy's [..., :n] slice keeps the
+        # privileged tail (teacher mode). Otherwise legacy asymmetry.
         privileged_obs_dim=(
-            PrivilegedState.N_DIMS if args.env_version == 5 else 0
+            0 if getattr(args, "privileged_actor", False)
+            else (PrivilegedState.N_DIMS if args.env_version == 5 else 0)
         ),
         # Gen-4 aux heads — indices RELATIVE to the privileged tail; the
         # policy predicts those privileged values from its deployable
@@ -709,6 +741,12 @@ def main(args):
     env_train_unwrapped.save_config(env_train_config)
     env_eval_config = os.path.join(config_folder, "env_eval.yml")
     env_eval_unwrapped.save_config(env_eval_config)
+
+    # RL_IMPROV_18 P2 — heatup random-action band scale (see runner kwargs).
+    _heatup_scale = float(getattr(args, "heatup_action_scale", 1.0))
+    if _heatup_scale != 1.0:
+        print(f"[P2] heatup action band scaled x{_heatup_scale} "
+              f"(residual heatup = heuristic + small noise)")
     infos = list(env_eval_unwrapped.info.info.keys())
     runner = Runner(
         agent=agent,
@@ -720,8 +758,18 @@ def main(args):
         # transitions were previously rare (bounds [-10,+30], mean +10).
         # Trade-off: a zero-mean walk penetrates less deeply; if harvest
         # depth suffers, re-bias low toward e.g. -15 rather than -30.
-        heatup_action_low=[[-30.0, -1.5], [-30.0, -1.5]],
-        heatup_action_high=[[30.0, 1.5], [30.0, 1.5]],
+        # RL_IMPROV_18 P2 — --heatup_action_scale shrinks the random band
+        # (residual mode: heatup = heuristic + small residual noise, so the
+        # buffer seeds at ~heuristic quality instead of pure random). 1.0 =
+        # legacy full band.
+        heatup_action_low=[
+            [-30.0 * _heatup_scale, -1.5 * _heatup_scale],
+            [-30.0 * _heatup_scale, -1.5 * _heatup_scale],
+        ],
+        heatup_action_high=[
+            [30.0 * _heatup_scale, 1.5 * _heatup_scale],
+            [30.0 * _heatup_scale, 1.5 * _heatup_scale],
+        ],
         agent_parameter_for_result_file=custom_parameters,
         checkpoint_folder=checkpoint_folder,
         results_file=results_file,
@@ -1762,6 +1810,68 @@ if __name__ == "__main__":
             "lanes entirely (IS weights = 1) — the RLPD recipe is "
             "uniform-within-halves and its composition with PER is "
             "unstudied. 0.0 = OFF (legacy PER sampling)."
+        ),
+    )
+    parser.add_argument(
+        "--residual_heuristic",
+        action="store_true",
+        help=(
+            "RL_IMPROV_18 P2 — residual-on-heuristic: env5.step composes "
+            "a_total = clip(a_heuristic + residual_scale * a_policy) in "
+            "raw device units (CenterlineFollowerHeuristic via "
+            "HeuristicActionFunction, noise 0, off-path retract phase "
+            "included). The policy learns a RESIDUAL: at init (mean~0) "
+            "behavior = pure heuristic, so the run starts at heuristic "
+            "competence instead of 0%%. Heatup random actions compose the "
+            "same way (heuristic+noise buffer). Applied to train AND eval "
+            "envs. env5 only. OFF = legacy."
+        ),
+    )
+    parser.add_argument(
+        "--residual_scale",
+        type=float,
+        default=1.0,
+        help=(
+            "P2 — multiplier on the policy's residual before composition "
+            "(1.0 = full authority: residual can fully override the "
+            "heuristic after clipping; 0.5 = heuristic-dominated)."
+        ),
+    )
+    parser.add_argument(
+        "--heur_action_obs",
+        action="store_true",
+        help=(
+            "P2 — append the 4-dim raw heuristic action (normalized) to "
+            "the obs dict BEFORE the privileged tail, so teacher AND a "
+            "later obs-only student see the base controller's intent. "
+            "Shifts flat obs 121->125 (policy prefix 97->101; privileged "
+            "tail start 97->101; stuck contact index 103->107 — handled). "
+            "Old checkpoints/caches are obs-incompatible with this flag. "
+            "Requires --residual_heuristic."
+        ),
+    )
+    parser.add_argument(
+        "--privileged_actor",
+        action="store_true",
+        help=(
+            "P2 — teacher mode: build the agent with privileged_obs_dim=0 "
+            "so the POLICY consumes the full flat obs including the 24-dim "
+            "privileged tail (GaussianPolicy's prefix slice becomes a "
+            "no-op). Scaffolder-style privileged-ACTOR: the teacher is NOT "
+            "deployable (needs sim-side state) — a later student distills "
+            "to the deployable prefix. Requires --aux_coef 0."
+        ),
+    )
+    parser.add_argument(
+        "--heatup_action_scale",
+        type=float,
+        default=1.0,
+        help=(
+            "P2 — scale factor on the heatup random-action band "
+            "(+-30 mm/s, +-1.5 rad/s legacy). With --residual_heuristic, "
+            "0.3 makes heatup = heuristic + small residual noise: the "
+            "buffer seeds at ~heuristic quality with action diversity. "
+            "1.0 = legacy band."
         ),
     )
     parser.add_argument(

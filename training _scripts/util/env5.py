@@ -226,6 +226,34 @@ class _CoordTargetReachedTerminal(eve.terminal.TargetReached):
         return bool(np.linalg.norm(tip - self.target_coord3d) < self.threshold)
 
 
+class HeurActionObs(eve.observation.Observation):
+    """RL_IMPROV_18 P2 — 4-dim observation exposing the raw heuristic
+    action that will be composed with the policy's residual THIS step.
+    Reads the env's once-per-state cached heuristic action (see
+    BenchEnv5._heur_next_action — the cache prevents double-advancing the
+    heuristic's internal phase counters). Wrapped in Normalize like
+    last_action; must sit BEFORE the privileged tail in the ObsDict."""
+
+    def __init__(self, env, name: str = "heur_action") -> None:
+        self.name = name
+        self._env = env
+        self.obs = None
+
+    @property
+    def space(self):
+        return self._env.intervention.action_space
+
+    def step(self) -> None:
+        self.obs = np.asarray(
+            self._env._heur_next_action(), dtype=np.float32
+        ).reshape(self.space.shape)
+
+    def reset(self, episode_nr: int = 0) -> None:
+        self.obs = np.asarray(
+            self._env._heur_next_action(), dtype=np.float32
+        ).reshape(self.space.shape)
+
+
 class BenchEnv5(eve.Env):
     def __init__(
         self,
@@ -237,6 +265,17 @@ class BenchEnv5(eve.Env):
         target_coord3d=None,
         relax_failure_truncations: bool = False,
         buckle_reward_coef: float = 0.0,
+        # RL_IMPROV_18 P2 (residual-on-heuristic teacher) — when True,
+        # step() composes a_total = clip(a_heuristic + residual_scale *
+        # a_policy) in RAW device units; the policy's action becomes a
+        # residual on the scripted CenterlineFollowerHeuristic. Heatup
+        # random actions compose the same way (heuristic + noise data).
+        # heur_action_obs additionally appends the 4-dim raw heuristic
+        # action (normalized) to the obs dict BEFORE the privileged tail.
+        # All default-off = legacy env, byte-identical obs/actions.
+        residual_heuristic: bool = False,
+        residual_scale: float = 1.0,
+        heur_action_obs: bool = False,
     ) -> None:
         # Gen-4 recovery training — when True, the fold-stall and off-path
         # detectors keep counting (they remain observation features and
@@ -270,6 +309,23 @@ class BenchEnv5(eve.Env):
         self._buckle_phi_prev = None  # None -> first step delta = 0
         self._buckle_prev_raw = (0.0, 0.0)  # (slack_mm, contact_mm) fallback
         self._last_buckle_phi = 0.0  # STEP-log diagnostic
+        # RL_IMPROV_18 P2 — residual-on-heuristic state. The action fn is
+        # built lazily on first use (pathfinder must exist; the wrapper
+        # itself lazily re-reads the path after each env reset). The
+        # once-per-state cache is keyed on (episode, step) so the obs
+        # component and the next step() composition share ONE heuristic
+        # call — the controller has internal phase counters that must not
+        # be advanced twice per sim state.
+        self._residual_heuristic = bool(residual_heuristic)
+        self._residual_scale = float(residual_scale)
+        self._heur_action_obs = bool(heur_action_obs)
+        if self._heur_action_obs and not self._residual_heuristic:
+            raise ValueError(
+                "heur_action_obs=True requires residual_heuristic=True"
+            )
+        self._residual_fn = None
+        self._heur_cache_key = None
+        self._heur_cached_action = np.zeros(4, dtype=np.float64)
         self.mode = mode
         self.visualisation = visualisation
         # Plan v12 redesign — when set, this grader grades against a FROZEN
@@ -389,15 +445,23 @@ class BenchEnv5(eve.Env):
             intervention, path_context=self._path_context
         )
 
-        observation = eve.observation.ObsDict(
-            {
-                "tracking": tracking,
-                "target": target_state,
-                "last_action": last_action,
-                "guidance": guidance,
-                "privileged": privileged,
-            }
-        )
+        # RL_IMPROV_18 P2 — optional heur_action component. Inserted
+        # BEFORE privileged (which must stay LAST): it lands in the
+        # deployable prefix, so a privileged teacher AND a later obs-only
+        # student both see the base controller's intent. Normalized like
+        # last_action. Default-off = legacy ObsDict, byte-identical.
+        _obs_entries = {
+            "tracking": tracking,
+            "target": target_state,
+            "last_action": last_action,
+            "guidance": guidance,
+        }
+        if self._heur_action_obs:
+            _obs_entries["heur_action"] = eve.observation.wrapper.Normalize(
+                HeurActionObs(self)
+            )
+        _obs_entries["privileged"] = privileged
+        observation = eve.observation.ObsDict(_obs_entries)
 
         # ----------------------------------------------------------------
         # Reward
@@ -743,6 +807,15 @@ class BenchEnv5(eve.Env):
             self._restore_ckpt_file = options.get("_restore_checkpoint_file")
             self._restore_ckpt_idx = options.get("_restore_checkpoint_idx")
 
+        # RL_IMPROV_18 P2 — mark the residual heuristic stale BEFORE
+        # super().reset(): the HeurActionObs component resets INSIDE it
+        # (after pathfinder.reset has recomputed the path), and the
+        # wrapper's lazy reset re-reads the new path on its first call.
+        if self._residual_heuristic:
+            if self._residual_fn is not None:
+                self._residual_fn.reset()
+            self._heur_cache_key = None
+
         # path_context.reset() is called by LocalGuidance.reset() and
         # ArcLengthProgress.reset() inside super().reset(), AFTER
         # pathfinder.reset() has already computed the new path.
@@ -920,6 +993,27 @@ class BenchEnv5(eve.Env):
     # ------------------------------------------------------------------
     # Post-intervention hook (called inside eve.Env.step)
     # ------------------------------------------------------------------
+    def _heur_next_action(self):
+        """RL_IMPROV_18 P2 — raw heuristic action for the CURRENT sim state,
+        computed at most once per state (the controller has internal phase
+        counters; the HeurActionObs component and the next step()'s residual
+        composition must share one call). Cache is invalidated on state
+        change (_on_intervention_stepped) and at reset."""
+        if self._residual_fn is None:
+            try:
+                from util.heuristic_policy import HeuristicActionFunction
+            except ImportError:
+                from heuristic_policy import HeuristicActionFunction
+            self._residual_fn = HeuristicActionFunction(
+                self, noise_std=0.0, normalize_output=False
+            )
+        if self._heur_cache_key is None:
+            self._heur_cached_action = np.asarray(
+                self._residual_fn(None), dtype=np.float64
+            ).reshape(-1)
+            self._heur_cache_key = "valid"
+        return self._heur_cached_action
+
     def _on_intervention_stepped(self):
         """Refresh the projection cache + branch state machine for THIS step.
 
@@ -931,6 +1025,10 @@ class BenchEnv5(eve.Env):
         exactly once per step.
         """
         self._path_context.invalidate()
+        # RL_IMPROV_18 P2 — the sim state just changed: invalidate the
+        # once-per-state heuristic-action cache BEFORE observation.step()
+        # runs, so the heur_action obs recomputes for THIS step's state.
+        self._heur_cache_key = None
         try:
             self._path_context.update_branch_state()
         except Exception as e:
@@ -941,6 +1039,24 @@ class BenchEnv5(eve.Env):
     # ------------------------------------------------------------------
     def step(self, action):
         step_start_time = time.time()
+
+        # RL_IMPROV_18 P2 — residual composition, RAW device units (the
+        # worker de-normalizes the policy action before env.step). The
+        # heuristic action for THIS state was already computed (and shown
+        # to the policy via HeurActionObs) — the cache guarantees it is
+        # the same one. Clip to the intervention's physical limits.
+        if self._residual_heuristic:
+            act = np.asarray(action, dtype=np.float64)
+            # heuristic returns flat [gw_t, gw_r, cath_t, cath_r]; the
+            # worker delivers the action in action_space shape (2,2) —
+            # same flat order (worker reshapes flat->space shape).
+            a_h = self._heur_next_action().reshape(act.shape)
+            self._heur_last_residual = act
+            action = np.clip(
+                a_h + self._residual_scale * act,
+                self.intervention.action_space.low,
+                self.intervention.action_space.high,
+            ).astype(np.float64)
 
         if self._last_step_time is not None:
             time_since_last = step_start_time - self._last_step_time

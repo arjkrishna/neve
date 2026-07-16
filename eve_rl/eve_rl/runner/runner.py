@@ -846,14 +846,18 @@ class Runner(EveRLObject):
             # negative update budget.
             self._pretrain_update_baseline = self.step_counter.update
 
-            # RL_IMPROV_15 — pretrain-only baseline eval (see param note).
-            if eval_after_pretrain:
-                self.logger.info(
-                    "Post-pretrain BASELINE eval (explore=0) — held-out "
-                    "quality of the pretrained policy before any online "
-                    "learning."
-                )
-                self.eval(episodes=eval_episodes, seeds=eval_seeds)
+        # RL_IMPROV_15 — pretrain-only baseline eval (see param note).
+        # RL_IMPROV_18 P2 — hoisted OUT of the pretrain>0 guard: with
+        # pretrain 0 the baseline eval measures the untrained policy —
+        # for a residual-on-heuristic run (init mean ~0) that IS the pure
+        # heuristic's held-out quality, the run's reference point.
+        if eval_after_pretrain:
+            self.logger.info(
+                "Post-pretrain BASELINE eval (explore=0) — held-out "
+                "quality of the pretrained policy before any online "
+                "learning."
+            )
+            self.eval(episodes=eval_episodes, seeds=eval_seeds)
 
         next_eval_step_limt = (
             self.agent.step_counter.exploration + explore_steps_between_eval
