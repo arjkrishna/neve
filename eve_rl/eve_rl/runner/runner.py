@@ -151,9 +151,30 @@ class Runner(EveRLObject):
                 except Exception as e:
                     self.logger.warning(f"Failed to restore probe states: {e}")
 
-    def load_replay_buffer(self):
-        """Auto-load replay buffer from checkpoint folder if file exists."""
-        replay_path = os.path.join(self.checkpoint_folder, "replay_buffer.npz")
+    def load_replay_buffer(self, from_folder: str = None):
+        """Auto-load replay buffer from a checkpoint folder (defaults to
+        this run's own). RL_IMPROV_16 — prefers the incremental format
+        (replay_incremental/ dir with chunks + state) and falls back to
+        the legacy monolithic replay_buffer.npz."""
+        folder = from_folder or self.checkpoint_folder
+        inc_dir = os.path.join(folder, "replay_incremental")
+        inc_state = os.path.join(inc_dir, "replay_state.npz")
+        if os.path.isfile(inc_state) and hasattr(
+            self.agent.replay_buffer, "load_buffer_incremental"
+        ):
+            try:
+                n = self.agent.replay_buffer.load_buffer_incremental(inc_dir)
+                self.logger.info(
+                    f"Loaded replay buffer incrementally "
+                    f"({n} transitions) from {inc_dir}"
+                )
+                return n
+            except Exception as e:
+                self.logger.warning(
+                    f"Incremental replay load failed ({e}); "
+                    f"trying legacy file."
+                )
+        replay_path = os.path.join(folder, "replay_buffer.npz")
         if os.path.isfile(replay_path):
             try:
                 n = self.agent.replay_buffer.load_buffer_from_file(replay_path)
@@ -344,12 +365,41 @@ class Runner(EveRLObject):
             writer = csv.writer(csvfile, delimiter=";")
             writer.writerow(self._results.values())
 
-        # Periodic replay buffer save
+        # Periodic replay buffer save.
+        # RL_IMPROV_16 — prefer the INCREMENTAL format when the buffer
+        # supports it: new-transitions chunk + small drift-state file,
+        # instead of re-serializing the whole 1-2 GB buffer inside the
+        # sample-serving subprocess every eval (wasteful, and the direct
+        # trigger of the post-eval stall window behind the v1/v2 eval3
+        # deadlocks). EVE_RL_LEGACY_BUFFER_SAVE=1 forces the old monolithic
+        # replay_buffer.npz (safety hatch / offline-tool compatibility).
         if self._eval_count % self._replay_save_interval == 0:
-            replay_path = os.path.join(self.checkpoint_folder, "replay_buffer.npz")
+            use_incremental = hasattr(
+                self.agent.replay_buffer, "save_buffer_incremental"
+            ) and os.environ.get("EVE_RL_LEGACY_BUFFER_SAVE", "") != "1"
             try:
-                n = self.agent.replay_buffer.save_buffer_to_file(replay_path)
-                self.logger.info(f"Saved replay buffer ({n} episodes) at eval #{self._eval_count}")
+                if use_incremental:
+                    inc_dir = os.path.join(
+                        self.checkpoint_folder, "replay_incremental"
+                    )
+                    n = self.agent.replay_buffer.save_buffer_incremental(
+                        inc_dir
+                    )
+                    self.logger.info(
+                        f"Saved replay buffer incrementally (+{n} new "
+                        f"transitions) at eval #{self._eval_count}"
+                    )
+                else:
+                    replay_path = os.path.join(
+                        self.checkpoint_folder, "replay_buffer.npz"
+                    )
+                    n = self.agent.replay_buffer.save_buffer_to_file(
+                        replay_path
+                    )
+                    self.logger.info(
+                        f"Saved replay buffer ({n} episodes) at eval "
+                        f"#{self._eval_count}"
+                    )
             except Exception as e:
                 self.logger.warning(f"Failed to save replay buffer: {e}")
 
@@ -499,8 +549,51 @@ class Runner(EveRLObject):
         # checkpoints were mid/post-collapse). explore counter is 0 here,
         # so the checkpoint is named checkpoint0*.
         eval_after_pretrain: bool = False,
+        # RL_IMPROV_16 — resume mode: the agent checkpoint (nets, optims,
+        # schedulers, step/episode counters) and the replay buffer have
+        # already been loaded by the caller. Skips heatup/pretrain and,
+        # critically, re-bases the online update budget so the restored
+        # counters do not create a phantom backlog/deficit: the
+        # explore_and_update budget is
+        #   exploration*ratio − (update − baseline)
+        # so on resume the baseline is set to (update − exploration*ratio),
+        # preserving the pre-crash equilibrium exactly.
+        resume: bool = False,
     ):
         # TODO: Log Training Run Infos
+        if resume:
+            self._pretrain_update_baseline = max(
+                0,
+                int(
+                    self.step_counter.update
+                    - self.step_counter.exploration
+                    * update_steps_per_explore_step
+                ),
+            )
+            self.logger.info(
+                "RESUME: continuing at explore=%d update=%d eval=%d — "
+                "update-budget baseline re-based to %d; heatup/pretrain "
+                "skipped.",
+                self.step_counter.exploration,
+                self.step_counter.update,
+                self.step_counter.evaluation,
+                self._pretrain_update_baseline,
+            )
+            next_eval_step_limt = (
+                self.agent.step_counter.exploration + explore_steps_between_eval
+            )
+            quality = reward = 0.0
+            while self.agent.step_counter.exploration < training_steps:
+                self.explore_and_update(
+                    explore_episodes_between_updates,
+                    update_steps_per_explore_step,
+                    explore_steps_limit=next_eval_step_limt,
+                )
+                quality, reward = self.eval(
+                    episodes=eval_episodes, seeds=eval_seeds
+                )
+                next_eval_step_limt += explore_steps_between_eval
+            return quality, reward
         # Plan v10 — heatup-until-N-threaded: instead of a fixed step budget,
         # run heatup in chunks until N episodes have THREADED RCCA (the seed
         # signal), with a safety cap. The whole heatup run (threaded + fails)

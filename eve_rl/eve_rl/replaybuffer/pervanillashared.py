@@ -114,6 +114,22 @@ class PERVanillaStepShared(VanillaStepShared):
         )
         self._process.start()
 
+    def save_buffer_incremental(self, dir_path: str) -> int:
+        """RL_IMPROV_16 — persist only the transitions pushed since the
+        last incremental save (chunk file) plus the full small drift-state
+        (atomic replace). Returns the number of newly-saved transitions.
+        Same request pattern as save_buffer_to_file."""
+        with self._request_lock:
+            self._task_queue.put(["save_buffer_incremental", dir_path])
+            return self._result_queue.get()
+
+    def load_buffer_incremental(self, dir_path: str) -> int:
+        """RL_IMPROV_16 — rebuild the buffer from an incremental-save
+        directory (chunks + state). Returns transitions restored."""
+        with self._request_lock:
+            self._task_queue.put(["load_buffer_incremental", dir_path])
+            return self._result_queue.get()
+
     def _run_subprocess(self, shared_update_step):
         self._shared_update_step = shared_update_step
         internal_replay_buffer = PERVanillaStep(
@@ -213,6 +229,47 @@ class PERVanillaStepShared(VanillaStepShared):
                             )
                         except Exception as e:
                             logger.error(f"LOAD_BUFFER failed: {e}", exc_info=True)
+                            self._result_queue.put(-1)
+                    elif task[0] == "save_buffer_incremental":
+                        # RL_IMPROV_16 — chunked save: only new transitions
+                        # + the small drift-state file (vs the 1-2 GB full
+                        # re-serialization that stalled this loop at eval3
+                        # scale and triggered the v1/v2 post-eval deadlock).
+                        dir_path = task[1]
+                        try:
+                            n_new = (
+                                internal_replay_buffer.save_incremental_to_dir(
+                                    dir_path
+                                )
+                            )
+                            self._result_queue.put(n_new)
+                            logger.info(
+                                f"SAVE_BUFFER_INCR: {n_new} new transitions "
+                                f"-> {dir_path} (total "
+                                f"{len(internal_replay_buffer)})"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"SAVE_BUFFER_INCR failed: {e}", exc_info=True
+                            )
+                            self._result_queue.put(-1)
+                    elif task[0] == "load_buffer_incremental":
+                        dir_path = task[1]
+                        try:
+                            n_loaded = (
+                                internal_replay_buffer.load_incremental_from_dir(
+                                    dir_path
+                                )
+                            )
+                            self._result_queue.put(n_loaded)
+                            logger.info(
+                                f"LOAD_BUFFER_INCR: {n_loaded} transitions "
+                                f"from {dir_path}"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"LOAD_BUFFER_INCR failed: {e}", exc_info=True
+                            )
                             self._result_queue.put(-1)
                 elif not self._push_queue.empty():
                     item = self._push_queue.get()
