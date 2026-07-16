@@ -668,6 +668,11 @@ def main(args):
         # RL_IMPROV_16 E1b/E2.2 — advantage normalization + aux z-scoring.
         awac_adv_norm_tau=float(getattr(args, "awac_adv_norm_tau", 0.0)),
         aux_label_znorm=bool(getattr(args, "aux_label_znorm", False)),
+        # RL_IMPROV_17 P1 (RLPD) — critic LayerNorm, entropy-free critic
+        # backup, symmetric offline/online sampling. All default-off.
+        critic_layernorm=bool(getattr(args, "critic_layernorm", False)),
+        backup_entropy=not bool(getattr(args, "no_entropy_backup", False)),
+        offline_fraction=float(getattr(args, "rlpd_offline_fraction", 0.0)),
         # RL_IMPROV_16 E3 — stuck-lane sampling. Flat-obs indices are
         # env5 Gen-4 layout constants (verified by the 2026-07-12 obs
         # audit): tracking 40 + target 2 + last_action 4 = guidance
@@ -1114,17 +1119,19 @@ def main(args):
                 f"--buckle_reward_coef {_cache_coef} or re-harvest."
             )
         n_pushed = 0
+        # RL_IMPROV_17 P1 (RLPD) — under symmetric sampling the cache IS the
+        # offline lane, keyed on is_demo. Legacy runs keep is_demo=False
+        # (heatup episodes are random-action, not demos).
+        _cache_is_demo = float(getattr(args, "rlpd_offline_fraction", 0.0)) > 0.0
         for i, ep_tuple in enumerate(episodes_tuples):
             flat_obs, actions, rewards, terminals = ep_tuple
-            # Heatup episodes are random-action — NOT demos. Carry quality
-            # metadata when present (a few heatup episodes reach the target).
             m = heatup_meta[i] if heatup_meta is not None else {}
             replay_ep = EpisodeReplay(
                 flat_obs=list(flat_obs),
                 actions=list(actions),
                 rewards=list(rewards),
                 terminals=list(terminals),
-                is_demo=False,
+                is_demo=_cache_is_demo,
                 episode_return=float(m.get("episode_return", 0.0)),
                 reached_target_daughter=bool(
                     m.get("reached_target_daughter", False)
@@ -1715,6 +1722,46 @@ if __name__ == "__main__":
         help=(
             "E3 stuck-lane contact_max threshold (normalized; 0.0026 ~= "
             "top decile of the v2 buffer's live contact-proxy channel)."
+        ),
+    )
+    parser.add_argument(
+        "--critic_layernorm",
+        action="store_true",
+        help=(
+            "RL_IMPROV_17 P1 (RLPD, Ball et al. ICML 2023) — LayerNorm "
+            "after every hidden Linear in the CRITIC bodies (q1/q2 only; "
+            "policy stays legacy). The RLPD ablation shows this is the "
+            "decisive stabilizer when training on offline data WITHOUT a "
+            "BC/AWAC term: it bounds Q-value extrapolation on OOD actions. "
+            "OFF = legacy nets (old checkpoints load unchanged)."
+        ),
+    )
+    parser.add_argument(
+        "--no_entropy_backup",
+        action="store_true",
+        help=(
+            "RL_IMPROV_17 P1 (RLPD) — drop the -alpha*log_pi term from the "
+            "CRITIC target (plain min-Q Bellman backup); the actor loss "
+            "keeps its entropy term, so exploration pressure survives. "
+            "RLPD found entropy-in-backup destabilizes sparse/near-sparse "
+            "reward tasks. AWAC already backs up without entropy; this "
+            "flag extends that to --algo sac. OFF = legacy SAC backup."
+        ),
+    )
+    parser.add_argument(
+        "--rlpd_offline_fraction",
+        type=float,
+        default=0.0,
+        help=(
+            "RL_IMPROV_17 P1 (RLPD) — symmetric offline/online sampling: "
+            "this fraction of every batch is drawn UNIFORMLY from seed "
+            "(is_demo) transitions, the rest uniformly from online ones "
+            "(0.5 = the RLPD 50/50 recipe). When >0 the heatup-cache "
+            "episodes are pushed with is_demo=True so they form the "
+            "offline lane, and this sampler REPLACES PER/balanced/stuck "
+            "lanes entirely (IS weights = 1) — the RLPD recipe is "
+            "uniform-within-halves and its composition with PER is "
+            "unstudied. 0.0 = OFF (legacy PER sampling)."
         ),
     )
     parser.add_argument(

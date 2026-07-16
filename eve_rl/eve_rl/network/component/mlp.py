@@ -14,10 +14,17 @@ class MLP(Component):
         n_inputs: Optional[int] = None,
         output_layer_size: Optional[Union[int, List[int]]] = None,
         init_w: float = 3e-3,
+        # RL_IMPROV_17 (RLPD recipe) — LayerNorm after every hidden Linear
+        # (before the ReLU). The RLPD ablation (Ball et al., ICML 2023)
+        # shows critic LayerNorm is the decisive stabilizer when training
+        # on offline data without a BC term: it bounds Q-extrapolation on
+        # OOD actions. Default False = legacy nets, checkpoints unchanged.
+        use_layernorm: bool = False,
     ):
         super().__init__()
         self.hidden_layers = hidden_layers
         self.init_w = init_w
+        self.use_layernorm = bool(use_layernorm)
 
         self._input_layer: nn.Linear = None
         self._output_layers: List[nn.Linear] = None
@@ -26,6 +33,14 @@ class MLP(Component):
         layers_out = self.hidden_layers[1:]
         for in_size, out_size in zip(layers_in, layers_out):
             self._layers.append(nn.Linear(in_size, out_size))
+        # One norm per hidden activation: input-layer output
+        # (hidden_layers[0]) + each _layers[i] output (hidden_layers[i+1]).
+        # Only created when enabled, so legacy state_dicts stay loadable.
+        self._norms: Optional[nn.ModuleList] = None
+        if self.use_layernorm:
+            self._norms = nn.ModuleList(
+                [nn.LayerNorm(h) for h in self.hidden_layers]
+            )
         if n_inputs is not None:
             self.n_inputs = n_inputs
         if output_layer_size is not None:
@@ -80,9 +95,14 @@ class MLP(Component):
         return self._layers[0].weight.device
 
     def forward(self, obs_batch: torch.Tensor, *args, **kwds) -> torch.Tensor:
-        state = F.relu(self._input_layer(obs_batch))
-        for layer in self._layers:
+        state = self._input_layer(obs_batch)
+        if self._norms is not None:
+            state = self._norms[0](state)
+        state = F.relu(state)
+        for i, layer in enumerate(self._layers):
             state = layer(state)
+            if self._norms is not None:
+                state = self._norms[i + 1](state)
             state = F.relu(state)
         if self._output_layers is not None:
             # output without relu

@@ -72,6 +72,9 @@ class PERVanillaStepShared(VanillaStepShared):
         stuck_slack_thresh: float = 0.174,
         stuck_contact_index: int = -1,
         stuck_contact_thresh: float = 0.0026,
+        # RL_IMPROV_17 (RLPD) — symmetric offline/online sampling fraction,
+        # forwarded verbatim (see PERVanillaStep docnote). 0.0 = OFF.
+        offline_fraction: float = 0.0,
     ):
         # NB: deliberately do NOT call VanillaStepShared.__init__ — it would
         # start the subprocess before the priority queue exists. Replicate
@@ -105,6 +108,7 @@ class PERVanillaStepShared(VanillaStepShared):
         self.stuck_slack_thresh = stuck_slack_thresh
         self.stuck_contact_index = stuck_contact_index
         self.stuck_contact_thresh = stuck_contact_thresh
+        self.offline_fraction = offline_fraction
         # Third queue — trainer → subprocess priority updates. Created
         # before spawn so the subprocess inherits it.
         self._priority_update_queue = mp.SimpleQueue()
@@ -144,6 +148,7 @@ class PERVanillaStepShared(VanillaStepShared):
             stuck_slack_thresh=self.stuck_slack_thresh,
             stuck_contact_index=self.stuck_contact_index,
             stuck_contact_thresh=self.stuck_contact_thresh,
+            offline_fraction=self.offline_fraction,
         )
         self.loop(internal_replay_buffer)
 

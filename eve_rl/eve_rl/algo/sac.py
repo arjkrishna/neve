@@ -206,6 +206,12 @@ class SAC(Algo):
         # from deployable signals. aux_coef 0.0 = off (byte-identical).
         aux_coef: float = 0.0,
         aux_label_indices: Optional[List[int]] = None,
+        # RL_IMPROV_17 (RLPD recipe) — drop the max-entropy term from the
+        # CRITIC TARGET (the actor loss keeps its entropy term). RLPD
+        # disables the entropy backup on sparse/hard tasks; our AWAC branch
+        # already learned the same lesson independently (the -406k critic
+        # divergence). True = legacy SAC backup with -alpha*log_pi(next).
+        backup_entropy: bool = True,
         # RL_IMPROV_16 E2.2 — z-score the aux labels AT LOSS TIME (running
         # EMA mean/var per label). The v2 contact labels have std ~1e-3 in
         # normalized units, so aux_coef*MSE ~= 5e-8 — zero shaping pressure
@@ -232,6 +238,8 @@ class SAC(Algo):
         # RL_IMPROV_16 E1b/E2.2 (see __init__ docnotes).
         self.awac_adv_norm_tau = float(awac_adv_norm_tau)
         self.aux_label_znorm = bool(aux_label_znorm)
+        # RL_IMPROV_17 — critic-target entropy backup toggle (RLPD).
+        self.backup_entropy = bool(backup_entropy)
         self._aux_znorm_mu = None   # running EMA mean per aux label
         self._aux_znorm_var = None  # running EMA var per aux label
         self._aux_loss_value = 0.0
@@ -762,13 +770,16 @@ class SAC(Algo):
             next_target_q1 = self.model.target_q1(all_states, next_actions)
             next_target_q2 = self.model.target_q2(all_states, next_actions)
 
-        if self.algo == "awac":
+        if self.algo == "awac" or not self.backup_entropy:
             # Plan v8 fix — AWAC critic target is a PLAIN Bellman backup,
             # NO max-entropy term. SAC's `- alpha*next_log_pi` is
             # incompatible with AWAC's advantage-weighted BC policy: that
             # policy goes peaky, so next_log_pi grows large-positive and the
             # entropy term becomes a huge negative drag that drives the
             # critic to -inf (the -406k divergence in rcca_awac_gradclip10).
+            # RL_IMPROV_17 — `backup_entropy=False` extends the plain
+            # backup to SAC (the RLPD sparse-task recipe); the ACTOR loss
+            # keeps its entropy term either way.
             next_target_q = torch.min(next_target_q1, next_target_q2)
         else:
             next_target_q = (

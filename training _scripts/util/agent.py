@@ -185,6 +185,11 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         # z-scoring (see sac.py docnotes). Defaults OFF = legacy.
         awac_adv_norm_tau: float = 0.0,
         aux_label_znorm: bool = False,
+        # RL_IMPROV_17 (RLPD recipe) — see sac.py / mlp.py / pervanillastep
+        # docnotes. All default-off = legacy behavior.
+        critic_layernorm: bool = False,
+        backup_entropy: bool = True,
+        offline_fraction: float = 0.0,
         # RL_IMPROV_16 E3 — stuck-lane sampling knobs (see pervanillastep
         # docnote; indices are flat-obs positions computed by the training
         # script from the env5 Gen-4 layout). Defaults OFF = legacy.
@@ -274,8 +279,14 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         # old sharing meant only q1's optimizer ever stepped it while all
         # three losses fed it gradients).
 
-        q1_base = eve_rl.network.component.MLP(hidden_layers)
-        q2_base = eve_rl.network.component.MLP(hidden_layers)
+        # RL_IMPROV_17 (RLPD) — LayerNorm on the CRITIC bodies only (the
+        # RLPD-decisive stabilizer); the policy body stays legacy.
+        q1_base = eve_rl.network.component.MLP(
+            hidden_layers, use_layernorm=critic_layernorm
+        )
+        q2_base = eve_rl.network.component.MLP(
+            hidden_layers, use_layernorm=critic_layernorm
+        )
         policy_base = eve_rl.network.component.MLP(hidden_layers)
 
         q1 = eve_rl.network.QNetwork(q1_base, n_observations, n_actions, q1_embedder)
@@ -390,6 +401,7 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
                 awac_lambda=awac_lambda,
                 awac_adv_norm_tau=awac_adv_norm_tau,
                 aux_label_znorm=aux_label_znorm,
+                backup_entropy=backup_entropy,
                 entropy_beta_per_dim=entropy_beta_per_dim,
                 action_mean_penalty=action_mean_penalty,
                 log_alpha_min=log_alpha_min,
@@ -426,6 +438,7 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
                 stuck_slack_thresh=stuck_slack_thresh,
                 stuck_contact_index=stuck_contact_index,
                 stuck_contact_thresh=stuck_contact_thresh,
+                offline_fraction=offline_fraction,
             )
         elif replay_mode == "step":
             replay_buffer = eve_rl.replaybuffer.VanillaStepShared(

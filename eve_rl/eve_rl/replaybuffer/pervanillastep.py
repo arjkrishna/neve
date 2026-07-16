@@ -119,6 +119,16 @@ class PERVanillaStep(ReplayBuffer):
         stuck_slack_thresh: float = 0.174,
         stuck_contact_index: int = -1,
         stuck_contact_thresh: float = 0.0026,
+        # RL_IMPROV_17 (RLPD) — symmetric offline/online sampling. When
+        # > 0, sample() returns `offline_fraction` of each batch UNIFORMLY
+        # from the offline set (slots with is_demo=True — the loaded seed/
+        # demo data) and the rest UNIFORMLY from the online set, with
+        # IS-weights == 1 (no prioritization). This is RLPD's 50/50
+        # symmetric-sampling recipe and OVERRIDES the PER/clean/stuck
+        # machinery entirely while active (the paper samples uniformly
+        # within halves; composing PER with symmetric sampling is
+        # unstudied). 0.0 = OFF (legacy PER + lanes, byte-identical).
+        offline_fraction: float = 0.0,
     ):
         self.capacity = int(capacity)
         self._batch_size = batch_size
@@ -181,6 +191,12 @@ class PERVanillaStep(ReplayBuffer):
         # flags, position, counters). See save_incremental_to_dir().
         self._total_pushed = 0
         self._last_incremental_saved = 0
+        # RL_IMPROV_17 (RLPD) — symmetric-sampling state (see __init__).
+        # Offline membership = is_demo. The index cache is rebuilt lazily,
+        # only when membership changes (cache load, or the ring overwriting
+        # an offline slot) — pushes are hot-path.
+        self.offline_fraction = float(offline_fraction)
+        self._offline_idx_cache = None  # np.ndarray of offline slots
 
     @property
     def batch_size(self) -> int:
@@ -239,6 +255,10 @@ class PERVanillaStep(ReplayBuffer):
             )
             pos = self.position
             self.buffer[pos] = episode_np
+            # RL_IMPROV_17 — invalidate the offline-index cache only when
+            # membership actually changes (slot flips demo <-> non-demo).
+            if bool(self.is_demo[pos]) != is_demo:
+                self._offline_idx_cache = None
             self.is_demo[pos] = is_demo
             self.is_clean[pos] = reached
             self.episode_returns[pos] = ep_return
@@ -392,6 +412,7 @@ class PERVanillaStep(ReplayBuffer):
         self.position = position
         self.tree.tree = tree
         self.is_demo = is_demo
+        self._offline_idx_cache = None  # RL_IMPROV_17 membership reset
         self.is_clean = is_clean
         self.is_stuck = is_stuck
         self.episode_returns = episode_returns
@@ -472,6 +493,7 @@ class PERVanillaStep(ReplayBuffer):
         self.position = int(data["position"])
         self.tree.tree = np.array(data["tree"], dtype=np.float64)
         self.is_demo = np.array(data["is_demo"], dtype=bool)
+        self._offline_idx_cache = None  # RL_IMPROV_17 membership reset
         self.is_clean = np.array(data["is_clean"], dtype=bool)
         self.episode_returns = np.array(data["episode_returns"], dtype=np.float64)
         self.max_priority = float(data["max_priority"])
@@ -530,7 +552,57 @@ class PERVanillaStep(ReplayBuffer):
             weights.append((n * max(prob, 1e-12)) ** (-beta))
         return indices, samples, weights
 
+    def _sample_symmetric(self) -> Batch:
+        """RL_IMPROV_17 (RLPD) — uniform 50/50-style offline/online batch
+        (see __init__ docnote on `offline_fraction`). IS weights are all 1;
+        indices are still returned so update_priorities() calls stay
+        harmless no-ops semantically (the trees are not consulted here)."""
+        self._sample_count += 1
+        n = len(self.buffer)
+        if self._offline_idx_cache is None:
+            self._offline_idx_cache = np.flatnonzero(self.is_demo[:n])
+        offline = self._offline_idx_cache
+        n_off_want = int(round(self.offline_fraction * self.batch_size))
+        n_off = min(n_off_want, len(offline)) if len(offline) else 0
+        n_on = self.batch_size - n_off
+        idx = []
+        if n_off > 0:
+            idx.extend(
+                offline[np.random.randint(0, len(offline), size=n_off)]
+            )
+        # Online half: rejection-sample against the offline set (fast while
+        # offline is a minority; exact uniform over the complement).
+        n_offline_total = len(offline)
+        if n_offline_total >= n:
+            # Degenerate: buffer is all-offline (e.g. right after cache
+            # load, before exploration) — fill from the whole buffer.
+            idx.extend(np.random.randint(0, n, size=n_on))
+        else:
+            filled = 0
+            while filled < n_on:
+                cand = np.random.randint(0, n, size=(n_on - filled) * 2 + 8)
+                cand = cand[~self.is_demo[cand]]
+                take = cand[: n_on - filled]
+                idx.extend(take)
+                filled += len(take)
+        indices = [int(i) for i in idx]
+        samples = [self.buffer[i] for i in indices]
+        batch = list(map(np.stack, zip(*samples)))
+        batch = [torch.from_numpy(entry) for entry in batch]
+        batch[1] = batch[1].unsqueeze(1)               # actions  → (B,1,act)
+        batch[2] = batch[2].unsqueeze(1).unsqueeze(1)  # rewards  → (B,1,1)
+        batch[3] = batch[3].unsqueeze(1).unsqueeze(1)  # terminals→ (B,1,1)
+        is_weights = torch.ones(len(indices), dtype=torch.float32)
+        idx_tensor = torch.tensor(indices, dtype=torch.long)
+        return Batch(
+            batch[0], batch[1], batch[2], batch[3],
+            None, is_weights, idx_tensor,
+        )
+
     def sample(self) -> Batch:
+        # RL_IMPROV_17 (RLPD) — symmetric mode overrides PER + lanes.
+        if self.offline_fraction > 0.0:
+            return self._sample_symmetric()
         # Anneal beta from beta_start → 1.0 over beta_steps sample() calls.
         beta = min(
             1.0,
