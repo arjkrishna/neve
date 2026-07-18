@@ -712,14 +712,33 @@ class Synchron(SynchronEvalOnly, Agent):
                 # post-eval3 deadlock). On deadline, force-restart the trainer
                 # (same recovery as an exception) and let the cycle finish; the
                 # skipped updates are re-earned by the next cycle's budget.
-                elif perf_counter() - t_start > self._trainer_result_timeout_s:
-                    self._restart_trainer(
-                        f"no update-result within "
-                        f"{self._trainer_result_timeout_s:.0f}s (deadlock guard)"
-                    )
-                    got_trainer_results = True
-                    n_steps_update = self.step_counter.update - update_steps_start
-                    t_duration_update = perf_counter() - t_start
+                # RL_IMPROV_18 R2 — the 2026-07-16 P2a run proved the pure
+                # wall-clock deadline is WRONG: explore cycles legitimately
+                # run ~40 min > 1800s, so a HEALTHY trainer got restarted
+                # into fresh init every cycle (32 wipes; combined with the
+                # R1 sync bug ⇒ 24h of init-policy evals). Gate the restart
+                # on STALL EVIDENCE: the shared update counter must have
+                # stopped advancing for the full timeout, not merely the
+                # result being slow to arrive.
+                elif (
+                    perf_counter() - t_start > self._trainer_result_timeout_s
+                ):
+                    _u_now = self.step_counter.update
+                    if _u_now != getattr(self, "_last_update_progress", (None, 0.0))[0]:
+                        self._last_update_progress = (_u_now, perf_counter())
+                    elif (
+                        perf_counter() - self._last_update_progress[1]
+                        > self._trainer_result_timeout_s
+                    ):
+                        self._restart_trainer(
+                            f"update counter STALLED at {_u_now} for "
+                            f"{self._trainer_result_timeout_s:.0f}s (deadlock guard)"
+                        )
+                        got_trainer_results = True
+                        n_steps_update = (
+                            self.step_counter.update - update_steps_start
+                        )
+                        t_duration_update = perf_counter() - t_start
 
             if got_worker_results and got_trainer_results:
                 break
@@ -757,8 +776,48 @@ class Synchron(SynchronEvalOnly, Agent):
         del self.replay_buffer
 
     def _update_algo_state_dicts(self):
-        state_dicts = self.algo.state_dicts_network()
-        self.trainer.state_dicts_network(state_dicts)
+        # RL_IMPROV_18 R1 — the trainer is the AUTHORITY on network weights.
+        # The old code passed algo's dict as `destination` and DISCARDED the
+        # return: the trainer subprocess fills a PICKLED COPY, so in-place
+        # mutation can never reach this process — algo's nets stayed at
+        # init forever (workers/evals/checkpoints all sync FROM algo ⇒ the
+        # 24h init-policy run of 2026-07-16). Pull and LOAD the return.
+        state_dicts = self.trainer.state_dicts_network()
+        if state_dicts is not None:
+            self.algo.load_state_dicts_network(state_dicts)
+            # R3 invariant alarm — weights pulled from the trainer must
+            # CHANGE between syncs once training has started. A frozen
+            # fingerprint across 3+ syncs = the 2026-07-16 failure class
+            # (sync broken or trainer re-initing) — scream, don't crash.
+            try:
+                import hashlib
+                import pickle as _pkl
+
+                fp = hashlib.md5(_pkl.dumps(
+                    {k: v for k, v in sorted(state_dicts.items())}
+                )).hexdigest()[:12]
+                self._net_sync_count = getattr(self, "_net_sync_count", 0) + 1
+                if fp == getattr(self, "_last_net_fp", None):
+                    self._net_fp_repeats = getattr(self, "_net_fp_repeats", 0) + 1
+                    if (
+                        self._net_fp_repeats >= 3
+                        and self.step_counter.update > 1000
+                    ):
+                        self.logger.error(
+                            "NET_SYNC_ALARM: trainer network fingerprint %s "
+                            "UNCHANGED for %d consecutive syncs at update=%d "
+                            "— weight sync or trainer state is broken!",
+                            fp, self._net_fp_repeats, self.step_counter.update,
+                        )
+                else:
+                    self._net_fp_repeats = 0
+                self._last_net_fp = fp
+                self.logger.info(
+                    "NET_SYNC ok #%d fp=%s update=%d",
+                    self._net_sync_count, fp, self.step_counter.update,
+                )
+            except Exception:
+                pass
 
         state_dicts = self.trainer.state_dicts_optimizer()
         self.algo.load_state_dicts_optimizer(state_dicts)
