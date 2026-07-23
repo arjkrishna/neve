@@ -190,6 +190,13 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         critic_layernorm: bool = False,
         backup_entropy: bool = True,
         offline_fraction: float = 0.0,
+        # RL_IMPROV_18 v1c — crunchpass lane (see pervanillastep docnote).
+        crunchpass_fraction: float = 0.0,
+        crunchpass_la0_index: int = -1,
+        crunchpass_la2_index: int = -1,
+        crunchpass_radius_index: int = -1,
+        crunchpass_engage_thresh: float = 0.25,
+        crunchpass_radius_thresh: float = 0.175,
         # RL_IMPROV_16 E3 — stuck-lane sampling knobs (see pervanillastep
         # docnote; indices are flat-obs positions computed by the training
         # script from the env5 Gen-4 layout). Defaults OFF = legacy.
@@ -439,6 +446,12 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
                 stuck_contact_index=stuck_contact_index,
                 stuck_contact_thresh=stuck_contact_thresh,
                 offline_fraction=offline_fraction,
+                crunchpass_fraction=crunchpass_fraction,
+                crunchpass_la0_index=crunchpass_la0_index,
+                crunchpass_la2_index=crunchpass_la2_index,
+                crunchpass_radius_index=crunchpass_radius_index,
+                crunchpass_engage_thresh=crunchpass_engage_thresh,
+                crunchpass_radius_thresh=crunchpass_radius_thresh,
             )
         elif replay_mode == "step":
             replay_buffer = eve_rl.replaybuffer.VanillaStepShared(

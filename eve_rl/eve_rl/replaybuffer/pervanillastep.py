@@ -119,6 +119,28 @@ class PERVanillaStep(ReplayBuffer):
         stuck_slack_thresh: float = 0.174,
         stuck_contact_index: int = -1,
         stuck_contact_thresh: float = 0.0026,
+        # RL_IMPROV_18 v1c — crunchpass lane (machine-2 v3a/v3b learnings +
+        # v1b chunk verification, saved/p2a_deep_dive/CRUNCH_POOL_STRATEGY.md).
+        # Membership = the dual-device crunch SIGNATURE on the state obs
+        #   |obs[la0_idx]| > engage_thresh  AND  |obs[la2_idx]| > engage_thresh
+        #   AND obs[radius_idx] <= radius_thresh        (narrow lumen)
+        # AND the episode SUCCEEDED (post rail-filter `reached`, same flag
+        # as the clean lane — raw crunch signature alone marks GRINDING:
+        # failures carry 4-8x more signature steps than successes in every
+        # v1b era; success-conditioning selects the productive passages).
+        # Thresholds calibrated on v1b chunks 1/3/4/13: engagement 0.25
+        # (normalized last_action), radius 0.175 (the 2.0mm deep-daughter
+        # floor sits at 0.167) -> signature 22-46% of transitions, lane
+        # ~8-15% after success-conditioning. Indices are env5-layout flat
+        # constants injected by the training script (last_action gw_t=42,
+        # cath_t=44, local_radius=93; stable for both 121/125 layouts);
+        # -1 disables. crunchpass_fraction 0.0 = lane OFF (legacy).
+        crunchpass_fraction: float = 0.0,
+        crunchpass_la0_index: int = -1,
+        crunchpass_la2_index: int = -1,
+        crunchpass_radius_index: int = -1,
+        crunchpass_engage_thresh: float = 0.25,
+        crunchpass_radius_thresh: float = 0.175,
         # RL_IMPROV_17 (RLPD) — symmetric offline/online sampling. When
         # > 0, sample() returns `offline_fraction` of each batch UNIFORMLY
         # from the offline set (slots with is_demo=True — the loaded seed/
@@ -167,6 +189,21 @@ class PERVanillaStep(ReplayBuffer):
         )
         self.is_stuck = np.zeros(self.capacity, dtype=bool)
         self.stuck_tree = SumTree(self.capacity) if self._stuck else None
+        # RL_IMPROV_18 v1c — crunchpass lane state (see __init__ docnote).
+        self.crunchpass_fraction = float(crunchpass_fraction)
+        self.crunchpass_la0_index = int(crunchpass_la0_index)
+        self.crunchpass_la2_index = int(crunchpass_la2_index)
+        self.crunchpass_radius_index = int(crunchpass_radius_index)
+        self.crunchpass_engage_thresh = float(crunchpass_engage_thresh)
+        self.crunchpass_radius_thresh = float(crunchpass_radius_thresh)
+        self._crunchpass = (
+            self.crunchpass_fraction > 0.0
+            and self.crunchpass_la0_index >= 0
+            and self.crunchpass_la2_index >= 0
+            and self.crunchpass_radius_index >= 0
+        )
+        self.is_crunchpass = np.zeros(self.capacity, dtype=bool)
+        self.crunchpass_tree = SumTree(self.capacity) if self._crunchpass else None
 
         self.buffer = []
         self.position = 0
@@ -277,6 +314,29 @@ class PERVanillaStep(ReplayBuffer):
                     )
                 self.is_stuck[pos] = bool(stuck)
                 self.stuck_tree.update(pos, priority if stuck else 0.0)
+            # RL_IMPROV_18 v1c — crunchpass membership: crunch SIGNATURE on
+            # the STATE obs AND episode success (`reached` is the post-rail-
+            # filter flag, shared with the clean lane so rail-poisoned
+            # successes stay out of BOTH amplified lanes).
+            if self._crunchpass:
+                st_obs = episode.flat_obs[i]
+                cp = False
+                if (
+                    self.crunchpass_la0_index < len(st_obs)
+                    and self.crunchpass_la2_index < len(st_obs)
+                    and self.crunchpass_radius_index < len(st_obs)
+                ):
+                    cp = bool(
+                        reached
+                        and abs(st_obs[self.crunchpass_la0_index])
+                        > self.crunchpass_engage_thresh
+                        and abs(st_obs[self.crunchpass_la2_index])
+                        > self.crunchpass_engage_thresh
+                        and st_obs[self.crunchpass_radius_index]
+                        <= self.crunchpass_radius_thresh
+                    )
+                self.is_crunchpass[pos] = cp
+                self.crunchpass_tree.update(pos, priority if cp else 0.0)
             self.tree.update(pos, priority)
             if self._balanced:
                 self.clean_tree.update(pos, priority if reached else 0.0)
@@ -343,6 +403,7 @@ class PERVanillaStep(ReplayBuffer):
             "is_demo": self.is_demo,
             "is_clean": self.is_clean,
             "is_stuck": self.is_stuck,
+            "is_crunchpass": self.is_crunchpass,
             "episode_returns": self.episode_returns,
             "max_priority": np.array(self.max_priority, dtype=np.float64),
             "sample_count": np.array(self._sample_count, dtype=np.int64),
@@ -374,6 +435,12 @@ class PERVanillaStep(ReplayBuffer):
             is_stuck = (
                 np.array(st["is_stuck"], dtype=bool)
                 if "is_stuck" in st
+                else np.zeros(self.capacity, dtype=bool)
+            )
+            # RL_IMPROV_18 v1c — back-compat: pre-v1c dirs have no lane.
+            is_crunchpass = (
+                np.array(st["is_crunchpass"], dtype=bool)
+                if "is_crunchpass" in st
                 else np.zeros(self.capacity, dtype=bool)
             )
             episode_returns = np.array(
@@ -415,6 +482,7 @@ class PERVanillaStep(ReplayBuffer):
         self._offline_idx_cache = None  # RL_IMPROV_17 membership reset
         self.is_clean = is_clean
         self.is_stuck = is_stuck
+        self.is_crunchpass = is_crunchpass
         self.episode_returns = episode_returns
         self.max_priority = max_priority
         self._sample_count = sample_count
@@ -433,6 +501,12 @@ class PERVanillaStep(ReplayBuffer):
                 if self.is_stuck[i]:
                     leaf = float(self.tree.tree[i + self.capacity - 1])
                     self.stuck_tree.update(i, leaf)
+        if self._crunchpass:
+            self.crunchpass_tree = SumTree(self.capacity)
+            for i in range(n):
+                if self.is_crunchpass[i]:
+                    leaf = float(self.tree.tree[i + self.capacity - 1])
+                    self.crunchpass_tree.update(i, leaf)
         return n
 
     def export_all(self) -> dict:
@@ -462,6 +536,8 @@ class PERVanillaStep(ReplayBuffer):
             "is_clean": self.is_clean,
             # RL_IMPROV_16 E3 — stuck-lane membership (rebuild like clean).
             "is_stuck": self.is_stuck,
+            # RL_IMPROV_18 v1c — crunchpass-lane membership (same pattern).
+            "is_crunchpass": self.is_crunchpass,
             "episode_returns": self.episode_returns,
             "max_priority": np.array(self.max_priority, dtype=np.float64),
             "sample_count": np.array(self._sample_count, dtype=np.int64),
@@ -517,6 +593,17 @@ class PERVanillaStep(ReplayBuffer):
                 if self.is_stuck[i]:
                     leaf_pri = float(self.tree.tree[i + self.capacity - 1])
                     self.stuck_tree.update(i, leaf_pri)
+        # RL_IMPROV_18 v1c — rebuild the crunchpass lane (same back-compat).
+        if self._crunchpass:
+            if "is_crunchpass" in data:
+                self.is_crunchpass = np.array(
+                    data["is_crunchpass"], dtype=bool
+                )
+            self.crunchpass_tree = SumTree(self.capacity)
+            for i in range(n):
+                if self.is_crunchpass[i]:
+                    leaf_pri = float(self.tree.tree[i + self.capacity - 1])
+                    self.crunchpass_tree.update(i, leaf_pri)
         # RL_IMPROV_16 — seed the monotonic counter so incremental saves
         # made AFTER a legacy monolithic load keep the slot = idx % capacity
         # invariant (unwrapped: total = n; wrapped: total ≡ position mod
@@ -621,7 +708,11 @@ class PERVanillaStep(ReplayBuffer):
         n_stuck = 0
         if self._stuck and self.stuck_tree.total() > 0:
             n_stuck = int(round(self.stuck_fraction * self.batch_size))
-        n_general = self.batch_size - n_clean - n_stuck
+        # RL_IMPROV_18 v1c — fourth lane: success-conditioned crunch steps.
+        n_crunch = 0
+        if self._crunchpass and self.crunchpass_tree.total() > 0:
+            n_crunch = int(round(self.crunchpass_fraction * self.batch_size))
+        n_general = self.batch_size - n_clean - n_stuck - n_crunch
 
         idx_g, smp_g, w_g = self._draw(self.tree, n_general, beta, n)
         if n_clean > 0:
@@ -632,9 +723,16 @@ class PERVanillaStep(ReplayBuffer):
             idx_s, smp_s, w_s = self._draw(self.stuck_tree, n_stuck, beta, n)
         else:
             idx_s, smp_s, w_s = [], [], []
+        if n_crunch > 0:
+            idx_p, smp_p, w_p = self._draw(
+                self.crunchpass_tree, n_crunch, beta, n
+            )
+        else:
+            idx_p, smp_p, w_p = [], [], []
         # Backfill from the general tree if a stream came up short.
         deficit = (
-            self.batch_size - len(smp_g) - len(smp_c) - len(smp_s)
+            self.batch_size
+            - len(smp_g) - len(smp_c) - len(smp_s) - len(smp_p)
         )
         if deficit > 0:
             idx_d, smp_d, w_d = self._draw(self.tree, deficit, beta, n)
@@ -642,9 +740,9 @@ class PERVanillaStep(ReplayBuffer):
             smp_g += smp_d
             w_g += w_d
 
-        indices = idx_g + idx_c + idx_s
-        samples = smp_g + smp_c + smp_s
-        weights = np.asarray(w_g + w_c + w_s, dtype=np.float64)
+        indices = idx_g + idx_c + idx_s + idx_p
+        samples = smp_g + smp_c + smp_s + smp_p
+        weights = np.asarray(w_g + w_c + w_s + w_p, dtype=np.float64)
         weights = weights / max(weights.max(), 1e-12)
 
         # Stack transition tuples — same layout as VanillaStep.sample().
@@ -685,6 +783,9 @@ class PERVanillaStep(ReplayBuffer):
             # (is_stuck is immutable per slot, mirroring is_clean).
             if self._stuck and self.is_stuck[idx]:
                 self.stuck_tree.update(idx, p)
+            # RL_IMPROV_18 v1c — same maintenance for the crunchpass lane.
+            if self._crunchpass and self.is_crunchpass[idx]:
+                self.crunchpass_tree.update(idx, p)
 
     def bulk_import_arrays(self, arrays: dict) -> int:
         """Plan v11 Stage 1 — fast offline-buffer load from

@@ -636,6 +636,19 @@ def main(args):
             "--stuck_fraction requires --env_version 5 (the stuck-lane "
             "flat-obs indices 89/103 are Gen-4 121-flat layout constants)."
         )
+    # RL_IMPROV_18 v1c — crunchpass lane guard (indices 42/44/93 are env5
+    # layout constants, valid for both 121 and 125 flat widths).
+    _crunchpass_fraction = float(getattr(args, "crunchpass_fraction", 0.0))
+    if _crunchpass_fraction > 0.0 and args.env_version != 5:
+        raise SystemExit(
+            "--crunchpass_fraction requires --env_version 5 (flat-obs "
+            "indices 42/44/93 are env5 layout constants)."
+        )
+    if _crunchpass_fraction > 0.0:
+        print(f"[v1c] crunchpass lane ON: fraction={_crunchpass_fraction} "
+              f"engage>{getattr(args, 'crunchpass_engage_thresh', 0.25)} "
+              f"radius<={getattr(args, 'crunchpass_radius_thresh', 0.175)} "
+              f"(success-conditioned crunch steps)")
 
     agent = BenchAgentSynchron(
         trainer_device,
@@ -712,6 +725,21 @@ def main(args):
         ),
         stuck_contact_thresh=float(
             getattr(args, "stuck_contact_thresh", 0.0026)
+        ),
+        # RL_IMPROV_18 v1c — crunchpass lane. Flat indices are env5 layout
+        # constants: last_action gw_trans=42, cath_trans=44, guidance
+        # local_radius=93 — all < 97, so stable for BOTH the 121 (legacy)
+        # and 125 (heur_action_obs) layouts. env5-guarded like the stuck
+        # lane. Membership additionally requires episode success at push.
+        crunchpass_fraction=_crunchpass_fraction,
+        crunchpass_la0_index=(42 if _crunchpass_fraction > 0.0 else -1),
+        crunchpass_la2_index=(44 if _crunchpass_fraction > 0.0 else -1),
+        crunchpass_radius_index=(93 if _crunchpass_fraction > 0.0 else -1),
+        crunchpass_engage_thresh=float(
+            getattr(args, "crunchpass_engage_thresh", 0.25)
+        ),
+        crunchpass_radius_thresh=float(
+            getattr(args, "crunchpass_radius_thresh", 0.175)
         ),
         # Gen-4 asymmetric critic — env5's ObsDict appends a privileged
         # tail (PrivilegedState, LAST key); the critics consume the full
@@ -1860,6 +1888,43 @@ if __name__ == "__main__":
             "no-op). Scaffolder-style privileged-ACTOR: the teacher is NOT "
             "deployable (needs sim-side state) — a later student distills "
             "to the deployable prefix. Requires --aux_coef 0."
+        ),
+    )
+    parser.add_argument(
+        "--crunchpass_fraction",
+        type=float,
+        default=0.0,
+        help=(
+            "RL_IMPROV_18 v1c — fraction of each batch drawn from the "
+            "CRUNCHPASS lane: transitions whose state obs shows the "
+            "dual-device crunch signature (|last_action gw_trans|>engage "
+            "AND |cath_trans|>engage AND local_radius<=radius_thresh) AND "
+            "whose episode SUCCEEDED (post rail-filter). Verified on v1b "
+            "chunks: signature alone marks grinding (failures have 4-8x "
+            "more); success-conditioning selects productive crunch "
+            "passages (saved/p2a_deep_dive/CRUNCH_POOL_STRATEGY.md). "
+            "Composes with balanced/stuck lanes (recommended: 0.2 with "
+            "--balanced_fraction 0.2). env v5 only. 0.0 = OFF."
+        ),
+    )
+    parser.add_argument(
+        "--crunchpass_engage_thresh",
+        type=float,
+        default=0.25,
+        help=(
+            "v1c crunchpass — min |normalized last_action| on BOTH device "
+            "translations to count as dual-device engagement (0.25 = "
+            "7.5 mm/s; calibrated on v1b chunks: both-engaged 39-60%%)."
+        ),
+    )
+    parser.add_argument(
+        "--crunchpass_radius_thresh",
+        type=float,
+        default=0.175,
+        help=(
+            "v1c crunchpass — max normalized local_radius (flat 93) for "
+            "the narrow-lumen test. The deep-daughter 2.0mm floor sits at "
+            "0.167; 0.175 admits the floor band (~58-78%% of steps)."
         ),
     )
     parser.add_argument(
