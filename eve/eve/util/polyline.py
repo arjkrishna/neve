@@ -199,3 +199,42 @@ def project_onto_polyline(
         # Window empty or windowed best too far — fall back to full scan.
 
     return _project_onto_segment_range(point, polyline, cumlen, 0, n_seg)
+
+
+def point_at_inserted_length(
+    device_polyline, inserted_mm: float
+):
+    """RL_IMPROV_18 v3c (machine-2 reward pair) — 3-D point of a device tip
+    that sits ``inserted_mm`` of arclength past the insertion end of a
+    DISTAL-FIRST device polyline (tracking3d order: index 0 = leading tip,
+    last index = insertion point).
+
+    Undeployed nodes pile up as zero-length segments at the proximal end;
+    they are dropped before measuring, so the walk runs over deployed
+    geometry only. ``inserted_mm`` is clamped to [0, deployed length]: 0
+    returns the insertion point, values past the deployed length return the
+    leading tip. Returns None when fewer than 2 deployed points exist.
+    """
+    pts = np.asarray(device_polyline, dtype=float)
+    if pts.ndim != 2 or len(pts) < 2:
+        return None
+    seg = np.linalg.norm(pts[1:] - pts[:-1], axis=1)
+    keep = seg > 1e-9
+    if not keep.any():
+        return None
+    # Keep point i when either adjacent segment is non-degenerate.
+    keep_pts = np.concatenate([[keep[0]], keep[:-1] | keep[1:], [keep[-1]]]) \
+        if len(seg) > 1 else np.array([True, True])
+    pts = pts[keep_pts]
+    if len(pts) < 2:
+        return None
+    # Arc from the PROXIMAL (insertion) end: reverse, then walk forward.
+    rev = pts[::-1]
+    cum = compute_cumulative_arclength(rev)
+    target = float(np.clip(inserted_mm, 0.0, cum[-1]))
+    idx = int(np.searchsorted(cum, target, side="right") - 1)
+    if idx >= len(rev) - 1:
+        return rev[-1].copy()
+    seg_len = cum[idx + 1] - cum[idx]
+    t = 0.0 if seg_len <= 1e-9 else (target - cum[idx]) / seg_len
+    return rev[idx] + t * (rev[idx + 1] - rev[idx])

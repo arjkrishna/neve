@@ -72,3 +72,32 @@ def buckle_potential(slack_mm: float, contact_mm: float) -> float:
         W_SLACK * slack_ex / SLACK_CAP_MM
         + W_CONTACT * contact / CONTACT_CAP_MM
     )
+
+
+# RL_IMPROV_18 v3c (machine-2 reward pair) — catheter-slack channel.
+CATH_SLACK_DEADBAND_MM = 15.0
+CATH_SLACK_CAP_MM = 150.0
+
+
+def cath_slack_potential(cath_slack_mm: float) -> float:
+    """Catheter-slack potential phi_c(cath_slack) in [-1, 0].
+
+    Same construction rules as buckle_potential: monotonically
+    non-increasing, flat inside the dead-band and beyond the cap, caps on
+    the INPUT (never the delta) so loop-neutrality holds — forming a coil
+    and pulling it back out nets exactly zero, and an episode restored
+    INTO a coiled state that un-coils nets positive.
+
+    cath_slack = inserted_cath - arc(catheter tip projected on planned
+    path): ~0 in clean over-wire tracking; validated on machine 2 as a
+    knot detector (precision 0.97 / recall 0.96 at >50mm against far-arc
+    self-contact on 423 stuck-pool states). Dead-band 15mm covers normal
+    catheter lag + projection jitter; per-mm price at coef 0.5 is
+    0.00333/mm, deliberately below the 0.01/mm progress factor. CAPPED
+    form (machine 2 verified the uncapped tail behaviorally irrelevant).
+    """
+    ex = min(
+        max(float(cath_slack_mm) - CATH_SLACK_DEADBAND_MM, 0.0),
+        CATH_SLACK_CAP_MM,
+    )
+    return -(ex / CATH_SLACK_CAP_MM)

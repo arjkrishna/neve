@@ -35,12 +35,13 @@ from eve.util.pathcontext import (
 # different reward than intended — the exact seed/train mismatch this
 # design avoids).
 try:
-    from util.buckle_reward import buckle_potential
+    from util.buckle_reward import buckle_potential, cath_slack_potential
 except ImportError:
     try:  # imported with util/ itself on sys.path
-        from buckle_reward import buckle_potential
+        from buckle_reward import buckle_potential, cath_slack_potential
     except ImportError:
         buckle_potential = None
+        cath_slack_potential = None
 
 
 # Plan v12 — daughter short-tag derivation. Used to populate
@@ -276,6 +277,16 @@ class BenchEnv5(eve.Env):
         residual_heuristic: bool = False,
         residual_scale: float = 1.0,
         heur_action_obs: bool = False,
+        # RL_IMPROV_18 v3c (machine-2 reward pair) — tip-average progress
+        # + catheter-slack potential channel. Diagnosis (verified on BOTH
+        # machines; v1b: catheter leads gw by >50mm on 69% of late steps,
+        # max insertion 820mm): frontier-only progress pay + unpriced
+        # catheter slack select a catheter-shove/coil strategy. The pair
+        # pays the coordinated two-device gait and prices the coil, both
+        # as pure potentials. Defaults = byte-identical legacy reward.
+        cath_slack_coef: float = 0.0,
+        progress_tip_mode: str = "frontier",
+        avg_gw_weight: float = 0.5,
     ) -> None:
         # Gen-4 recovery training — when True, the fold-stall and off-path
         # detectors keep counting (they remain observation features and
@@ -309,6 +320,19 @@ class BenchEnv5(eve.Env):
         self._buckle_phi_prev = None  # None -> first step delta = 0
         self._buckle_prev_raw = (0.0, 0.0)  # (slack_mm, contact_mm) fallback
         self._last_buckle_phi = 0.0  # STEP-log diagnostic
+        # v3c — catheter-slack channel state + progress-mode knobs.
+        self.cath_slack_coef = float(cath_slack_coef)
+        self.progress_tip_mode = str(progress_tip_mode)
+        self.avg_gw_weight = float(avg_gw_weight)
+        if self.cath_slack_coef != 0.0 and cath_slack_potential is None:
+            raise ImportError(
+                "cath_slack_coef != 0 but util/buckle_reward.py lacks "
+                "cath_slack_potential — mount the v3c buckle_reward.py"
+            )
+        self._cath_phi_prev = None
+        self._cath_slack_prev_raw = 0.0
+        self._last_cath_slack_mm = 0.0
+        self._cath_proj_prev_s = None
         # RL_IMPROV_18 P2 — residual-on-heuristic state. The action fn is
         # built lazily on first use (pathfinder must exist; the wrapper
         # itself lazily re-reads the path after each env reset). The
@@ -489,6 +513,9 @@ class BenchEnv5(eve.Env):
             progress_factor=0.01,
             lateral_penalty_factor=0.001,
             path_context=self._path_context,
+            # v3c — tip-average progress (defaults byte-identical legacy).
+            tip_mode=self.progress_tip_mode,
+            avg_gw_weight=self.avg_gw_weight,
         )
         reward = eve.reward.Combination([target_reward, arc_progress])
 
@@ -753,6 +780,13 @@ class BenchEnv5(eve.Env):
         self._buckle_phi_prev = None
         self._buckle_prev_raw = (0.0, 0.0)
         self._last_buckle_phi = 0.0
+        # v3c — same None re-baseline for the catheter-slack channel (a
+        # restore INTO a coiled state nets positive on un-coil, delta 0 on
+        # step 1). Windowed-projection anchor also resets with the path.
+        self._cath_phi_prev = None
+        self._cath_slack_prev_raw = 0.0
+        self._last_cath_slack_mm = 0.0
+        self._cath_proj_prev_s = None
         # Fold-detector d_corr bypass: if the tip is closing on the correct
         # entry (arclength d_corr decreasing), don't count this step as
         # folding even if path-projection delta is slow. Switched from
@@ -1204,6 +1238,20 @@ class BenchEnv5(eve.Env):
             except Exception as e:
                 self._step_logger.warning(f"buckle reward failed: {e}")
 
+        # ---- v3c: catheter-slack potential channel (machine-2 pair) ----
+        # Same delta pattern as the buckle channel; separate coefficient
+        # so the two channels attribute independently.
+        if self.cath_slack_coef != 0.0:
+            try:
+                phi_c = cath_slack_potential(self._compute_cath_slack_mm())
+                if self._cath_phi_prev is not None:
+                    reward += self.cath_slack_coef * (
+                        phi_c - self._cath_phi_prev
+                    )
+                self._cath_phi_prev = phi_c
+            except Exception as e:
+                self._step_logger.warning(f"cath-slack reward failed: {e}")
+
         # ---- Plan v5: drain state-machine daughter-commit events ----
         # update_branch_state may have emitted (j_arc, +1|-1) events when
         # the wire committed at a daughter fork. +1 = correct-daughter
@@ -1621,6 +1669,7 @@ class BenchEnv5(eve.Env):
                 f"{sofa_info} | delta_ins=[{delta_ins[0]:.2f},{delta_ins[1]:.2f}]"
                 f" | heading_err={_head_err:+.3f} | cross_tr={_cross_tr:+.2f}"
                 f" | buckle_phi={getattr(self, '_last_buckle_phi', 0.0):+.3f}"
+                f" | cath_slack={getattr(self, '_last_cath_slack_mm', 0.0):+.1f}"
                 f"{shared_str}{grader_str}{heur_str}"
             )
             self._step_logger.info(log_msg)
@@ -1857,6 +1906,59 @@ class BenchEnv5(eve.Env):
 
         self._buckle_prev_raw = (slack_mm, contact_mm)
         return buckle_potential(slack_mm, contact_mm)
+
+    def _compute_cath_slack_mm(self) -> float:
+        """v3c — inserted_cath - arc(catheter tip projected on planned path).
+
+        ~0 in clean over-wire tracking; >50mm only when the shaft stores
+        redundant length (machine-2 validated knot detector: precision
+        0.97 / recall 0.96 at >50mm). Windowed projection (prev_s anchor,
+        30mm half-window) reuses the hairpin guard. Falls back to the
+        PREVIOUS raw value on any accessor failure (delta = 0 through the
+        phi indirection — same failure semantics as the buckle channel).
+        """
+        from eve.util.polyline import (
+            point_at_inserted_length as _pt_at_len,
+            project_onto_polyline as _proj,
+        )
+        from eve.util.coordtransform import (
+            tracking3d_to_vessel_cs as _to_vessel,
+        )
+
+        slack = self._cath_slack_prev_raw
+        try:
+            inserted = self.intervention.device_lengths_inserted
+            ins_cath = float(inserted[1])
+            if ins_cath <= 1e-6:
+                self._cath_slack_prev_raw = 0.0
+                self._last_cath_slack_mm = 0.0
+                return 0.0
+            fluoro = self.intervention.fluoroscopy
+            track = np.asarray(fluoro.tracking3d, dtype=float)
+            tip_3d = _pt_at_len(track, ins_cath)
+            if tip_3d is not None:
+                tip_vessel = _to_vessel(
+                    tip_3d, fluoro.image_rot_zx, fluoro.image_center
+                )
+                poly = self.pathfinder.path_points_vessel_cs
+                if len(poly) >= 2:
+                    from eve.util.polyline import (
+                        compute_cumulative_arclength as _cum,
+                    )
+                    cumlen = _cum(poly)
+                    proj = _proj(
+                        tip_vessel, poly, cumlen,
+                        prev_s=self._cath_proj_prev_s, window_mm=30.0,
+                    )
+                    self._cath_proj_prev_s = float(proj.s)
+                    s = ins_cath - float(proj.s)
+                    if np.isfinite(s):
+                        slack = s
+        except Exception:
+            pass
+        self._cath_slack_prev_raw = slack
+        self._last_cath_slack_mm = slack
+        return slack
 
     # ------------------------------------------------------------------
     # Plan v9 Change 4 — path-segment-conditioned per-step reward

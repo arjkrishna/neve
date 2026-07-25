@@ -431,6 +431,36 @@ def main(args):
               f"heur_action_obs={bool(args.heur_action_obs)}")
     elif getattr(args, "heur_action_obs", False):
         raise ValueError("--heur_action_obs requires --residual_heuristic")
+    # RL_IMPROV_18 v3c (machine-2 reward pair) — tip-average progress +
+    # catheter-slack channel. env5-only; kwargs only when non-legacy so
+    # legacy runner.yml stays byte-identical. Env vars exported BEFORE any
+    # worker spawns (workers inherit os.environ) so cache stamps are right.
+    _cath_slack_coef = float(getattr(args, "cath_slack_coef", 0.0) or 0.0)
+    _tip_mode = str(getattr(args, "progress_tip_mode", "frontier"))
+    _avg_gw_weight = float(getattr(args, "avg_gw_weight", 0.5))
+    if (_cath_slack_coef != 0.0 or _tip_mode != "frontier") and args.env_version != 5:
+        raise ValueError("the v3c reward pair requires --env_version 5")
+    if getattr(args, "multi_target_heatup", False) and (
+        _cath_slack_coef != 0.0 or _tip_mode != "frontier"
+    ):
+        raise ValueError(
+            "--multi_target_heatup is incompatible with the v3c reward "
+            "pair (MultiTargetEnv5 does not receive the new kwargs; the "
+            "harvest would be scored legacy while its stamps claim v3c)"
+        )
+    os.environ["EVE_RL_CATH_SLACK_COEF"] = str(_cath_slack_coef)
+    os.environ["EVE_RL_PROGRESS_TIP_MODE"] = _tip_mode
+    os.environ["EVE_RL_AVG_GW_WEIGHT"] = str(_avg_gw_weight)
+    if _cath_slack_coef != 0.0:
+        env_kwargs["cath_slack_coef"] = _cath_slack_coef
+        print(f"[v3c] catheter-slack channel ON: coef={_cath_slack_coef} "
+              f"(dead-band 15mm, cap 150mm, pure potential)")
+    if _tip_mode != "frontier":
+        env_kwargs["progress_tip_mode"] = _tip_mode
+        env_kwargs["avg_gw_weight"] = _avg_gw_weight
+        print(f"[v3c] tip-average progress ON: mode={_tip_mode} "
+              f"gw_weight={_avg_gw_weight} (parked gw pays half; "
+              f"telescoping gait nets ~0)")
     if getattr(args, "privileged_actor", False):
         if args.env_version != 5:
             raise ValueError("--privileged_actor requires --env_version 5")
@@ -893,14 +923,29 @@ def main(args):
             # buffer, biasing the critic/advantages. Absent stamp = 0.0
             # (pre-buckle cache) — valid only for a coef=0 run.
             from eve_rl.util.experience_cache import cache_buckle_coef
-            _cache_coef = cache_buckle_coef(args.heuristic_cache_file)
-            if abs(_cache_coef - _buckle_coef) > 1e-9:
+            # v3c — full 4-field reward-version compare (buckle + pair).
+            from eve_rl.util.experience_cache import cache_reward_version
+            _crv = cache_reward_version(args.heuristic_cache_file)
+            _run_rv = {
+                "buckle_coef": _buckle_coef,
+                "cath_slack_coef": _cath_slack_coef,
+                "progress_tip_mode": _tip_mode,
+                "avg_gw_weight": _avg_gw_weight,
+            }
+            _mism = [
+                k for k in _run_rv
+                if (isinstance(_run_rv[k], str) and _crv[k] != _run_rv[k])
+                or (not isinstance(_run_rv[k], str)
+                    and abs(_crv[k] - _run_rv[k]) > 1e-9)
+            ]
+            if _mism:
                 raise ValueError(
-                    f"Heuristic cache reward version mismatch: cache scored "
-                    f"with buckle_reward_coef={_cache_coef}, this run uses "
-                    f"{_buckle_coef} ({args.heuristic_cache_file}). Pass "
-                    f"--buckle_reward_coef {_cache_coef} or re-harvest."
+                    f"Heuristic cache reward version mismatch on {_mism}: "
+                    f"cache={_crv} run={_run_rv} "
+                    f"({args.heuristic_cache_file}). Re-harvest under the "
+                    f"run's reward flags."
                 )
+            _cache_coef = _crv["buckle_coef"]
             n_pushed = 0
             for i, ep_tuple in enumerate(episodes_tuples):
                 flat_obs, actions, rewards, terminals = ep_tuple
@@ -1186,14 +1231,28 @@ def main(args):
         # Gen-4 — reward-version guard (mirror of the heuristic-cache site):
         # cached rewards must be scored under THIS run's buckle_reward_coef.
         from eve_rl.util.experience_cache import cache_buckle_coef
-        _cache_coef = cache_buckle_coef(args.heatup_cache_file)
-        if abs(_cache_coef - _buckle_coef) > 1e-9:
+        # v3c — full 4-field reward-version compare (buckle + pair).
+        from eve_rl.util.experience_cache import cache_reward_version
+        _crv = cache_reward_version(args.heatup_cache_file)
+        _run_rv = {
+            "buckle_coef": _buckle_coef,
+            "cath_slack_coef": _cath_slack_coef,
+            "progress_tip_mode": _tip_mode,
+            "avg_gw_weight": _avg_gw_weight,
+        }
+        _mism = [
+            k for k in _run_rv
+            if (isinstance(_run_rv[k], str) and _crv[k] != _run_rv[k])
+            or (not isinstance(_run_rv[k], str)
+                and abs(_crv[k] - _run_rv[k]) > 1e-9)
+        ]
+        if _mism:
             raise ValueError(
-                f"Heatup cache reward version mismatch: cache scored with "
-                f"buckle_reward_coef={_cache_coef}, this run uses "
-                f"{_buckle_coef} ({args.heatup_cache_file}). Pass "
-                f"--buckle_reward_coef {_cache_coef} or re-harvest."
+                f"Heatup cache reward version mismatch on {_mism}: "
+                f"cache={_crv} run={_run_rv} ({args.heatup_cache_file}). "
+                f"Re-harvest under the run's reward flags."
             )
+        _cache_coef = _crv["buckle_coef"]
         n_pushed = 0
         # RL_IMPROV_17 P1 (RLPD) — under symmetric sampling the cache IS the
         # offline lane, keyed on is_demo. Legacy runs keep is_demo=False
@@ -1888,6 +1947,45 @@ if __name__ == "__main__":
             "no-op). Scaffolder-style privileged-ACTOR: the teacher is NOT "
             "deployable (needs sim-side state) — a later student distills "
             "to the deployable prefix. Requires --aux_coef 0."
+        ),
+    )
+    parser.add_argument(
+        "--cath_slack_coef",
+        type=float,
+        default=0.0,
+        help=(
+            "RL_IMPROV_18 v3c (machine-2 reward pair) — coefficient of the "
+            "catheter-slack potential channel: reward += coef * "
+            "(phi_c(t) - phi_c(t-1)) with cath_slack = inserted_cath - "
+            "arc(cath tip on planned path). Prices catheter coils the "
+            "tip-based terms cannot see (v1b: cath led gw by >50mm on 69%% "
+            "of late steps, max insertion 820mm). Dead-band 15mm, cap "
+            "150mm, pure potential (unfarmable; un-coiling refunds). "
+            "0.0 = OFF (legacy)."
+        ),
+    )
+    parser.add_argument(
+        "--progress_tip_mode",
+        type=str,
+        default="frontier",
+        choices=["frontier", "avg"],
+        help=(
+            "v3c — progress-reward tip mode. 'avg' pays progress_factor * "
+            "delta(w*s_gw + (1-w)*s_cath) instead of the frontier-tip arc: "
+            "a parked guidewire halves the pay rate, advancing the "
+            "TRAILING device is paid, and the catheter-forward+gw-retract "
+            "telescoping gait nets ~0. Off-path the avg tracker FREEZES "
+            "(the machine-2 BLOCKER fix — rebaselining there creates a "
+            "farmable pump). 'frontier' = byte-identical legacy."
+        ),
+    )
+    parser.add_argument(
+        "--avg_gw_weight",
+        type=float,
+        default=0.5,
+        help=(
+            "v3c — guidewire weight w in the tip-average progress "
+            "(cath weight = 1-w). Only read when --progress_tip_mode avg."
         ),
     )
     parser.add_argument(
