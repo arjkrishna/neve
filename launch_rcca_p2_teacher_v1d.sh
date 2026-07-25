@@ -37,7 +37,8 @@
 # PRETRAIN pathway this line does not have): H0 here is the pure
 # reward-blind heuristic, so H0 SUCCESS must land in v1b's ~37-47% band
 # — outside it = the port leaked into dynamics/obs, STOP. Only the H0
-# REWARD number reads lower (cosmetic, new scale). The §6 early dip
+# REWARD stays ~unchanged (coordinated 0.8-follow gait keeps ~0.9x of
+# progress pay; cath_slack ~0 in over-wire tracking). The §6 early dip
 # applies AFTER learning starts (explore/eval1: shove de-incentivized
 # before the two-device gait replaces it). Judge at eval1+, vs v1b's
 # ~61% explore plateau and 62% eval-avg.
