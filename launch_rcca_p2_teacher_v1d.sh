@@ -33,9 +33,14 @@
 # RECOVERED under LayerNorm + entropy-free backup — this line may be more
 # robust than machine 2's AWAC, but watch it.)
 #
-# Baseline note (§6): expect the H0/early evals LOWER than v1b's (the
-# pair de-incentivizes the catheter-shove that solved shallow seeds).
-# Judge at eval1+, vs v1b's ~61% explore plateau and 62% eval-avg.
+# Baseline note (CORRECTED from handoff §6 — their dip rides on a 10k
+# PRETRAIN pathway this line does not have): H0 here is the pure
+# reward-blind heuristic, so H0 SUCCESS must land in v1b's ~37-47% band
+# — outside it = the port leaked into dynamics/obs, STOP. Only the H0
+# REWARD number reads lower (cosmetic, new scale). The §6 early dip
+# applies AFTER learning starts (explore/eval1: shove de-incentivized
+# before the two-device gait replaces it). Judge at eval1+, vs v1b's
+# ~61% explore plateau and 62% eval-avg.
 # Monitor: docker logs -f rcca_p2_teacher_v1d | Stop: docker stop -t 60 rcca_p2_teacher_v1d
 set -e
 export MSYS_NO_PATHCONV=1
