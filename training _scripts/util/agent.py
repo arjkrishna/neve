@@ -239,6 +239,10 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         # DualDeviceNavProcedural) instead of a deepcopy of the master
         # env_train. env_eval stays the shared held-out anatomy.
         env_train_factory=None,
+        # RL_IMPROV_18 — per-worker EVAL-env factory (see synchron.py note):
+        # lets each worker own its own anatomy stream so eval measures
+        # generalization across vessel trees, not one frozen tree.
+        env_eval_factory=None,
     ):
 
         obs_dict = env_train.observation_space.sample()
@@ -476,6 +480,7 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
             timeout_worker_after_reaching_limit=180,
             diagnostics_config=diagnostics_config,
             env_train_factory=env_train_factory,
+            env_eval_factory=env_eval_factory,
         )
 
 

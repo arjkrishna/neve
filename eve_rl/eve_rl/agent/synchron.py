@@ -301,6 +301,7 @@ class Synchron(SynchronEvalOnly, Agent):
         timeout_worker_after_reaching_limit: float = 90,
         diagnostics_config: Optional[Dict] = None,
         env_train_factory=None,
+        env_eval_factory=None,
     ) -> None:
         self.algo = algo
         self.algo.to(torch.device("cpu"))
@@ -323,6 +324,21 @@ class Synchron(SynchronEvalOnly, Agent):
         # real factory lives in self._env_train_factory.
         self._env_train_factory = env_train_factory
         self.env_train_factory = None
+        # RL_IMPROV_18 — per-worker EVAL-env factory, same contract as the
+        # train one above. The original comment claimed "env_eval stays
+        # shared (a fixed held-out anatomy is the honest generalization
+        # metric)"; that is WRONG as written — one fixed anatomy is a single
+        # SAMPLE, not a generalization measurement, and combined with
+        # DualDeviceNav_train building env_eval as
+        # DualDeviceNavRCCAVaried(episodes_between_change=10**9) it meant
+        # EVERY eval episode of every run so far ran in ONE vessel tree
+        # (verified 2026-07-27 by hashing vessel_tree.branches coordinates:
+        # identical across episodes, while the per-episode seed only moved
+        # the target and the start rotation). With a factory, worker i can
+        # own its own anatomy stream exactly like training does.
+        # None = legacy (deepcopy the shared master) behavior.
+        self._env_eval_factory = env_eval_factory
+        self.env_eval_factory = None
         self.worker_device = worker_device
         self.trainer_device = trainer_device
         self.consecutive_action_steps = consecutive_action_steps
@@ -892,11 +908,15 @@ class Synchron(SynchronEvalOnly, Agent):
             worker_env_train = self._env_train_factory(i)
         else:
             worker_env_train = deepcopy(self.env_train)
+        if self._env_eval_factory is not None:
+            worker_env_eval = self._env_eval_factory(i)
+        else:
+            worker_env_eval = deepcopy(self.env_eval)
         return SingleAgentProcess(
             i,
             self.algo.to_play_only(),
             worker_env_train,
-            deepcopy(self.env_eval),
+            worker_env_eval,
             self.replay_buffer.copy(),
             self.worker_device,
             self.consecutive_action_steps,

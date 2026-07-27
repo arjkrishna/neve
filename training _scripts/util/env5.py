@@ -1010,10 +1010,43 @@ class BenchEnv5(eve.Env):
             f"EPISODE_START | ep={self._episode_count} | global_steps={self._step_count} | "
             f"wall_time={time.time():.6f} | pid={os.getpid()}{target_str}{ins_str}"
             f" | target_branch={self._target_branch_short}{seed_str}{variant_str}{restore_str}"
+            f"{self._anatomy_str()}"
         )
         sys.stderr.flush()
 
         return result
+
+    # ------------------------------------------------------------------
+    # Anatomy identity (RL_IMPROV_18)
+    # ------------------------------------------------------------------
+    def _anatomy_str(self) -> str:
+        """`| anatomy=<md5-12> | mesh_fp=s<seed>g<gen>` for EPISODE_START.
+
+        Makes anatomy diversity VERIFIABLE from logs instead of assumed.
+        `anatomy` hashes the actual vessel branch coordinates — the only
+        trustworthy identity: `pathfinder.path_points_vessel_cs` moves with
+        the TARGET (differs across seeds in an identical tree) and
+        `mesh_fingerprint` is f"s{seed}g{gen}" whose seed is reassigned on
+        every reset (it changed per episode while the geometry was frozen —
+        exactly how the single-anatomy eval bug hid for so long). Both are
+        logged so the pair can be cross-checked. Name-keyed parsers are
+        unaffected by the extra fields; failures degrade to "".
+        """
+        try:
+            import hashlib
+
+            vt = self.intervention.vessel_tree
+            parts = [
+                np.asarray(b.coordinates, dtype=np.float64).round(4).tobytes()
+                for b in (getattr(vt, "branches", None) or [])
+            ]
+            if not parts:
+                return ""
+            h = hashlib.md5(b"".join(parts)).hexdigest()[:12]
+            fp = getattr(vt, "mesh_fingerprint", "?")
+            return f" | anatomy={h} | mesh_fp={fp}"
+        except Exception:
+            return ""
 
     # ------------------------------------------------------------------
     # Heuristic abort helper
