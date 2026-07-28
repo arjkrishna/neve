@@ -252,3 +252,92 @@ v1bp ordering holds under all three configs. Conclusions are stated as deltas fo
 4. **The siphon wall is not a recovery problem.** Near-100% stall rates with ~65% escape but
    ~15% success means the limiting factor is the sheer density of stalls, not the ability to
    escape any one of them.
+
+---
+
+## 13. VERIFICATION APPENDIX (2026-07-28, on challenge)
+
+### 13.1 Reconciling with the July-19 audit's "soft% flat 2–6%"
+
+Today's v1b soft% (22.6% of events) vs the 2026-07-19 audit's "2–6% of stuck events".
+Candidate re-slicings of TODAY's data, per bin:
+
+| bin | soft/events (T1) | eps-with-ANY-soft | eps-BEST-soft (T3 class) | strict-cfg soft/events |
+|---|---|---|---|---|
+| 1 | 26.7% | 24.5% | 10.2% | 21.5% |
+| 4 | 24.2% | 17.9% | 8.0% | 18.7% |
+| 8 | 19.0% | 10.1% | 2.5% | 12.7% |
+
+First-5930-episode window (all the July-19 audit could see): soft/events 24.4%.
+
+**No re-slicing of today's detector reproduces 2–6% flat** ⇒ the discrepancy is a
+*detector-definition* difference, not a units artifact. The July-19 audit's stuck
+criterion was substantially stricter (long zero-progress windows → only deep, mostly
+hopeless stalls enter the denominator, of which few escape softly). Its code was an
+inline one-off and was NOT preserved — unrecoverable. The committed
+`monitoring/extract_stuck.py` fixes this class of problem: three configs scored
+simultaneously, definitions in the file, reproducible.
+
+**Why soft% is so threshold-sensitive** — retraction depth of escaped events is a
+CONTINUUM massed near zero, not a bimodal soft/grind split:
+
+| run | <0.5mm | 0.5–1 | 1–2 | 2–4 | 4–8 | 8–16 | >16 |
+|---|---|---|---|---|---|---|---|
+| v1b | 32% | 5% | 9% | 17% | 17% | 12% | 8% |
+| v1bp | 25% | 5% | 9% | 16% | 19% | 15% | 10% |
+
+The 1mm and 8mm cuts slice a smooth distribution ⇒ absolute soft% is detector-defined.
+Only orderings/trends are trustworthy — and those agree with the old audit: soft is
+flat-to-DECLINING in v1b (26.7→19.0% events; 10.2→2.5% episodes) and higher in v1bp.
+
+### 13.2 Why v1bp's recovered episodes convert at 54–77% (vs v1b's 91–99%)
+
+**They time out.** Of v1bp's 246 recovered-but-failed episodes: 91% hit the 600-step
+cap (reason=max_steps 211/246), median final d_tgt **61 mm** — they escaped every
+stall but died mid-journey, with the LAST recovery at 97% of the episode (still
+fighting at the buzzer) and median 3 events/ep vs 2 for recovered-successes.
+Serial re-stalling + slow escapes exhaust the budget. Not-stuck-at-end is by
+construction (a terminal stall would classify the episode unrecovered).
+
+**The gap is real within every band, not just composition:**
+
+| band | v1b rec-ep succ% | v1bp rec-ep succ% |
+|---|---|---|
+| CCA | 98% (n=251) | 94% (n=144) |
+| ICA-mid | 97% (n=733) | 85% (n=503) |
+| siphon | 91% (n=446) | **61%** (n=421) |
+
+Composition adds on top: siphon is 39% of v1bp's recovered pool vs 31% of v1b's.
+
+**And it is mostly a TRANSIENT of the mid-run turbulence.** v1bp per bin:
+
+| bin | rec eps | succ% | failed@cap% | siphon-rec succ% |
+|---|---|---|---|---|
+| 1 | 158 | 77% | 100% | 33% |
+| 3 | 140 | **56%** | 97% | 23% |
+| 4 | 152 | 68% | 92% | 49% |
+| 5 | 145 | **54%** | 95% | 44% |
+| 6 | 109 | **94%** | 50% | 89% |
+| 7 | 180 | **95%** | 44% | 85% |
+| 8 | 111 | 85% | 76% | 75% |
+
+Bins 3–5 (the reward-pair turbulence phase, incl. the 40% dip) recover deep stalls but
+convert only 23–49% of siphon recoveries; by bins 6–7 conversion reaches 94–95%
+(siphon 85–89%) — late v1bp DID learn to make recoveries pay. This refines F3: the
+pair's conversion deficit was largely transient; the remaining gap to v1b is that
+v1bp never learned stall AVOIDANCE (stalled-ep% flat 53–57% vs v1b's 64→42%).
+
+### 13.3 "% of successes via recovery" has NO downward trend in v1bp — two equilibria
+
+v1b: 29→6–8% (recovery channel dries up as avoidance improves). v1bp: 13–28%, no
+trend — and its BEST bin (7: 61% success) leans MOST on recovery (28%). The two runs
+reach nearly identical peak success (61–62%) by OPPOSITE routes:
+**v1b = avoid-and-run-clean; v1bp = stall-and-fight-through.** The reward pair did
+not fail to change the policy — it produced a genuinely different equilibrium at the
+same overall performance. Consistent with F1 (avoidance is v1b's channel) and F2
+(the pair keeps recovery alive); sharpens F3 (same summit, different face).
+
+### 13.4 Integrity recount
+
+Independent recount (separate code path) reproduces T5 exactly: v1b 13,013 events /
+53.4% esc / 22.6% soft; v1bp 10,999 / 67.4% / 29.5%. ✓
