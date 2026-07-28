@@ -665,3 +665,29 @@ CONCLUSIONS:
   variation is not a superset of reality — a train/eval distribution gap in the wrong direction.
 - Step budget is NOT binding: successes finish at median 30-45 steps (p90 105) of 600. The 1000-step
   runs were abandoned on this evidence.
+
+### STOCHASTIC vs DETERMINISTIC EVAL — 2026-07-29 — **NULL (+1 episode). Noise is NOT the difference.**
+Hypothesis under test: explore (sigma-noise) fails by TIMEOUT while deterministic eval fails by JAM,
+so a stochastic controller might dither through static-friction stalls. Paired test, v1bp ckpt514264,
+identical 98 seeds / 50 generated anatomies / 600 steps, ONLY the action rule changed
+(`--stochastic_eval` added to eval_anatomies.py, DEFAULT OFF so all prior runs stay byte-identical).
+
+| protocol | success | median steps (succ) | mean reward |
+|---|---|---|---|
+| deterministic tanh(mu) | 54/98 = 55.1% | 40 | 2.770 |
+| stochastic tanh(N(mu,std)) | 55/98 = 56.1% | 41 | 2.808 |
+
+Seed-level pairing: BOTH succeed 54 | ONLY stochastic 1 (seed 900074) | ONLY deterministic 0 |
+both fail 43. Stochastic is a STRICT SUPERSET — noise cost nothing and added one episode.
+McNemar with a single discordant pair: not significant.
+
+CONCLUSIONS
+1. The +1 is a clean null, not a reshuffle. Noise neither rescues jams nor breaks working runs.
+2. Explore-vs-eval parity is confirmed as a FAILURE-MODE difference, not a success-rate difference
+   (v1b explore 58.6 vs eval 57.1; v1bp explore 52.8 vs eval 55.1 — deterministic is HIGHER for v1bp).
+3. The 43 both-fail episodes are the jammed population. Dither at the policy's own learned std does
+   not move them => the siphon wall is not static friction the policy could wiggle through.
+4. Deterministic stays the HEADLINE protocol (field convention; the whole eval matrix is built on it).
+   `--stochastic_eval` is retained as an optional secondary metric.
+OPEN: this used the policy's OWN std. A null could mean "dither does not help" OR "std collapsed at
+convergence". Distinguishing these needs INJECTED dither at a chosen amplitude — cheap, not yet run.

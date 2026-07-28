@@ -243,6 +243,11 @@ def main():
     p.add_argument("--log_std_min", type=float, default=-2.0)
     p.add_argument("--log_std_max", type=float, default=0.0)
     p.add_argument("--algo", default="sac")
+    p.add_argument("--stochastic_eval", action="store_true",
+                   help="sample tanh(N(mean, policy std)) instead of "
+                        "tanh(mean) — evaluates the STOCHASTIC controller "
+                        "(dither can break static-friction stalls). "
+                        "Default off = deterministic, the headline protocol.")
     # --- env flags: MUST match the checkpoint's run (obs width!) ---
     p.add_argument("--residual_heuristic", action="store_true")
     p.add_argument("--residual_scale", type=float, default=1.0)
@@ -368,6 +373,8 @@ def main():
               f"{a.seed_base + 20000}, … x{a.n_worker})")
     print(f"[eval-anat] step budget: {a.max_steps} "
           f"(training/eval standard = 600)")
+    print(f"[eval-anat] action selection: "
+          f"{'STOCHASTIC (tanh(N(mu,std)) sampled)' if a.stochastic_eval else 'deterministic tanh(mu)'}")
     print(f"[eval-anat] seeds: {seeds[0]}..{seeds[-1]}  (n={len(seeds)})")
     print(f"[eval-anat] privileged_obs_dim={priv_dim} "
           f"critic_layernorm={a.critic_layernorm} aux={aux_rel or None}")
@@ -380,7 +387,7 @@ def main():
         env_train, env_eval,
         1,                                   # consecutive_action_steps
         a.n_worker,
-        stochastic_eval=False,               # DETERMINISTIC eval
+        stochastic_eval=bool(a.stochastic_eval),   # default False = deterministic
         replay_mode="step",
         algo=a.algo,
         log_std_min=a.log_std_min, log_std_max=a.log_std_max,
