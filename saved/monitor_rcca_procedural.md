@@ -624,3 +624,44 @@ distal C1 + petrous C2; siphon(>=210) = cavernous C4 genua + supraclinoid C6 -> 
 **Implications:** (1) every absolute eval number in this program is single-anatomy and must be
 re-measured before publication; (2) RELATIVE comparisons (v1b vs v1bp vs H0) remain valid — same
 protocol throughout; (3) the paper's generalization claim must rest on multi-anatomy numbers only.
+
+## ★★ REAL-PATIENT + MULTI-ANATOMY EVALUATION MATRIX — 2026-07-28 (all 98 targets, 600 steps, deterministic)
+NOTE: RCCAVariedFromMesh.__init__ CALLS _generate() (line 282) => even a "frozen" tree is a GENERATED
+variant. The real patient vessel requires zeroing every perturbation channel (base_amp_mm=0,
+tortuosity=0, radius_scale=1.0, rva_amp_mm=0 post-construction) — verified by seed-independence of the
+branch hash (867c5770632a for all seeds). All prior program numbers = ONE generated variant.
+
+| checkpoint | 1 generated variant | 50 generated | REAL PATIENT |
+|---|---|---|---|
+| v1b ckpt757854 (peak) | 81.6% | 57.1% (CI 47-67) | **35.7%** (CI 27-46) |
+| v1bp ckpt514264 (peak, reward pair) | 66.3% | 55.1% (CI 45-65) | **35.7%** |
+| H0 = ckpt0 (untrained, residual~0 => heuristic) | 45.9% | — | **25.5%** (CI 18-35) |
+
+REAL PATIENT, section-resolved (n: CCA 27 / ICA-mid 41 / siphon 30) + speed:
+| model | CCA | ICA-mid | siphon | median steps-to-success |
+|---|---|---|---|---|
+| H0 heuristic | 70.4% | 14.6% | 0/30 | 306 |
+| v1b          | 100%  | 19.5% | 0/30 | 32  |
+| v1bp         | 100%  | 19.5% | 0/30 | 30  |
+
+VERIFIED FACTS (not inference):
+1. v1b and v1bp solve the IDENTICAL 35-seed set on the real vessel (diff = empty). Their 50-anatomy
+   results DIFFER (55.1 vs 57.1; ICA-mid 54.8 vs 61.9), so the checkpoints are genuinely different
+   models — the equality is a property of the real anatomy, not a loading bug.
+2. v1b's 35 seeds are a STRICT SUPERSET of H0's 25 (0 solved-by-H0-but-not-v1b, 10 the reverse).
+3. All integrity checks passed on every run: 98 requested / 98 parsed / 0 dropped / official ==
+   log-derived.
+
+CONCLUSIONS:
+- RL DOES transfer to real anatomy: +10.2pp over the heuristic, strict superset, CCA 70.4%->100%,
+  and ~10x FEWER STEPS (306 -> 30). The efficiency gain is the largest and most clinically
+  meaningful effect measured.
+- The SIPHON IS AN ABSOLUTE WALL: 0/30 for heuristic, v1b, and v1bp alike. No training and no reward
+  variant moved it. It coincides with the ~180deg cavernous genua (R~4-5mm within ~15mm) that
+  carotidsiphon.py itself flags as the catheter-overshoot region.
+- THE REWARD PAIR MADE NO MEASURABLE DIFFERENCE on either honest protocol. Its apparent 66.3-vs-81.6
+  deficit under the old single-anatomy protocol was luck, not signal.
+- The procedural generator produces EASIER vessels than the real one (57.1% vs 35.7%), so procedural
+  variation is not a superset of reality — a train/eval distribution gap in the wrong direction.
+- Step budget is NOT binding: successes finish at median 30-45 steps (p90 105) of 600. The 1000-step
+  runs were abandoned on this evidence.

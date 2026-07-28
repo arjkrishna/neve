@@ -43,6 +43,11 @@ SEED_BASE="${SEED_BASE:-900000}"
 SNAPSHOT_MODE="${SNAPSHOT_MODE:-centerlines}"
 ARCH_FLAGS="${ARCH_FLAGS:---residual_heuristic --heur_action_obs --privileged_actor --critic_layernorm}"
 ENV_FLAGS="${ENV_FLAGS:---relax_failure_truncations --buckle_reward_coef 0.5}"
+MAX_STEPS="${MAX_STEPS:-600}"
+# EXTRA_FLAGS e.g. "--frozen_anatomy --anatomy_seed 12344" to reproduce the
+# legacy single-anatomy protocol (procedural_seed-1 = the tree every prior
+# eval in this program actually used).
+EXTRA_FLAGS="${EXTRA_FLAGS:-}"
 NAME="${NAME:-eval_anatomies}"
 
 docker rm "$NAME" 2>/dev/null || true
@@ -125,7 +130,8 @@ docker run --name "$NAME" --rm -i --gpus all --shm-size=16g \
     --n_worker "$N_WORKER" \
     --seed_base "$SEED_BASE" \
     --snapshot_mode "$SNAPSHOT_MODE" \
-    $ARCH_FLAGS $ENV_FLAGS
+    --max_steps "$MAX_STEPS" \
+    $ARCH_FLAGS $ENV_FLAGS $EXTRA_FLAGS
 #
 # Output lands next to the checkpoint:
 #   <ckpt-dir>/eval_anatomies_<ckpt-name>/

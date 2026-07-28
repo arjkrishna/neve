@@ -103,6 +103,11 @@ def build_env_kwargs(a):
         "default_target_branch": a.target_branch,
         "relax_failure_truncations": bool(a.relax_failure_truncations),
         "buckle_reward_coef": float(a.buckle_reward_coef),
+        # Step budget (eve.truncation.MaxSteps). Training used 600; raising
+        # it tests whether max_steps failures are "slow but correct" or
+        # genuinely lost. NB: comparisons across different budgets are not
+        # like-for-like — always report the budget with the number.
+        "n_max_steps": int(a.max_steps),
     }
     if a.residual_heuristic:
         kw["residual_heuristic"] = True
@@ -120,9 +125,34 @@ def make_env(a, seed: int, change_every: int, mode: str):
     from eve_bench.dualdevicenavrccavaried import DualDeviceNavRCCAVaried
     from util.env5 import BenchEnv5
 
-    interv = DualDeviceNavRCCAVaried(
-        seed=seed, episodes_between_change=change_every
-    )
+    if getattr(a, "real_patient_anatomy", False):
+        # THE REAL PATIENT ANATOMY — RCCA *not* replaced.
+        # RCCAVariedFromMesh.__init__ calls _generate() (line 282), which
+        # swaps the loaded patient RCCA for a perturbed copy. So even the
+        # "frozen" legacy eval tree (episodes_between_change=1e9) was ONE
+        # GENERATED VARIANT, never the patient vessel — and its
+        # mesh_fingerprint reads g0 because _generation resets to 0 on the
+        # reset() re-seed, which is why this hid for so long.
+        # perturb_rcca's displacement scales with base_amp_mm * tortuosity,
+        # so zeroing both returns the loaded centerline exactly; radii are
+        # scaled toward radius_scale, so pin it at 1.0. rva_amp_mm is NOT
+        # exposed by the wrapper, so zero it and regenerate once — after
+        # which every branch equals the loaded patient geometry.
+        interv = DualDeviceNavRCCAVaried(
+            seed=seed,
+            episodes_between_change=10 ** 9,
+            base_amp_mm=0.0,
+            tortuosity_mean_sigma=(0.0, 0.0),
+            tortuosity_clip=(0.0, 0.0),
+            radius_scale_mean_sigma=(1.0, 0.0),
+        )
+        vt = interv.vessel_tree
+        vt.rva_amp_mm = 0.0
+        vt._generate()          # rebuild with ALL amplitudes at zero
+    else:
+        interv = DualDeviceNavRCCAVaried(
+            seed=seed, episodes_between_change=change_every
+        )
     return BenchEnv5(
         intervention=interv, mode=mode, visualisation=False,
         **build_env_kwargs(a)
@@ -182,8 +212,25 @@ def main():
     p.add_argument("--verify_variation", action="store_true",
                    help="preflight: prove the anatomy changes per episode")
     p.add_argument("--frozen_anatomy", action="store_true",
-                   help="reproduce the legacy single-anatomy behavior "
-                        "(episodes_between_change=1e9) — for A/B only")
+                   help="reproduce the LEGACY single-anatomy protocol: one "
+                        "frozen tree shared by all workers (no per-worker "
+                        "factory, episodes_between_change=1e9). Pair with "
+                        "--anatomy_seed 12344 to get the exact tree every "
+                        "prior eval in this program used (procedural_seed-1)")
+    p.add_argument("--anatomy_seed", type=int, default=None,
+                   help="seed of the frozen/master anatomy (default: "
+                        "--seed_base). 12344 = the legacy eval tree.")
+    p.add_argument("--max_steps", type=int, default=600,
+                   help="per-episode step budget (training used 600)")
+    p.add_argument("--real_patient_anatomy", action="store_true",
+                   help="evaluate on the REAL PATIENT vessel with its "
+                        "original RCCA (perturbation amplitudes zeroed, so "
+                        "the loaded centerline is kept). NOTE this is NOT "
+                        "the same as --frozen_anatomy: the constructor "
+                        "always calls _generate(), so a 'frozen' tree is "
+                        "one GENERATED variant. Self-check: with zero "
+                        "amplitude the geometry is seed-independent, so "
+                        "--verify_variation must report IDENTICAL.")
     # --- architecture flags: MUST match the checkpoint's run ---
     p.add_argument("--hidden", nargs="+", type=int, default=[256, 256])
     p.add_argument("--embedder_layers", type=int, default=0)
@@ -229,7 +276,8 @@ def main():
     os.environ["STEP_LOG_DIR"] = log_dir
     print(f"[eval-anat] STEP_LOG_DIR={log_dir}")
 
-    change_every = 10 ** 9 if a.frozen_anatomy else a.change_every
+    change_every = (10 ** 9 if (a.frozen_anatomy or a.real_patient_anatomy)
+                    else a.change_every)
     seeds = [a.seed_base + i for i in range(a.n_episodes)]
 
     # Snapshots: env5 reads these env vars at import/step time, and the
@@ -261,11 +309,22 @@ def main():
             print(f"  episode {i} seed={s} geometry={hashes[-1]}")
         env.close()
         uniq = len(set(hashes))
-        print(f"[eval-anat] distinct geometries: {uniq}/{len(hashes)} — "
-              + ("VARYING (correct)" if uniq > 1
-                 else "IDENTICAL (single-anatomy — this is the bug)"))
-        if not a.frozen_anatomy and uniq == 1:
-            print("[eval-anat] ABORT: anatomy did not vary; do not trust results.")
+        single_expected = a.real_patient_anatomy or a.frozen_anatomy
+        if single_expected:
+            # One tree is the POINT here: real-patient (zero perturbation =>
+            # seed-independent) or a legacy frozen variant.
+            verdict = ("IDENTICAL (correct — single fixed anatomy)"
+                       if uniq == 1 else
+                       "VARYING (WRONG — this mode must not regenerate)")
+            ok = uniq == 1
+        else:
+            verdict = ("VARYING (correct)" if uniq > 1 else
+                       "IDENTICAL (single-anatomy — this is the bug)")
+            ok = uniq > 1
+        print(f"[eval-anat] distinct geometries: {uniq}/{len(hashes)} — {verdict}")
+        if not ok:
+            print("[eval-anat] ABORT: anatomy variation is not as expected; "
+                  "do not trust results.")
             return 2
         return 0
 
@@ -276,27 +335,39 @@ def main():
     aux_rel = [int(t) for t in a.aux_labels.split(",") if t.strip()]
     priv_dim = 0 if a.privileged_actor else PrivilegedState.N_DIMS
 
+    anat_seed = a.anatomy_seed if a.anatomy_seed is not None else a.seed_base
     env_train = make_env(a, seed=a.seed_base - 1000, change_every=change_every,
                          mode="train")          # sizing only; never stepped
-    env_eval = make_env(a, seed=a.seed_base, change_every=change_every,
+    env_eval = make_env(a, seed=anat_seed, change_every=change_every,
                         mode="eval")            # master (sizing/config)
 
-    # Per-worker EVAL anatomy streams — the point of the exercise. Without
-    # this every worker deep-copies ONE env_eval, so all 16 start on the
-    # SAME tree and (at change_every=N) their first N episodes all share it.
-    # With it, worker i owns an independently-seeded stream, exactly like
-    # training's env_train_factory. Seeds are offset far from the master and
-    # from training's band (procedural_seed..+n_worker).
-    def env_eval_factory(worker_id: int):
-        return make_env(a, seed=a.seed_base + 10000 * (worker_id + 1),
-                        change_every=change_every, mode="eval")
+    if a.real_patient_anatomy:
+        env_eval_factory = None      # one shared, unperturbed patient tree
+        print("[eval-anat] REAL PATIENT ANATOMY: original RCCA kept "
+              "(base_amp=0, tortuosity=0, radius_scale=1, rva_amp=0); "
+              "no factory, no regeneration")
+    elif a.frozen_anatomy:
+        # LEGACY protocol reproduction: no factory, so every worker
+        # deep-copies this one master tree and never regenerates — exactly
+        # what DualDeviceNav_train did (and why all prior evals were
+        # single-anatomy). Only the target + start rotation vary.
+        env_eval_factory = None
+        print(f"[eval-anat] FROZEN single anatomy (legacy protocol): "
+              f"seed={anat_seed}, change_every={change_every}, no factory")
+    else:
+        # Per-worker EVAL anatomy streams — the point of the exercise.
+        # Without this every worker deep-copies ONE env_eval, so all 16
+        # start on the SAME tree and (at change_every=N) their first N
+        # episodes share it. Mirrors training's env_train_factory.
+        def env_eval_factory(worker_id: int):
+            return make_env(a, seed=a.seed_base + 10000 * (worker_id + 1),
+                            change_every=change_every, mode="eval")
 
-    print(f"[eval-anat] anatomy regeneration: every {change_every} episode(s), "
-          f"per-worker streams (seeds {a.seed_base + 10000}, "
-          f"{a.seed_base + 20000}, … x{a.n_worker})")
-    print(f"[eval-anat] expected distinct anatomies ~= "
-          f"{a.n_worker} * ceil({a.n_episodes}/{a.n_worker}/{change_every}) "
-          f"(verify from the 'anatomy=' field in EPISODE_START logs)")
+        print(f"[eval-anat] anatomy regeneration: every {change_every} "
+              f"episode(s), per-worker streams (seeds {a.seed_base + 10000}, "
+              f"{a.seed_base + 20000}, … x{a.n_worker})")
+    print(f"[eval-anat] step budget: {a.max_steps} "
+          f"(training/eval standard = 600)")
     print(f"[eval-anat] seeds: {seeds[0]}..{seeds[-1]}  (n={len(seeds)})")
     print(f"[eval-anat] privileged_obs_dim={priv_dim} "
           f"critic_layernorm={a.critic_layernorm} aux={aux_rel or None}")
