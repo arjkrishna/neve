@@ -267,3 +267,44 @@ is passable end-to-end and is the one the historical 46.2%-siphon run used.
 **FIX** (one line): `--real_patient_anatomy` must construct `DualDeviceNav`, which loads
 `vessel_architecture_collision.obj`, instead of `DualDeviceNavRCCAVaried` with zeroed
 amplitudes. Re-run then gives the first honest real-patient number in this program.
+
+---
+
+# 9. RESULT — v1b on the TRUE patient surface (98 eps, deterministic, 600 steps)
+
+Single variable vs every prior real-patient run: the collision SURFACE. Centerlines,
+insertion, targets, devices, step budget and action rule all unchanged.
+
+| band | re-meshed surface (old) | **TRUE patient surface** | delta |
+|---|---|---|---|
+| CCA | 100% (27) | 92.6% (25/27) | −7.4 |
+| **ICA-mid** | **19.5%** (41) | **58.5%** (24/41) | **+39.0** |
+| **siphon** | **0/30** | **6.7%** (2/30) | **+6.7** |
+| **OVERALL** | **35.7%** (35/98) | **52.0%** (51/98) | **+16.3 pp** |
+
+successes median 62 steps; path_len span 76–266 mm (reaches the terminus).
+
+**The gain is concentrated exactly where the wall was.** The arrest sat at proj_s
+153.4 mm, which is inside the ICA-mid band (146–210 mm) — and ICA-mid is the band that
+moved, +39 pp. CCA (proximal to the wall) is unchanged within noise; the 2 CCA failures
+are new but n=27. This is what a removed obstruction looks like, not a general uplift.
+
+**+16.3 pp with zero retraining**, purely from evaluating on the correct surface.
+
+## The siphon is now REACHABLE but still mostly unsolved — 6.7% vs 46.2% historical
+
+The wall is gone (0/30 -> 2/30) but v1b is far below the historical fixed-mesh policy's
+46.2%. The two are not comparable as "policies": the historical pid19116 policy was
+TRAINED on this exact mesh, whereas v1b trained entirely on procedurally generated
+anatomies — of which ~2/3 are geometrically impassable (§7), and whose walls sit at a
+median ~154 mm, i.e. BEFORE the siphon.
+
+So v1b has essentially never seen a traversable siphon during training. 6.7% is roughly
+what a policy that never had the opportunity to learn the skill should score. This is a
+TRAINING-DISTRIBUTION deficit, not evidence that the siphon is hard for RL.
+
+**This is the strongest argument yet for fixing the generator**: the mesh defect does
+not merely depress the measured number, it removed the hard skill from the training
+curriculum entirely. Fix the generator -> training anatomies become passable -> the
+policy can actually learn siphon navigation, and the historical 46.2% becomes the
+reference to beat rather than an unexplained outlier.
