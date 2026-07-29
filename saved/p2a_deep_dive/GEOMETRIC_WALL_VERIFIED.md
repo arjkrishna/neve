@@ -308,3 +308,50 @@ not merely depress the measured number, it removed the hard skill from the train
 curriculum entirely. Fix the generator -> training anatomies become passable -> the
 policy can actually learn siphon navigation, and the historical 46.2% becomes the
 reference to beat rather than an unexplained outlier.
+
+---
+
+# 10. REVERSAL — on the correct mesh the reward pair is a LARGE win
+
+Same 98 seeds, same corrected patient surface, deterministic, 600 steps. Both are the
+checkpoints the (flawed) eval had selected as "best".
+
+| | v1b ckpt757854 | **v1bp ckpt514264** |
+|---|---|---|
+| overall | 52.0% (51/98) | **72.4% (71/98)** |
+| CCA | 92.6% | 88.9% |
+| ICA-mid | 58.5% | 63.4% |
+| **siphon** | **6.7%** (2/30) | **70.0%** (21/30) |
+
+**+20.4 pp overall and +63.3 pp at the siphon.** v1bp also beats the historical
+fixed-mesh policy's 46.2% siphon (pid19116) by 24 pp — and that policy was trained ON
+this mesh, while v1bp never saw it.
+
+## This RETRACTS the central conclusion of the stuck/recovery analysis
+
+Findings F2/F3 of STUCK_RECOVERY_ANALYSIS.md and both per-run reports state that the
+reward pair "moved internal behaviour decisively and gained nothing on the outcome",
+offered as the program's cleanest negative result. **That conclusion was an artifact of
+the broken evaluation mesh.**
+
+Mechanistically it now fits: the pair cut catheter-lead 0.34 -> 0.04 and raised stall
+escape 53% -> 67%. Those skills pay off precisely in tight curves — and on the walled
+mesh NOTHING reached a tight curve, because every anatomy dead-ended at ~154 mm, before
+the siphon. The benefit was not absent; it was unmeasurable. Explore success (52.8 vs
+58.6) was likewise measured on walled training anatomies and did not surface it either.
+
+**The generalisation is the important part:** an intervention aimed at a specific
+capability can look worthless when the evaluation cannot exercise that capability. Both
+prior "clean negatives" in this program (the reward pair, and the stochastic-eval null)
+were measured against a wall.
+
+## Consequences
+
+- **F2/F3 in STUCK_RECOVERY_ANALYSIS.md and both per-run PDFs are now WRONG** and must
+  be corrected before any external use.
+- v1bp is the better policy, by a wide margin, at the anatomy we actually care about.
+- The r = -0.82 avoidance-not-escape finding remains provisional (walled/non-walled
+  pooling) and is now additionally suspect: the "recovery does not pay" reasoning rested
+  on outcomes measured in vessels where recovery could not pay.
+- Two runs still in flight (true best-by-explore checkpoints, v1b 3259127 and
+  v1bp 2002292) will show how much more was lost to checkpoint selection.
