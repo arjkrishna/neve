@@ -231,3 +231,39 @@ training anatomies impassable to the device. Every run since Gen-4 trained and w
 evaluated on these. This is measured geometry, independent of any controller's skill.
 Fix the generator (voxel size, smoothing passes, radius compensation), then re-measure
 clearance BEFORE spending GPU time — `monitoring/mesh_clearance.py` is the gate.
+
+---
+
+# 8. CLOSED — the real-patient eval ran on a re-meshed surface, and geometry predicts
+# the observed arrest to 0.6 mm
+
+Question: "didn't we run via the original mesh?" No. Measured side by side:
+
+| | our `--real_patient_anatomy` | true original `.obj` |
+|---|---|---|
+| class | `DualDeviceNavRCCAVaried` (amps zeroed) | `DualDeviceNav` |
+| mesh cells | **3,721** | **3,584** |
+| median clearance | 1.23 mm | **2.11 mm** |
+| p05 clearance | 0.40 mm | **1.15 mm** |
+| min clearance | 0.06 mm | 0.25 mm |
+| blocked stations (< 0.18 mm wire radius) | **2 / 235** | **0 / 235** |
+| first block | raw 120.4 mm -> **proj_s ~154.0** | none — PASSABLE end-to-end |
+| **centerlines** | **IDENTICAL — max\|diff\| = 0.000000 mm** | |
+
+**Geometry predicts arrest at proj_s ~154.0. The controllers arrest at 153.4** (§1) —
+0.6 mm agreement between a pure clearance computation and an independent behavioural
+measurement of three different controllers. Nothing was fitted to anything.
+
+This is why the flaw was invisible: zeroing the amplitudes reproduces the patient
+centerlines to **zero floating-point error**, so every check based on centerlines,
+path length, target sampling or branch identity passes. Only the SURFACE differs — and
+the surface is what the wire collides with.
+
+**CONCLUSION.** `--real_patient_anatomy` evaluated the patient's centerlines wrapped in
+a regenerated surface that is impassable at proj_s ~154. The 35.7% figure is a
+measurement of that reconstruction, not of the patient anatomy. The true original mesh
+is passable end-to-end and is the one the historical 46.2%-siphon run used.
+
+**FIX** (one line): `--real_patient_anatomy` must construct `DualDeviceNav`, which loads
+`vessel_architecture_collision.obj`, instead of `DualDeviceNavRCCAVaried` with zeroed
+amplitudes. Re-run then gives the first honest real-patient number in this program.
