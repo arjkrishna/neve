@@ -78,7 +78,67 @@ patient is small but non-zero.
   a hard geometric wall is not the same event as a stall in navigable vessel. That
   finding is now provisional until recomputed within the non-walled stratum.
 
-## 5. Two candidate mechanisms, both indefensible regardless
+## 4b. CORRECTION (same day, user challenge) — the wall is a RE-MESHING artifact,
+## and the manoeuvre is provably possible
+
+**User's objection:** an earlier run trained on a single fixed real-patient mesh scored
+~86% overall with **46.2% in the siphon band** — so the wire demonstrably CAN traverse
+the siphon, and a claim of geometric impossibility must be wrong.
+
+**The objection is correct, and it locates the real defect.** Verified:
+
+1. **The historical result is real.** `RL_IMPROV_10_CHANGES.md:800` — pid19116 on the
+   fixed mesh: proximal CCA 45/45 = 100%, cervical ICA 33/40 = 82.5%,
+   **siphon/terminus 6/13 = 46.2%**. The siphon was navigated routinely.
+
+2. **My `--real_patient_anatomy` mode does NOT evaluate the patient's mesh.** It zeroes
+   all perturbation amplitudes, which reproduces the loaded CENTERLINES exactly — but
+   `RCCAVariedFromMesh` then **re-meshes the whole tree from those centerlines**
+   (`rccavariedfrommesh.py:10` docstring: *"the whole tree is re-meshed from centerlines
+   (voxel -> marching-cubes)"*; `mesh_path` calls `generate_temp_mesh`). The historical
+   fixed-mesh run loaded the original segmented patient **surface** directly. Same
+   centerlines, completely different surface. **So "real patient 35.7%" was measured on
+   a re-meshed reconstruction, not on the patient anatomy — a flaw in my evaluator.**
+
+3. **The re-meshed surface is grossly under-resolved.** Measured on the generated mesh:
+
+   | quantity | value |
+   |---|---|
+   | whole arterial tree | 1,871 points / **3,721 cells** |
+   | triangle edge length | **median 6.46 mm**, p90 11.93 mm, max 25.82 mm |
+   | distal vessel radius (true, from centerline) | 1.25–1.72 mm (**diameter 2.5–3.4 mm**) |
+
+   **The triangles are 2–4x larger than the vessel diameter they represent.** Distally
+   the lumen is not a tube at all — it is a coarse polygon whose cross-section pinches
+   between widely spaced vertices. `generate_mesh` calls `decimate(0.99)`, keeping 1%
+   of triangles.
+
+4. **The lumen-EROSION hypothesis is REFUTED by direct measurement.** Nearest-vertex
+   radius vs true radius over the navigated branch: distal mean shrink **1%**
+   (r_true 1.71 mm vs r_mesh 1.69 mm), and **0/15 distal stations** are too tight for
+   the 0.36 mm wire. The audit's claimed 25–43% systematic shrink does not reproduce.
+   Local excursions are large and two-sided (−56% to +28%) — which is the signature of
+   FACETING noise, not systematic erosion.
+
+5. **The collision-chord hypothesis is largely eliminated too.** The historical run used
+   the same device classes and collision settings and traversed the siphon. A 9.94 mm
+   straight collision chord would have blocked it there as well.
+
+**Revised diagnosis:** the wall is real and reproducible, but it is caused by
+**catastrophic under-resolution of the re-meshed surface** (`decimate(0.99)` leaving
+6.5 mm triangles on a 2.5 mm-diameter vessel), not by lumen erosion, not by collision
+discretization, and not by the policy. The procedural-anatomy pipeline introduced in
+Gen-4 — to give each worker a different vessel — silently replaced a properly resolved
+patient surface with one whose distal geometry is meaningless. That is why fixed-mesh
+runs reached 86%/46% siphon while every procedural run plateaus near 57% with 0% siphon.
+
+**Revised next test** (supersedes §6): re-generate with `decimate_factor` 0.99 -> 0.5
+(and/or finer voxels) and re-run H0 on the real-patient centerlines, scoring the arrest
+station. Predicted: the 153.4 mm wall moves or disappears. Also worth doing: evaluate
+directly on the ORIGINAL patient surface mesh to reproduce the historical 46.2% siphon
+number under the current harness.
+
+## 5. Original candidate mechanisms (both now downgraded — see §4b)
 
 Found by code audit this session (not yet discriminated — that is the next test):
 1. **Collision discretization.** `jshaped.py:50` defaults
