@@ -121,23 +121,80 @@ def build_env_kwargs(a):
     return kw
 
 
+def _install_pinned_surface_patch():
+    """Make RCCAVariedFromMesh honour an instance attribute `_pinned_mesh`.
+
+    Workers are SPAWNED, so anything reachable from the env must pickle. A
+    closure bound to the instance, or a class defined inside a function, both
+    fail (`Can't pickle local object`). Patching the CLASS method leaves the
+    instance carrying only a plain string, which pickles fine; each process
+    that builds an env calls this, so the patch exists wherever it is needed.
+
+    Why it is needed at all: _generate() nulls _mesh_path, and reset() calls
+    _generate() (episode_nr % episodes_between_change == 0 is true at episode
+    0), so without this the re-meshed surface would come back on the first
+    reset even after being overridden at construction.
+    """
+    from eve.intervention.vesseltree.rccavariedfrommesh import RCCAVariedFromMesh
+
+    if getattr(RCCAVariedFromMesh, "_pinned_surface_patch", False):
+        return
+    _orig_generate = RCCAVariedFromMesh._generate
+
+    def _generate(self):
+        _orig_generate(self)
+        pinned = getattr(self, "_pinned_mesh", None)
+        if pinned:
+            self._mesh_path = pinned
+
+    RCCAVariedFromMesh._generate = _generate
+    RCCAVariedFromMesh._pinned_surface_patch = True
+
+
 def make_env(a, seed: int, change_every: int, mode: str):
     from eve_bench.dualdevicenavrccavaried import DualDeviceNavRCCAVaried
     from util.env5 import BenchEnv5
 
     if getattr(a, "real_patient_anatomy", False):
-        # THE REAL PATIENT ANATOMY — RCCA *not* replaced.
-        # RCCAVariedFromMesh.__init__ calls _generate() (line 282), which
-        # swaps the loaded patient RCCA for a perturbed copy. So even the
-        # "frozen" legacy eval tree (episodes_between_change=1e9) was ONE
-        # GENERATED VARIANT, never the patient vessel — and its
-        # mesh_fingerprint reads g0 because _generation resets to 0 on the
-        # reset() re-seed, which is why this hid for so long.
-        # perturb_rcca's displacement scales with base_amp_mm * tortuosity,
-        # so zeroing both returns the loaded centerline exactly; radii are
-        # scaled toward radius_scale, so pin it at 1.0. rva_amp_mm is NOT
-        # exposed by the wrapper, so zero it and regenerate once — after
-        # which every branch equals the loaded patient geometry.
+        # THE REAL PATIENT ANATOMY — the ORIGINAL segmented surface.
+        #
+        # 2026-07-29 FIX. The previous implementation built
+        # DualDeviceNavRCCAVaried with every perturbation amplitude zeroed.
+        # That reproduces the patient CENTERLINES to zero floating-point
+        # error (verified: max|diff| = 0.000000 mm) — which is exactly why
+        # it passed every check — but RCCAVariedFromMesh ALWAYS re-meshes
+        # the tree from those centerlines (voxel -> marching-cubes, see its
+        # docstring L10; mesh_path -> generate_temp_mesh). The wire collides
+        # with the SURFACE, not the centerline, and the regenerated surface
+        # is NOT the patient's:
+        #     original vessel_architecture_collision.obj : 3,584 cells,
+        #         median clearance 2.11 mm, 0/235 stations blocked (PASSABLE)
+        #     zeroed-amplitude regeneration              : 3,721 cells,
+        #         median clearance 1.23 mm, 2/235 blocked, first block at
+        #         raw arclength 120.4 mm -> proj_s ~154.0 mm
+        # and three different controllers (v1b, v1bp, and the parameterless
+        # heuristic H0) were measured arresting at proj_s 153.4 mm — 0.6 mm
+        # from the geometric prediction. So the old "real patient" number
+        # measured a reconstruction that is impassable at the mid-ICA.
+        #
+        # We do NOT simply construct DualDeviceNav: it also changes the wire
+        # INSERTION POINT (femoral entry, threading the whole arch) and the
+        # target sampler (4 branches, no minimum arclength). A smoke test of
+        # that swap gave path_len 594-752 mm against ~103-156 mm for every
+        # previous real-patient run — a different task, not a different mesh.
+        #
+        # Instead: keep DualDeviceNavRCCAVaried (correct insertion at the (11)
+        # bridge, RCCA-only targets, same devices/frames) and swap ONLY the
+        # collision SURFACE. DualDeviceNav's FromMesh writes the original .obj
+        # already rotated into the branch frame, and the zeroed-amplitude
+        # centerlines are identical to it (max|diff| = 0.000000 mm), so that
+        # transformed mesh is exactly the right surface for these centerlines.
+        # _generate() nulls _mesh_path (and reset() calls it), so wrap it to
+        # re-pin the original surface every time.
+        from eve_bench.dualdevicenav import DualDeviceNav
+
+        _orig_mesh = DualDeviceNav().vessel_tree.mesh_path
+
         interv = DualDeviceNavRCCAVaried(
             seed=seed,
             episodes_between_change=10 ** 9,
@@ -148,7 +205,13 @@ def make_env(a, seed: int, change_every: int, mode: str):
         )
         vt = interv.vessel_tree
         vt.rva_amp_mm = 0.0
-        vt._generate()          # rebuild with ALL amplitudes at zero
+
+        _install_pinned_surface_patch()
+        vt._pinned_mesh = _orig_mesh
+        vt._generate()
+        print(f"[eval-anat] REAL PATIENT: collision surface pinned to the "
+              f"ORIGINAL segmented mesh ({_orig_mesh}); centerlines, insertion, "
+              f"targets, devices unchanged from every prior run")
     else:
         interv = DualDeviceNavRCCAVaried(
             seed=seed, episodes_between_change=change_every
@@ -259,6 +322,10 @@ def main():
                    choices=["frontier", "avg"])
     p.add_argument("--avg_gw_weight", type=float, default=0.5)
     p.add_argument("--target_branch", default="Centerline curve - RCCA.mrk")
+    p.add_argument("--target_min_arclength_mm", type=float, default=40.0,
+                   help="matches DualDeviceNavRCCAVaried's default so the "
+                        "real-patient run differs from the generated runs "
+                        "ONLY in the collision surface")
     a = p.parse_args()
 
     out_dir = a.out_dir or os.path.join(
