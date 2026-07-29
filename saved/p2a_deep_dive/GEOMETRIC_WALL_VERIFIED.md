@@ -355,3 +355,55 @@ were measured against a wall.
   on outcomes measured in vessels where recovery could not pay.
 - Two runs still in flight (true best-by-explore checkpoints, v1b 3259127 and
   v1bp 2002292) will show how much more was lost to checkpoint selection.
+
+---
+
+# 11. FULL 2x2 ON THE CORRECTED MESH — and a checkpoint-selection trade-off
+
+98 seeds, corrected patient surface, deterministic, 600 steps. "eval-picked" = the
+checkpoint the broken single-anatomy eval crowned; "true best" = highest explore
+success in +-150k steps (v1b 63.2%, v1bp 59.2%).
+
+| model | overall | CCA | ICA-mid | siphon |
+|---|---|---|---|---|
+| v1b ckpt757854 (eval-picked) | 52.0% | 92.6% | 58.5% | 6.7% (2/30) |
+| v1b ckpt3259127 (true best) | 63.3% | 100% | 65.9% | 26.7% (8/30) |
+| v1bp ckpt514264 (eval-picked) | 72.4% | 88.9% | 63.4% | **70.0% (21/30)** |
+| **v1bp ckpt2002292 (true best)** | **75.5%** | 100% | **90.2%** | 33.3% (10/30) |
+
+## What is now established
+
+1. **The real-patient number is 75.5%, not 35.7%.** +39.8 pp, from two measurement
+   fixes (correct surface, correct checkpoint) and zero retraining.
+2. **The reward pair is a large win, confirmed at BOTH checkpoint choices**
+   (72.4/75.5 vs 52.0/63.3). §10's retraction of the "pair gained nothing" finding
+   stands and is now doubly supported.
+3. **Checkpoint selection by explore success beats the broken eval**: v1b +11.3 pp
+   (52.0 -> 63.3), v1bp +3.1 pp (72.4 -> 75.5). Both "true best" models solve CCA
+   perfectly (27/27).
+4. **The siphon is solved far better than ever measured**: best is 70% (v1bp
+   ckpt514264), against the historical fixed-mesh 46.2% and our previously reported
+   0/30.
+
+## The surprise — explore-success selection is WRONG for the siphon
+
+v1bp's later checkpoint is better overall (75.5 vs 72.4) and dramatically better at
+ICA-mid (90.2% vs 63.4%) but MUCH WORSE at the siphon: **33.3% vs 70.0%**, i.e.
+10/30 vs 21/30. That gap is ~3 standard errors, not noise.
+
+So the deep-navigation skill PEAKED EARLY in v1bp and then decayed while mid-vessel
+skill kept improving. Explore success% pools all depths, so it selects for aggregate
+competence and is blind to this: it picked the checkpoint that is worse at the hardest
+part of the task. v1b shows no such trade-off (later is better everywhere), so this is
+specific to the reward-pair run.
+
+**Implication for model selection:** neither the old eval nor explore success% is an
+adequate selector. Depth-stratified selection is required — report and select on the
+siphon band explicitly, or the best deep-navigation policy gets discarded. This is the
+same class of error as the original single-anatomy eval: optimising a pooled scalar
+that averages over the regime you actually care about.
+
+**Open:** why does siphon skill decay after ~0.5M steps in v1bp while ICA-mid improves?
+Candidate: as mid-vessel competence rises, deep episodes become a smaller share of the
+useful gradient (the same interference mechanism as F1, now at the level of task depth
+rather than stall recovery). Testable by depth-stratified explore success over training.
