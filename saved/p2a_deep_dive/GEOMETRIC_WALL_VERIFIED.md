@@ -190,3 +190,44 @@ geometric hypotheses are dead → test device stiffness (both devices are at
 `young_modulus` 1e3, ~80× softer than eve's own validated 17e3/80e3), and if that also
 fails, re-scope the paper to cervical-to-petrous ICA with the cavernous siphon stated
 as an open problem.
+
+---
+
+# 7. RESOLVED — direct geometric measurement (no controller)
+
+Challenge: "impassable" was asserted from controller behaviour, never measured; and a
+heuristic-passability test is invalid (if the heuristic could reach the terminus there
+would be no project). Correct on both counts. Measured properly with
+`monitoring/mesh_clearance.py`: clearance = distance from each centerline station to the
+nearest point ON THE TRIANGLE SURFACE (~106k densely sampled surface points per mesh —
+NOT nearest-vertex, which on 6 mm triangles overestimates clearance badly). Guidewire
+radius 0.18 mm.
+
+| mesh | median clearance | p05 | stations clearance < wire radius |
+|---|---|---|---|
+| **ORIGINAL patient** | **2.11 mm** | 1.15 | **0/235 — passable end-to-end** |
+| generated #0 | 1.33 | 0.63 | 0/235 |
+| generated #1 | 1.23 | 0.40 | 0/235 |
+| generated #2 | 1.16 | 0.26 | **4** — first block @129 mm |
+| generated #3 | 1.09 | 0.22 | **6** — first block @116 mm |
+| generated #4 | 1.17 | 0.35 | **2** — first block @134 mm |
+| generated #5 | 1.15 | 0.30 | **3** — first block @122 mm |
+
+**4/6 generated anatomies are geometrically impassable.** Generated vessels carry ~HALF
+the clearance of the source anatomy (median 1.1-1.3 vs 2.11 mm); p05 collapses from
+1.15 mm to 0.22-0.63 mm.
+
+**Independent corroboration:** blocked stations at raw arclength 116-134 mm + the known
+raw->proj offset (~34 mm) = proj_s ~150-168, bracketing the 153.4 mm arrest measured
+behaviourally in §1. Geometry and behaviour agree without being fitted to each other.
+
+**RETRACTS §4b.4** ("lumen erosion REFUTED, 1% distal shrink"). That used nearest-VERTEX
+distance; vertices sit at the outside of each facet, so on this mesh it overstates
+clearance. Erosion is REAL. The refutation was the artifact. Lesson: never measure lumen
+clearance from mesh vertices on a coarse mesh — sample the triangle surfaces.
+
+**Standing conclusion.** The mesh generator halves vessel calibre and renders ~2/3 of
+training anatomies impassable to the device. Every run since Gen-4 trained and was
+evaluated on these. This is measured geometry, independent of any controller's skill.
+Fix the generator (voxel size, smoothing passes, radius compensation), then re-measure
+clearance BEFORE spending GPU time — `monitoring/mesh_clearance.py` is the gate.
