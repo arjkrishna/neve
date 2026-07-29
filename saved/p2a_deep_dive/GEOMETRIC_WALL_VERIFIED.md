@@ -100,18 +100,23 @@ the siphon, and a claim of geometric impossibility must be wrong.
    centerlines, completely different surface. **So "real patient 35.7%" was measured on
    a re-meshed reconstruction, not on the patient anatomy — a flaw in my evaluator.**
 
-3. **The re-meshed surface is grossly under-resolved.** Measured on the generated mesh:
+3. **~~The re-meshed surface is grossly under-resolved.~~ RETRACTED — measured, and the
+   ORIGINAL patient collision mesh is just as coarse.** I claimed the re-mesher's
+   coarseness was the difference. It is not. Measured directly:
 
-   | quantity | value |
-   |---|---|
-   | whole arterial tree | 1,871 points / **3,721 cells** |
-   | triangle edge length | **median 6.46 mm**, p90 11.93 mm, max 25.82 mm |
-   | distal vessel radius (true, from centerline) | 1.25–1.72 mm (**diameter 2.5–3.4 mm**) |
+   | mesh | points | cells | edge median | p90 | max |
+   |---|---|---|---|---|---|
+   | `vessel_architecture_collision.obj` (**the original patient mesh** — what `DualDeviceNav` loads at [dualdevicenav.py:24](eve_bench/eve_bench/dualdevicenav.py#L24), i.e. what the historical 46.2%-siphon run used) | 1,786 | 3,584 | **6.28 mm** | 11.00 | 26.39 |
+   | our re-meshed reconstruction | 1,871 | 3,721 | **6.46 mm** | 11.93 | 25.82 |
+   | `vessel_architecture_visual.obj` (render only, NOT collided) | 22,433 | 44,877 | 1.61 mm | 3.21 | 6.29 |
 
-   **The triangles are 2–4x larger than the vessel diameter they represent.** Distally
-   the lumen is not a tube at all — it is a coarse polygon whose cross-section pinches
-   between widely spaced vertices. `generate_mesh` calls `decimate(0.99)`, keeping 1%
-   of triangles.
+   The two collision meshes are the **same coarseness within 3%**. So triangle
+   resolution CANNOT be what distinguishes the historical run (46.2% siphon) from the
+   current ones (walled at 153.4 mm). 6.3 mm triangles on a 2.5–3.4 mm-diameter vessel
+   remains objectively poor modelling and a paper-disclosure item — but it is a
+   long-standing property of this benchmark, not a Gen-4 regression.
+
+   NOTE the visual mesh is 12x finer than the collision mesh. The physics never sees it.
 
 4. **The lumen-EROSION hypothesis is REFUTED by direct measurement.** Nearest-vertex
    radius vs true radius over the navigated branch: distal mean shrink **1%**
@@ -124,19 +129,40 @@ the siphon, and a claim of geometric impossibility must be wrong.
    the same device classes and collision settings and traversed the siphon. A 9.94 mm
    straight collision chord would have blocked it there as well.
 
-**Revised diagnosis:** the wall is real and reproducible, but it is caused by
-**catastrophic under-resolution of the re-meshed surface** (`decimate(0.99)` leaving
-6.5 mm triangles on a 2.5 mm-diameter vessel), not by lumen erosion, not by collision
-discretization, and not by the policy. The procedural-anatomy pipeline introduced in
-Gen-4 — to give each worker a different vessel — silently replaced a properly resolved
-patient surface with one whose distal geometry is meaningless. That is why fixed-mesh
-runs reached 86%/46% siphon while every procedural run plateaus near 57% with 0% siphon.
+**Revised diagnosis — what is ESTABLISHED vs what is still OPEN.**
 
-**Revised next test** (supersedes §6): re-generate with `decimate_factor` 0.99 -> 0.5
-(and/or finer voxels) and re-run H0 on the real-patient centerlines, scoring the arrest
-station. Predicted: the 153.4 mm wall moves or disappears. Also worth doing: evaluate
-directly on the ORIGINAL patient surface mesh to reproduce the historical 46.2% siphon
-number under the current harness.
+ESTABLISHED (measured this session):
+- The 153.4 mm arrest is real, deterministic, and hit by three controllers including a
+  parameterless heuristic. It is environmental, not a policy defect.
+- ~40–45% of the 50-anatomy failure mass sits at per-anatomy fixed stations, at
+  model-independent millimetre readings.
+- My `--real_patient_anatomy` mode evaluates a **re-meshed reconstruction**, not the
+  patient surface the historical run used. The "real patient 35.7%" row is therefore
+  not a measurement of the patient anatomy. **This is a genuine flaw in my evaluator.**
+- The siphon IS traversable in this simulator (46.2%, historical, fixed mesh).
+
+FALSIFIED (each was proposed and then killed by measurement):
+- Systematic lumen erosion (25–43% claimed; measured 1% distal mean, 0/15 stations too
+  tight for the wire).
+- Collision-chord discretization (same devices traversed the siphon historically).
+- Re-mesh coarseness (the original collision mesh is the same coarseness, within 3%).
+
+STILL OPEN — the actual mechanism. Both surfaces are equally coarse and share the same
+centerlines, yet one passes the siphon and one walls at 153.4 mm. The remaining
+difference is SHAPE, not resolution: the reconstruction is voxelized at [0.6,0.6,0.9] mm
+and `gaussian_smooth`-ed twice, which can produce LOCAL constrictions even when the mean
+radius is preserved. Consistent with the two-sided local excursions measured
+(−56% to +28%; e.g. r_vert 0.75 mm vs r_true 1.25 mm at arclen 121 mm). Not yet proven.
+
+**Revised next test** (supersedes §6 and the decimate sweep): the clean A/B is to run
+the CURRENT harness and policy on the ORIGINAL `vessel_architecture_collision.obj` via
+`DualDeviceNav` (fixed mesh, no regeneration) and compare the arrest station against the
+re-meshed reconstruction. Same policy, same devices, same physics, same centerlines —
+only the surface differs. If the wall vanishes, the re-mesher is convicted and the
+mechanism hunt narrows to voxel size + smoothing passes. If the wall persists, the
+re-mesher is exonerated and the cause is elsewhere in the era's changes (devices,
+targets, obs). This also reproduces the historical 46.2% under today's harness, which
+independently validates the harness.
 
 ## 5. Original candidate mechanisms (both now downgraded — see §4b)
 
