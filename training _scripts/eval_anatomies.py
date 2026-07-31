@@ -142,13 +142,70 @@ def _install_pinned_surface_patch():
     _orig_generate = RCCAVariedFromMesh._generate
 
     def _generate(self):
-        _orig_generate(self)
-        pinned = getattr(self, "_pinned_mesh", None)
-        if pinned:
-            self._mesh_path = pinned
+        # `_require_passable`: reject-and-regenerate until the generated surface
+        # actually admits the guidewire. The procedural mesher yields anatomies
+        # that are geometrically impassable (measured: 4 of 6 sampled have
+        # stations where the 0.36 mm device cannot fit; median clearance 1.1-1.3
+        # mm vs the original segmentation's 2.11). Evaluating on those measures
+        # the mesher, not the policy. See MESH_GENERATOR_FIX_PLAN.md.
+        need = getattr(self, "_require_passable", False)
+        tries = int(getattr(self, "_passable_max_tries", 15))
+        for k in range(tries if need else 1):
+            _orig_generate(self)
+            pinned = getattr(self, "_pinned_mesh", None)
+            if pinned:
+                self._mesh_path = pinned
+            if not need:
+                return
+            if _tree_is_passable(
+                    self, min_median_mm=float(getattr(self, "_passable_min_median", 0.0))):
+                self._passable_tries = k + 1
+                return
+        self._passable_tries = -1        # gave up; surface may be impassable
 
     RCCAVariedFromMesh._generate = _generate
     RCCAVariedFromMesh._pinned_surface_patch = True
+
+
+def _tree_is_passable(vt, wire_radius_mm: float = 0.18, per_tri: int = 12,
+                      min_median_mm: float = 0.0) -> bool:
+    """Gate on the navigated branch's clearance profile.
+
+    Two conditions:
+      * min clearance >= wire radius  -> the device geometrically fits at all
+      * median clearance >= min_median_mm -> the vessel is not systematically
+        narrower than the real anatomy. The REAL patient surface measures
+        median 2.14 mm / p05 1.20; the generator at radius_scale=1.0 gives
+        median 1.26 / p05 0.46, i.e. it erodes ~37% of radius. Passing the
+        first test alone would still leave a vessel far tighter than reality.
+
+    Clearance is distance to the nearest point ON THE TRIANGLE SURFACE. Nearest
+    -VERTEX distance is NOT usable here: on a ~6 mm-triangle mesh the vertices
+    sit outside the facets and overstate clearance enough to call an impassable
+    mesh passable (it reported 1% erosion where the true figure is ~45%).
+    """
+    import numpy as np
+    import pyvista as pv
+    from scipy.spatial import cKDTree
+
+    try:
+        m = pv.read(vt.mesh_path).triangulate().clean()
+        f = m.faces.reshape(-1, 4)[:, 1:]
+        v = m.points
+        a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
+        rg = np.random.default_rng(0)
+        u = rg.random((per_tri, len(f), 1))
+        w = rg.random((per_tri, len(f), 1))
+        k = u + w > 1
+        u = np.where(k, 1 - u, u)
+        w = np.where(k, 1 - w, w)
+        surf = np.vstack([v, (a + u * (b - a) + w * (c - a)).reshape(-1, 3)])
+        br = next(x for x in vt.branches if "RCCA" in str(x.name).upper())
+        d, _ = cKDTree(surf).query(np.asarray(br.coordinates, dtype=float))
+        return bool(d.min() >= wire_radius_mm
+                    and np.median(d) >= min_median_mm)
+    except Exception:
+        return True      # never hard-fail an eval on the gate
 
 
 def make_env(a, seed: int, change_every: int, mode: str):
@@ -213,9 +270,18 @@ def make_env(a, seed: int, change_every: int, mode: str):
               f"ORIGINAL segmented mesh ({_orig_mesh}); centerlines, insertion, "
               f"targets, devices unchanged from every prior run")
     else:
+        rs = float(getattr(a, "radius_scale", 1.0))
         interv = DualDeviceNavRCCAVaried(
-            seed=seed, episodes_between_change=change_every
+            seed=seed, episodes_between_change=change_every,
+            radius_scale_mean_sigma=(rs, 0.07 if rs == 1.0 else 0.05),
         )
+        if getattr(a, "require_passable", False):
+            _install_pinned_surface_patch()
+            vt = interv.vessel_tree
+            vt._require_passable = True
+            vt._passable_max_tries = int(a.passable_max_tries)
+            vt._passable_min_median = float(a.passable_min_median_mm)
+            vt._generate()      # re-draw now under the gate
     return BenchEnv5(
         intervention=interv, mode=mode, visualisation=False,
         **build_env_kwargs(a)
@@ -322,6 +388,23 @@ def main():
                    choices=["frontier", "avg"])
     p.add_argument("--avg_gw_weight", type=float, default=0.5)
     p.add_argument("--target_branch", default="Centerline curve - RCCA.mrk")
+    p.add_argument("--require_passable", action="store_true",
+                   help="reject-and-regenerate each anatomy until the guidewire "
+                        "geometrically fits everywhere along the navigated branch. "
+                        "Without this, ~2/3 of generated anatomies are impassable "
+                        "and the eval measures the mesher, not the policy.")
+    p.add_argument("--passable_max_tries", type=int, default=15)
+    p.add_argument("--passable_min_median_mm", type=float, default=2.00,
+                   help="reject anatomies whose MEDIAN clearance is below this. "
+                        "The real patient surface measures 2.14 mm; the raw "
+                        "generator gives 1.26 (it erodes ~37%% of radius), so "
+                        "fitting the wire is not sufficient — the vessel must "
+                        "also not be systematically tighter than reality.")
+    p.add_argument("--radius_scale", type=float, default=1.0,
+                   help="compensates the mesher's erosion. Measured: 1.6 "
+                        "reproduces the real patient's clearance (median 2.14 "
+                        "vs 2.14, p05 1.13 vs 1.20 — i.e. equal on average and "
+                        "marginally tighter in the narrow tail).")
     p.add_argument("--target_min_arclength_mm", type=float, default=40.0,
                    help="matches DualDeviceNavRCCAVaried's default so the "
                         "real-patient run differs from the generated runs "
