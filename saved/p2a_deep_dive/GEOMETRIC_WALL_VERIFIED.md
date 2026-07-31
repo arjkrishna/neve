@@ -407,3 +407,49 @@ that averages over the regime you actually care about.
 Candidate: as mid-vessel competence rises, deep episodes become a smaller share of the
 useful gradient (the same interference mechanism as F1, now at the level of task depth
 rather than stall recovery). Testable by depth-stratified explore success over training.
+
+---
+
+# 12. PROPER EVAL NUMBER — calibrated, verified-passable anatomies
+
+98 episodes, 50 procedurally-varied anatomies, each gated at generation time to
+(a) admit the guidewire everywhere and (b) have median clearance >= 2.00 mm.
+`--radius_scale 1.6` compensates the mesher's ~37% radius erosion, reproducing the
+real patient's clearance profile (median 2.14 vs 2.14, p05 1.13 vs 1.20 — equal on
+average, marginally tighter in the narrow tail). Deterministic, 600 steps.
+
+| model | overall | CCA | ICA-mid | siphon | med steps |
+|---|---|---|---|---|---|
+| **v1bp ckpt2002292** | **84.7%** (83/98) | **100%** (26/26) | **100%** (40/40) | 53.1% (17/32) | 60 |
+| v1bp ckpt514264 | 83.7% (82/98) | **100%** (26/26) | **100%** (40/40) | 50.0% (16/32) | 54 |
+
+**CCA and ICA-mid are SOLVED — 66/66 combined, both models, zero failures.** Every
+remaining failure in the entire evaluation is a siphon target.
+
+For contrast, the number this program has been quoting is **57.1%** (v1b ckpt757854 on
+raw generated anatomies). Two independent defects separated it from reality: the
+checkpoint was chosen by a single-anatomy eval, and ~2/3 of the evaluation anatomies
+were geometrically impassable.
+
+## RETRACTS the §11 "depth-stratified selection is required" surprise
+
+§11 reported that on the real patient ckpt514264 crushed ckpt2002292 at the siphon
+(70.0% vs 33.3%, 21/30 vs 10/30, ~3 SE) and concluded that explore-success selection
+systematically discards the best deep-navigation policy.
+
+**Across 50 varied anatomies the two are indistinguishable: 53.1% vs 50.0% at the
+siphon (17/32 vs 16/32 — one episode).** The real-patient split was ANATOMY-SPECIFIC,
+not a policy property: ckpt514264 really is better on that one geometry, and that
+advantage does not generalise. Selecting a checkpoint on real-patient siphon
+performance would be overfitting to a single vessel — the same error as the original
+single-anatomy eval, one level up.
+
+The narrower lesson still stands: n=30 on one anatomy cannot support a claim about a
+policy, however many standard errors it looks like.
+
+## Caveat for the writeup
+
+These anatomies are calibrated and gated; the models trained on raw, largely impassable
+ones. So 84.7% is "performance on realistic vessel geometry", NOT in-distribution
+generalisation. Given the training anatomies were mostly impassable, this is the more
+meaningful number — but the distribution shift must be stated, not glossed.
