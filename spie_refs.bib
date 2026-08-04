@@ -1,0 +1,1016 @@
+% =====================================================================
+% FINAL CITATION SET — "Learning to Recover: Privileged-Actor RL for
+% Dual-Device Neurovascular Navigation" (SPIE Medical Imaging, 4 pp)
+%
+% DEDUPE RULES APPLIED:
+%  - stEVE: journal (Comput Biol Med 2025) is the entry; arXiv:2410.01956 kept
+%    only as a note field.
+%  - Robertshaw IRL (IJCARS 2024) and Robertshaw safe-two-device (IJCARS 2025)
+%    are TWO DIFFERENT PAPERS. arXiv:2406.12499 -> 2024 IRL paper.
+%    arXiv:2503.24140 / PMC12167253 -> 2025 safe-two-device 96% paper.
+%    (PAPER_PLAN_NEUROVASC_RL.md sec.1.1/sec.10 currently merges them — fix.)
+%  - Karstensen porcine-liver 2022 appeared in two sweeps; one entry.
+%  - Cotin MICCAI 2005 and Duriez Comput Aided Surg 2006 are the conference and
+%    journal forms of the same method; cite duriez2006catheter, drop cotin2005.
+%  - Bouthillier 1996 is indexed under two DOIs (Ovid duplicate); use the
+%    10.1227 form.
+%  - Haarnoja ICML 2018 and Haarnoja arXiv 2018 are distinct records; both kept
+%    (alpha auto-tuning is ONLY in the second).
+%
+% MARKERS: [ESS] essential  [OPT] optional/cut-first  % PARTIAL: needs a check
+% Nothing below contains a field that was not read off a retrieved record.
+% =====================================================================
+
+
+% ---------------------------------------------------------------------
+% Sec.1 PURPOSE — clinical motivation
+% ---------------------------------------------------------------------
+
+% [ESS]
+@article{goyal2016hermes,
+  author  = {Goyal, Mayank and Menon, Bijoy K. and van Zwam, Wim H. and others},
+  title   = {Endovascular thrombectomy after large-vessel ischaemic stroke: a meta-analysis of individual patient data from five randomised trials},
+  journal = {The Lancet},
+  volume  = {387},
+  number  = {10029},
+  pages   = {1723--1731},
+  year    = {2016},
+  doi     = {10.1016/S0140-6736(16)00163-X},
+  note    = {HERMES collaborators. PMID 26898852. Primary outcome is an ORDINAL SHIFT of 90-day mRS (adjusted common OR 2.49, 95\% CI 1.76--3.53), NOT a dichotomised mRS 0--2 rate. Five trials, n=1287.}
+}
+
+% [OPT] — same HERMES cohort as goyal2016hermes; not independent evidence
+@article{saver2016time,
+  author  = {Saver, Jeffrey L. and Goyal, Mayank and van der Lugt, Aad and others},
+  title   = {Time to Treatment With Endovascular Thrombectomy and Outcomes From Ischemic Stroke: A Meta-analysis},
+  journal = {JAMA},
+  volume  = {316},
+  number  = {12},
+  pages   = {1279--1289},
+  year    = {2016},
+  doi     = {10.1001/jama.2016.13647},
+  note    = {PMID 27701686. Measures onset-to-puncture / onset-to-reperfusion delay, not intra-procedural navigation time.}
+}
+
+% [ESS] — the specialty-matched operator-dose reference
+@article{weyland2023dose,
+  author  = {Weyland, Charlotte S. and Jesser, Jessica and Bourgart, Isabelle and Hilgenfeld, Tim and Breckwoldt, Michael O. and Vollherbst, Dominik and Schmitt, Niclas and Seker, Fatih and Bendszus, Martin and M{\"o}hlenbruch, Markus A.},
+  title   = {Occupational radiation exposure of neurointerventionalists during endovascular stroke treatment},
+  journal = {European Journal of Radiology},
+  volume  = {164},
+  pages   = {110882},
+  year    = {2023},
+  doi     = {10.1016/j.ejrad.2023.110882},
+  note    = {PMID 37201247. Median 7 uSv/procedure; the paper's own conclusion is that exposure is ``generally low but very variable''. Dose CORRELATES with fluoroscopy time, DAP, contrast runs and NUMBER OF THROMBECTOMY ATTEMPTS — cite for dose-scaling, not for harm.}
+}
+
+% [OPT] — career-cumulative deterministic risk, INTERVENTIONAL CARDIOLOGY
+@article{vano2010cataract,
+  author  = {Vano, Eliseo and Kleiman, Norman J. and Duran, Ariel and Rehani, Madan M. and Echeverri, Dario and Cabrera, Mariana},
+  title   = {Radiation cataract risk in interventional cardiology personnel},
+  journal = {Radiation Research},
+  volume  = {174},
+  number  = {4},
+  pages   = {490--495},
+  year    = {2010},
+  doi     = {10.1667/RR2207.1},
+  note    = {PMID 20726724. Interventional CARDIOLOGY personnel, not neurointerventionalists — cite as ``fluoroscopically guided intervention more broadly''.}
+}
+
+% [ESS] — current-era workforce figure
+@article{bulwa2021workforce,
+  author  = {Bulwa, Zachary and Chen, Michael},
+  title   = {Stroke Center Designations, Neurointerventionalist Demand, and the Finances of Stroke Thrombectomy in the United States},
+  journal = {Neurology},
+  volume  = {97},
+  number  = {20, Suppl. 2},
+  pages   = {S17--S24},
+  year    = {2021},
+  doi     = {10.1212/WNL.0000000000012780},
+  note    = {PMID 34785600. Narrative review. >1660 certified US stroke centers, only 306 thrombectomy-capable.}
+}
+
+% [OPT] — pre-2015 workforce numbers; use only if a second citation is affordable
+@article{zaidat2012demand,
+  author  = {Zaidat, Osama O. and Lazzaro, Marc and McGinley, Emily and Edgell, Randall C. and Nguyen, Thanh and Linfante, Italo and Janjua, Nazli},
+  title   = {Demand-supply of neurointerventionalists for endovascular ischemic stroke therapy},
+  journal = {Neurology},
+  volume  = {79},
+  number  = {13, Suppl. 1},
+  pages   = {S35--S41},
+  year    = {2012},
+  doi     = {10.1212/WNL.0b013e31826957ef},
+  note    = {PMID 23008409. Pre-dates the 2015 thrombectomy trials; its own conclusion is cautiously optimistic about supply.}
+}
+
+% [ESS] — robotic catheter systems exist but are teleoperated
+@article{mendespereira2020firstinhuman,
+  author  = {Mendes Pereira, Vitor and Cancelliere, Nicole M. and Nicholson, Patrick and Radovanovic, Ivan and Drake, Karen E. and Sungur, Jenny-Marie and Krings, Timo and Turk, Aquilla},
+  title   = {First-in-human, robotic-assisted neuroendovascular intervention},
+  journal = {Journal of NeuroInterventional Surgery},
+  volume  = {12},
+  number  = {4},
+  pages   = {338--340},
+  year    = {2020},
+  doi     = {10.1136/neurintsurg-2019-015671.rep},
+  note    = {PMID 32132138. CorPath GRX; neurovascular use is investigational/off-label. VERIFY DOI: the ``.rep'' suffix is the BMJ republished record; the original is very likely 10.1136/neurintsurg-2019-015671.}
+}
+
+% [ESS] — autonomy taxonomy
+@article{yang2017autonomy,
+  author  = {Yang, Guang-Zhong and Cambias, James and Cleary, Kevin and Daimler, Eric and Drake, James and Dupont, Pierre E. and Hata, Nobuhiko and Kazanzides, Peter and Martel, Sylvain and Patel, Rajni V. and Santos, Veronica J. and Taylor, Russell H.},
+  title   = {Medical robotics---Regulatory, ethical, and legal considerations for increasing levels of autonomy},
+  journal = {Science Robotics},
+  volume  = {2},
+  number  = {4},
+  pages   = {eaam8638},
+  year    = {2017},
+  doi     = {10.1126/scirobotics.aam8638},
+  note    = {Six levels: 0 none, 1 robot assistance, 2 task autonomy, 3 conditional autonomy, 4 high, 5 full. NO level is named ``supervised autonomy'' — our setting maps to Level 2 (task autonomy).}
+}
+
+% [ESS] — the phrase ``supervised autonomy''
+@article{shademan2016supervised,
+  author  = {Shademan, Azad and Decker, Ryan S. and Opfermann, Justin D. and Leonard, Simon and Krieger, Axel and Kim, Peter C. W.},
+  title   = {Supervised autonomous robotic soft tissue surgery},
+  journal = {Science Translational Medicine},
+  volume  = {8},
+  number  = {337},
+  year    = {2016},
+  doi     = {10.1126/scitranslmed.aad9398},
+  note    = {Article ID aad9398; page designation commonly cited as 337ra64 — CONFIRM before typesetting (Crossref carries only the article ID).}
+}
+
+% [OPT] — empirical backing that no FDA-cleared surgical robot exceeds Level 3
+@article{lee2024autonomylevels,
+  author  = {Lee, Andrew and Baker, Turner S. and Bederson, Joshua B. and Rapoport, Benjamin I.},
+  title   = {Levels of autonomy in {FDA}-cleared surgical robots: a systematic review},
+  journal = {npj Digital Medicine},
+  volume  = {7},
+  pages   = {103},
+  year    = {2024},
+  doi     = {10.1038/s41746-024-01102-y},
+  note    = {PMID 38671232; PMC11053143. Of 49 FDA-cleared robots 2015--2023: 86\% Level 1, 8\% L2, 6\% L3, none above L3. Scheme (``LASR'') is adapted from Yang et al., not identical.}
+}
+
+% [ESS] — pre-procedural CTA/MRA is standard
+@article{powers2019guidelines,
+  author  = {Powers, William J. and Rabinstein, Alejandro A. and Ackerson, Teri and Adeoye, Opeolu M. and Bambakidis, Nicholas C. and Becker, Kyra and Biller, Jos{\'e} and Brown, Michael and others},
+  title   = {Guidelines for the Early Management of Patients With Acute Ischemic Stroke: 2019 Update to the 2018 Guidelines for the Early Management of Acute Ischemic Stroke},
+  journal = {Stroke},
+  volume  = {50},
+  number  = {12},
+  year    = {2019},
+  doi     = {10.1161/STR.0000000000000211},
+  note    = {AHA/ASA. PAGE RANGE NOT VERIFIED (commonly cited as e344--e418) — Crossref carries no pages.}
+}
+
+% [OPT] — intra-procedural roadmapping is routine
+@article{jang2016roadmap,
+  author  = {Jang, Dong-Kyu and Stidd, David A. and Schafer, Sebastian and Chen, Michael and Moftakhar, Roham and Lopes, Demetrius K.},
+  title   = {Monoplane {3D} Overlay Roadmap versus Conventional Biplane {2D} Roadmap Technique for Neurointerventional Procedures},
+  journal = {Neurointervention},
+  volume  = {11},
+  number  = {2},
+  pages   = {105--113},
+  year    = {2016},
+  doi     = {10.5469/neuroint.2016.11.2.105}
+}
+
+% [CUT] — 2-page technical note, superseded by jang2016roadmap for this claim
+@article{lin2010roadmap,
+  author  = {Lin, Chung-Jung and Blanc, Rapha{\"e}l and Claren{\c{c}}on, Fr{\'e}d{\'e}ric and Piotin, Michel and Spelle, Laurent and Guillermic, Julien and Moret, Jacques},
+  title   = {Overlying Fluoroscopy and Preacquired {CT} Angiography for Road-Mapping in Cerebral Angiography},
+  journal = {American Journal of Neuroradiology},
+  volume  = {31},
+  number  = {3},
+  pages   = {494--495},
+  year    = {2010},
+  doi     = {10.3174/ajnr.A1757}
+}
+
+% counter-evidence, listed for honesty — DO NOT cite to support a harm claim
+@article{kemerink2002dose,
+  author  = {Kemerink, G. J. and others},
+  title   = {Patient and occupational dose in neurointerventional procedures},
+  journal = {Neuroradiology},
+  volume  = {44},
+  number  = {6},
+  pages   = {522--528},
+  year    = {2002},
+  doi     = {10.1007/s00234-002-0780-4},
+  note    = {PMID 12070727. Concludes the contribution of neurointerventional procedures to occupational dose ``was very small'' (6.7 +/- 4.6 uSv under a 0.35 mm lead apron). Included here only so the radiation sentence is not written against the evidence.}
+}
+
+
+% ---------------------------------------------------------------------
+% Sec.1 PURPOSE — endovascular RL / competitive landscape
+% ---------------------------------------------------------------------
+
+% [ESS] — stEVE, the framework and benchmark we run
+@article{karstensen2025steve,
+  author  = {Karstensen, Lennart and Robertshaw, Harry and Hatzl, Johannes and Jackson, Benjamin and Langej{\"u}rgen, Jens and Breininger, Katharina and Uhl, Christian and Sadati, S. M. Hadi and Booth, Thomas and Bergeles, Christos and Mathis-Ullrich, Franziska},
+  title   = {Learning-based autonomous navigation, benchmark environments and simulation framework for endovascular interventions},
+  journal = {Computers in Biology and Medicine},
+  volume  = {196},
+  pages   = {110844},
+  year    = {2025},
+  doi     = {10.1016/j.compbiomed.2025.110844},
+  note    = {Preprint fallback: arXiv:2410.01956. Published abstract states ``success rates up to 98/100 in simulation'' and ``up to 97/100'' on the physical bench, covering BasicWireNav and ArchVariety only.}
+}
+
+% [ESS] — dual-device IRL; NOTE: 2024, 19(8), NOT 2025
+@article{robertshaw2024irl,
+  author  = {Robertshaw, Harry and Karstensen, Lennart and Jackson, Benjamin and Granados, Alejandro and Booth, Thomas C.},
+  title   = {Autonomous navigation of catheters and guidewires in mechanical thrombectomy using inverse reinforcement learning},
+  journal = {International Journal of Computer Assisted Radiology and Surgery},
+  volume  = {19},
+  number  = {8},
+  pages   = {1569--1578},
+  year    = {2024},
+  doi     = {10.1007/s11548-024-03208-w},
+  note    = {PMID 38884893; preprint arXiv:2406.12499. Reward-shaped 100\%/22.6 s, dense 96\%/24.9 s, IRL-derived reward only 48\%/59.2 s — i.e. IRL UNDERPERFORMED shaping.}
+}
+
+% [ESS] — the closest dual-device siphon competitor (96%, 12 anatomies, 0.24 N)
+@article{robertshaw2025safe,
+  author  = {Robertshaw, Harry and Jackson, Benjamin and Wang, Jiaheng and Sadati, S. M. Hadi and Karstensen, Lennart and Granados, Alejandro and Booth, Thomas C.},
+  title   = {Reinforcement learning for safe autonomous two-device navigation of cerebral vessels in mechanical thrombectomy},
+  journal = {International Journal of Computer Assisted Radiology and Surgery},
+  volume  = {20},
+  number  = {6},
+  pages   = {1077--1086},
+  year    = {2025},
+  doi     = {10.1007/s11548-025-03339-8},
+  note    = {PMID 40178751; PMC12167253; preprint arXiv:2503.24140. 96\%, 7.0 s, 0.24 N mean force, 12 patient-specific vasculatures. NOT established as a held-out-anatomy number.}
+}
+
+% [ESS] % PARTIAL: RA-L DOI seen only on arXiv metadata; no volume/issue/pages
+@article{robertshaw2026hmmarl,
+  author  = {Robertshaw, Harry and Fischer, Nadia and Karstensen, Lennart and Jackson, Benjamin and Chen, Xi and Sadati, S. M. Hadi and Bergeles, Christos and Granados, Alejandro and Booth, Thomas C.},
+  title   = {Toward {AI} Autonomous Navigation for Mechanical Thrombectomy using Hierarchical Modular Multi-agent Reinforcement Learning},
+  journal = {IEEE Robotics and Automation Letters},
+  year    = {2026},
+  doi     = {10.1109/LRA.2026.3664661},
+  note    = {Preprint arXiv:2602.18663. Single-vasculature 92--100\%; MULTI-vasculature only 56--80\%. Best single citation for ``fixed-mesh agents encode a single route.''}
+}
+
+% [ESS] % PARTIAL: Springer LNCS chapter DOI and pages not retrieved
+@inproceedings{robertshaw2025worldmodel,
+  author    = {Robertshaw, Harry and Wu, Hao-Ran and Granados, Alejandro and Booth, Thomas C.},
+  title     = {World Model for {AI} Autonomous Navigation in Mechanical Thrombectomy},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI) 2025},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {15968},
+  year      = {2025},
+  note      = {arXiv:2509.25518. A single SAC agent across ten real patient vasculatures reached only 37\% mean success; TD-MPC2 65\%.}
+}
+
+% [ESS] — closest methodological ancestor for synthetic anatomy variation
+@article{karstensen2023rnn,
+  author  = {Karstensen, Lennart and Ritter, Jacqueline and Hatzl, Johannes and Ernst, Floris and Langej{\"u}rgen, Jens and Uhl, Christian and Mathis-Ullrich, Franziska},
+  title   = {Recurrent neural networks for generalization towards the vessel geometry in autonomous endovascular guidewire navigation in the aortic arch},
+  journal = {International Journal of Computer Assisted Radiology and Surgery},
+  volume  = {18},
+  number  = {9},
+  pages   = {1735--1744},
+  year    = {2023},
+  doi     = {10.1007/s11548-023-02938-7},
+  note    = {PMID 37245181; PMC10491528. Trained on 2048 generated geometries, evaluated on 1000 different arch models. SINGLE-DEVICE, AORTIC ARCH only.}
+}
+
+% [ESS] — the fairest published dual-device algorithm comparison; cuts against SAC
+@article{moosa2025benchmark,
+  author  = {Moosa, Faisal and Robertshaw, Harry and Karstensen, Lennart and Booth, Thomas C. and Granados, Alejandro},
+  title   = {Benchmarking reinforcement learning algorithms for autonomous mechanical thrombectomy},
+  journal = {International Journal of Computer Assisted Radiology and Surgery},
+  volume  = {20},
+  number  = {6},
+  pages   = {1231--1238},
+  year    = {2025},
+  doi     = {10.1007/s11548-025-03360-x},
+  note    = {PMID 40299264; PMC12167280. DualDeviceNav tuned: TD3 68\% > SAC 58\% > PPO 41\% > DDPG 24\%. Single Type-I arch — NOT a generalization result.}
+}
+
+% [ESS] % PARTIAL: preprint; v2 title (Jul 2026) differs from v1 — cite as retrieved
+@misc{barnes2025soft,
+  author = {Barnes, Nathaniel and Kim, Ji Woong and Di, Lucas and Qu, Hao and Bhattacharjee, Anirban and Janowski, Miroslaw and Gandhi, Dheeraj and Felix, Bailey and Jiang, Shuo and Young, Olivia and Fuge, Mark and Sochol, Ryan D. and Brown, Jeremy D. and Krieger, Axel},
+  title  = {Toward Autonomous Soft Robotic Endovascular Navigation via Imitation Learning},
+  year   = {2025},
+  eprint = {2510.09497},
+  archivePrefix = {arXiv},
+  doi    = {10.48550/arXiv.2510.09497},
+  note   = {JHU + UMD (same institution as our author list). Trained on 36 modular bifurcated geometries / 647 demonstrations; 83\% on three unseen geometries; 75\% on an unseen PATIENT-DERIVED geometry — directly comparable to our Sec.4 patient-derived result.}
+}
+
+% [OPT] — competing generalization strategy (shape-invariant observation)
+@article{scarponi2024zeroshot,
+  author  = {Scarponi, Valentina and Duprez, Michel and Nageotte, Florent and Cotin, St{\'e}phane},
+  title   = {A zero-shot reinforcement learning strategy for autonomous guidewire navigation},
+  journal = {International Journal of Computer Assisted Radiology and Surgery},
+  volume  = {19},
+  number  = {6},
+  pages   = {1185--1192},
+  year    = {2024},
+  doi     = {10.1007/s11548-024-03092-4},
+  note    = {PMID 38627313. 95\% across 4 vascular systems, single device, ``nearly shape-invariant'' (arguably idealised) observation space.}
+}
+
+% [OPT] — ``no autonomous system has been used in a patient''
+@article{robertshaw2023review,
+  author  = {Robertshaw, Harry and Karstensen, Lennart and Jackson, Benjamin and Sadati, Hadi and Rhode, Kawal and Ourselin, Sebastien and Granados, Alejandro and Booth, Thomas C.},
+  title   = {Artificial intelligence in the autonomous navigation of endovascular interventions: a systematic review},
+  journal = {Frontiers in Human Neuroscience},
+  volume  = {17},
+  pages   = {1239374},
+  year    = {2023},
+  doi     = {10.3389/fnhum.2023.1239374},
+  note    = {PMID 37600553; PMC10438983. 14/462 studies included; ``No procedures were performed on patients in any of the studies reviewed''; TRL 3.}
+}
+
+% [OPT] — supervised-autonomy framing, current
+@article{yao2026review,
+  author  = {Yao, Tianliang and Lu, Bo and Kowarschik, Markus and Yuan, Yiwen and Zhao, Hongyu and Ourselin, Sebastien and Althoefer, Kaspar and Ge, Junliang and Qi, Peng},
+  title   = {Advancing Embodied Intelligence in Robotic-Assisted Endovascular Procedures: A Systematic Review of {AI} Solutions},
+  journal = {IEEE Reviews in Biomedical Engineering},
+  volume  = {19},
+  pages   = {248--266},
+  year    = {2026},
+  doi     = {10.1109/RBME.2025.3641383},
+  note    = {PMID 41406269. ``Clinician's role evolves into that of a high-level supervisor.''}
+}
+
+% [OPT] % PARTIAL: T-RO volume/issue/pages not retrieved (DOI from arXiv journal-ref)
+@article{pore2023review,
+  author  = {Pore, Ameya and Li, Zhen and Dall'Alba, Diego and Hernansanz, Albert and De Momi, Elena and Menciassi, Arianna and Casals, Alicia and Dankelman, Jenny and Fiorini, Paolo and Vander Poorten, Emmanuel},
+  title   = {Autonomous Navigation for Robot-assisted Intraluminal and Endovascular Procedures: A Systematic Review},
+  journal = {IEEE Transactions on Robotics},
+  year    = {2023},
+  doi     = {10.1109/TRO.2023.3269384},
+  note    = {arXiv:2305.04027. Near-verbatim support: ``navigation is bound to become more autonomous, placing the clinician in a supervisory position''.}
+}
+
+% [ESS] — translation path, and an honest sim-to-real gap (100% sim -> 30% ex vivo)
+@article{karstensen2022porcine,
+  author  = {Karstensen, Lennart and Ritter, Jacqueline and Hatzl, Johannes and P{\"a}tz, Torben and Langej{\"u}rgen, Jens and Uhl, Christian and Mathis-Ullrich, Franziska},
+  title   = {Learning-based autonomous vascular guidewire navigation without human demonstration in the venous system of a porcine liver},
+  journal = {International Journal of Computer Assisted Radiology and Surgery},
+  volume  = {17},
+  number  = {11},
+  pages   = {2033--2040},
+  year    = {2022},
+  doi     = {10.1007/s11548-022-02646-8},
+  note    = {PMID 35604490; PMC9515141 (CC-BY). Hepatic venous system, single device. 100\% in simulation, 30\% ex vivo.}
+}
+
+% [OPT] — open-source simulator precedent (MuJoCo-based per wider literature, unverified)
+@article{jianu2024cathsim,
+  author  = {Jianu, Tudor and Huang, Baoru and Vu, Minh Nhat and Abdelaziz, Mohamed E. M. K. and Fichera, Sebastiano and Lee, Chun-Yi and Berthet-Rayne, Pierre and Rodriguez y Baena, Ferdinando and Nguyen, Anh},
+  title   = {{CathSim}: An Open-Source Simulator for Endovascular Intervention},
+  journal = {IEEE Transactions on Medical Robotics and Bionics},
+  volume  = {6},
+  number  = {3},
+  pages   = {971--979},
+  year    = {2024},
+  doi     = {10.1109/TMRB.2024.3421256},
+  note    = {arXiv:2208.01455. Do NOT state the physics engine — not verified on a primary source.}
+}
+
+% [CUT] % PARTIAL: venue ambiguous (abstract says ``this chapter''); no DOI
+@misc{jianu2024expert,
+  author = {Jianu, Tudor and Huang, Baoru and Vo, Tuan and Vu, Minh Nhat and Kang, Jingxuan and Nguyen, Hoan and Omisore, Olatunji and Berthet-Rayne, Pierre and Fichera, Sebastiano and Nguyen, Anh},
+  title  = {Autonomous Catheterization with Open-source Simulator and Expert Trajectory},
+  year   = {2024},
+  eprint = {2401.09059},
+  archivePrefix = {arXiv}
+}
+
+% [CUT] % PARTIAL: IROS 2025 inferred from an author-hosted PDF filename only
+@misc{jianu2025splineformer,
+  author = {Jianu, Tudor and Doust, Shayan and Li, Mengyun and Huang, Baoru and Do, Tuong and Nguyen, Hoan and Bates, Karl and Ta, Tung D. and Fichera, Sebastiano and Berthet-Rayne, Pierre and Nguyen, Anh},
+  title  = {{SplineFormer}: An Explainable Transformer-Based Approach for Autonomous Endovascular Navigation},
+  year   = {2025},
+  eprint = {2501.04515},
+  archivePrefix = {arXiv},
+  doi    = {10.48550/arXiv.2501.04515}
+}
+
+% [CUT] % PARTIAL: ICRA 2026 acceptance from arXiv metadata only; efficiency metrics only
+@misc{wang2026sample,
+  author = {Wang, Hao and Yao, Tianliang and Lu, Bo and Pei, Zhiqiang and Dong, Long and Ma, Lei and Qi, Peng},
+  title  = {Sample-Efficient Learning with Online Expert Correction for Autonomous Catheter Steering in Endovascular Bifurcation Navigation},
+  year   = {2026},
+  eprint = {2602.20216},
+  archivePrefix = {arXiv},
+  doi    = {10.48550/arXiv.2602.20216}
+}
+
+
+% ---------------------------------------------------------------------
+% Sec.2 METHODS — anatomy, tortuosity, procedural generation
+% ---------------------------------------------------------------------
+
+% [ESS] — ``tortuosity varies markedly between patients''
+@article{sidiq2023tortuosity,
+  author  = {Sidiq, Mohammed and Scheidecker, Elena and Potreck, Arne and others},
+  title   = {Aortic Arch Variations and Supra-aortic Arterial Tortuosity in Stroke Patients Undergoing Thrombectomy: Retrospective Analysis of 1705 Cases},
+  journal = {Clinical Neuroradiology},
+  volume  = {33},
+  number  = {1},
+  pages   = {49--56},
+  year    = {2023},
+  doi     = {10.1007/s00062-022-01181-y},
+  note    = {PMID 35695910; PMC10014756. ICA tortuosity absent in only 35.9\% of n=1311. YEAR AMBIGUITY: online-first 2022, issue 2023;33(1).}
+}
+
+% [ESS] — ``tortuosity predicts procedural difficulty'', thrombectomy-specific
+@article{chen2022cicatortuosity,
+  author  = {Chen, Zhongbin and Fan, Tiegong and Zhao, Xingyu and Hu, Tao and Qi, Huan and Li, Dongliang},
+  title   = {Simplified classification of cavernous internal carotid artery tortuosity: a predictor of procedural complexity and clinical outcomes in mechanical thrombectomy},
+  journal = {Neurological Research},
+  volume  = {44},
+  number  = {10},
+  pages   = {918--926},
+  year    = {2022},
+  doi     = {10.1080/01616412.2022.2068851},
+  note    = {PMID 35475775. Single-center retrospective.}
+}
+
+% [OPT] — quantitative first-pass/procedure-time evidence
+@article{koge2022tortuosity,
+  author  = {Koge, Junpei and Tanaka, Kanta and Yoshimoto, Takeshi and others},
+  title   = {Internal Carotid Artery Tortuosity: Impact on Mechanical Thrombectomy},
+  journal = {Stroke},
+  volume  = {53},
+  number  = {8},
+  pages   = {2458--2467},
+  year    = {2022},
+  doi     = {10.1161/STROKEAHA.121.037904},
+  note    = {PMC9311296. First-pass effect 21\% vs 39\% (aOR 0.45); puncture-to-reperfusion 59 vs 40 min. Outright failure to reach target 2.5\% vs 0.4\% was NOT significant — do not claim ``predicts access failure''.}
+}
+
+% [OPT] — geometry -> expert-perceived difficulty
+@article{shazeeb2023difficulty,
+  author  = {Shazeeb, Mohammed Salman and Moholkar, Viraj and King, Robert M. and others},
+  title   = {Assessment of thrombectomy procedure difficulty by neurointerventionalists based on vessel geometry parameters from carotid artery {3D} reconstructions},
+  journal = {Journal of Clinical Neuroscience},
+  volume  = {113},
+  pages   = {121--125},
+  year    = {2023},
+  doi     = {10.1016/j.jocn.2023.05.014},
+  note    = {PMID 37262981. PERCEIVED difficulty (7 raters, 49 subjects, 3-point scale) — a proxy endpoint.}
+}
+
+% [OPT] — tortuosity increases with age/hypertension
+@article{huang2024tortuosity,
+  author  = {Huang, Hao and Fu, Jing-Jing and Yao, Pei-Guang and others},
+  title   = {Age and duration of hypertension are associated with carotid artery tortuosity},
+  journal = {Frontiers in Neurology},
+  volume  = {15},
+  pages   = {1307984},
+  year    = {2024},
+  doi     = {10.3389/fneur.2024.1307984},
+  note    = {PMID 38529032; PMC10961416. Prevalence 25.5\% (<=40 y) rising to 84.8\% (>=81 y). DO NOT quote the hypertension-duration CI (asymmetric; apparent typo in the source).}
+}
+
+% [OPT] — cavernous ICA tortuosity index; flow-diverter cohort, not thrombectomy
+@article{lin2015cavernous,
+  author  = {Lin, Li-Mei and Colby, Geoffrey P. and Jiang, Bowen and Uwandu, Chinwe and Huang, Judy and Tamargo, Rafael J. and Coon, Alexander L.},
+  title   = {Classification of cavernous internal carotid artery tortuosity: a predictor of procedural complexity in Pipeline embolization},
+  journal = {Journal of NeuroInterventional Surgery},
+  volume  = {7},
+  number  = {9},
+  pages   = {628--633},
+  year    = {2015},
+  doi     = {10.1136/neurintsurg-2014-011298},
+  note    = {PMID 24996435.}
+}
+
+% [OPT] — siphon geometry descriptors (curvature radius, bend angle)
+@article{zhang2013siphon,
+  author  = {Zhang, Chi and Pu, Fang and Li, Shuyu and Xie, Shuo and Fan, Yubo and Li, Deyu},
+  title   = {Geometric classification of the carotid siphon: association between geometry and stenoses},
+  journal = {Surgical and Radiologic Anatomy},
+  volume  = {35},
+  number  = {5},
+  pages   = {385--394},
+  year    = {2013},
+  doi     = {10.1007/s00276-012-1042-8},
+  note    = {PMID 23183849. Abstract names curvature radius/bend angle as measured but reports no numeric radii — DO NOT quote a bend radius in mm from this.}
+}
+
+% [OPT] — numeric siphon bend angles (median-split cutoffs, not norms)
+@article{waihrich2017siphon,
+  author  = {Waihrich, Eduardo and Clavel, Pierre and Mendes, Guilherme A. C. and Iosif, Christina and Moraes Kessler, Iruena and Mounayer, Charbel},
+  title   = {Influence of Carotid Siphon Anatomy on Brain Aneurysm Presentation},
+  journal = {American Journal of Neuroradiology},
+  volume  = {38},
+  number  = {9},
+  pages   = {1771--1775},
+  year    = {2017},
+  doi     = {10.3174/ajnr.A5285}
+}
+
+% [ESS] — ICA segment nomenclature (cervical / petrous / cavernous)
+@article{bouthillier1996segments,
+  author  = {Bouthillier, Alain and van Loveren, Harry R. and Keller, Jeffrey T.},
+  title   = {Segments of the Internal Carotid Artery: A New Classification},
+  journal = {Neurosurgery},
+  volume  = {38},
+  number  = {3},
+  pages   = {425--433},
+  year    = {1996},
+  doi     = {10.1227/00006123-199603000-00001},
+  note    = {C1 cervical, C2 petrous, C3 lacerum, C4 cavernous, C5 clinoid, C6 ophthalmic, C7 communicating. C1--C7 is Bouthillier-specific; Fischer's numbering runs the opposite direction. PMID not confirmed — do not print one.}
+}
+
+% [ESS] — normative ICA diameters by segment (CONTRADICTS the draft's 2.5-3.4 mm)
+@article{baz2021morphometry,
+  author  = {Baz, Radu Andrei and Scheau, Cristian and Niscoveanu, Cosmin and Bordei, Petru},
+  title   = {Morphometry of the Entire Internal Carotid Artery on {CT} Angiography},
+  journal = {Medicina},
+  volume  = {57},
+  number  = {8},
+  pages   = {832},
+  year    = {2021},
+  doi     = {10.3390/medicina57080832},
+  note    = {PMID 34441039; PMC8398484. Cervical midpoint 4.85 +/- 0.53 mm; cavernous 4.27--4.33 mm; ophthalmic 2.88 +/- 0.40 mm; terminal 2.71 +/- 0.37 mm. Segment labels are NOT Bouthillier's.}
+}
+
+% [OPT] — CCA/ICA diameters, n=500
+@article{krejza2006diameter,
+  author  = {Krejza, Jaroslaw and Arkuszewski, Michal and Kasner, Scott E. and Weigele, John and Ustymowicz, Andrzej and Hurst, Robert W. and Cucchiara, Brett L. and Messe, Steven R.},
+  title   = {Carotid Artery Diameter in Men and Women and the Relation to Body and Neck Size},
+  journal = {Stroke},
+  volume  = {37},
+  number  = {4},
+  pages   = {1103--1105},
+  year    = {2006},
+  doi     = {10.1161/01.STR.0000206440.48756.f7},
+  note    = {PMID 16497983. ICA 4.66 +/- 0.78 mm (women) / 5.11 +/- 0.87 mm (men); CCA 6.10--6.52 mm.}
+}
+
+% [OPT] — working calibers assumed in thrombectomy device sizing (MCA 2.5 mm, ICA 4 mm)
+@article{nikoubashman2017catheter,
+  author  = {Nikoubashman, Omid and Nikoubashman, A. and B{\"u}sen, M. and Wiesmann, Martin},
+  title   = {Necessary Catheter Diameters for Mechanical Thrombectomy with {ADAPT}},
+  journal = {American Journal of Neuroradiology},
+  volume  = {38},
+  number  = {12},
+  pages   = {2277--2281},
+  year    = {2017},
+  doi     = {10.3174/ajnr.A5401},
+  note    = {PMID 29025728. Modelling assumptions, not a morphometric survey.}
+}
+
+% [OPT] — prior art: vascular trees grown de novo (contrast with our centerline deformation)
+@article{schreiner1993cco,
+  author  = {Schreiner, Wolfgang and Buxbaum, Peter F.},
+  title   = {Computer-optimization of vascular trees},
+  journal = {IEEE Transactions on Biomedical Engineering},
+  volume  = {40},
+  number  = {5},
+  pages   = {482--491},
+  year    = {1993},
+  doi     = {10.1109/10.243413},
+  note    = {PMID 8225337. Constrained constructive optimization.}
+}
+
+% [CUT] — open CCO implementation
+@article{kerautret2023opencco,
+  author  = {Kerautret, Bertrand and Ngo, Phuc and Passat, Nicolas and Talbot, Hugues and Jaquet, Cl{\'e}ment},
+  title   = {{OpenCCO}: An Implementation of Constrained Constructive Optimization for Generating {2D} and {3D} Vascular Trees},
+  journal = {Image Processing On Line},
+  volume  = {13},
+  pages   = {258--279},
+  year    = {2023},
+  doi     = {10.5201/ipol.2023.477}
+}
+
+% [CUT] — physiologically driven tree generation (microvascular scale)
+@article{schneider2012arterialtree,
+  author  = {Schneider, Matthias and Reichold, Johannes and Weber, Bruno and Sz{\'e}kely, G{\'a}bor and Hirsch, Sven},
+  title   = {Tissue metabolism driven arterial tree generation},
+  journal = {Medical Image Analysis},
+  volume  = {16},
+  number  = {7},
+  pages   = {1397--1414},
+  year    = {2012},
+  doi     = {10.1016/j.media.2012.04.009},
+  note    = {PMID 22705288. Cortical microvasculature — not carotid-scale.}
+}
+
+% [CUT] % PARTIAL: printed page range not retrieved
+@inproceedings{prabhakar2024vesselgraph,
+  author    = {Prabhakar, Chinmay and Shit, Suprosanna and Musio, Fabio and Yang, Kaiyuan and Amiranashvili, Tamaz and Paetzold, Johannes C. and Li, Hongwei Bran and Menze, Bjoern},
+  title     = {{3D} Vessel Graph Generation Using Denoising Diffusion},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI) 2024},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {15011},
+  year      = {2024},
+  doi       = {10.1007/978-3-031-72120-5_1},
+  note      = {arXiv:2407.05842. Generates vessel GRAPHS, not simulation-ready lumen surfaces.}
+}
+
+% [OPT] — centerline extraction / VMTK
+@article{antiga2008vmtk,
+  author  = {Antiga, Luca and Piccinelli, Marina and Botti, Lorenzo and Ene-Iordache, Bogdan and Remuzzi, Andrea and Steinman, David A.},
+  title   = {An image-based modeling framework for patient-specific computational hemodynamics},
+  journal = {Medical \& Biological Engineering \& Computing},
+  volume  = {46},
+  number  = {11},
+  pages   = {1097--1112},
+  year    = {2008},
+  doi     = {10.1007/s11517-008-0420-1},
+  note    = {PMID 19002516. Standard VMTK citation.}
+}
+
+
+% ---------------------------------------------------------------------
+% Sec.2 METHODS — surface reconstruction
+% ---------------------------------------------------------------------
+
+% [ESS]
+@inproceedings{lorensen1987marchingcubes,
+  author    = {Lorensen, William E. and Cline, Harvey E.},
+  title     = {Marching cubes: A high resolution {3D} surface construction algorithm},
+  booktitle = {Proceedings of the 14th Annual Conference on Computer Graphics and Interactive Techniques (SIGGRAPH '87)},
+  publisher = {ACM},
+  pages     = {163--169},
+  year      = {1987},
+  doi       = {10.1145/37401.37422}
+}
+
+% [ESS]
+@inproceedings{schroeder1992decimation,
+  author    = {Schroeder, William J. and Zarge, Jonathan A. and Lorensen, William E.},
+  title     = {Decimation of triangle meshes},
+  booktitle = {Proceedings of the 19th Annual Conference on Computer Graphics and Interactive Techniques (SIGGRAPH '92)},
+  publisher = {ACM},
+  pages     = {65--70},
+  year      = {1992},
+  doi       = {10.1145/133994.134010},
+  note      = {A duplicate ACM record exists as 10.1145/142920.134010; use the proceedings DOI above.}
+}
+
+
+% ---------------------------------------------------------------------
+% Sec.2 METHODS — simulation (SOFA / BeamAdapter / contact)
+% ---------------------------------------------------------------------
+
+% [ESS] — the citation the SOFA project itself recommends
+@incollection{faure2012sofa,
+  author    = {Faure, Fran{\c{c}}ois and Duriez, Christian and Delingette, Herv{\'e} and Allard, J{\'e}r{\'e}mie and Gilles, Benjamin and Marchesseau, St{\'e}phanie and Talbot, Hugo and Courtecuisse, Hadrien and Bousquet, Guillaume and Peterlik, Igor and Cotin, St{\'e}phane},
+  title     = {{SOFA}: A Multi-Model Framework for Interactive Physical Simulation},
+  booktitle = {Soft Tissue Biomechanical Modeling for Computer Assisted Surgery},
+  series    = {Studies in Mechanobiology, Tissue Engineering and Biomaterials},
+  publisher = {Springer Berlin Heidelberg},
+  pages     = {283--321},
+  year      = {2012},
+  doi       = {10.1007/8415_2012_125}
+}
+
+% [OPT] — older canonical SOFA citation; no DOI exists
+@article{allard2007sofa,
+  author  = {Allard, J{\'e}r{\'e}mie and Cotin, St{\'e}phane and Faure, Fran{\c{c}}ois and Bensoussan, Pierre-Jean and Poyer, Fran{\c{c}}ois and Duriez, Christian and Delingette, Herv{\'e} and Grisoni, Laurent},
+  title   = {{SOFA} --- an open source framework for medical simulation},
+  journal = {Studies in Health Technology and Informatics},
+  volume  = {125},
+  pages   = {13--18},
+  year    = {2007},
+  note    = {MMVR 15. PMID 17377224; HAL inria-00319416. No DOI in the PubMed record.}
+}
+
+% [ESS] — the BeamAdapter plugin itself
+@misc{beamadapter,
+  author       = {{SOFA Framework}},
+  title        = {{BeamAdapter}: Plugin implementing Kirchhoff rods to simulate {1D} flexible structures},
+  howpublished = {\url{https://github.com/sofa-framework/BeamAdapter}},
+  note         = {Software repository. README states a 1D FEM based on KIRCHHOFF rod theory (not Cosserat) for catheters, guidewires and coils.}
+}
+
+% [ESS] — the FEM beam method underlying BeamAdapter (journal version)
+@article{duriez2006catheter,
+  author  = {Duriez, Christian and Cotin, St{\'e}phane and Lenoir, Julien and Neumann, Paul},
+  title   = {New approaches to catheter navigation for interventional radiology simulation},
+  journal = {Computer Aided Surgery},
+  volume  = {11},
+  number  = {6},
+  pages   = {300--308},
+  year    = {2006},
+  doi     = {10.3109/10929080601090623},
+  note    = {PMID 17458764. Conference form: Cotin et al., MICCAI 2005, doi:10.1007/11566489_66, pp. 534--542 (same work — cite one).}
+}
+
+% [ESS] — Signorini contact + Coulomb friction, Lagrange-multiplier constraint solve
+@article{duriez2006haptic,
+  author  = {Duriez, Christian and Dubois, Fr{\'e}d{\'e}ric and Kheddar, Abderrahmane and Andriot, Claude},
+  title   = {Realistic haptic rendering of interacting deformable objects in virtual environments},
+  journal = {IEEE Transactions on Visualization and Computer Graphics},
+  volume  = {12},
+  number  = {1},
+  pages   = {36--47},
+  year    = {2006},
+  doi     = {10.1109/TVCG.2006.13},
+  note    = {PMID 16382606. Standard reference for SOFA's constraint-based friction/contact solver.}
+}
+
+% [OPT] — geometrically exact 1D rod for catheter+guidewire
+@article{lenoir2006rod,
+  author  = {Lenoir, Julien and Cotin, St{\'e}phane and Duriez, Christian and Neumann, Paul},
+  title   = {Interactive physically-based simulation of catheter and guidewire},
+  journal = {Computers \& Graphics},
+  volume  = {30},
+  number  = {3},
+  pages   = {416--422},
+  year    = {2006},
+  doi     = {10.1016/j.cag.2006.02.013}
+}
+
+% [CUT] — only if the text genuinely invokes geometrically-exact/Cosserat theory
+@article{simo1985beam,
+  author  = {Simo, J. C.},
+  title   = {A finite strain beam formulation. The three-dimensional dynamic problem. Part {I}},
+  journal = {Computer Methods in Applied Mechanics and Engineering},
+  volume  = {49},
+  pages   = {55--70},
+  year    = {1985},
+  doi     = {10.1016/0045-7825(85)90050-7}
+}
+
+% [CUT] — Cosserat guidewire model, NOT SOFA
+@article{tang2012cosserat,
+  author  = {Tang, Wen and Wan, Tao Ruan and Gould, Derek A. and How, Thien and John, Nigel W.},
+  title   = {A stable and real-time nonlinear elastic approach to simulating guidewire and catheter insertions based on {Cosserat} rod},
+  journal = {IEEE Transactions on Biomedical Engineering},
+  volume  = {59},
+  number  = {8},
+  pages   = {2211--2218},
+  year    = {2012},
+  doi     = {10.1109/TBME.2012.2199319},
+  note    = {PMID 22614515. Do NOT cite as validation of SOFA.}
+}
+
+% [CUT]
+@inproceedings{korzeniowski2014cosserat,
+  author    = {Korzeniowski, Przemyslaw and Martinez-Martinez, Francisco and Hald, Niels and Bello, Fernando},
+  title     = {Simulation of Catheters and Guidewires for Cardiovascular Interventions Using an Inextensible {Cosserat} Rod},
+  booktitle = {Biomedical Simulation (ISBMS)},
+  series    = {Lecture Notes in Computer Science},
+  publisher = {Springer International Publishing},
+  pages     = {112--121},
+  year      = {2014},
+  doi       = {10.1007/978-3-319-12057-7_13}
+}
+
+% [OPT] — best available sim-vs-physical validation, but for VCSim3, NOT SOFA
+@article{korzeniowski2018vcsim3,
+  author  = {Korzeniowski, Przemyslaw and White, Richard J. and Bello, Fernando},
+  title   = {{VCSim3}: a {VR} simulator for cardiovascular interventions},
+  journal = {International Journal of Computer Assisted Radiology and Surgery},
+  volume  = {13},
+  number  = {1},
+  pages   = {135--149},
+  year    = {2018},
+  doi     = {10.1007/s11548-017-1679-1},
+  note    = {PMID 29079992; PMC5754385. Mean distance error 1.34 +/- 0.95 mm vs CT-scanned real devices in a silicone phantom.}
+}
+
+% [OPT] — SOFA-group device model validated experimentally (coils, contact-free)
+@inproceedings{dequidt2008coils,
+  author    = {Dequidt, J{\'e}r{\'e}mie and Marchal, Maud and Duriez, Christian and Kerien, Erwan and Cotin, St{\'e}phane},
+  title     = {Interactive simulation of embolization coils: modeling and experimental validation},
+  booktitle = {Medical Image Computing and Computer-Assisted Intervention (MICCAI) 2008},
+  volume    = {11},
+  number    = {Pt 1},
+  pages     = {695--702},
+  year      = {2008},
+  doi       = {10.1007/978-3-540-85988-8_83},
+  note      = {PMID 18979807. Coils in a contact-free rig — not a guidewire-in-vessel validation.}
+}
+
+% [CUT] — mass-spring, not FEM beams
+@article{luboz2009guidewire,
+  author  = {Luboz, Vincent and Blazewski, Rafal and Gould, Derek and Bello, Fernando},
+  title   = {Real-time guidewire simulation in complex vascular models},
+  journal = {The Visual Computer},
+  volume  = {25},
+  number  = {9},
+  pages   = {827--834},
+  year    = {2009},
+  doi     = {10.1007/s00371-009-0312-x}
+}
+
+
+% ---------------------------------------------------------------------
+% Sec.2 METHODS — RL algorithm
+% ---------------------------------------------------------------------
+
+% [ESS]
+@inproceedings{haarnoja2018sac,
+  author    = {Haarnoja, Tuomas and Zhou, Aurick and Abbeel, Pieter and Levine, Sergey},
+  title     = {Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor},
+  booktitle = {Proceedings of the 35th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {80},
+  pages     = {1861--1870},
+  year      = {2018},
+  note      = {arXiv:1801.01290. Does NOT contain automatic entropy tuning.}
+}
+
+% [ESS] — the ONLY correct citation for auto-tuned alpha
+@misc{haarnoja2018sacapps,
+  author = {Haarnoja, Tuomas and Zhou, Aurick and Hartikainen, Kristian and Tucker, George and Ha, Sehoon and Tan, Jie and Kumar, Vikash and Zhu, Henry and Gupta, Abhishek and Abbeel, Pieter and Levine, Sergey},
+  title  = {Soft Actor-Critic Algorithms and Applications},
+  year   = {2018},
+  eprint = {1812.05905},
+  archivePrefix = {arXiv},
+  doi    = {10.48550/arXiv.1812.05905},
+  note   = {Preprint only — never formally published. Introduces the constrained formulation that automatically tunes the temperature.}
+}
+
+% [ESS] — clipped double-Q / twin critics
+@inproceedings{fujimoto2018td3,
+  author    = {Fujimoto, Scott and van Hoof, Herke and Meger, David},
+  title     = {Addressing Function Approximation Error in Actor-Critic Methods},
+  booktitle = {Proceedings of the 35th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {80},
+  pages     = {1587--1596},
+  year      = {2018},
+  note      = {arXiv:1802.09477. Cite for min(Q1,Q2) only; TD3's delayed policy update is not used by SAC.}
+}
+
+% [ESS]
+@inproceedings{schaul2016per,
+  author    = {Schaul, Tom and Quan, John and Antonoglou, Ioannis and Silver, David},
+  title     = {Prioritized Experience Replay},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2016},
+  note      = {arXiv:1511.05952.}
+}
+
+% [ESS] — the method we abandoned
+@misc{nair2020awac,
+  author = {Nair, Ashvin and Gupta, Abhishek and Dalal, Murtaza and Levine, Sergey},
+  title  = {{AWAC}: Accelerating Online Reinforcement Learning with Offline Datasets},
+  year   = {2020},
+  eprint = {2006.09359},
+  archivePrefix = {arXiv},
+  note   = {Preprint only — no conference venue on the arXiv record.}
+}
+
+% [OPT] — the advantage-weighted family
+@misc{peng2019awr,
+  author = {Peng, Xue Bin and Kumar, Aviral and Zhang, Grace and Levine, Sergey},
+  title  = {Advantage-Weighted Regression: Simple and Scalable Off-Policy Reinforcement Learning},
+  year   = {2019},
+  eprint = {1910.00177},
+  archivePrefix = {arXiv},
+  note   = {Preprint only — do NOT attribute to ICLR.}
+}
+
+% [ESS] — asymmetric actor-critic, canonical
+@inproceedings{pinto2018asymmetric,
+  author    = {Pinto, Lerrel and Andrychowicz, Marcin and Welinder, Peter and Zaremba, Wojciech and Abbeel, Pieter},
+  title     = {Asymmetric Actor Critic for Image-Based Robot Learning},
+  booktitle = {Robotics: Science and Systems (RSS) XIV},
+  year      = {2018},
+  doi       = {10.15607/RSS.2018.XIV.008},
+  note      = {arXiv:1710.06542 (posted 2017; published RSS 2018).}
+}
+
+% [OPT/RISKY] — argues the standard state-conditioned asymmetric critic is BIASED
+@inproceedings{baisero2022unbiased,
+  author    = {Baisero, Andrea and Amato, Christopher},
+  title     = {Unbiased Asymmetric Reinforcement Learning under Partial Observability},
+  booktitle = {Proceedings of the 21st International Conference on Autonomous Agents and Multiagent Systems (AAMAS)},
+  pages     = {44--52},
+  year      = {2022},
+  note      = {arXiv:2105.11674. Pages from arXiv metadata, not the ACM DL record. CUTS AGAINST a naive asymmetric critic — cite only with an acknowledging clause.}
+}
+
+% [OPT/RISKY] — a privileged expert can be a bad teacher
+@inproceedings{warrington2021robust,
+  author    = {Warrington, Andrew and Lavington, J. Wilder and Scibior, Adam and Schmidt, Mark and Wood, Frank},
+  title     = {Robust Asymmetric Learning in {POMDPs}},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2021},
+  note      = {arXiv:2012.15566. Venue read from arXiv metadata. ``The expert does not know what the trainee cannot see.''}
+}
+
+% [ESS if the teacher-student variant ships]
+@inproceedings{chen2019cheating,
+  author    = {Chen, Dian and Zhou, Brady and Koltun, Vladlen and Kr{\"a}henb{\"u}hl, Philipp},
+  title     = {Learning by Cheating},
+  booktitle = {Conference on Robot Learning (CoRL)},
+  year      = {2019},
+  note      = {arXiv:1912.12294. Venue from the arXiv page; PMLR volume/pages not retrieved. Autonomous driving — methodological precedent only.}
+}
+
+% [OPT] — closest robotics analogue (privileged teacher -> proprioception-only student)
+@article{lee2020quadruped,
+  author  = {Lee, Joonho and Hwangbo, Jemin and Wellhausen, Lorenz and Koltun, Vladlen and Hutter, Marco},
+  title   = {Learning quadrupedal locomotion over challenging terrain},
+  journal = {Science Robotics},
+  volume  = {5},
+  number  = {47},
+  pages   = {eabc5986},
+  year    = {2020},
+  doi     = {10.1126/scirobotics.abc5986},
+  note    = {arXiv:2010.11251. Teacher-student quotes verified from the author-posted arXiv version (publisher page 403-blocked).}
+}
+
+% [CUT if lee2020quadruped is cited]
+@article{miki2022perceptive,
+  author  = {Miki, Takahiro and Lee, Joonho and Hwangbo, Jemin and Wellhausen, Lorenz and Koltun, Vladlen and Hutter, Marco},
+  title   = {Learning robust perceptive locomotion for quadrupedal robots in the wild},
+  journal = {Science Robotics},
+  volume  = {7},
+  number  = {62},
+  pages   = {eabk2822},
+  year    = {2022},
+  doi     = {10.1126/scirobotics.abk2822},
+  note    = {arXiv:2201.08117.}
+}
+
+% [ESS if the DAgger student ships]
+@inproceedings{ross2011dagger,
+  author    = {Ross, St{\'e}phane and Gordon, Geoffrey J. and Bagnell, J. Andrew},
+  title     = {A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning},
+  booktitle = {Proceedings of the 14th International Conference on Artificial Intelligence and Statistics (AISTATS)},
+  year      = {2011},
+  note      = {arXiv:1011.0686. The name ``DAgger'' appears only in the body — gloss it. PMLR v15 pages not retrieved; do not print page numbers.}
+}
+
+% [ESS] — formal framing for the non-Markov deployable observation
+@article{kaelbling1998pomdp,
+  author  = {Kaelbling, Leslie Pack and Littman, Michael L. and Cassandra, Anthony R.},
+  title   = {Planning and acting in partially observable stochastic domains},
+  journal = {Artificial Intelligence},
+  volume  = {101},
+  number  = {1--2},
+  pages   = {99--134},
+  year    = {1998},
+  doi     = {10.1016/S0004-3702(98)00023-X},
+  note    = {Supports ``this is a POMDP'' and nothing more — says nothing about elastic energy, projection loss or stick-slip.}
+}
+
+% [OPT] — memory != credit assignment (the safe form of ``recurrence is not enough'')
+@inproceedings{ni2023transformers,
+  author    = {Ni, Tianwei and Ma, Michel and Eysenbach, Benjamin and Bacon, Pierre-Luc},
+  title     = {When Do Transformers Shine in {RL}? Decoupling Memory from Credit Assignment},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2023},
+  note      = {arXiv:2307.03864. Says nothing about hysteretic or stick-slip dynamics.}
+}
+
+% counter-evidence to a strong ``recurrence cannot work'' claim — know it exists
+@inproceedings{ni2022recurrent,
+  author    = {Ni, Tianwei and Eysenbach, Benjamin and Salakhutdinov, Ruslan},
+  title     = {Recurrent Model-Free {RL} Can Be a Strong Baseline for Many {POMDPs}},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2022},
+  note      = {arXiv:2110.05038. Matches or beats specialised methods on 18/21 environments.}
+}
+
+% [OPT] — name for the forgetting phenomenon (sequential, not concurrent)
+@article{kirkpatrick2017ewc,
+  author  = {Kirkpatrick, James and Pascanu, Razvan and Rabinowitz, Neil and Veness, Joel and Desjardins, Guillaume and Rusu, Andrei A. and Milan, Kieran and Quan, John and Ramalho, Tiago and Grabska-Barwinska, Agnieszka and Hassabis, Demis and Clopath, Claudia and Kumaran, Dharshan and Hadsell, Raia},
+  title   = {Overcoming catastrophic forgetting in neural networks},
+  journal = {Proceedings of the National Academy of Sciences},
+  volume  = {114},
+  number  = {13},
+  pages   = {3521--3526},
+  year    = {2017},
+  doi     = {10.1073/pnas.1611835114},
+  note    = {PMID 28292907. SEQUENTIAL-task forgetting. A PNAS technical comment disputes the EWC penalty derivation — cite for the phenomenon, not the penalty.}
+}
+
+% [OPT] — closer mechanism for advance-vs-recover competition
+@misc{schaul2019rayinterference,
+  author = {Schaul, Tom and Borsa, Diana and Modayil, Joseph and Pascanu, Razvan},
+  title  = {Ray Interference: a Source of Plateaus in Deep Reinforcement Learning},
+  year   = {2019},
+  eprint = {1904.11455},
+  archivePrefix = {arXiv},
+  note   = {Preprint only. Mechanism = agent-controlled data distribution, NOT plain catastrophic forgetting. Do not cite interchangeably with kirkpatrick2017ewc.}
+}
+
+% [OPT] — conceptual parent of procedural anatomy randomization (APPEARANCE)
+@inproceedings{tobin2017domainrand,
+  author    = {Tobin, Josh and Fong, Rachel and Ray, Alex and Schneider, Jonas and Zaremba, Wojciech and Abbeel, Pieter},
+  title     = {Domain Randomization for Transferring Deep Neural Networks from Simulation to the Real World},
+  booktitle = {IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
+  year      = {2017},
+  note      = {arXiv:1703.06907. Venue from ``Submitted to IROS 2017'' on the arXiv page; IEEE record not opened. Randomizes APPEARANCE, not geometry.}
+}
+
+% [OPT] — dynamics randomization; closer analogue than tobin2017
+@inproceedings{peng2018dynamicsrand,
+  author    = {Peng, Xue Bin and Andrychowicz, Marcin and Zaremba, Wojciech and Abbeel, Pieter},
+  title     = {Sim-to-Real Transfer of Robotic Control with Dynamics Randomization},
+  booktitle = {IEEE International Conference on Robotics and Automation (ICRA)},
+  year      = {2018},
+  note      = {arXiv:1710.06537. Venue from arXiv journal-ref; IEEE record not opened — do not print pages. Neither this nor tobin2017 randomizes GEOMETRY.}
+}
