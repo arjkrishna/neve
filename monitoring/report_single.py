@@ -189,19 +189,30 @@ def bin_stats(b):
     return e, st, c, sum(c[k] for k in ESC)
 
 
-T1, SU, ST, RC, SF = [], [], [], [], []
+T1, SU, ST, RC, SF, HD, GR, UN = [], [], [], [], [], [], [], []
 for i, b in enumerate(BINS, 1):
     e, st, c, esc = bin_stats(b)
-    T1.append([i, f"{b[0]['cum']//1000}–{b[-1]['cum']//1000}", len(b),
+    T1.append([i, f"{b[0]['cum']//1000}–{b[-1]['cum']//1000}",
                f"{pct(sum(1 for r in b if r['succ']), len(b)):.0f}%",
                f"{pct(len(st), len(b)):.0f}%", len(e),
-               f"{len(e)/len(st) if st else 0:.1f}", f"{pct(esc, len(e)):.0f}%",
+               f"{pct(esc, len(e)):.0f}%",
                f"{pct(c['soft'], len(e)):.0f}%", f"{pct(c['hard'], len(e)):.0f}%",
                f"{pct(c['grind'], len(e)):.0f}%", f"{pct(c['unrec'], len(e)):.0f}%"])
     SU.append(pct(sum(1 for r in b if r["succ"]), len(b)))
     ST.append(pct(len(st), len(b)))
     RC.append(pct(esc, len(e)))
     SF.append(pct(c["soft"], len(e)))
+    HD.append(pct(c["hard"], len(e)))
+    GR.append(pct(c["grind"], len(e)))
+    UN.append(pct(c["unrec"], len(e)))
+
+
+def _arg(vals, fn):
+    """Index of the extreme cell, compared on the ROUNDED values that are
+    actually printed — so the highlighted cell is the one a reader sees as
+    lowest/highest, not one that merely differs in a hidden decimal."""
+    r = [round(v) for v in vals]
+    return r.index(fn(r))
 
 T2, VIA = [], []
 for i, b in enumerate(BINS, 1):
@@ -210,7 +221,7 @@ for i, b in enumerate(BINS, 1):
         g[ep_class(r)].append(r)
     stot = sum(1 for r in b if r["succ"])
     srec = sum(1 for r in g["rec"] if r["succ"])
-    row = [i, len(b), f"{pct(stot, len(b)):.0f}%"]
+    row = [i, f"{pct(stot, len(b)):.0f}%"]
     for k in ("clean", "rec", "unrec"):
         n = len(g[k])
         s = sum(1 for r in g[k] if r["succ"])
@@ -236,10 +247,15 @@ for k, g in GRP.items():
         continue
     stp = sorted(r["steps"] for r in g)
     rr = [x["r"] for r in g for x in ev(r)]
-    T3.append([k, len(g), f"{pct(sum(1 for r in g if r['succ']), len(g)):.0f}%",
-               stp[len(stp) // 2], f"{sum(rr)/len(rr) if rr else 0:.1f}"])
-GS = {r[0]: float(str(r[2]).rstrip("%")) for r in T3}
-GT = {r[0]: r[3] for r in T3}
+    # Mean retract is meaningless for the unrecovered group: those stalls never
+    # passed, so the figure is withdrawal DURING a failed stall, not the depth
+    # of a completed recovery. Reporting it invites a false comparison.
+    retract = "NA" if k.startswith("unrecovered") else \
+        f"{sum(rr)/len(rr) if rr else 0:.1f}"
+    T3.append([k, f"{pct(sum(1 for r in g if r['succ']), len(g)):.0f}%",
+               stp[len(stp) // 2], retract])
+GS = {r[0]: float(str(r[1]).rstrip("%")) for r in T3}
+GT = {r[0]: r[2] for r in T3}
 
 T4 = []
 for s in ("CCA", "ICA-mid", "siphon"):
@@ -383,17 +399,16 @@ finish(fig)
 
 # =============================================================== P3 T1
 P += 1
-fig = newpage(f"T1 — {RUN}: stuck & recovery vs training time",
-              "8 equal-episode chronological bins  ·  explore only  ·  canonical detector")
+fig = newpage("Stuck & recovery vs training time",
+              "Each bin ~ 1800 episodes of training data")
 if IS_B:
-    s1 = ("How often the wire got stuck, how often it got out, and by which manoeuvre, as training "
-          "progressed. Read the trend across bins, not the absolute levels.")
-    i1 = (f"The central finding. Episode success CLIMBS {SU[0]:.0f}→{max(SU):.0f}% while recovery "
+    s1 = ("Fig 1: Success rates and recovery rates with training "
+          "Fig 2. Falling recovery rates creates a ceiling for success rate")
+    i1 = (f"Episode success CLIMBS {SU[0]:.0f}→{max(SU):.0f}% while recovery "
           f"success FALLS {RC[0]:.0f}→{RC[-2]:.0f}% and unrecovered rises. What is actually improving "
           f"is the stalled-episode share, which drops {ST[0]:.0f}→{min(ST):.0f}%. The policy is not "
-          "learning to escape stalls — it is learning not to enter them, and the escape skill withers "
-          "as stalls leave its training data. That is textbook interference: the skill starves "
-          "because success removes its own training signal.")
+          "learning to escape stalls; it is learning not to enter them, and the escape skill withers "
+          "as stalls leave its training data.")
 else:
     s1 = ("How often the wire got stuck, how often it got out, and by which manoeuvre, as training "
           "progressed, for the run carrying the reward pair.")
@@ -406,12 +421,17 @@ else:
           "pages show where that escape effort is lost.")
 ch = cap_h(s1, i1)
 tb, cb = 0.575, 0.055 + ch + 0.055
-hi1 = {(SU.index(max(SU)), 3): C_OK, (RC.index(min(RC)), 7): C_HI}
+hi1 = {(_arg(SU, max), 2): C_OK,     # best success — green
+       (_arg(RC, min), 5): C_HI,     # weakest recovery
+       (_arg(SF, min), 6): C_HI,     # least soft
+       (_arg(HD, min), 7): C_HI,     # least hard
+       (_arg(GR, min), 8): C_HI,     # least grind
+       (_arg(UN, max), 9): C_HI}     # most left unrecovered
 table(fig, [0.045, tb, 0.91, 0.29],
-      ["bin", "explore steps (k)", "eps", "ep succ%", "stalled-ep%", "events",
-       "evt/stalled-ep", "recovery succ%", "soft%", "hard%", "grind%", "unrec%"],
-      T1, widths=[.045, .13, .06, .08, .095, .07, .105, .115, .06, .06, .065, .07],
-      hi=hi1, fs=8.3)
+      ["bin", "explore steps (k)", "success %", "stalled-ep %", "events",
+       "recovery %", "soft %", "hard %", "grind %", "unrecovered %"],
+      T1, widths=[.05, .145, .095, .11, .08, .115, .075, .075, .08, .125],
+      hi=hi1, fs=8.6)
 ax = fig.add_axes([0.075, cb, 0.855, tb - 0.055 - cb])
 x = list(range(1, 9))
 ax.plot(x, SU, "-o", color=C_MAIN, lw=2.4, ms=6, label="episode success%", zorder=3)
@@ -430,29 +450,28 @@ finish(fig)
 
 # =============================================================== P4 T2
 P += 1
-fig = newpage(f"T2 — {RUN}: the three successes — where episode success comes from",
-              "Each episode assigned to exactly one channel: never stalled / stalled-and-escaped / stalled-and-stuck")
+fig = newpage("Success vs Recovery",
+              "Each episodeassigned to exactly one channel: clean / stuck-and-recovered / stuck-and-failed")
 if IS_B:
     i2 = (f"Recovery's contribution COLLAPSES from {VIA[0]:.0f}% to {VIA[-2]:.0f}%. Early on roughly a "
           "third of all wins were rescues; by the end nearly every win is an episode that simply never "
-          f"jammed (clean episodes rise {T2[0][3].split()[0]}→{T2[-2][3].split()[0]}). This is the same "
-          "migration T1 shows, counted in episodes rather than events.")
+          f"jammed (clean episodes rise {T2[0][3].split()[0]}→{T2[-2][3].split()[0]}). ")
 else:
     i2 = (f"No downward trend: recovery's contribution stays in the {min(VIA):.0f}–{max(VIA):.0f}% band "
           "across the whole run, and the best-performing bin is among those leaning MOST heavily on "
           "recovery. This run never migrates away from the recovery channel — it keeps reaching the "
           "target by fighting through stalls rather than by avoiding them, right to the end of training.")
 s2 = "Episode success decomposed by channel, and the share of all successes that flowed through recovery (chart)."
-i2 += ("  CAVEAT: the 100% and ~1% columns are near-definitional — an episode that pushes 600 steps "
-       "without jamming has by construction arrived, and one ending jammed has not. Read the COUNTS "
-       "and the final column, not those two rates.")
+i2 += ("  Note: As seen by the success rates in columns 4 and 5, a small fraction of episodes that "
+       "recover do not reach the target as they have exhausted all their steps and similarly some "
+       "that do get stuck are already very close to the target and hence gets counted as successes.")
 ch = cap_h(s2, i2)
 tb, cb = 0.575, 0.055 + ch + 0.05
 table(fig, [0.045, tb, 0.91, 0.285],
-      ["bin", "eps", "ep succ%", "clean eps (succ%)", "recovered eps (succ%)",
-       "unrec eps (succ%)", "% of successes via recovery"], T2,
-      widths=[.06, .09, .11, .18, .20, .18, .18], fs=8.3,
-      hi={(0, 6): C_HI, (len(T2) - 2, 6): C_HI} if IS_B else {})
+      ["bin", "success %", "clean eps (success %)", "recovered eps (success %)",
+       "unrec eps (success %)", "% of successes via recovery"], T2,
+      widths=[.07, .12, .20, .22, .20, .19], fs=8.4,
+      hi={(0, 5): C_HI, (len(T2) - 2, 5): C_HI} if IS_B else {})
 ax = fig.add_axes([0.075, cb, 0.855, tb - 0.055 - cb])
 ax.plot(x, VIA, "-o", color=C_MAIN, lw=2.4, ms=6)
 ax.fill_between(x, 0, VIA, color=C_MAIN, alpha=.13)
@@ -468,26 +487,23 @@ finish(fig)
 
 # =============================================================== P5 T3
 P += 1
-fig = newpage(f"T3 — {RUN}: does recovery TYPE predict episode success?",
-              "Episodes grouped by the best recovery they achieved  ·  tests the premise behind the crunchpass / two-mode design")
+fig = newpage("Recovery type vs episode success",
+              "Episodes grouped by the recovery they achieved")
 s3 = "Whether the type of escape predicts the episode outcome, and what each type costs in steps."
 i3 = (f"GRIND BEATS SOFT: grind-only episodes succeed {GS.get('grind only', 0):.0f}% in "
       f"{GT.get('grind only', 0)} median steps, against soft at {GS.get('soft (any)', 0):.0f}% in "
       f"{GT.get('soft (any)', 0)} steps and hard at {GS.get('hard (no soft)', 0):.0f}% in "
-      f"{GT.get('hard (no soft)', 0)}. This inverts the premise behind the crunchpass lane and the "
-      "'we want soft recoveries' framing. The likely reason is a confound: recovery type is mostly a "
+      f"{GT.get('hard (no soft)', 0)}. The likely reason is a confound: recovery type is mostly a "
       "proxy for stall SEVERITY, not policy skill. A jam you can grind through was mild; one forcing "
-      "an 8 mm withdrawal was severe and usually deeper, where the episode was already in trouble. "
-      "Soft recovery cannot be justified as a training target on this evidence until the confound is "
-      "broken by comparing within matched depth and severity strata.")
+      "an 8 mm withdrawal was severe and usually deeper, where the episode was already in trouble. ")
 ch = cap_h(s3, i3)
 tb = 0.635
 cb = 0.055 + ch + 0.05
 hh = tb - 0.055 - cb
 table(fig, [0.045, tb, 0.91, 0.185],
-      ["recovery profile", "episodes", "episode succ%", "median steps", "mean retract mm"],
-      T3, widths=[.34, .17, .19, .16, .19], fs=8.6,
-      hi={(2, 2): C_OK, (2, 3): C_OK})
+      ["recovery profile", "success %", "median steps", "mean retract mm"],
+      T3, widths=[.38, .22, .20, .20], fs=8.6,
+      hi={(2, 1): C_OK, (2, 2): C_OK})
 labs = ["grind\nonly", "soft\n(any)", "hard\n(no soft)"]
 keys = ["grind only", "soft (any)", "hard (no soft)"]
 ax = fig.add_axes([0.075, cb, 0.40, hh])
@@ -523,7 +539,7 @@ finish(fig)
 
 # =============================================================== P6 T4
 P += 1
-fig = newpage(f"T4 — {RUN}: stuck & recovery by depth",
+fig = newpage("Stuck & recovery by depth",
               "Path-length bands: CCA (<146 mm)  ·  ICA-mid (146–210 mm)  ·  siphon (>210 mm)")
 sip = T4[2]
 s4 = "Where the stalls actually are, and whether escaping them rescues the episode there."
@@ -563,7 +579,7 @@ finish(fig)
 
 # =============================================================== P7 T6
 P += 1
-fig = newpage(f"T6 — {RUN}: is episode success actually tracking recovery?",
+fig = newpage("Is episode success actually tracking recovery?",
               "10 chronological bins  ·  each point is one bin  ·  units deliberately mixed to test the intuition")
 s6 = ("A direct test of the intuition that success rises and falls with recovery skill. Each point "
       "is one chronological bin; the dashed line is the least-squares fit.")
@@ -603,7 +619,7 @@ finish(fig)
 
 # =============================================================== P8 T7
 P += 1
-fig = newpage(f"T7 — {RUN}: threshold sensitivity — are these conclusions detector artifacts?",
+fig = newpage("Threshold sensitivity — are these conclusions detector artifacts?",
               "Every episode scored under three detector configurations simultaneously")
 s7 = ("The same analysis re-run under a sensitive, a canonical and a strict definition of 'stuck', "
       "to separate signal from detector choice.")
@@ -627,7 +643,7 @@ finish(fig)
 
 # =============================================================== P9 diag
 P += 1
-fig = newpage(f"Diagnostics — {RUN}: recovery quality, cost and where it fails",
+fig = newpage("Diagnostics — recovery quality, cost and where it fails",
               "Retraction-depth distribution, per-bin conversion, and the forensics of recovered-but-failed episodes")
 labels = ["<0.5", "0.5–1", "1–2", "2–4", "4–8", "8–16", ">16"]
 rr = [x["r"] for r in R for x in ev(r) if x["k"] != "unrec"]
@@ -693,7 +709,7 @@ finish(fig)
 
 # =============================================================== P10 findings
 P += 1
-fig = newpage(f"Findings — {RUN}",
+fig = newpage("Findings",
               "Every claim is stated as a delta or trend, and survives all three detector configurations")
 if IS_B:
     F = [("F1", "Improvement is stall AVOIDANCE, not stall ESCAPE.", C_HI,
@@ -790,7 +806,7 @@ finish(fig)
 
 # =============================================================== P11 implications
 P += 1
-fig = newpage(f"Implications — {RUN}", "What these measurements license, and what they rule out")
+fig = newpage("Implications", "What these measurements license, and what they rule out")
 y = 0.845
 for tag, head, body in IMP:
     fig.text(0.048, y, tag, fontsize=12.5, fontweight="bold", color=C_MAIN)
