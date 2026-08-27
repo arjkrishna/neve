@@ -327,6 +327,27 @@ class PERVanillaStep(ReplayBuffer):
             "max_priority": np.array(self.max_priority, dtype=np.float64),
             "sample_count": np.array(self._sample_count, dtype=np.int64),
         }
+        # RL_IMPROV_16 (v3c) — reward-version stamps (same env-var mechanism as
+        # experience_cache.save_episodes_npz) so a --resume cannot silently
+        # mix transitions scored under a different reward MDP; the resume
+        # guard in DualDeviceNav_train compares these against the run.
+        try:
+            from ..util.experience_cache import (
+                _current_avg_gw_weight,
+                _current_buckle_coef,
+                _current_cath_slack_coef,
+                _current_progress_tip_mode,
+            )
+            state["meta_buckle_coef"] = np.float64(_current_buckle_coef())
+            state["meta_cath_slack_coef"] = np.float64(
+                _current_cath_slack_coef()
+            )
+            state["meta_progress_tip_mode"] = np.str_(
+                _current_progress_tip_mode()
+            )
+            state["meta_avg_gw_weight"] = np.float64(_current_avg_gw_weight())
+        except Exception:
+            pass  # stamps are best-effort; the guard treats absent as legacy
         tmp_path = os.path.join(dir_path, "replay_state.tmp.npz")
         np.savez(tmp_path, **state)
         os.replace(tmp_path, os.path.join(dir_path, self._STATE_FILE))

@@ -139,3 +139,28 @@ dmypy.json
 
 # Saved run outputs (logs, snapshots, checkpoints) — large and per-machine
 saved/eve_paper/neurovascular/full/mesh_ben/
+
+# --- TopBrain dataset -------------------------------------------------
+# The grafted anatomies ARE the deliverable and are committed. Everything
+# else under topbrain_data is either the 1.9 GB upstream download or a
+# regenerable intermediate of it (surfaces, raw release, centerlines).
+topbrain_data/*
+!topbrain_data/anatomies/
+
+# --- paper ------------------------------------------------------------
+*.tex
+*.pdf
+report.bib
+
+# --- run outputs ------------------------------------------------------
+# Large, per-machine, and regenerable: stuck-checkpoint pools, heatup
+# buffers, rendered figures.
+saved/rcca_*/
+saved/*_stuck/
+saved/*heatup*/
+saved/figs/
+saved/figs - Copy/
+
+# --- scratch ----------------------------------------------------------
+scratchpad_pick.txt
+.claude/scheduled_tasks.lock

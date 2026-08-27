@@ -185,6 +185,12 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
         # z-scoring (see sac.py docnotes). Defaults OFF = legacy.
         awac_adv_norm_tau: float = 0.0,
         aux_label_znorm: bool = False,
+        # RL_IMPROV_16 (v3c) — default-OFF trainer levers (per-contact-mode
+        # adv normalization + contact-gated anti-rail; see sac.py docnotes).
+        awac_mode_adv_norm: bool = False,
+        awac_contact_thresh: float = 0.009,
+        contact_mean_penalty: float = 0.0,
+        q_target_floor: float = None,
         # RL_IMPROV_16 E3 — stuck-lane sampling knobs (see pervanillastep
         # docnote; indices are flat-obs positions computed by the training
         # script from the env5 Gen-4 layout). Defaults OFF = legacy.
@@ -390,6 +396,10 @@ class BenchAgentSynchron(eve_rl.agent.Synchron):
                 awac_lambda=awac_lambda,
                 awac_adv_norm_tau=awac_adv_norm_tau,
                 aux_label_znorm=aux_label_znorm,
+                awac_mode_adv_norm=awac_mode_adv_norm,
+                awac_contact_thresh=awac_contact_thresh,
+                contact_mean_penalty=contact_mean_penalty,
+                q_target_floor=q_target_floor,
                 entropy_beta_per_dim=entropy_beta_per_dim,
                 action_mean_penalty=action_mean_penalty,
                 log_alpha_min=log_alpha_min,

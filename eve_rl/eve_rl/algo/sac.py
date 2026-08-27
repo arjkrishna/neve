@@ -184,6 +184,11 @@ class SAC(Algo):
         awac_adv_norm_tau: float = 0.0,
         entropy_beta_per_dim: Optional[List[float]] = None,
         action_mean_penalty: float = 0.0,
+        awac_mode_adv_norm: bool = False,
+        awac_contact_thresh: float = 0.009,
+        awac_contact_idx: int = 103,
+        contact_mean_penalty: float = 0.0,
+        q_target_floor: float = None,
         offline_mode: bool = False,
         target_entropy: Optional[float] = None,
         # RL_IMPROV_15 collapse forensics — configurable log_alpha rails.
@@ -248,6 +253,40 @@ class SAC(Algo):
             list(entropy_beta_per_dim) if entropy_beta_per_dim else None
         )
         self.action_mean_penalty = float(action_mean_penalty)
+        # RL_IMPROV_16 (v3c) — default-OFF trainer levers, CLI-gated so the
+        # reward changes can be measured in isolation first (both attrs
+        # must mirror __init__ param names for the ConfigHandler getattr
+        # round-trip):
+        #   awac_mode_adv_norm — normalize E1b advantages PER CONTACT MODE
+        #     (contact = states[..., awac_contact_idx] > awac_contact_thresh,
+        #     ground-truth privileged contact, zero inference error). The
+        #     v3a forensic measured corr(adv, action) flat (0.01) inside the
+        #     contact stratum under GLOBAL normalization — per-mode std
+        #     re-sharpens ranking where success/failure actually differ.
+        #   contact_mean_penalty — contact-gated anti-rail: contact-state
+        #     samples pay this mean-margin penalty instead of the global
+        #     action_mean_penalty (v3a measured |tanh(mu)|>0.99 on 86% of
+        #     contact states vs 0% free — the rail is mode-specific, so the
+        #     penalty should be too). 0.0 keeps the legacy global path.
+        self.awac_mode_adv_norm = bool(awac_mode_adv_norm)
+        self.awac_contact_thresh = float(awac_contact_thresh)
+        self.awac_contact_idx = int(awac_contact_idx)
+        self.contact_mean_penalty = float(contact_mean_penalty)
+        # RL_IMPROV_16 (v3c3) — Bellman-target floor clip, default OFF (None
+        # = byte-identical legacy). v3c2's critic diverged super-linearly to
+        # q1 ~ -90 while honest buffer returns bottomed at ~-7 (bulk p1
+        # -2.9): min-double-Q bootstrapping on the railed policy's OOD
+        # next-actions manufactured ever-lower targets in lockstep
+        # (target_q == q1 all the way down). Clamping the TARGET at a floor
+        # set BELOW any honest return (e.g. -10) never binds on real data
+        # but severs the self-feeding spiral — the same guard family as the
+        # AWAC target's removed entropy term (the prior -406k divergence).
+        # Complement, not substitute, for contact_mean_penalty: the penalty
+        # keeps next-actions in-distribution (steering), the floor bounds
+        # the target against any residual runaway (airbag).
+        self.q_target_floor = (
+            float(q_target_floor) if q_target_floor is not None else None
+        )
         # RL_IMPROV_15 — log_alpha clamp rails (see __init__ docnote).
         self.log_alpha_min = float(log_alpha_min)
         self.log_alpha_max = float(log_alpha_max)
@@ -528,10 +567,35 @@ class SAC(Algo):
                 # RL_IMPROV_16 E1b — batch-normalized advantages (see
                 # __init__). tau=0 keeps the legacy fixed-lambda path.
                 if self.awac_adv_norm_tau > 0.0:
-                    adv_std = advantage.std().clamp_min(1e-4)
-                    weight = torch.exp(
-                        (advantage / adv_std) / self.awac_adv_norm_tau
-                    ).clamp(max=20.0)
+                    if self.awac_mode_adv_norm:
+                        # RL_IMPROV_16 (v3c) (v3c, CLI-gated, default off) —
+                        # PER-MODE normalization: contact-flagged samples
+                        # (ground-truth privileged contact, available in
+                        # `states` at update time) and free samples are
+                        # centered/scaled within their own stratum, so the
+                        # contact stratum's systematically-lower advantages
+                        # rank actions against EACH OTHER instead of being
+                        # uniformly down-weighted by the global std.
+                        # Stratum < 8 samples falls back to the global
+                        # scale (uncentered, legacy semantics).
+                        contact = (
+                            states[..., self.awac_contact_idx]
+                            > self.awac_contact_thresh
+                        ).unsqueeze(-1)
+                        g_std = advantage.std().clamp_min(1e-4)
+                        adv_n = advantage / g_std
+                        for m in (contact, ~contact):
+                            if int(m.sum()) >= 8:
+                                sel = advantage[m]
+                                adv_n[m] = (sel - sel.mean()) / sel.std().clamp_min(1e-4)
+                        weight = torch.exp(
+                            adv_n / self.awac_adv_norm_tau
+                        ).clamp(max=20.0)
+                    else:
+                        adv_std = advantage.std().clamp_min(1e-4)
+                        weight = torch.exp(
+                            (advantage / adv_std) / self.awac_adv_norm_tau
+                        ).clamp(max=20.0)
                 else:
                     weight = torch.exp(
                         advantage / self.awac_lambda
@@ -603,6 +667,7 @@ class SAC(Algo):
         if self.algo == "awac" and (
             self.entropy_beta_per_dim is not None
             or self.action_mean_penalty > 0.0
+            or self.contact_mean_penalty > 0.0
         ):
             mean_b, log_std_b = self.model.policy(states)
             if self.entropy_beta_per_dim is not None:
@@ -612,7 +677,29 @@ class SAC(Algo):
                     dtype=log_std_b.dtype,
                 )
                 policy_loss = policy_loss - (beta * log_std_b.mean(dim=0)).sum()
-            if self.action_mean_penalty > 0.0:
+            if self.contact_mean_penalty > 0.0:
+                # RL_IMPROV_16 (v3c) (v3c, CLI-gated, default off) — contact-gated
+                # anti-rail. The measured rail is mode-specific (86% of
+                # CONTACT states vs 0% free at u=748k), so the mean-margin
+                # penalty is applied per-sample with a heavier coefficient
+                # on contact-flagged states; free states keep the global
+                # action_mean_penalty. Review LOW fix: penalize the PRE-TANH
+                # mean clamped at 6 (tanh(6)≈0.99999) instead of
+                # atanh(tanh(mean).clamp(0.99)) — numerically identical in
+                # the unrailed band but keeps a LIVE gradient on already-
+                # railed samples (|pre-tanh|>2.65), which the legacy form
+                # zeroes on exactly the population this penalty targets.
+                pen = mean_b.clamp(-6.0, 6.0).abs().mean(dim=-1)
+                contact_f = (
+                    states[..., self.awac_contact_idx]
+                    > self.awac_contact_thresh
+                ).to(pen.dtype)
+                coef = (
+                    contact_f * self.contact_mean_penalty
+                    + (1.0 - contact_f) * self.action_mean_penalty
+                )
+                policy_loss = policy_loss + (coef * pen).mean()
+            elif self.action_mean_penalty > 0.0:
                 am = torch.tanh(mean_b).clamp(-0.99, 0.99)
                 policy_loss = (
                     policy_loss
@@ -783,6 +870,12 @@ class SAC(Algo):
             rewards * self.reward_scaling
             + (1 - dones) * self.gamma * next_target_q
         )
+        # RL_IMPROV_16 (v3c3) (v3c3, CLI-gated, default off) — target floor clip:
+        # bound the regression target from below BEFORE padding masking
+        # (clamp of the padded zeros is a no-op for any negative floor).
+        # See __init__ docnote for the divergence forensic this guards.
+        if self.q_target_floor is not None:
+            expected_q = expected_q.clamp(min=self.q_target_floor)
         if padding_mask is not None:
             expected_q *= padding_mask
         return expected_q

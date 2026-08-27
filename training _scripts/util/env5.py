@@ -35,12 +35,13 @@ from eve.util.pathcontext import (
 # different reward than intended — the exact seed/train mismatch this
 # design avoids).
 try:
-    from util.buckle_reward import buckle_potential
+    from util.buckle_reward import buckle_potential, cath_slack_potential
 except ImportError:
     try:  # imported with util/ itself on sys.path
-        from buckle_reward import buckle_potential
+        from buckle_reward import buckle_potential, cath_slack_potential
     except ImportError:
         buckle_potential = None
+        cath_slack_potential = None
 
 
 # Plan v12 — daughter short-tag derivation. Used to populate
@@ -237,6 +238,9 @@ class BenchEnv5(eve.Env):
         target_coord3d=None,
         relax_failure_truncations: bool = False,
         buckle_reward_coef: float = 0.0,
+        cath_slack_coef: float = 0.0,
+        progress_tip_mode: str = "frontier",
+        avg_gw_weight: float = 0.5,
     ) -> None:
         # Gen-4 recovery training — when True, the fold-stall and off-path
         # detectors keep counting (they remain observation features and
@@ -270,6 +274,24 @@ class BenchEnv5(eve.Env):
         self._buckle_phi_prev = None  # None -> first step delta = 0
         self._buckle_prev_raw = (0.0, 0.0)  # (slack_mm, contact_mm) fallback
         self._last_buckle_phi = 0.0  # STEP-log diagnostic
+        # RL_IMPROV_16 (v3c) — CATHETER-slack shaping channel + tip-average
+        # progress mode. Both default-off/legacy: with cath_slack_coef=0.0
+        # and progress_tip_mode="frontier" the env is byte-identical to v3a.
+        # Separate coefficient (not folded into buckle_reward_coef) so the
+        # two shaping channels attribute independently in the losses/reward
+        # accounting.
+        self.cath_slack_coef = float(cath_slack_coef)
+        self.progress_tip_mode = str(progress_tip_mode)
+        self.avg_gw_weight = float(avg_gw_weight)
+        if self.cath_slack_coef != 0.0 and cath_slack_potential is None:
+            raise ImportError(
+                "cath_slack_coef != 0 but util/buckle_reward.py (with "
+                "cath_slack_potential) is not importable — the launcher "
+                "must bind-mount training_scripts/util/buckle_reward.py"
+            )
+        self._cath_phi_prev = None  # None -> first step delta = 0
+        self._cath_slack_prev_raw = 0.0  # fallback on accessor failure
+        self._last_cath_slack_mm = 0.0  # STEP-log diagnostic
         self.mode = mode
         self.visualisation = visualisation
         # Plan v12 redesign — when set, this grader grades against a FROZEN
@@ -425,6 +447,8 @@ class BenchEnv5(eve.Env):
             progress_factor=0.01,
             lateral_penalty_factor=0.001,
             path_context=self._path_context,
+            tip_mode=self.progress_tip_mode,
+            avg_gw_weight=self.avg_gw_weight,
         )
         reward = eve.reward.Combination([target_reward, arc_progress])
 
@@ -689,6 +713,13 @@ class BenchEnv5(eve.Env):
         self._buckle_phi_prev = None
         self._buckle_prev_raw = (0.0, 0.0)
         self._last_buckle_phi = 0.0
+        # RL_IMPROV_16 (v3c) — cath-slack channel re-baselines identically: an
+        # episode restored INTO a coiled state gets delta 0 on step 1 and
+        # nets POSITIVE by un-coiling.
+        self._cath_phi_prev = None
+        self._cath_slack_prev_raw = 0.0
+        self._last_cath_slack_mm = 0.0
+        self._cath_proj_prev_s = None  # windowed-projection anchor
         # Fold-detector d_corr bypass: if the tip is closing on the correct
         # entry (arclength d_corr decreasing), don't count this step as
         # folding even if path-projection delta is slow. Switched from
@@ -1087,6 +1118,23 @@ class BenchEnv5(eve.Env):
                 self._last_buckle_phi = phi
             except Exception as e:
                 self._step_logger.warning(f"buckle reward failed: {e}")
+
+        # ---- RL_IMPROV_16 (v3c): catheter-slack potential shaping ----
+        # coef * (phi_c_t - phi_c_{t-1}); phi_c from cath_slack =
+        # inserted_cath - arc(cath tip). Prices the coil the tip-based
+        # progress terms cannot see (the v3a forensic measured 700+ mm
+        # coils at net ~0 reward). Delta/potential form: un-coiling pays
+        # the penalty back; a restore into a coiled state re-baselines.
+        if self.cath_slack_coef != 0.0:
+            try:
+                phi_c = cath_slack_potential(self._compute_cath_slack_mm())
+                if self._cath_phi_prev is not None:
+                    reward += self.cath_slack_coef * (
+                        phi_c - self._cath_phi_prev
+                    )
+                self._cath_phi_prev = phi_c
+            except Exception as e:
+                self._step_logger.warning(f"cath-slack reward failed: {e}")
 
         # ---- Plan v5: drain state-machine daughter-commit events ----
         # update_branch_state may have emitted (j_arc, +1|-1) events when
@@ -1505,6 +1553,7 @@ class BenchEnv5(eve.Env):
                 f"{sofa_info} | delta_ins=[{delta_ins[0]:.2f},{delta_ins[1]:.2f}]"
                 f" | heading_err={_head_err:+.3f} | cross_tr={_cross_tr:+.2f}"
                 f" | buckle_phi={getattr(self, '_last_buckle_phi', 0.0):+.3f}"
+                f" | cath_slack={getattr(self, '_last_cath_slack_mm', 0.0):+.1f}"
                 f"{shared_str}{grader_str}{heur_str}"
             )
             self._step_logger.info(log_msg)
@@ -1697,6 +1746,63 @@ class BenchEnv5(eve.Env):
     # ------------------------------------------------------------------
     # Gen-4 — anti-buckle potential (privileged reward shaping)
     # ------------------------------------------------------------------
+
+    def _compute_cath_slack_mm(self) -> float:
+        """cath_slack = inserted_cath - arc(catheter tip on planned path).
+
+        Near zero in clean over-wire tracking (the catheter body follows
+        the vessel); grows only when the shaft stores redundant length —
+        coils/knots (>50 mm validated as knot at precision 0.97 / recall
+        0.96 against far-arc self-contact geometry). Falls back to the
+        previous value on any accessor failure so a transient read error
+        contributes delta = 0, exactly like the buckle channel.
+        """
+        prev = self._cath_slack_prev_raw
+        try:
+            from eve.util.polyline import (
+                compute_cumulative_arclength,
+                point_at_inserted_length,
+                project_onto_polyline,
+            )
+            from eve.util.coordtransform import tracking3d_to_vessel_cs
+
+            inserted = self.intervention.device_lengths_inserted
+            if inserted is None or len(inserted) < 2:
+                return prev
+            ins_cath = float(inserted[1])
+            if ins_cath <= 1e-6:
+                self._cath_slack_prev_raw = 0.0
+                self._last_cath_slack_mm = 0.0
+                return 0.0
+            fluoro = self.intervention.fluoroscopy
+            track = np.asarray(fluoro.tracking3d, dtype=float)
+            tip_3d = point_at_inserted_length(track, ins_cath)
+            if tip_3d is None:
+                return prev
+            tip_vessel = tracking3d_to_vessel_cs(
+                tip_3d, fluoro.image_rot_zx, fluoro.image_center
+            )
+            polyline = self.pathfinder.path_points_vessel_cs
+            if polyline is None or len(polyline) < 2:
+                return prev
+            cumlen = compute_cumulative_arclength(polyline)
+            # Review MEDIUM fix — windowed projection (30mm continuity
+            # anchor + fallback escape) so hairpin limb-flips cannot inject
+            # fold-arc-sized cath_slack jumps into the shaping channel.
+            proj = project_onto_polyline(
+                tip_vessel, polyline, cumlen,
+                prev_s=getattr(self, "_cath_proj_prev_s", None),
+                window_mm=30.0,
+            )
+            self._cath_proj_prev_s = float(proj.s)
+            s = ins_cath - float(proj.s)
+            if not np.isfinite(s):
+                return prev
+            self._cath_slack_prev_raw = s
+            self._last_cath_slack_mm = s
+            return s
+        except Exception:
+            return prev
 
     def _compute_buckle_potential(self) -> float:
         """phi(slack, contact) for the shaping delta in step().

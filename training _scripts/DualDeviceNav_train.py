@@ -419,11 +419,56 @@ def main(args):
         env_kwargs["buckle_reward_coef"] = _buckle_coef
         print(f"[Gen-4] anti-buckle potential shaping ON: "
               f"coef={_buckle_coef} (slack + contact channels)")
+    # RL_IMPROV_16 (v3c) — reward pair: catheter-slack shaping channel +
+    # tip-average progress. Default-off/legacy; both stamp the cache like
+    # buckle_reward_coef so the reward-version guard covers them.
+    _cath_slack_coef = float(getattr(args, "cath_slack_coef", 0.0) or 0.0)
+    _tip_mode = str(getattr(args, "progress_tip_mode", "frontier") or "frontier")
+    _avg_gw_weight = float(getattr(args, "avg_gw_weight", 0.5))
+    if args.env_version == 5 and _cath_slack_coef != 0.0:
+        env_kwargs["cath_slack_coef"] = _cath_slack_coef
+        print(f"[v3c] catheter-slack potential shaping ON: "
+              f"coef={_cath_slack_coef} (deadband 15mm, linear 1.0/150mm, "
+              f"glitch-clip 1000mm — no dead zone past the old 150mm cap)")
+    if args.env_version == 5 and _tip_mode != "frontier":
+        env_kwargs["progress_tip_mode"] = _tip_mode
+        env_kwargs["avg_gw_weight"] = _avg_gw_weight
+        print(f"[v3c] progress reward tip mode: {_tip_mode} "
+              f"(gw weight {_avg_gw_weight}) — parked guidewire now halves "
+              f"the progress rate; advancing the trailing device is paid")
+    # Review fixes — configuration guards for the v3c levers:
+    # (a) the contact-indexed trainer levers hardcode the env5 121-layout
+    #     (flat dim 103), mirroring the E3 stuck-lane guard;
+    # (b) MultiTargetEnv5 does not receive the reward-pair kwargs, so a
+    #     multi-target harvest under the pair would run legacy reward while
+    #     the cache stamps claim otherwise — refuse loudly.
+    if args.env_version != 5 and (
+        getattr(args, "awac_mode_adv_norm", False)
+        or float(getattr(args, "contact_mean_penalty", 0.0)) > 0.0
+    ):
+        raise SystemExit(
+            "--awac_mode_adv_norm/--contact_mean_penalty index privileged "
+            "flat dim 103 of the env5 Gen-4 121-layout; only --env_version 5 "
+            "is supported."
+        )
+    if getattr(args, "multi_target_heatup", False) and (
+        _tip_mode != "frontier" or _cath_slack_coef != 0.0
+    ):
+        raise SystemExit(
+            "--multi_target_heatup does not wire the v3c reward pair "
+            "(progress_tip_mode/cath_slack_coef) into MultiTargetEnv5 — the "
+            "harvest would be scored under the LEGACY reward while its cache "
+            "stamps claim the new one. Use the single-target harvest "
+            "(launch_rcca_harvest_v3c.sh) or extend MultiTargetEnv5 first."
+        )
     # Reward-version stamp for experience caches: every save (including the
     # worker-side rolling heatup flushes, which inherit this env var) embeds
     # the coef its rewards were scored under; the cache-load guards below
     # fail fast on a mismatch. Set BEFORE any worker process is created.
     os.environ["EVE_RL_BUCKLE_COEF"] = repr(_buckle_coef)
+    os.environ["EVE_RL_CATH_SLACK_COEF"] = repr(_cath_slack_coef)
+    os.environ["EVE_RL_PROGRESS_TIP_MODE"] = _tip_mode
+    os.environ["EVE_RL_AVG_GW_WEIGHT"] = repr(_avg_gw_weight)
 
     # Gen-4 procedural anatomy — per-worker RCCA->siphon variation. Each
     # worker gets a distinctly-seeded DualDeviceNavProcedural that
@@ -667,6 +712,13 @@ def main(args):
         log_alpha_max=float(getattr(args, "log_alpha_max", 2.0)),
         # RL_IMPROV_16 E1b/E2.2 — advantage normalization + aux z-scoring.
         awac_adv_norm_tau=float(getattr(args, "awac_adv_norm_tau", 0.0)),
+        # RL_IMPROV_16 (v3c) — default-OFF trainer levers (per-mode adv
+        # normalization + contact-gated anti-rail); run 1 measures the
+        # reward changes alone, run 2 turns these on for their marginal.
+        awac_mode_adv_norm=bool(getattr(args, "awac_mode_adv_norm", False)),
+        awac_contact_thresh=float(getattr(args, "awac_contact_thresh", 0.009)),
+        contact_mean_penalty=float(getattr(args, "contact_mean_penalty", 0.0)),
+        q_target_floor=getattr(args, "q_target_floor", None),
         aux_label_znorm=bool(getattr(args, "aux_label_znorm", False)),
         # RL_IMPROV_16 E3 — stuck-lane sampling. Flat-obs indices are
         # env5 Gen-4 layout constants (verified by the 2026-07-12 obs
@@ -811,14 +863,26 @@ def main(args):
             # scoring). A silent mismatch mixes two reward MDPs in one
             # buffer, biasing the critic/advantages. Absent stamp = 0.0
             # (pre-buckle cache) — valid only for a coef=0 run.
-            from eve_rl.util.experience_cache import cache_buckle_coef
-            _cache_coef = cache_buckle_coef(args.heuristic_cache_file)
-            if abs(_cache_coef - _buckle_coef) > 1e-9:
+            from eve_rl.util.experience_cache import cache_reward_version
+            _cache_rv = cache_reward_version(args.heuristic_cache_file)
+            _run_rv = {
+                "buckle_coef": _buckle_coef,
+                "cath_slack_coef": _cath_slack_coef,
+                "progress_tip_mode": _tip_mode,
+                "avg_gw_weight": _avg_gw_weight,
+            }
+            _mismatch = [
+                k for k in _run_rv
+                if (isinstance(_run_rv[k], str) and _cache_rv[k] != _run_rv[k])
+                or (not isinstance(_run_rv[k], str)
+                    and abs(_cache_rv[k] - _run_rv[k]) > 1e-9)
+            ]
+            if _mismatch:
                 raise ValueError(
-                    f"Heuristic cache reward version mismatch: cache scored "
-                    f"with buckle_reward_coef={_cache_coef}, this run uses "
-                    f"{_buckle_coef} ({args.heuristic_cache_file}). Pass "
-                    f"--buckle_reward_coef {_cache_coef} or re-harvest."
+                    f"Heuristic cache reward version mismatch on {_mismatch}: "
+                    f"cache={_cache_rv}, run={_run_rv} "
+                    f"({args.heuristic_cache_file}). Match the flags or "
+                    f"re-harvest."
                 )
             n_pushed = 0
             for i, ep_tuple in enumerate(episodes_tuples):
@@ -1057,6 +1121,52 @@ def main(args):
             )
         _res_ckpt = os.path.join(_res_ckpt_dir, _cands[-1])
         print(f"[RESUME] loading agent checkpoint {_res_ckpt}")
+        # RL_IMPROV_16 (v3c) review fix (HIGH) — reward-version guard for resume:
+        # a resumed buffer scored under a different reward MDP is the exact
+        # mismatch the cache guards exist for. Stamps absent (pre-v3c runs)
+        # resolve to legacy values, so old-run resumes stay valid exactly
+        # for legacy-reward configs.
+        _res_rv = None
+        _inc_state = os.path.join(
+            _res_ckpt_dir, "replay_incremental", "replay_state.npz"
+        )
+        _leg_buf = os.path.join(_res_ckpt_dir, "replay_buffer.npz")
+        if os.path.isfile(_inc_state):
+            import numpy as _np
+            with _np.load(_inc_state, allow_pickle=False) as _st:
+                _res_rv = {
+                    "buckle_coef": float(_st["meta_buckle_coef"])
+                    if "meta_buckle_coef" in _st.files else 0.0,
+                    "cath_slack_coef": float(_st["meta_cath_slack_coef"])
+                    if "meta_cath_slack_coef" in _st.files else 0.0,
+                    "progress_tip_mode": str(_st["meta_progress_tip_mode"])
+                    if "meta_progress_tip_mode" in _st.files else "frontier",
+                    "avg_gw_weight": float(_st["meta_avg_gw_weight"])
+                    if "meta_avg_gw_weight" in _st.files else 0.5,
+                }
+        elif os.path.isfile(_leg_buf):
+            from eve_rl.util.experience_cache import cache_reward_version
+            _res_rv = cache_reward_version(_leg_buf)
+        if _res_rv is not None:
+            _run_rv = {
+                "buckle_coef": _buckle_coef,
+                "cath_slack_coef": _cath_slack_coef,
+                "progress_tip_mode": _tip_mode,
+                "avg_gw_weight": _avg_gw_weight,
+            }
+            _mm = [
+                k for k in _run_rv
+                if (isinstance(_run_rv[k], str) and _res_rv[k] != _run_rv[k])
+                or (not isinstance(_run_rv[k], str)
+                    and abs(_res_rv[k] - _run_rv[k]) > 1e-9)
+            ]
+            if _mm:
+                raise SystemExit(
+                    f"--resume reward version mismatch on {_mm}: resumed "
+                    f"buffer={_res_rv}, this run={_run_rv}. Resuming would "
+                    f"mix two reward MDPs in one buffer — match the reward "
+                    f"flags or start fresh."
+                )
         agent.load_checkpoint(_res_ckpt)
         n_res = runner.load_replay_buffer(from_folder=_res_ckpt_dir)
         if n_res <= 0:
@@ -1103,15 +1213,27 @@ def main(args):
                     "regenerate it with the current code."
                 )
         # Gen-4 — reward-version guard (mirror of the heuristic-cache site):
-        # cached rewards must be scored under THIS run's buckle_reward_coef.
-        from eve_rl.util.experience_cache import cache_buckle_coef
-        _cache_coef = cache_buckle_coef(args.heatup_cache_file)
-        if abs(_cache_coef - _buckle_coef) > 1e-9:
+        # cached rewards must be scored under THIS run's full reward version
+        # (RL_IMPROV_16 (v3c): buckle coef + cath-slack coef + progress tip mode).
+        from eve_rl.util.experience_cache import cache_reward_version
+        _cache_rv = cache_reward_version(args.heatup_cache_file)
+        _run_rv = {
+            "buckle_coef": _buckle_coef,
+            "cath_slack_coef": _cath_slack_coef,
+            "progress_tip_mode": _tip_mode,
+            "avg_gw_weight": _avg_gw_weight,
+        }
+        _mismatch = [
+            k for k in _run_rv
+            if (isinstance(_run_rv[k], str) and _cache_rv[k] != _run_rv[k])
+            or (not isinstance(_run_rv[k], str)
+                and abs(_cache_rv[k] - _run_rv[k]) > 1e-9)
+        ]
+        if _mismatch:
             raise ValueError(
-                f"Heatup cache reward version mismatch: cache scored with "
-                f"buckle_reward_coef={_cache_coef}, this run uses "
-                f"{_buckle_coef} ({args.heatup_cache_file}). Pass "
-                f"--buckle_reward_coef {_cache_coef} or re-harvest."
+                f"Heatup cache reward version mismatch on {_mismatch}: "
+                f"cache={_cache_rv}, run={_run_rv} "
+                f"({args.heatup_cache_file}). Match the flags or re-harvest."
             )
         n_pushed = 0
         for i, ep_tuple in enumerate(episodes_tuples):
@@ -1758,6 +1880,107 @@ if __name__ == "__main__":
             "Heuristic-mode demo aborts are unaffected. Failure episodes run "
             "2-3x longer — pair with a stuck-pool restore curriculum "
             "(STUCK_CHECKPOINT_DIR harvest, then --checkpoint_dir on the pool)."
+        ),
+    )
+    parser.add_argument(
+        "--cath_slack_coef",
+        type=float,
+        default=0.0,
+        help=(
+            "RL_IMPROV_16 (v3c) reward — CATHETER-slack potential channel. "
+            "Adds coef*(phi_c_t - phi_c_{t-1}) per step, phi_c in [-1,0] from "
+            "cath_slack = inserted_cath - arc(cath tip on planned path) "
+            "(15mm dead-band, 150mm cap; util/buckle_reward.py "
+            "cath_slack_potential). Prices the coil/knot formation the "
+            "tip-based progress terms cannot see (v3a measured 700+mm coils "
+            "at net ~0 reward; cath_slack>50mm = knot at precision 0.97). "
+            "Potential form: un-coiling pays the penalty back; restores into "
+            "coiled states re-baseline. 0.0 = OFF (legacy). Reward change — "
+            "human-approved 2026-07-21."
+        ),
+    )
+    parser.add_argument(
+        "--progress_tip_mode",
+        type=str,
+        choices=["frontier", "avg"],
+        default="frontier",
+        help=(
+            "RL_IMPROV_16 (v3c) reward — which tip(s) the arclength-progress "
+            "term grades. 'frontier' (legacy): the leading tip only — a "
+            "parked guidewire is reward-free, which the v3a forensic showed "
+            "makes catheter-only telescoping optimal. 'avg': the weighted "
+            "average arc of BOTH device tips — a parked guidewire halves the "
+            "progress rate, advancing the trailing device is paid, and the "
+            "measured reward tie at the choke (gw-push vs gw-retract, "
+            "identical instantaneous reward) breaks toward deploying the "
+            "wire. Still a pure potential (round trips net zero). Reward "
+            "change — human-approved 2026-07-21."
+        ),
+    )
+    parser.add_argument(
+        "--avg_gw_weight",
+        type=float,
+        default=0.5,
+        help=(
+            "Guidewire weight w in the 'avg' progress mode (effective arc = "
+            "w*s_gw + (1-w)*s_cath). 0.5 = plain average; raise toward 0.6 "
+            "to bias wire-lead if the endgame needs it. Ignored under "
+            "--progress_tip_mode frontier."
+        ),
+    )
+    parser.add_argument(
+        "--awac_mode_adv_norm",
+        action="store_true",
+        help=(
+            "RL_IMPROV_16 (v3c) trainer lever, DEFAULT OFF — per-mode E1b "
+            "advantage normalization: contact-flagged samples (privileged "
+            "flat dim 103 > --awac_contact_thresh, ground truth at update "
+            "time) and free samples are centered/scaled within their own "
+            "stratum. v3a measured corr(adv, action)=0.01 inside the contact "
+            "stratum under global normalization — the ranking exists but is "
+            "drowned. Requires --awac_adv_norm_tau > 0. Keep OFF for the "
+            "reward-isolation run; turn on for run 2."
+        ),
+    )
+    parser.add_argument(
+        "--awac_contact_thresh",
+        type=float,
+        default=0.009,
+        help=(
+            "Contact threshold on privileged flat dim 103 for the v3c "
+            "per-mode trainer levers (~seed q75/late-mean boundary from the "
+            "buffer audit)."
+        ),
+    )
+    parser.add_argument(
+        "--contact_mean_penalty",
+        type=float,
+        default=0.0,
+        help=(
+            "RL_IMPROV_16 (v3c) trainer lever, DEFAULT OFF (0.0) — "
+            "contact-gated anti-rail: contact-flagged samples pay this "
+            "mean-margin penalty per-sample instead of the global "
+            "--action_mean_penalty (v3a measured the mean railed on 86%% of "
+            "contact states vs 0%% free — the rail is mode-specific). "
+            "Suggested 0.05 when enabled. Keep OFF for the reward-isolation "
+            "run; turn on for run 2."
+        ),
+    )
+    parser.add_argument(
+        "--q_target_floor",
+        type=float,
+        default=None,
+        help=(
+            "RL_IMPROV_16 (v3c3) trainer guard, DEFAULT OFF (None) — clamp "
+            "the Bellman regression target at this floor before the critic "
+            "fit. v3c2's critic diverged super-linearly to q1~-90 while "
+            "honest buffer returns bottomed at ~-7 (min-double-Q "
+            "bootstrapping on the railed policy's OOD next-actions "
+            "manufacturing ever-lower targets). A floor BELOW any honest "
+            "return (suggested -10) never binds on real data but severs the "
+            "self-feeding spiral. Set too high (e.g. -3) it blinds the "
+            "critic to genuinely-bad states — derive from the measured "
+            "return distribution."
         ),
     )
     parser.add_argument(

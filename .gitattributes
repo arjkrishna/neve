@@ -1,0 +1,10 @@
+# Shell scripts run inside the Linux container. CRLF breaks bash itself and
+# the sed one-liners in the launchers, so pin them to LF on checkout.
+*.sh text eol=lf
+
+# The grafted anatomies are byte-exact geometry, and the whole point of
+# baking the meshes is that copying an anatomy folder to another machine
+# reproduces it exactly. core.autocrlf is true here, so without this a
+# Windows checkout would rewrite the .obj and .json line endings and no
+# longer match a Linux one. Treat them as binary.
+topbrain_data/anatomies/** -text

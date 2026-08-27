@@ -29,10 +29,23 @@
 #   Peel-off protocol: if a gate fails, relaunch minus the implicated
 #   flag (all default-off; seed reuse makes relaunch ~25 min).
 #
-# PORTABILITY (machine 2): mounts below use the absolute repo path
-# D:\Arjun\workspace
-eve — adjust the prefix to the local checkout, or
-# run:  sed -i 's|D:\Arjun\workspace\neve|<your path>|g' <this file>
+# PORTABILITY (machine 2): mounts below are rewritten for THIS checkout,
+# D:\neve\.claude\worktrees\rl_improv_16_resume — adjust the prefix if the
+# repo moves. Do NOT use `sed 's|...\neve|...|'` to do it: GNU sed reads the
+# \n in \neve as a newline, so the pattern never matches the mounts and the
+# replacement injects a line break (that is what split this very comment
+# before). Use a literal-string replace instead.
+# Keep this file LF-only: with core.autocrlf=true git checks it out CRLF,
+# and bash then reads each `\`-continued line as its own command, so the
+# docker run below dies on a usage error instead of starting.
+#
+# GUARD TIMEOUTS (raised from 1800/2400 on 2026-07-16): the trainer-result
+# deadline counts from CYCLE start (synchron.py explore_and_update) and the
+# trainer needs ~32 min per ~21.5k-update cycle budget on this 12-core host,
+# so 1800s force-restarted a HEALTHY trainer every cycle, rolling each
+# cycle's updates back to the last checkpoint (run never progressed past
+# pretrain). 5400s ≈ 1.5x the worst legitimate cycle (explore + eval + full
+# update budget); the watchdog stays above the deadline by design.
 # Also copy saved/rcca_proc_heatup/seed.npz (the 282k-transition seed) to
 # <repo>/saved/rcca_proc_heatup/ — the run pretrains from it. Keep the
 # host awake (the v1 deadlock trigger was a host suspend; the IPC guard
@@ -51,75 +64,75 @@ docker rm rcca_procedural_v3a 2>/dev/null || true
 docker run --name rcca_procedural_v3a --gpus all --shm-size=24g --init -d \
   -e EVE_CLEAN_RAIL_MAX=0.15 \
   -e EVE_RL_MODEL_QUEUE_TIMEOUT_S=900 \
-  -e EVE_RL_TRAINER_RESULT_TIMEOUT_S=1800 \
-  -e EVE_RL_WATCHDOG_STALL_S=2400 \
+  -e EVE_RL_TRAINER_RESULT_TIMEOUT_S=5400 \
+  -e EVE_RL_WATCHDOG_STALL_S=7200 \
   -e STUCK_CHECKPOINT_DIR=/opt/eve_training/results/rcca_v3_stuck \
-  -v "D:\Arjun\workspace\neve\training _scripts\DualDeviceNav_train.py:/opt/eve_training/training_scripts/DualDeviceNav_train.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\env.py:/opt/eve_training/training_scripts/util/env.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\env2.py:/opt/eve_training/training_scripts/util/env2.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\env3.py:/opt/eve_training/training_scripts/util/env3.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\env4.py:/opt/eve_training/training_scripts/util/env4.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\env5.py:/opt/eve_training/training_scripts/util/env5.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\util.py:/opt/eve_training/training_scripts/util/util.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\agent.py:/opt/eve_training/training_scripts/util/agent.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\action_curriculum.py:/opt/eve_training/training_scripts/util/action_curriculum.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\checkpoint_restore.py:/opt/eve_training/training_scripts/util/checkpoint_restore.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\buffer_filter.py:/opt/eve_training/training_scripts/util/buffer_filter.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\buckle_reward.py:/opt/eve_training/training_scripts/util/buckle_reward.py" \
-  -v "D:\Arjun\workspace\neve\training _scripts\util\snapshot.py:/opt/eve_training/training_scripts/util/snapshot.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\util\diagnostics_logger.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/diagnostics_logger.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\util\probe_evaluator.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/probe_evaluator.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\util\__init__.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/__init__.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\util\experience_cache.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/experience_cache.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\algo\sac.py:/usr/local/lib/python3.8/dist-packages/eve_rl/algo/sac.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\network\gaussianpolicy.py:/usr/local/lib/python3.8/dist-packages/eve_rl/network/gaussianpolicy.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\network\component\mlp.py:/usr/local/lib/python3.8/dist-packages/eve_rl/network/component/mlp.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\agent\single.py:/usr/local/lib/python3.8/dist-packages/eve_rl/agent/single.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\agent\singelagentprocess.py:/usr/local/lib/python3.8/dist-packages/eve_rl/agent/singelagentprocess.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\agent\synchron.py:/usr/local/lib/python3.8/dist-packages/eve_rl/agent/synchron.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\runner\runner.py:/usr/local/lib/python3.8/dist-packages/eve_rl/runner/runner.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\replaybuffer\vanillashared.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/vanillashared.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\replaybuffer\vanillaepisode.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/vanillaepisode.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\replaybuffer\vanillastep.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/vanillastep.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\replaybuffer\pervanillastep.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/pervanillastep.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\replaybuffer\pervanillashared.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/pervanillashared.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\replaybuffer\replaybuffer.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/replaybuffer.py" \
-  -v "D:\Arjun\workspace\neve\eve_rl\eve_rl\replaybuffer\__init__.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/__init__.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\env.py:/usr/local/lib/python3.8/dist-packages/eve/env.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\util\polyline.py:/usr/local/lib/python3.8/dist-packages/eve/util/polyline.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\util\pathcontext.py:/usr/local/lib/python3.8/dist-packages/eve/util/pathcontext.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\util\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/util/__init__.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\reward\arclengthprogress.py:/usr/local/lib/python3.8/dist-packages/eve/reward/arclengthprogress.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\reward\waypointprogress.py:/usr/local/lib/python3.8/dist-packages/eve/reward/waypointprogress.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\reward\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/reward/__init__.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\observation\localguidance.py:/usr/local/lib/python3.8/dist-packages/eve/observation/localguidance.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\observation\meshinvariant.py:/usr/local/lib/python3.8/dist-packages/eve/observation/meshinvariant.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\observation\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/observation/__init__.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\observation\centerlines2d.py:/usr/local/lib/python3.8/dist-packages/eve/observation/centerlines2d.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\observation\target2d.py:/usr/local/lib/python3.8/dist-packages/eve/observation/target2d.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\pathfinder\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/pathfinder/__init__.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\pathfinder\fixedpath.py:/usr/local/lib/python3.8/dist-packages/eve/pathfinder/fixedpath.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\pathfinder\dijkstra2.py:/usr/local/lib/python3.8/dist-packages/eve/pathfinder/dijkstra2.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\intervention\monoplanestatic.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/monoplanestatic.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\intervention\simulation\sofabeamadapter.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/simulation/sofabeamadapter.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\intervention\target\centerlinerandom.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/target/centerlinerandom.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\intervention\vesseltree\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/__init__.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\intervention\vesseltree\rccavariedfrommesh.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/rccavariedfrommesh.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\intervention\vesseltree\rccaprocedural.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/rccaprocedural.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\intervention\vesseltree\aorticarcharteries\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/aorticarcharteries/__init__.py" \
-  -v "D:\Arjun\workspace\neve\eve\eve\intervention\vesseltree\aorticarcharteries\carotidsiphon.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/aorticarcharteries/carotidsiphon.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\__init__.py:/opt/eve_training/eve_bench/eve_bench/__init__.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenav.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenav.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenav.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenav.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenavrccavaried.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenavrccavaried.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenavrccavaried.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenavrccavaried.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenavprocedural.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenavprocedural.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\dualdevicenavprocedural.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenavprocedural.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\archvariety.py:/usr/local/lib/python3.8/dist-packages/eve_bench/archvariety.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\archvariety.py:/opt/eve_training/eve_bench/eve_bench/archvariety.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\basicwirenav.py:/usr/local/lib/python3.8/dist-packages/eve_bench/basicwirenav.py" \
-  -v "D:\Arjun\workspace\neve\eve_bench\eve_bench\basicwirenav.py:/opt/eve_training/eve_bench/eve_bench/basicwirenav.py" \
-  -v "D:\Arjun\workspace\neve\saved:/opt/eve_training/results" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\DualDeviceNav_train.py:/opt/eve_training/training_scripts/DualDeviceNav_train.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\env.py:/opt/eve_training/training_scripts/util/env.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\env2.py:/opt/eve_training/training_scripts/util/env2.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\env3.py:/opt/eve_training/training_scripts/util/env3.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\env4.py:/opt/eve_training/training_scripts/util/env4.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\env5.py:/opt/eve_training/training_scripts/util/env5.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\util.py:/opt/eve_training/training_scripts/util/util.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\agent.py:/opt/eve_training/training_scripts/util/agent.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\action_curriculum.py:/opt/eve_training/training_scripts/util/action_curriculum.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\checkpoint_restore.py:/opt/eve_training/training_scripts/util/checkpoint_restore.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\buffer_filter.py:/opt/eve_training/training_scripts/util/buffer_filter.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\buckle_reward.py:/opt/eve_training/training_scripts/util/buckle_reward.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\training _scripts\util\snapshot.py:/opt/eve_training/training_scripts/util/snapshot.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\util\diagnostics_logger.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/diagnostics_logger.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\util\probe_evaluator.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/probe_evaluator.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\util\__init__.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/__init__.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\util\experience_cache.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/experience_cache.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\algo\sac.py:/usr/local/lib/python3.8/dist-packages/eve_rl/algo/sac.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\network\gaussianpolicy.py:/usr/local/lib/python3.8/dist-packages/eve_rl/network/gaussianpolicy.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\network\component\mlp.py:/usr/local/lib/python3.8/dist-packages/eve_rl/network/component/mlp.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\agent\single.py:/usr/local/lib/python3.8/dist-packages/eve_rl/agent/single.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\agent\singelagentprocess.py:/usr/local/lib/python3.8/dist-packages/eve_rl/agent/singelagentprocess.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\agent\synchron.py:/usr/local/lib/python3.8/dist-packages/eve_rl/agent/synchron.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\runner\runner.py:/usr/local/lib/python3.8/dist-packages/eve_rl/runner/runner.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\replaybuffer\vanillashared.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/vanillashared.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\replaybuffer\vanillaepisode.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/vanillaepisode.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\replaybuffer\vanillastep.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/vanillastep.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\replaybuffer\pervanillastep.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/pervanillastep.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\replaybuffer\pervanillashared.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/pervanillashared.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\replaybuffer\replaybuffer.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/replaybuffer.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_rl\eve_rl\replaybuffer\__init__.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/__init__.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\env.py:/usr/local/lib/python3.8/dist-packages/eve/env.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\util\polyline.py:/usr/local/lib/python3.8/dist-packages/eve/util/polyline.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\util\pathcontext.py:/usr/local/lib/python3.8/dist-packages/eve/util/pathcontext.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\util\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/util/__init__.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\reward\arclengthprogress.py:/usr/local/lib/python3.8/dist-packages/eve/reward/arclengthprogress.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\reward\waypointprogress.py:/usr/local/lib/python3.8/dist-packages/eve/reward/waypointprogress.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\reward\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/reward/__init__.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\observation\localguidance.py:/usr/local/lib/python3.8/dist-packages/eve/observation/localguidance.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\observation\meshinvariant.py:/usr/local/lib/python3.8/dist-packages/eve/observation/meshinvariant.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\observation\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/observation/__init__.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\observation\centerlines2d.py:/usr/local/lib/python3.8/dist-packages/eve/observation/centerlines2d.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\observation\target2d.py:/usr/local/lib/python3.8/dist-packages/eve/observation/target2d.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\pathfinder\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/pathfinder/__init__.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\pathfinder\fixedpath.py:/usr/local/lib/python3.8/dist-packages/eve/pathfinder/fixedpath.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\pathfinder\dijkstra2.py:/usr/local/lib/python3.8/dist-packages/eve/pathfinder/dijkstra2.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\intervention\monoplanestatic.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/monoplanestatic.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\intervention\simulation\sofabeamadapter.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/simulation/sofabeamadapter.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\intervention\target\centerlinerandom.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/target/centerlinerandom.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\intervention\vesseltree\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/__init__.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\intervention\vesseltree\rccavariedfrommesh.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/rccavariedfrommesh.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\intervention\vesseltree\rccaprocedural.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/rccaprocedural.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\intervention\vesseltree\aorticarcharteries\__init__.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/aorticarcharteries/__init__.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve\eve\intervention\vesseltree\aorticarcharteries\carotidsiphon.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/aorticarcharteries/carotidsiphon.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\__init__.py:/opt/eve_training/eve_bench/eve_bench/__init__.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\dualdevicenav.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenav.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\dualdevicenav.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenav.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\dualdevicenavrccavaried.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenavrccavaried.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\dualdevicenavrccavaried.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenavrccavaried.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\dualdevicenavprocedural.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenavprocedural.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\dualdevicenavprocedural.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenavprocedural.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\archvariety.py:/usr/local/lib/python3.8/dist-packages/eve_bench/archvariety.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\archvariety.py:/opt/eve_training/eve_bench/eve_bench/archvariety.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\basicwirenav.py:/usr/local/lib/python3.8/dist-packages/eve_bench/basicwirenav.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\eve_bench\eve_bench\basicwirenav.py:/opt/eve_training/eve_bench/eve_bench/basicwirenav.py" \
+  -v "D:\neve\.claude\worktrees\rl_improv_16_resume\saved:/opt/eve_training/results" \
   eve-training-fixed \
   python3 /opt/eve_training/training_scripts/DualDeviceNav_train.py \
     --env_version 5 \

@@ -33,12 +33,38 @@ logger = logging.getLogger(__name__)
 # for coef=0 runs).
 _BUCKLE_COEF_ENV = "EVE_RL_BUCKLE_COEF"
 
+# RL_IMPROV_16 (v3c) — the reward pair (catheter-slack channel + progress
+# tip mode) extends the same stamp/guard mechanism. Absent env var / absent
+# field mean the legacy values (0.0 / "frontier" / 0.5), so pre-v3c caches
+# stay valid for legacy-reward runs and fail fast otherwise.
+_CATH_SLACK_COEF_ENV = "EVE_RL_CATH_SLACK_COEF"
+_PROGRESS_TIP_MODE_ENV = "EVE_RL_PROGRESS_TIP_MODE"
+_AVG_GW_WEIGHT_ENV = "EVE_RL_AVG_GW_WEIGHT"
+
 
 def _current_buckle_coef() -> float:
     try:
         return float(os.environ.get(_BUCKLE_COEF_ENV, "0") or 0.0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _current_cath_slack_coef() -> float:
+    try:
+        return float(os.environ.get(_CATH_SLACK_COEF_ENV, "0") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _current_progress_tip_mode() -> str:
+    return str(os.environ.get(_PROGRESS_TIP_MODE_ENV, "frontier") or "frontier")
+
+
+def _current_avg_gw_weight() -> float:
+    try:
+        return float(os.environ.get(_AVG_GW_WEIGHT_ENV, "0.5") or 0.5)
+    except (TypeError, ValueError):
+        return 0.5
 
 
 def save_episodes_npz(path, episodes, position=0, metadata=None):
@@ -92,6 +118,10 @@ def save_episodes_npz(path, episodes, position=0, metadata=None):
         position=np.int32(position),
         # Gen-4 — reward-version stamp (see _BUCKLE_COEF_ENV note above).
         meta_buckle_coef=np.float64(_current_buckle_coef()),
+        # RL_IMPROV_16 (v3c) — reward-pair stamps (same guard mechanism).
+        meta_cath_slack_coef=np.float64(_current_cath_slack_coef()),
+        meta_progress_tip_mode=np.str_(_current_progress_tip_mode()),
+        meta_avg_gw_weight=np.float64(_current_avg_gw_weight()),
     )
     if metadata is not None:
         save_kwargs["meta_return"] = np.array(
@@ -308,6 +338,28 @@ def cache_buckle_coef(path) -> float:
         if "meta_buckle_coef" in data.files:
             return float(data["meta_buckle_coef"])
     return 0.0
+
+
+def cache_reward_version(path) -> dict:
+    """RL_IMPROV_16 (v3c) — full reward-version tuple of a cache. Fields absent
+    from pre-v3c archives resolve to their legacy values, so old caches
+    remain valid exactly for legacy-reward runs."""
+    out = {
+        "buckle_coef": 0.0,
+        "cath_slack_coef": 0.0,
+        "progress_tip_mode": "frontier",
+        "avg_gw_weight": 0.5,
+    }
+    with np.load(path) as data:
+        if "meta_buckle_coef" in data.files:
+            out["buckle_coef"] = float(data["meta_buckle_coef"])
+        if "meta_cath_slack_coef" in data.files:
+            out["cath_slack_coef"] = float(data["meta_cath_slack_coef"])
+        if "meta_progress_tip_mode" in data.files:
+            out["progress_tip_mode"] = str(data["meta_progress_tip_mode"])
+        if "meta_avg_gw_weight" in data.files:
+            out["avg_gw_weight"] = float(data["meta_avg_gw_weight"])
+    return out
 
 
 def load_episodes_npz(path):
