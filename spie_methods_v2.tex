@@ -1,0 +1,223 @@
+% ============================================================================
+%  SPIE Methods, Secs. 2.3-2.8 -- narrative follows the order of discovery:
+%
+%    2.3  SAC: what we trained (equations, not prose)
+%    2.4  Observed: recovery decays while success rises -> two modes
+%    2.5  The modes are separated by mechanical state -- which the policy
+%         cannot observe. This is why the standard objective cannot fix it.
+%    2.6  Planned-path geometry corresponds to that mechanical state, giving
+%         the policy a partial, deployable mode signal
+%    2.7  Asymmetric SAC: critic values the modes correctly, policy acts on the
+%         proxy -- the two halves of the fix
+%    2.8  Evaluation protocol
+%
+%  Secs. 2.1-2.2 (anatomy generation; simulation, devices, observations,
+%  reward) unchanged from spie_methods_asymmetric.tex and not repeated here.
+%
+%  Requires: \usepackage{amsmath, amssymb, booktabs}
+%
+%  ⚠ The correspondence probe at the end of Sec. 2.6 is NOT YET EXECUTED.
+%    Eq. (6) is exact and verifiable from code; the CORRELATION with the
+%    privileged fields is what remains to be measured.
+%    See SPIE_METHODS.md inventory H1-H3.
+% ============================================================================
+
+\subsection{Reinforcement learning formulation}
+\label{sec:rl}
+
+Navigation is formulated as continuous control over the four device commands. The executed
+command composes a learned residual with a scripted centerline follower,
+%
+\begin{equation}
+a_t = \operatorname{clip}\!\big(a_{\mathrm{heur}}(s_t) + a_{\pi},\; a_{\min},\, a_{\max}\big),
+\label{eq:residual}
+\end{equation}
+%
+where $a_{\mathrm{heur}}$ is the scripted action and $a_{\pi}\sim\pi_{\phi}$ the learned residual,
+so an untrained $\pi_{\phi}$ reproduces $a_{\mathrm{heur}}$ exactly while retaining authority to
+override it anywhere within the actuation limits.
+
+We train with soft actor-critic: two critics $Q_{\theta_1}, Q_{\theta_2}$ are fitted to the
+bootstrapped return $y$, with the entropy term omitted from the backup, and the policy
+$\pi_{\phi}$ maximizes the value regularized by an entropy temperature $\alpha$.
+%
+\begin{align}
+\mathcal{L}_{Q}(\theta_i) &= \mathbb{E}_{(s,a,r,s')\sim\mathcal{D}}
+   \Big[\big(Q_{\theta_i}(s,a) - y\big)^{2}\Big],
+   \quad
+   y = r + \gamma\,(1-d)\min_{j\in\{1,2\}} Q_{\bar{\theta}_j}(s',a'),
+   \;\; a'\sim\pi_{\phi}(\cdot\mid s'),
+   \label{eq:critic}\\[2pt]
+\mathcal{L}_{\pi}(\phi) &= \mathbb{E}_{s\sim\mathcal{D},\, a\sim\pi_{\phi}}
+   \Big[\alpha\log\pi_{\phi}(a\mid s) - \min_{j\in\{1,2\}} Q_{\theta_j}(s,a)\Big],
+   \label{eq:actor}\\[2pt]
+\mathcal{L}_{\alpha} &= \mathbb{E}\big[-\alpha\,\big(\log\pi_{\phi}(a\mid s) + \bar{\mathcal{H}}\big)\big].
+   \label{eq:alpha}
+\end{align}
+%
+Here $d$ is the terminal flag, $\gamma = 0.99$ the discount, and $\bar{\theta}_j$ the target
+parameters, updated by Polyak averaging with $\tau = 0.005$. Both $\pi_{\phi}$ and $Q_{\theta_i}$
+are two-layer perceptrons of width 256, with layer normalization in the critic bodies only. The
+temperature $\alpha$ is auto-tuned by Eq.~\eqref{eq:alpha} against a target entropy
+$\bar{\mathcal{H}} = +1.0$ rather than the conventional $-n_{\mathrm{actions}}$, with
+$\log\alpha$ railed to $[-5,0]$, retaining exploration pressure late in training. Transitions are
+drawn from the replay buffer $\mathcal{D}$ by prioritized sampling, with a fixed fraction of each
+batch taken from episodes that reached the correct daughter branch. We call this
+Configuration~A: $\pi_{\phi}$ and $Q_{\theta_i}$ receive the same deployable observation.
+
+\subsection{Observed behavior: two navigation modes}
+\label{sec:behavior}
+
+Configuration~A improves steadily in episode success, but the trajectories show that this is not
+the whole picture. Navigation resolves into two behaviors of very different frequency.
+\emph{Centerline following} governs the large majority of steps and produces progress along the
+route. \emph{Recovery}---retracting, reorienting and re-advancing after the device buckles or
+enters a wrong branch---governs a small minority of steps, but they are the steps on which
+episodes are lost.
+
+We measure the second separately by detecting stalls from the step logs: a stall opens when the
+guidewire is being advanced while progress along the route stays flat, and resolves when progress
+passes the frontier at which it began. Stall resolution is a per-event rate and episode success a
+per-episode rate, so the two are reported separately and never pooled.
+
+Table~\ref{tab:recovery} shows the outcome. Across training, episode success rises while the
+fraction of stalls resolved \emph{falls} by 24 percentage points; the two move in opposite
+directions throughout. Configuration~A improves by entering stalls less often rather than by
+escaping them better, and the aggregate metric hides this: monitoring episode success alone
+records uninterrupted improvement while the ability to recover is being lost.
+
+\subsection{The modes are separated by mechanical state, which the policy cannot observe}
+\label{sec:why}
+
+What distinguishes the two behaviors is not appearance but mechanics. In following, inserted
+length converts into advancement and wall loading stays low and distributed. In a stall, insertion
+continues while advancement does not: the applied length is absorbed into bending and contact, so
+elastic and torsional energy accumulate and the load concentrates. The mode is therefore a
+function of the mechanical state, and the simulator's contact forces, tensions and constraint
+impulses separate the two cleanly.
+
+The policy cannot see any of it. From a projection the device can be seen to have stopped
+advancing---so the presence of a stall is partly observable---but not the state of that stall: how
+much energy is stored, where the load is concentrated, or whether the contact is sticking or
+slipping. Those are what determine \emph{which} action resolves it, and whether the correct
+response is a millimetre of retraction, a large withdrawal, or rotation without retraction. Two
+stalls that project identically can require opposite commands.
+
+This is why the standard objective cannot resolve the competition, for two compounding reasons.
+First, in the value estimate: $Q_{\theta_i}$ in Eq.~\eqref{eq:critic} regresses on the deployable
+observation, so a recoverable configuration and a jammed one---indistinguishable in that
+observation---are assigned a single averaged value. $Q_{\theta_i}$ cannot report that retraction is
+worth taking in the first and wasted in the second, so the policy gradient through
+Eq.~\eqref{eq:actor} receives nothing that separates them. Recovery is not merely under-rewarded;
+it is unlearnable at the states where it matters.
+
+Second, in the data: Eqs.~\eqref{eq:critic}--\eqref{eq:actor} are expectations over the state
+distribution $d^{\pi_{\phi}}$ induced by the current policy. As following improves, stalled
+configurations become rare under $d^{\pi_{\phi}}$ and their gradient contribution shrinks toward
+zero.
+Because episode success is dominated by the frequent behavior, an update that trades recovery for
+following \emph{raises} the objective---the optimizer does not neglect the rare behavior, it
+selects against it. Neither standard remedy applies: entropy regularization, Eq.~\eqref{eq:alpha},
+diversifies actions at visited states but does not induce visitation of avoided ones, and replay
+retains stalled transitions whose bootstrapped targets nonetheless drift under the increasingly
+avoidant policy.
+
+\subsection{Planned-path geometry corresponds to mechanical state}
+\label{sec:correspondence}
+
+% ⚠ PENDING -- the probe in the final paragraph is not yet implemented.
+% Eq. (6) is an exact identity verifiable from code; that it CORRELATES with the
+% privileged force fields is the claim still to be measured. Note also that any
+% deployable feature numerically identical to a privileged dimension must be
+% excluded from the probe, or it measures an identity rather than a correspondence.
+% SPIE_METHODS.md inventory H1-H3.
+
+Since the intervention is planned against a route, the device can be described in a reference
+frame the operator already supplies---and in that frame part of the hidden mechanics becomes
+visible. The relevant quantity is the discrepancy between inserted length and advancement,
+%
+\begin{equation}
+\mathrm{slack}(t) \;=\; \ell_{\mathrm{ins}}(t) \;-\; s(t),
+\label{eq:slack}
+\end{equation}
+%
+where $\ell_{\mathrm{ins}}$ is inserted guidewire length and $s$ is arclength progress along the
+planned route. Length inserted but not appearing as progress has been absorbed into bending, slack
+loops and wall loading---exactly the accumulation that defines the stalled mode in
+Sec.~\ref{sec:why}. Equation~\eqref{eq:slack} is a purely geometric scalar, computable from the
+planned route and device tracking alone, that tracks the mechanical quantity the solver reports as
+stored energy and contact loading. Related route-relative features---curvature ahead, cross-track
+offset, heading error, distance to the next daughter branch---anticipate where loading and branch
+selection will arise.
+
+These features do not make the observation Markov. Frictional state is genuinely hysteretic, and no
+instantaneous geometric quantity recovers whether a contact is sticking or slipping. What they
+supply is a sufficient statistic for the component of the hidden state that is geometric in
+origin---the stored-length component---which is the component that separates a recoverable
+configuration from a jammed one. The planned route therefore converts part of an unobservable
+mechanical problem into an observable geometric one, using information the clinical workflow
+already provides.
+
+We quantify how far this extends rather than assuming it. A probe predicts privileged stress
+quantities---contact-impulse magnitude and distal nodal force---from route-relative features alone,
+reported as area under the receiver operating characteristic curve for a binarized high-contact
+state and as coefficient of determination for the continuous targets, each against a shuffled-label
+control. Any deployable feature numerically identical to a privileged dimension is excluded, so the
+probe measures correspondence rather than an identity.
+
+\subsection{Asymmetric actor-critic}
+\label{sec:asymmetric}
+
+Section~\ref{sec:why} identified two failures, and they require different remedies. The policy's
+blindness to mode is addressed by the route-relative features of
+Sec.~\ref{sec:correspondence}, which enter its observation. The value estimate is addressed by
+giving the critic the mechanical state directly:
+%
+\begin{equation}
+Q_{\theta}\big(o^{\mathrm{priv}}, a\big),
+\qquad
+\pi_{\phi}\big(a \mid o^{\mathrm{dep}}\big),
+\qquad
+o^{\mathrm{dep}} \subset o^{\mathrm{priv}},
+\label{eq:asym}
+\end{equation}
+%
+with Eqs.~\eqref{eq:critic}--\eqref{eq:alpha} otherwise unchanged. The regression target of
+$Q_{\theta_i}$ now depends on quantities that are Markov by construction---nodal forces and
+velocities, contact impulse, accumulated twist---so a recoverable stall and a jammed one receive
+\emph{different} values even when they project identically. The averaging that flattened the
+recovery gradient in Sec.~\ref{sec:why} is removed at its source, and the policy gradient through
+Eq.~\eqref{eq:actor} inherits a signal distinguishing a worthwhile retraction from a wasted one.
+
+The two halves are complementary: the critic can now value mode-appropriate actions correctly, and
+the policy has a deployable proxy by which to tell which mode it is in. Nothing privileged appears
+at inference---the critics are discarded after training and only $\pi_{\phi}$ is executed---so the
+policy is deployable by construction, with no gap between the trained and the deployed controller.
+We call this Configuration~B; it differs from Configuration~A only in Eq.~\eqref{eq:asym}, which is
+what licenses reading the difference between them as the effect of the asymmetry.
+
+\subsection{Evaluation protocol}
+\label{sec:eval}
+
+Evaluation uses 98 fixed seeds across 50 procedurally generated anatomies, redrawn every two
+episodes across 16 workers, with the clearance audit of Sec.~2.1 applied at generation time.
+Actions are taken deterministically as the hyperbolic tangent of the policy mean, from the
+deployable observation only. An episode succeeds if the guidewire tip comes within $5$\,mm
+(three-dimensional Euclidean distance) of a target sampled at least $40$\,mm into the RCCA, within
+600 control steps.
+
+Anatomy identity is established by hashing branch-coordinate arrays, because the obvious
+identifiers are unreliable: the planned path moves with the target, and the mesh fingerprint is
+built from a seed reassigned on reset, so either can report a match between geometrically different
+vessels.
+
+Results are stratified by planned-path length into three bands, with cut points at $146$\,mm and
+$210$\,mm, corresponding approximately to the common carotid artery, the mid-internal carotid
+artery, and the cavernous segment. These are cut points on path length rather than anatomical
+segmentation; the modelled vessel terminates at the internal carotid artery terminus, and the
+middle cerebral artery is not represented.
+
+Transfer is assessed on the patient-derived anatomy using its original segmented surface rather
+than a reconstruction, with all other settings unchanged. Binomial (Wilson) confidence intervals
+are reported; these understate the true uncertainty, since episodes are not fully independent and
+the initial device twist is not seeded.

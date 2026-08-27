@@ -1,0 +1,148 @@
+% ============================================================================
+%  SPIE Section 4 -- RESULTS (tables, no figures)
+%  Requires: \usepackage{booktabs, amsmath, amssymb}
+%
+%  DRAFTING STATUS -- READ BEFORE SUBMISSION
+%  Every number below was measured with the policy reading the privileged
+%  observation block (--privileged_actor sets privileged_obs_dim = 0, making
+%  the actor's input slice a no-op). They are therefore TEACHER / oracle
+%  numbers.
+%    * With spie_methods.tex (teacher-student): Results must be REGENERATED
+%      from the distilled student. Expect lower values.
+%    * With spie_methods_asymmetric.tex: Results must come from the asymmetric
+%      run on the second machine, whose policy is genuinely partially observed.
+%  Do not ship either Methods variant paired with the numbers as they stand.
+%  See SPIE_METHODS.md, inventory item R1.
+% ============================================================================
+
+\section{RESULTS}
+
+Table~\ref{tab:clearance} reports the geometric audit of the generated anatomies. Reconstructing
+the vessel surface from centerlines narrows the lumen by approximately 37\% of radius, which is
+sufficient to make the $0.36$\,mm guidewire geometrically unable to pass at isolated stations:
+before calibration, one of three sampled anatomies contained at least one station whose clearance
+fell below the device radius. After calibration the generated anatomies reproduce the
+patient-derived vessel almost exactly in median clearance ($2.14$\,mm versus $2.14$\,mm) while
+remaining marginally tighter in the narrow tail (fifth percentile $1.13$\,mm versus $1.20$\,mm).
+Generated anatomy is therefore no easier to traverse than the patient's own, and anatomical
+variation is not obtained by widening the vessel.
+
+\begin{table}[ht]
+\caption{Lumen clearance along the navigated branch, measured to the nearest point on the
+triangle surface. The calibrated generator matches the patient-derived reference in median
+clearance while remaining marginally tighter at the fifth percentile.}
+\label{tab:clearance}
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Surface & Median (mm) & 5th pct.\ (mm) & Min (mm) & Anatomies with a blocked station \\
+\midrule
+Patient-derived (reference) & 2.14 & 1.20 & 0.22 & 0 \\
+Generated, uncalibrated     & 1.26 & 0.46 & 0.24 & 1 of 3 \\
+Generated, calibrated       & 2.14 & 1.13 & 0.75 & 0 of 3 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+Table~\ref{tab:behavior} characterizes the two navigation behaviors during training for the two
+training configurations, computed over all exploration episodes. The configurations differ only
+in the potential-based shaping terms. The second configuration stalls more often (57.9\% versus
+51.0\% of episodes) but resolves a substantially larger fraction of the stalls it encounters
+(67.4\% versus 53.4\%), leaves far fewer stalls unresolved (32.6\% versus 46.6\%), and
+essentially eliminates the catheter-advance pathology in which the catheter is driven ahead of
+the guidewire (0.04 versus 0.34 of steps). Resolution by withdrawal of $1$--$8$\,mm---the
+manoeuvre in which the device is eased back, reoriented, and re-advanced---rises from 22.6\% to
+29.5\% of stall events.
+
+\begin{table}[ht]
+\caption{Behavioral characterization over all training-phase episodes. Stall resolution is
+measured per stall event; episode success is measured per episode. The two configurations differ
+only in the potential-based shaping terms.}
+\label{tab:behavior}
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Measure & Configuration A & Configuration B \\
+\midrule
+Exploration episodes analyzed          & 14{,}691 & 8{,}040 \\
+Episodes containing a stall            & 51.0\%   & 57.9\%  \\
+Stall events                           & 13{,}013 & 10{,}999 \\
+Stall resolution rate (per event)      & 53.4\%   & \textbf{67.4\%} \\
+\quad resolved, ${<}1$\,mm withdrawn   & 19.8\%   & 20.6\%  \\
+\quad resolved, $1$--$8$\,mm withdrawn & 22.6\%   & \textbf{29.5\%} \\
+\quad resolved, ${>}8$\,mm withdrawn   & 10.9\%   & 17.3\%  \\
+\quad unresolved                       & 46.6\%   & \textbf{32.6\%} \\
+Catheter-lead fraction of steps        & 0.34     & \textbf{0.04} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+Table~\ref{tab:synthetic} reports navigation success on 50 held-out synthetic anatomies, and
+Table~\ref{tab:patient} on the patient-derived anatomy, both stratified by target depth. On
+held-out synthetic anatomy the common carotid and mid-internal carotid segments are navigated
+without failure (66 of 66 targets across both checkpoints); every remaining failure in the
+evaluation is a cavernous-segment target. On the patient-derived anatomy, to which no model was
+exposed during training, the best configuration reaches 75.5\% overall with the common carotid
+solved completely and 90.2\% of mid-internal carotid targets reached.
+
+\begin{table}[ht]
+\caption{Navigation success on 50 held-out synthetic anatomies (98 episodes, deterministic
+policy, 600-step limit, 5\,mm success threshold), stratified by target depth along the planned
+path.}
+\label{tab:synthetic}
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Model & Overall & Common carotid & Mid-ICA & Cavernous segment \\
+\midrule
+Configuration B, later checkpoint   & \textbf{84.7\%} (83/98) & 100\% (26/26) & 100\% (40/40) & 53.1\% (17/32) \\
+Configuration B, earlier checkpoint & 83.7\% (82/98)          & 100\% (26/26) & 100\% (40/40) & 50.0\% (16/32) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+\begin{table}[ht]
+\caption{Transfer to the patient-derived anatomy, evaluated on its original segmented surface
+with all other settings unchanged. No model was exposed to this anatomy during training.}
+\label{tab:patient}
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Model & Overall & Common carotid & Mid-ICA & Cavernous segment \\
+\midrule
+Configuration A, earlier checkpoint & 52.0\% (51/98)          & 92.6\% (25/27) & 58.5\% (24/41) & \phantom{0}6.7\% (2/30) \\
+Configuration A, later checkpoint   & 63.3\% (62/98)          & 100\% (27/27)  & 65.9\% (27/41) & 26.7\% (8/30) \\
+Configuration B, earlier checkpoint & 72.4\% (71/98)          & 88.9\% (24/27) & 63.4\% (26/41) & 70.0\% (21/30) \\
+Configuration B, later checkpoint   & \textbf{75.5\%} (74/98) & 100\% (27/27)  & 90.2\% (37/41) & 33.3\% (10/30) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+Read together, Tables~\ref{tab:behavior}--\ref{tab:patient} indicate that the two training-phase
+measures move together with transfer. Within Configuration B, the later checkpoint improves on
+both measures simultaneously---episode success rises from 53.3\% to 59.2\% and stall resolution
+from 44\% to 66\% over the corresponding training window---and improves on both evaluation sets,
+from 83.7\% to 84.7\% on held-out synthetic anatomy and from 72.4\% to 75.5\% on the patient
+anatomy. Across configurations the same ordering holds at comparable training-phase episode
+success: Configuration B, whose stall-resolution rate was sustained through training, transfers
+to the patient anatomy at 75.5\% against 63.3\% for Configuration A, whose resolution rate decayed
+from 65\% to 41\% over the same run. Improvements confined to centerline following, without a
+corresponding gain in stall resolution, produced the smaller transfer gain.
+
+These comparisons should be read as consistent trends rather than as individually resolved
+differences. At $n = 98$ the Wilson 95\% confidence intervals are
+84.7\% $[76.3, 90.5]$, 83.7\% $[75.1, 89.7]$, 75.5\% $[66.1, 83.0]$ and 63.3\% $[53.4, 72.3]$: the
+two checkpoints of Configuration B differ by a single episode, and the interval for the best
+patient-anatomy result overlaps that of Configuration A. Episodes are additionally not fully
+independent, and the initial device twist is not seeded, so repeat evaluations are not
+bit-reproducible. The ordering is consistent across four checkpoints, two evaluation sets, and
+three depth strata, but the individual margins are not established at this sample size.
+
+Failures are confined almost entirely to the cavernous segment, where two near-$180^\circ$ bends
+of a few millimetres' radius occur within a vessel of $2.5$--$3.4$\,mm diameter. The proximal and
+mid-vessel course is solved on held-out synthetic anatomy, and the remaining problem is
+depth-localized rather than uniformly distributed.

@@ -1,0 +1,114 @@
+% ============================================================================
+%  Interpretation text for Table \ref{tab:recovery}
+%  Written on the assumption that Configuration A is a NON-PRIVILEGED baseline
+%  (plain SAC, deployable observations only, no teacher-student, no asymmetric
+%  critic) and Configuration B is the proposed method.
+%
+%  ⚠ CHECK BEFORE USE. In the runs as actually executed, the two configurations
+%  differed in REWARD SHAPING (an added potential-based catheter-slack term),
+%  not in privileged access -- both read the privileged block. If the plain-SAC
+%  row being added is the true baseline, reference THAT row wherever this text
+%  says "the baseline", and demote the shaping comparison to a separate
+%  sentence. If it is not, the causal claim must be about shaping rather than
+%  about privilege. The argument structure below is unchanged either way; only
+%  the attribution moves.
+% ============================================================================
+
+Table~\ref{tab:recovery} shows that the configurations reach comparable navigation success by
+different means, and that the difference is invisible in the quantity ordinarily used to monitor
+training.
+
+By the final bin the configurations are within a few percentage points of one another in episode
+success (59\% and 56\%), and both have improved over their first bin ($+7$ and $+10$ points).
+Monitoring the training reward alone, or the success rate it induces, an observer would conclude
+that the configurations are equivalent and that either could be carried forward.
+
+The per-event column separates them. In the baseline, the fraction of stalls the controller
+escapes falls from 65\% to 41\%---a 24-point decline---over exactly the interval in which episode
+success rises. The proposed method sustains stall resolution between 63\% and 75\% throughout,
+declining by 5 points. The baseline therefore improves by \emph{not entering} stalls rather than
+by escaping them, while the proposed method improves without surrendering the ability to escape.
+
+This is the signature of interference between the two behaviors identified in
+Sec.~\ref{sec:behavior}. Centerline following governs the large majority of steps and improves
+steadily; as it improves, the states in which recovery would be exercised become rare, the
+experience that teaches recovery is withdrawn from the data, and the skill decays. The decline is
+not a transient: it is monotone across the second half of training and ends at the lowest value
+recorded in the run. Because episode success is dominated by the frequent behavior, the aggregate
+metric continues to rise while the rare behavior is being lost.
+
+Three claims follow.
+
+\textbf{First, training-phase episode success is not a sufficient statistic for the quality of a
+navigation policy.} Two configurations that are indistinguishable on that measure differ by 12
+percentage points in transfer to the patient-derived anatomy (Table~\ref{tab:patient}). Any
+model-selection or early-stopping rule based on aggregate success is therefore blind to a
+difference that matters at deployment---which is also why the checkpoint selected by aggregate
+success is not the checkpoint that transfers best.
+
+\textbf{Second, the loss of recovery is a property of the training dynamics, not of capacity or
+of the anatomy distribution.} Both configurations saw the same generated anatomies, the same
+observation space, and the same network sizes; both had ample capacity to represent both
+behaviors, since the proposed method does represent them. What differs is whether the rare
+behavior continues to receive gradient once the frequent behavior succeeds.
+
+\textbf{Third, sustained stall resolution---not training-phase episode success---is what tracks
+transfer to unseen anatomy.} The configuration that retains it reaches 84.7\% on held-out
+synthetic anatomy and 75.5\% on the patient-derived anatomy, against 63.3\% for the configuration
+whose resolution decayed, at matched training-phase success. A held-out vessel presents
+configurations the policy has not encountered, and the ability to recover from them is the
+capability that distinguishes the two.
+
+\textbf{The table also serves as the ablation of the privileged component.} Removing it returns
+the plain baseline, and the effect of that removal is not a uniform degradation but a specific
+one: episode success is essentially preserved, while stall resolution collapses. Had the ablation
+been scored on aggregate success alone---the conventional choice---it would have been reported as
+having no effect, and the component would have been judged unnecessary. The behavioral
+decomposition is what makes the ablation legible. We note this because it generalizes beyond the
+present system: an ablation of a component that serves a rare behavior will read as null under a
+metric dominated by the frequent one.
+
+\textbf{The regime in which the two measures become inversely correlated is the failure mode
+itself.} In the baseline the measures move in opposite directions ($+7$ against $-24$ points),
+and across chronological bins they are strongly anti-correlated. This is stronger than benign
+neglect. Because episode success is dominated by the frequent behavior, an update that trades
+recovery for path-following raises the objective; the training signal therefore actively selects
+against the rare behavior rather than merely failing to reinforce it. The trade is favorable
+until the point at which the residual failures are exactly those that require recovery, after
+which no further improvement is available and the aggregate plateaus---which is what the last
+three bins of the baseline show. The consequence is visible where it should be, at depth: on the
+patient-derived anatomy the baseline reaches only 26.7\% of cavernous-segment targets against
+70.0\% for the configuration that retained resolution, while the two are far closer in the
+proximal segments (Table~\ref{tab:patient}). A method that keeps the two measures from becoming
+anti-correlated is therefore not making a marginal improvement to an aggregate; it is removing a
+ceiling.
+
+These readings carry the following limits. The bins are equal-episode quantiles within each run
+rather than matched training budgets, so the comparison is between trajectories rather than
+between paired points. Episode success is measured per episode and stall resolution per stall
+event, so the two columns are comparable across configurations but not against one another.
+And while the transfer ordering is consistent across four checkpoints, two evaluation sets and
+three depth strata, the individual margins are not resolved at $n = 98$: the confidence intervals
+reported in Sec.~\ref{sec:eval} overlap. The claim supported here is that the two configurations
+differ in mechanism and that the mechanism tracks transfer---not that any single pair of
+percentages is separated.
+
+% ⚠ TWO ITEMS TO SETTLE BEFORE THIS TEXT SHIPS
+%
+% 1. THE ANTI-CORRELATION FIGURE. The sentence "across chronological bins they are
+%    strongly anti-correlated" is deliberately qualitative. The measured value is
+%    r = -0.82 over ten bins, but it was computed on the PRE-AUDIT anatomy
+%    distribution, in which a large fraction of anatomies were geometrically
+%    impassable -- and a stall against an impassable surface is not the same event
+%    as a stall in a navigable vessel. Recompute on audited anatomies before
+%    printing any coefficient. If it survives, state it; if it does not, the
+%    qualitative sentence above still stands on the +7 / -24 divergence visible in
+%    the table itself, which is measured on the same episodes either way.
+%    (SPIE_METHODS.md inventory B1.)
+%
+% 2. THE DEPTH COMPARISON uses the patient-derived anatomy only, because the
+%    calibrated held-out synthetic evaluation was run for the proposed method but
+%    NOT for the baseline -- that run was cancelled. Either run it (about 1.5 h,
+%    no training) so the depth claim rests on both evaluation sets, or keep the
+%    sentence scoped to the patient anatomy as written. Do not generalize it to
+%    "both evaluation sets" without the missing run.

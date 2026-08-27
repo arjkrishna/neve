@@ -1,0 +1,76 @@
+% ============================================================================
+%  Per-bin recovery-vs-success table -- FLATTENED
+%  Requires: \usepackage{booktabs}   (multirow no longer needed)
+%
+%  Configuration A = v1b, Configuration B = v1bp.
+%
+%  Layout: bins run DOWN, the two measures sit SIDE BY SIDE as column groups.
+%  This removes the nested \multirow row-blocks, so every row is one bin and
+%  every column is one measure/config pair -- the two measures can be compared
+%  across at a glance rather than by jumping between stacked blocks.
+%
+%  ⚠ CAPTION FIX: the submitted caption read "(15k episodes over 4m steps)",
+%    which describes Configuration A only. The runs differ -- A: 14,691
+%    episodes / 4.1M steps; B: 8,040 / 2.6M -- so bin k is NOT the same
+%    training budget in the two configurations. Both are now given, because a
+%    reader otherwise assumes matched budgets and reads each row as a paired
+%    comparison.
+%
+%  UNITS: episode success is per EPISODE; stall resolution is per stall EVENT.
+%  Compare A against B within a column pair; do not compare across the groups.
+% ============================================================================
+
+\begin{table}[ht]
+\caption{Evolution of navigation success and stall handling over training, for both
+configurations. Bins are equal-episode-count quantiles within each run (Configuration~A:
+14{,}691 episodes over $4.1\times10^{6}$ steps; Configuration~B: 8{,}040 over
+$2.6\times10^{6}$), so the bin index tracks progress through each run rather than matched
+training time. Episode success is measured per episode; stall resolution per stall event. In
+Configuration~A the stall-resolution rate falls by 24 percentage points while episode success
+rises, indicating that the improvement is obtained by avoiding stalls rather than by resolving
+them.}
+\label{tab:recovery}
+\begin{center}
+\begin{tabular}{c cc cc}
+\toprule
+ & \multicolumn{2}{c}{Episode success (\%)} & \multicolumn{2}{c}{Stall resolution (\%)} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+Bin & A & B & A & B \\
+\midrule
+1 & 52 & 46 & 65 & 68 \\
+2 & 56 & 54 & 58 & 44 \\
+3 & 60 & 40 & 53 & 72 \\
+4 & 58 & 55 & 58 & 73 \\
+5 & 61 & 53 & 46 & 75 \\
+6 & 60 & 57 & 52 & 64 \\
+7 & 62 & 61 & 39 & 66 \\
+8 & 59 & 56 & 41 & 63 \\
+\midrule
+$\Delta$ & $+7$ & $+10$ & $\mathbf{-24}$ & $\mathbf{-5}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+% ----------------------------------------------------------------------------
+%  MAXIMALLY FLAT VARIANT: two data rows, bins across, both measures side by
+%  side. Widest option -- check it fits the text block before using.
+% ----------------------------------------------------------------------------
+%
+% \begin{table}[ht]
+% \caption{Evolution of navigation success and stall handling over training.}
+% \label{tab:recovery-flat}
+% \begin{center}
+% \setlength{\tabcolsep}{4pt}
+% \begin{tabular}{l cccccccc c @{\hspace{1.5em}} cccccccc c}
+% \toprule
+%  & \multicolumn{9}{c}{Episode success (\%)} & \multicolumn{9}{c}{Stall resolution (\%)} \\
+% \cmidrule(lr){2-10} \cmidrule(lr){11-19}
+% Config. & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & $\Delta$ & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & $\Delta$ \\
+% \midrule
+% A & 52 & 56 & 60 & 58 & 61 & 60 & 62 & 59 & $+7$  & 65 & 58 & 53 & 58 & 46 & 52 & 39 & 41 & $\mathbf{-24}$ \\
+% B & 46 & 54 & 40 & 55 & 53 & 57 & 61 & 56 & $+10$ & 68 & 44 & 72 & 73 & 75 & 64 & 66 & 63 & $\mathbf{-5}$ \\
+% \bottomrule
+% \end{tabular}
+% \end{center}
+% \end{table}

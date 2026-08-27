@@ -246,3 +246,393 @@ A persistent monitor (b7676uxls) is watching for seeding-batch progress, cache s
 
 --------"The two levers that target this failure (both RL-stabilization knobs, not reward/obs/terminal changes) are: (a) raise awac_lambda 3 → 8-10 (softer advantage weighting keeps the policy near the broader buffer distribution instead of cloning only the few saturated high-A actions — slows the collapse), and (b) add a true entropy bonus to the AWAC policy loss (penalizes log_pi directly, including the tanh-Jacobian, so it counters the mean rail — the std floor can't). Per Plan v10's own decision tree, (b) is the deferred lever for "entropy collapse with floor insufficient."" ---> You mention some solutions to this , can it be that if we have tried a lower ratio of update per explore step which we increased from 1:20 to 1:1 it would have been better since policy would have the chance to make a lot more exploratory steps before locking in behaviours.
 
+----------
+harvester should also load varying mesh/ the whole mesh varying without extrenal dataset
+
+now decresease the retraction steps penatly (during off_path) to 0.002 instead of 0.007 but make sure the wire is well 0ff_path (atleast 2-3 few steps inside the wrong path  ) before it begins retarction. 
+
+what launch_screen_stuck.sh is for 
+
+eve_rl_deep_review_combined.pdf, eve_rl_multimesh_generalization_combined.pdf ----> These are 2 pdfs in which we have done most of the fixes , First you scan these files to locate what all the fixes we have done ; you can easily look up previous chats in this session and the code to do that . Then every two hours scan the logs and values and losses to verify if these fixes wrt learning stabilty diverse ways and revovery schedules are holding ; do this  thoroughly every two hours , log your findings but don't make any changes ; let the run continue
+
+------------
+
+Q1: Are micro-recoveries actually happening in the successes?
+Yes — 53% of explore successes contain at least one full stall→retract→resume cycle, and 35% contain your exact scenario (stuck while threading RCCA, ease slack, re-advance). One captured deterministic-eval success shows a textbook cycle: stall at step 337 with buckle_phi engaged, retract latency 6 steps, resumed by 349, succeeded.
+
+But three uncomfortable truths behind that number:
+
+The behavior is FADING, not being learned: cycle prevalence in successes falls 86% → 58% → 28% across training thirds; post-stall forward-push intent hardens +1.8 → +7.2 mm/s. The micro-recoveries were distilled from exploration noise (noise generates small retractions everywhere; AWAC clones the ones inside successes) — and with α at its ceiling and entropy collapsing, that demo source is drying up.
+Retraction isn't the success discriminator — stall avoidance is. Failures actually retract-and-resume more than successes (3.8 vs 1.4 cycles/ep). Successes mostly don't stall, and when they do, buckle≈0; failure-stalls carry buckle −0.19.
+The held-out eval gap (30.6% vs ~44% explore) is precisely a recovery gap — eval failures are stuck-grinders: 69% stall, post-stall response still +13mm forward net, strong pull-backs only 7%.
+Q2: Did the privileged critic actually pass its knowledge to the policy?
+Inference: partially yes. Behavior: no. The aux head genuinely learned to infer contact from deployable obs (r≈0.75 vs 0.002 for slack-alone) — the trunk carries the knowledge. But P(retract) is flat across contact quintiles, and the policy's correlation with its own contact inference is positive — it pushes harder when it senses contact. Three causes, in order of importance:
+
+Credit assignment is the bottleneck (biggest lever): the critic has the right preference — AWAC weight 1.042 for retract vs 0.947 for advance in the buckled tail — but with advantage std 0.092 and λ=1.0, the weights span only [0.72, 1.25] ≈ uniform BC. The critic knows; the policy update can't hear it. λ needs ~0.1–0.3, or advantage normalization.
+Silent bug: the SOFA force labels are dead — flat dims 99–101 are identically zero across all 569k buffer states (the dofs.force accessor exception-guards to 0). Half your aux capacity trains on constants.
+The live contact labels are scale-starved — std ~1e-3 normalized → aux_coef·MSE ≈ 5e-8 — effectively zero shaping pressure. They need z-scoring or ~50× tighter normalizers.
+Q3: Too much or too little observation?
+Both, and mis-weighted is the bigger problem. The single most alarming finding: ep_step is the #1 saliency input for all four action means (and the aux and log_std heads), with the four last_action dims at ranks 2–5 — time + own-momentum = 17% of total saliency, feeding exactly the determinism drift we're watching. Meanwhile: ~21 prunable dims (frame t-1 body offsets are r=0.99 duplicates; in_wrong_branch is the exact negation of on_path; d_rem_log got ignored), at_ostium is dead at source on procedural meshes (another bug), and curv_ahead is variance-crushed by its /10 scaling. The good news: the Gen-4 wire-state channels genuinely work — slip is rank 5, slack 13, fork geometry and the action-mask flags all load-bearing. Missing: catheter-relative-to-path state (P4-O3), torsional windup (the privileged sin/cos rotations carry std 0.71 of state the policy can't see, despite two rotation actions), a stuck-duration integrator (slip is 1-step), signed cross-track.
+
+The machine-2 setup (v3), prioritized
+Stage A — no obs change (reuses the existing seed, launch fast):
+
+T0 bugs (safe, pure fixes): repair/repoint the force accessor; z-score aux labels + retune aux_coef so the term is 1–10% of policy loss; fix at_ostium; fix br_trunk mis-binning.
+T1 credit assignment: awac_lambda 1.0 → ~0.3 (or advantage-normalized exp(adv/std·τ)), targeting p99/p1 weight ratio 5–20×; plus a stuckness-balanced sampling lane (slack/contact-tail analog of balanced_fraction — stuck states are ~10%/1% of the buffer and gradient-starved).
+T2 recovery source: the stuck-pool restore curriculum — the machinery is already built and mesh-safe (STUCK_CHECKPOINT_DIR harvest → screen_stuck_pool escapability filter → fingerprint-matched restore). Start episodes in screened stuck states so retraction gets on-policy credit instead of relying on dying exploration noise. Optionally scripted retract-jiggle demos at the RCCA ostium (82% of stalls happen there).
+Stage B — obs surgery (breaks seed caches → fresh harvest on machine 2):
+
+Add (~8 dims): cath along-path projection gap + cath cross-track, sin/cos cumulative commanded rotation per device (deployable windup proxy), stuck-duration EMA + steps-since-tip-moved, signed cross-track.
+Prune (~21 dims): frame t-1 body offsets (keep tip rows or replace with a t-5 delta), in_wrong_branch, d_rem_log; fix curv/radius/target scalings.
+De-crutch: drop ep_step from the policy prefix (keep it in the privileged tail for the critic), and feed executed last-action alongside commanded.
+The one item needing your explicit approval (reward-frozen rule): a small retract-when-stuck reward term conditioned on the detectable stall signature (proj_s flat ≥10 steps + buckle ≤ −0.05). The buckle potential alone rewards slack reduction but evidently hasn't overcome BC inertia; T1+T2 may suffice without it, so I'd hold it as the Stage-A fallback. Everything's in memory + the saved reports; v2 keeps running untouched (its ~40% explore / eval2 due shortly remains a valid baseline for v3 comparisons).
+
+
+
+
+-----
+
+
+Written: RL_IMPROV_16_EXPERIMENTS.md — the machine-2 experiment plan, every experiment traced to a verified finding (F-A credit assignment / F-B fading micro-recovery / F-C half-dead aux + mis-weighted obs), with exact settings, files, gates, and cache-compatibility flagged throughout. The shape:
+
+Tier A — v3a (launch first, reuses the existing seed, all default-off flags):
+
+E1 — advantage discrimination: preferred arm is batch-normalized advantages (exp((adv/σ)/τ), τ=2.0 → weight p99/p1 ≈ 12) over a bare λ=0.3, because it self-calibrates as the critic sharpens. Success gate = the contact-bin P(retract) gradient reappearing in the probe.
+E2 — aux repair: repoint labels "2,3,5,6" → "0,1,5,6" (off the dead force dims onto live velocities+contact) and z-score at loss time — the key trick that fixes the 5e-8 gradient without touching stored obs, keeping the seed cache valid. Plus: log the aux loss (it was invisible and silently ~0 all of v2).
+E3 — stuckness-balanced sampling lane (--stuck_fraction 0.15, cloning the clean-lane SumTree pattern, thresholds from measured buffer stats).
+E4-prep — free stuck-pool harvest via STUCK_CHECKPOINT_DIR during the run.
+E8 — monitor upgrades so every gate is measurable (P(retract|stuck), aux R², weight p99/p1).
+Tier B — v3b: the stuck-restore curriculum (E4) using the screened pool — with the one gap I found during verification: the restore wrapper currently fires on every reset, so it needs a small --restore_prob 0.3 addition. E7 (pay-on-escape bonus, designed unfarmable) is held as the approval-gated fallback if micro-recovery still fades.
+
+Tier C — v4 (cache-breaking, bundled as one change-set): the obs surgery — prune 21 dims, add 8 (catheter-path state, commanded-rotation windup, stuck-duration integrator, signed cross-track), fix the scaling/dead-feature bugs, de-crutch ep_step out of the policy prefix, and optionally computeConstraintForces=True for real force labels (the only way, given the verified scratch-buffer root cause).
+
+Tier D: E5 (entropy-regime A/B) is deliberately held pending v2's eval3 — if the deterministic-aggressive regime holds ≥49% there, leave it alone and let E4 supply recovery pressure; if it regresses, arm the α-ceiling raise or the per-dim entropy floor (that scaffold already exists as --entropy_beta_per_dim).
+
+The sequencing table enforces one-tier-per-launch for attribution, identical eval protocol everywhere, and v2 as the standing control curve. Rough effort: v3a ≈ 1 day (three <50-line diffs in already-mounted files), v3b ≈ half-day, v4 ≈ 2–3 days + re-harvest. Want me to commit this doc, or start implementing the v3a diffs so they're ready when the second machine is?
+
+d:\Arjun\workspace\neve\RL_IMPROV_15_CHANGES.md
+are the tier A changes need to be done one by one like E1 the E2 etc.... are all at once is recommnded
+Bundle them — that's deliberate in the plan — but with a defined peel-off protocol. Here's the reasoning:
+
+Why all-at-once is right for this particular trio
+1. They're three legs of one mechanism, not three independent bets. The target outcome (policy retracts when stuck) needs all three simultaneously:
+
+E1 makes the critic's preference audible (weight spread),
+E3 makes stuck states present in the batch (they're ~10%/1% of the buffer — E1 alone amplifies a preference the update rarely sees),
+E2 makes the trunk represent stuckness sharply enough to condition on.
+Run E1 alone and you'll likely measure "no behavioral change" — not because E1 failed, but because the stuck states it would act on appear in ~1 of 10 batches at tiny gradient share. A one-by-one ablation would produce three individually-weak results and a misleading conclusion.
+
+2. Attribution is preserved by the metrics, not by the schedule. This is why E8 ships in the same launch — each component has an orthogonal, component-specific diagnostic that isolates it within the bundled run:
+
+Component	Its own metric (independent of eval)	Its own abort trigger
+E1	awac weight p99/p1 ∈ [5,20]; P(retract|contact-bin) gradient	success −10pts vs v2 at matched steps ×2 checks
+E2	aux R² per label rising; aux-loss magnitude in CSV	policy-loss noise ↑ >2× → halve aux_coef
+E3	stuck-lane hit-rate ≈ 15%; q1_mean slope vs v2's	q1_mean pessimism outpacing v2
+If the bundle underperforms, these tell you which leg misbehaved without a separate run.
+
+3. The economics. Sequential ablation = 3 runs × ~10h-to-eval2 each ≈ 3 days before the combined config even exists — on the machine whose whole purpose is to get past v2. A bundled launch reaches the same decision point in one run. And because every change is a default-off flag with seed reuse, peeling one component out costs a ~25-minute relaunch (startup + 7-min pretrain), not a code change.
+
+The peel-off protocol (making the implicit explicit)
+Launch v3a with E1b+E2+E3 (+E4-prep, E8 — those two are zero-interaction: pure data collection and monitoring).
+First gate at eval1 (~287k explore, ~5-6h): if ≥ v2's 30.6% and component metrics green → continue to eval2.
+If eval1 regresses: the component metrics name the suspect (in practice: E1 if weights concentrated/saturating, E3 if q1_mean diving, E2 almost never — it's the near-zero-risk one since its current state is "trains on constants"). Relaunch minus that one flag. One ablation run only happens if needed, targeted at the implicated component.
+Risk ranking if you have to guess: E1 riskiest (weight concentration shrinks the effective batch), E3 moderate, E2 ≈ free.
+One thing I would not bundle: the two E1 arms — pick E1b (adv-norm, τ=2.0) and don't also change λ; two knobs on the same weight distribution in one run genuinely does destroy attribution.
+
+The only scenario where I'd flip to one-by-one: if machine 2 turns out to be much faster than machine 1 (evals every ~2h), sequential becomes cheap and the extra rigor is nearly free. Otherwise: bundle, gate at eval1, peel only on evidence.
+
+----------
+
+Before we did our current experiments we got about 70 acc at lcca training  , then you analysed RL speicfics and suggested improvements in RL Awac formuilation and obs/reward formulation , analsse what was RL AWAc before wrt learnoing stability, entropy collapse, aplha and rails and why we needed to change it, document these and explain why we made the changes that we did ; what's happening now and if we want to make learning more stable with just this configuration (and not with Tier A chmages ; all the Es that we shipped for the second machine ) but with inprovememnts to awac , can it be done , make it more stable , I want to give this one more change before we continuw with Tier A, B,C etc changes
+
+-------
+
+So . I keep thinking if the crtic was actually was able to use it's proviledged state and pass on it's hidden representational knowledge to the policy which may then decide to retract if stuck or buckled ; right now you are looking at recoveries differently which is wire going completely different way and then somehow turning to the right path; I was talking about micro-recoveries where the wire went into RVA or got stuck for a while (even if it threaded the RCCA) but got stuck , realized it's stuck and then retract to ease the slack and then move forward; are these actually happening in these successes and what else can we do in learning algorithms setup or obseravation tuple to make learning more robust wrt planned path and wire state ; are we putting too much observation in the environment or too less? Inverstigate that if I have another machine to run this setup, what's the next best iteration setup wrt above to use
+
+----------
+
+MACHINE-2 (v3a) STANDING MONITORING MANDATE — copy-paste this whole block to the machine-2 Claude session
+
+Every 2 hours, run a READ-ONLY monitoring pass on the rcca_procedural_v3a run. Make NO changes to code, containers, or the run — only observe and log. Append each pass (numbers, deltas vs previous pass, verdict OK/WATCH/ALERT) to saved/monitor_rcca_v3a.md. Set up a recurring schedule for this if you can; otherwise run it when I paste this.
+
+PART 1 — health metrics (script already in the repo):
+    bash monitoring/monitor_pass_v3a.sh
+It prints liveness, the latest losses-CSV row, gate scans, the deterministic probe, and the eval trajectory. Read the results against these healthy ranges (v3a = AWAC + Tier-A bundle):
+  - alpha in [0.0067, 0.100] (rails -5.0/-2.3) and MOVING; pinned at either rail for >50k updates = ALERT.
+  - entropy_proxy: should decline gently as the policy sharpens (v2 healthy phase: 2.7 -> 1.0); entropy pinned high ~2.5+ all run = mean not growing (v2b failure signature); cratering toward 0 = collapse precursor.
+  - q1_mean / target_q_mean: bounded, tracking each other; q1_mean diving hard negative = suspect E3 (stuck lane oversampling pain states); monotone exponential growth = critic divergence (ALERT).
+  - q1_loss/q2_loss O(0.001-0.1); grad norms bounded nonzero; nonfinite counts must stay 0,0,0; clamp_fraction < 5%.
+  - awac_weight_p99p1 (col 29, E1b gate): want 5-20. ~1.5-1.7 = BC-degenerate (E1b not biting); >>20 = over-sharp (effective batch collapse — E1b suspect if eval regresses).
+  - aux_loss (col 30, E2 gate): O(0.1-2) and slowly falling = aux heads learning; ~1e-7 = still dead (znorm not active — check flags).
+  - CLEAN_RAIL_FILTER rejections: a few % of successes is healthy; >30% = policy railing (WATCH).
+  - Deterministic probe (monitor script section A3): freeze ratio vs own PRETRAIN baseline — OK >= 2x, WATCH >= 1.25x, below that FREEZE-ALERT (v1 died this way: eval quality collapses while explore looks fine, because sigma=1 noise masks a dead mean; NEVER trust explore success alone).
+  - Probe retract-vs-slack: tail-bin P(retract) minus base-bin should be POSITIVE and GROWING across passes (v2: +13pp decaying to +8pp — the decay is what E1b/E3 exist to fix).
+  - Probe aux R^2 (E2, labels 97/98/102/103): contact pair >= 0.55 and rising; velocities joining later.
+  - Eval trajectory reference (v2): 6.1 -> 30.6 -> 49.0 -> 30.6. GATE: eval1 >= ~30% and component metrics green -> continue; regression -> the component metrics name the suspect (E1 if weights concentrated, E3 if q1_mean diving, E2 almost never) — report, do NOT relaunch on your own.
+  - Also each pass: RestartCount, OOM flag (docker inspect), post-eval stall (buffer save lines appear and CSV keeps advancing within ~30 min of an eval), GPU util + container mem (docker stats; mem creeping toward the cap = WATCH — machine-1 hit an in-container OOM kill at ~87%).
+
+PART 2 — soft/hard recovery tracking per 400 episodes (NEW: save the script below as monitoring/recovery_tracker.py, then run it each pass):
+    docker exec -i rcca_procedural_v3a python3 - < monitoring/recovery_tracker.py
+What it measures (from the per-worker step logs): a stuck event = the wire is being pushed but path progress stalls for >= 12 consecutive steps. After a stuck event:
+  - SOFT recovery (the behavior we WANT): retract a little (1-8 mm of guidewire), then re-advance PAST the stuck point. This is the micro-recovery: get stuck, ease the slack, go.
+  - HARD recovery: same but with a big pullback (> 8 mm).
+  - GRIND-THROUGH: passes the stuck point with < 1 mm retraction (brute force — the stuck-grinder ceiling behavior).
+  - UNRECOVERED: never passes the stuck point before the episode ends.
+It reports rates per 400-episode window plus success-vs-failure retract depth. What we want to accomplish: SOFT rate RISING across windows and higher in successes than failures. In v2 the equivalent cycles FADED across the run (~86% -> 58% -> 28% by thirds — noise-distilled away); v3a's E1b+E3 exist to reverse exactly that fade. Absolute rates depend on detector thresholds (tunable at the top of the script) — judge the TREND across windows, not the absolute number. If SOFT rate falls monotonically for 3+ consecutive windows while eval stagnates, log ALERT: distillation-fade recurring.
+
+```python
+#!/usr/bin/env python3
+"""Soft/hard recovery-rate tracker (read-only). RL_IMPROV_16 E8-companion.
+
+Parses per-worker step logs (diagnostics/logs_subprocesses/worker_*.log)
+and reports, per 400-episode window (chronological across workers):
+stuck-episode share, soft/hard/grind/unrecovered rates, and retract-depth
+split by episode outcome. Run inside the training container:
+    docker exec -i <container> python3 - < monitoring/recovery_tracker.py
+"""
+import glob
+import os
+import re
+
+# ---- run location (edit GLOB for a different run) ----
+BASE = "/opt/eve_training/results/eve_paper/neurovascular/full/mesh_ben"
+GLOB = "2026-*_rcca_procedural_v3a"
+# ---- detector thresholds (mm / steps; judge TRENDS, not absolutes) ----
+STALL_EPS = 0.3     # progress gain below this counts as stalled
+PUSH_MIN = 2.0      # commanded gw translation above this = "pushing"
+STUCK_STEPS = 12    # consecutive stalled-while-pushing steps => stuck event
+RETRACT_MIN = 1.0   # min gw retraction (mm) to count as a retract
+SOFT_MAX = 8.0      # retraction <= this = SOFT recovery; above = HARD
+PASS_EPS = 1.0      # must exceed pre-stuck max progress by this to recover
+WINDOW = 400        # episodes per report window
+
+runs = sorted(glob.glob(os.path.join(BASE, GLOB)))
+assert runs, "no run dir matching " + GLOB
+run = runs[-1]
+logs = sorted(glob.glob(os.path.join(run, "diagnostics/logs_subprocesses/worker_*.log")))
+assert logs, "no worker step logs in " + run
+
+F = {k: re.compile(k + r"=([-0-9.a-z\[\],]+)") for k in
+     ("ep", "ep_step", "wall_time", "proj_s", "term", "trunc")}
+INS = re.compile(r"inserted=\[([-0-9.]+),([-0-9.]+)\]")
+CMD = re.compile(r"cmd_action=\[([-0-9.]+),")
+
+episodes = []  # (start_wall, success, events list, had_steps)
+
+def close_episode(st):
+    if not st["n"]:
+        return
+    # close any open stuck event as unrecovered
+    if st["stuck"]:
+        st["events"].append(("unrecovered", st["retract"]))
+    episodes.append((st["t0"], st["success"], st["events"]))
+
+for path in logs:
+    st = None
+    with open(path, errors="replace") as fh:
+        for line in fh:
+            if "EPISODE_START" in line:
+                if st:
+                    close_episode(st)
+                st = {"n": 0, "t0": None, "success": False, "events": [],
+                      "maxp": -1e9, "stall": 0, "stuck": False,
+                      "gw_peak": 0.0, "gw_min": 0.0, "retract": 0.0, "p0": 0.0}
+                continue
+            if st is None or " STEP | " not in line:
+                continue
+            m_ins, m_cmd = INS.search(line), CMD.search(line)
+            m_prog = F["proj_s"].search(line)
+            if not (m_ins and m_cmd and m_prog):
+                continue
+            try:
+                gw = float(m_ins.group(1))
+                cmd0 = float(m_cmd.group(1))
+                prog = float(m_prog.group(1))
+            except ValueError:
+                continue
+            st["n"] += 1
+            if st["t0"] is None:
+                m_t = F["wall_time"].search(line)
+                st["t0"] = float(m_t.group(1)) if m_t else 0.0
+            if st["stuck"]:
+                # track deepest retraction, look for pass-through
+                st["gw_min"] = min(st["gw_min"], gw)
+                st["retract"] = max(st["retract"], st["gw_peak"] - st["gw_min"])
+                if prog > st["p0"] + PASS_EPS:
+                    r = st["retract"]
+                    kind = ("grind" if r < RETRACT_MIN
+                            else "soft" if r <= SOFT_MAX else "hard")
+                    st["events"].append((kind, r))
+                    st["stuck"] = False
+                    st["stall"] = 0
+            else:
+                stalled = (prog < st["maxp"] + STALL_EPS) and (cmd0 > PUSH_MIN)
+                # decay instead of hard reset: tolerates brief command
+                # sign-flips (noise) inside an otherwise-stuck push phase
+                st["stall"] = st["stall"] + 1 if stalled else max(0, st["stall"] - 2)
+                if st["stall"] >= STUCK_STEPS:
+                    st["stuck"] = True
+                    st["p0"] = st["maxp"]
+                    st["gw_peak"] = gw
+                    st["gw_min"] = gw
+                    st["retract"] = 0.0
+            st["maxp"] = max(st["maxp"], prog)
+            if "term=True" in line and "trunc=False" in line:
+                st["success"] = True
+    if st:
+        close_episode(st)
+
+episodes.sort(key=lambda e: e[0])
+n = len(episodes)
+print("RECOVERY TRACKER: run=%s episodes=%d (window=%d)" %
+      (os.path.basename(run), n, WINDOW))
+hdr = ("window       eps  stuck-eps  events  soft%  hard%  grind%  "
+       "unrec%  succ%  ret-depth succ/fail (mm)")
+print(hdr)
+for b in range(0, n, WINDOW):
+    w = episodes[b:b + WINDOW]
+    ev = [e for (_, _, evs) in w for e in evs]
+    stuck_eps = sum(1 for (_, _, evs) in w if evs)
+    succ = sum(1 for (_, s, _) in w if s)
+    tot = max(1, len(ev))
+    cnt = {k: sum(1 for (kk, _) in ev if kk == k)
+           for k in ("soft", "hard", "grind", "unrecovered")}
+    dep_s = [r for (t, s, evs) in w if s for (_, r) in evs]
+    dep_f = [r for (t, s, evs) in w if not s for (_, r) in evs]
+    avg = lambda xs: sum(xs) / len(xs) if xs else float("nan")
+    print("%5d-%-5d %5d  %6d     %5d  %5.1f  %5.1f  %6.1f  %6.1f  %5.1f"
+          "   %.1f / %.1f" %
+          (b + 1, b + len(w), len(w), stuck_eps, len(ev),
+           100.0 * cnt["soft"] / tot, 100.0 * cnt["hard"] / tot,
+           100.0 * cnt["grind"] / tot, 100.0 * cnt["unrecovered"] / tot,
+           100.0 * succ / max(1, len(w)), avg(dep_s), avg(dep_f)))
+print("GOAL: soft% RISING across windows and retract-depth succ < fail; "
+      "v2's cycles faded ~86->58->28 across run thirds — that fade "
+      "recurring (3+ windows monotone down + flat evals) = ALERT.")
+```
+
+Notes for the machine-2 session:
+  - The step logs only exist if the run was launched with the v3a launcher (STEP_LOG_DIR is set there). If worker_*.log files are missing, say so in the pass log instead of failing.
+  - Detector sensitivity: the stuck detector needs sustained pushing (cmd_action[0] > PUSH_MIN with stall persistence). On a PRETRAINED policy (v3a) this fires normally. If events-per-window come out near zero on a healthy directed policy, lower PUSH_MIN to 1.0 or STUCK_STEPS to 8 and note the change in the pass log so trends stay comparable — never compare absolute rates across different thresholds. (Validated on machine 1: parses real worker logs end-to-end; the RLPD run showed ~0 events precisely because its noise-dominated policy never pushes 12 steps straight.)
+  - Success detection = a step with term=True and trunc=False (EPISODE_END lines carry no success flag).
+  - Both scripts are read-only. Never edit files mounted by the running container; if a script needs a tweak, copy it to a scratch path first.
+  - Log every pass to saved/monitor_rcca_v3a.md with a dated header and an explicit verdict; include the recovery table verbatim so trends are visible pass-to-pass.
+-------
+
+
+First we need to take a deeo dive into the trained model and our training specifics and health ; how come H0 was so effective and then the model basically learned nothing after that ; after looking at all the eval successes and failures it felt that about half of failures were pretty close to success but just ran out of steps ; other half got stuck at RCCA and RVA intersection ;  also the failures that ran out of steps almost always went into RVA first and then instead of retracting they use other fork within RVA (going elsewhere) to make a u-turn within RVA and then  come back and thread RCCA again ; why the speed never improves at straight sections; can something like separate stuck training help like that proposed in v3b (E series) models on other machine. Also , I think in all these RL models we are stuck between 2 modalities either go fast and can't make fine turns or go slow and get trapped in local optima since there are two modes to navigation where there is crunch and where it is not , hence a singular mode of training /model is not able to encode it; since we are using planned path we can better encode it in our obsevation about the 2 modes (and also include wrong pts in one of those modes) or use two different models (actors) for classified (easy with path planning) 2 different modes but getting trained in the same run (2 different buffers getting filled); what would be the best way to proceed because if we can unlock RCCA / RVA instersection with learned recoveries we can unlock huge gains. Investigate all this thoroughly
+
+This deserves the full treatment — your two-modality hypothesis in particular maps directly onto the roadmap's "bimodal commit-vs-retract is unrepresentable by a unimodal tanh-Gaussian" finding, and the failure taxonomy you observed is quantifiable from the eval step logs. Launching a deep-dive workflow: eval forensics, training-health autopsy, mode-hypothesis testing, and a design synthesis:
+
+
+Eval forensics — parses all five eval windows from the worker step logs to quantify your observations: the timeout-near-target vs stuck-at-junction split among failures, the RVA U-turn pattern (entered RVA → forked around inside it → re-threaded RCCA, with steps wasted counted), and whether success speed or straight-section speed moved at all between eval1 and eval5.
+Training-health autopsy — the "why did nothing compound" question: alpha-cycle phase at each eval's timestamp (were the good evals just low-alpha phases?), residual magnitude evolution from the policy snapshots (is the residual stuck near zero, growing uselessly, or oscillating?), and — the key one — whether the critic prefers retraction at high-slack states while the actor ignores it, which would be the λ-transmission failure from the LCCA era recurring in SAC form.
+Bimodality evidence — your two-mode hypothesis, tested quantitatively: does optimal |action| actually differ between crunch steps (contact/slack/junction-proximity) and free steps (open trunk), does the current policy's action distribution differentiate the modes at all, and how many steps would full-speed straight sections save — enough to convert the timeout half of failures?
+Design survey — scores every candidate fix (mode-flag observation from the planned path, your two-actor dual-buffer MoE, GMM/QC-FQL bimodal heads from roadmap P3, the v3b/E4 stuck-restore curriculum, reduce-slack potential, alpha-ceiling, and step-budget/speed shaping for the timeout half) on which failure-half it addresses, cost, risk, and what composes cleanly into one relaunch.
+Then a synthesis agent writes saved/p2a_deep_dive/DEEP_DIVE_P2A_V1.md with the causal story, the decision matrix, and a concrete recommended P2a-v2 bundle with expected-gain arithmetic — and an adversarial auditor checks every headline number and the arithmetic before it's final. I'll bring you the executive summary and the recommended bundle when it lands.
+
+The deep dive is done — and it found something that reframes everything, including my own earlier analysis. Full report in saved/p2a_deep_dive/DEEP_DIVE_P2A_V1.md (adversarially audited, 6 agents).
+
+The bombshell: the run never deployed a trained weight. All 142 policy snapshots and all 7 checkpoints hash byte-identical to initialization. Two independent infrastructure breaks: (a) the trainer→worker/eval weight sync never fired once in 1.45M explore steps; (b) my deadlock guard from e3bf215 misfires — the 1800s trainer-result deadline is shorter than this run's ~40-minute explore cycles, so it "restarted" a healthy trainer into fresh init 32 times, every ~23.4k updates. That cadence is exactly the "alpha limit cycle" I've been reporting across passes — it was a restart sawtooth (init α=1.0 → anneal → wipe → repeat), not an entropy pathology. The 4-eval "reward decline" was an aggregation artifact. Every eval executed the identical init policy (residual ≈ 0 = pure heuristic), so 45.9→48.0→49.0→46.9→45.9→45.9 is episode-mix noise around a pooled H₀ ≈ 46.9% (85 of 98 seeds are deterministic; repeat-eval SE ≈ ±1.8pp). I was wrong to narrate "learning under the surface" — the composition shifts were noise under a constant policy. P1's snapshots did evolve (distinct md5s), but its same-period "alpha cycle" now needs re-examination too.
+
+The silver lining — ~590 episodes of clean H₀ characterization answering your questions:
+
+Failure mass is NOT what it looked like: 58.3% is deep-RVA capture — enter RVA early, spend ~505/600 steps inside with 0.0 mm retraction (commit-without-retract, the untransmitted-retract pathology again); ~34% near-target grind; genuinely at-the-door only ~4%. U-turns are a red herring (16% of failures, median 4 steps, successes do it too), and RVA-before-RCCA-then-success never occurs (0/259).
+Straight speed is frozen at the heuristic's compromise: ~5 mm/s commanded = 17% of max, identical in every eval. The counterfactual sweep from explore noise confirms your bimodal target: free-mode optimum ≈ 25–30 mm/s, crunch optimum ≈ 0. But speed alone converts only ~20% of timeouts — the dominant lever is breaking the RVA capture mode.
+Ceiling arithmetic if the bundle works: ~62–73% vs H₀ 47%.
+Recommended path (bundle in the doc): (1) infra repairs first — fix the spurious deadline restart + weight sync, with invariant alarms (checkpoint-hash-must-change, sync-counter) and a blocking smoke gate; (2) α-ceiling flag; (3) wrong-branch/path-context observation (~6 dims, attacks the 58% mode — your "encode the modes via planned path" proposal, adopted); (4) stuck-restore curriculum if machine-2's pool is ready; (5) success@900 secondary eval metric; (6) a scripted wrong-branch-escape ablation as the no-RL cost floor. Two-actor MoE rejected; GMM head is the v3 backup. Your call on killing the current (init-policy) run and starting the repairs.
+
+--------Here's the full parked queue, organized by what gates each item:
+
+Gated on v1b's eval3–5 (the active experiment decides):
+
+Reduce-slack potential reward — telescoping potential on guidewire slack, same non-farmable delta form as the existing buckle potential (buckle_reward.py family), directly paying for ease-slack-then-advance.
+Stuck-restore curriculum — episodes started from harvested stuck checkpoints (the E4 mechanism), so recovery states get dense practice instead of incidental visits.
+Tighter alpha ceiling (e.g. --log_alpha_max −1.2 to −0.7) — added on this run's evidence, to damp the limit cycle that P1 and P2 both showed.
+
+
+P2a-v2 bundle (DEEP_DIVE_P2A_V1.md): wrong-branch/path-context observation (~6 dims, attacks the deep-RVA-capture failure mode — your mode-encoding idea), E4/v3b stuck-restore curriculum (--restore_prob 0.3 from the harvested stuck-state pool, if machine-2's pool is ready), success@900 secondary eval metric, and the scripted wrong-branch-escape ablation as the no-RL cost floor.
+GMM residual head (P3 backup) — activates only if the soft-recovery transition stalls, i.e. evidence that one Gaussian can't hold both modes. Two-actor MoE stays rejected unless conditioning and GMM both saturate.
+Infra/protocol fixes queued for the next relaunch (whatever its reason):
+3. P0 eval-state hard reset — the orbit bug: per-episode device-state reset so eval measures seeds, not sequence position. Restores cross-run comparability and a single meaningful H₀.
+4. Launch seeding + policy_0.pt dump — reproducible inits.
+5. Probe re-arm after trainer restart (secondary bug from the deep dive), and eval accounting from episode_summary.jsonl instead of worker logs (which drop each worker's final episode).
+
+Needing your explicit approval (reward changes are frozen):
+6. Reduce-slack potential reward — telescoping, non-farmable, pays directly for the ease-slack behavior. Notably: the policy is now discovering soft recovery without it, so this may have become an accelerant rather than a necessity — the eval3–5 trend tells us.
+
+The larger roadmap, in order:
+7. P2b — DAgger student distillation (teacher → deployable obs-only policy, short history replacing ep_step) — gates on the teacher beating targets stably.
+8. Machine-2 v3a Tier-A run (E1b advantage-norm + E2 aux z-scoring + E3 stuck-lane, AWAC control arm) — handoff ready, its stuck-harvest also feeds item 1's restore pool.
+9. Multi-mesh generalization (per-worker mesh families beyond procedural RCCA) and the obs-pruning list from the audit (~21 dims).
+10. Paper: PAPER_PLAN_NEUROVASC_RL.md's [X%] gates plus two corrections we owe it — the C3 "diversity vs competence" numbers update, and the eval-protocol section rewritten for the orbit discovery (which is itself publishable as a benchmark-hygiene finding).
+
+The near-term decision tree stays simple: eval3 recovering into the 60s with soft-share retained → let v1b run deep, then bundle 1+3+4 into a v2 relaunch at a natural checkpoint; eval3 declining → same bundle but sooner, with the alpha/replay investigation added. Nothing needs a decision from you until eval3 lands (~4–5h).
+
+
+----------
+
+
+Gated on v1b's eval3–5 (the active experiment decides):
+
+P2a-v2 bundle (DEEP_DIVE_P2A_V1.md): wrong-branch/path-context observation (~6 dims, attacks the deep-RVA-capture failure mode — your mode-encoding idea), E4/v3b stuck-restore curriculum (--restore_prob 0.3 from the harvested stuck-state pool, if machine-2's pool is ready), success@900 secondary eval metric, and the scripted wrong-branch-escape ablation as the no-RL cost floor.
+GMM residual head (P3 backup) — activates only if the soft-recovery transition stalls, i.e. evidence that one Gaussian can't hold both modes. Two-actor MoE stays rejected unless conditioning and GMM both saturate.
+Infra/protocol fixes queued for the next relaunch (whatever its reason):
+3. P0 eval-state hard reset — the orbit bug: per-episode device-state reset so eval measures seeds, not sequence position. Restores cross-run comparability and a single meaningful H₀.
+4. Launch seeding + policy_0.pt dump — reproducible inits.
+5. Probe re-arm after trainer restart (secondary bug from the deep dive), and eval accounting from episode_summary.jsonl instead of worker logs (which drop each worker's final episode).
+
+Needing your explicit approval (reward changes are frozen):
+6. Reduce-slack potential reward — telescoping, non-farmable, pays directly for the ease-slack behavior. Notably: the policy is now discovering soft recovery without it, so this may have become an accelerant rather than a necessity — the eval3–5 trend tells us.
+
+The larger roadmap, in order:
+7. P2b — DAgger student distillation (teacher → deployable obs-only policy, short history replacing ep_step) — gates on the teacher beating targets stably.
+8. Machine-2 v3a Tier-A run (E1b advantage-norm + E2 aux z-scoring + E3 stuck-lane, AWAC control arm) — handoff ready, its stuck-harvest also feeds item 1's restore pool.
+9. Multi-mesh generalization (per-worker mesh families beyond procedural RCCA) and the obs-pruning list from the audit (~21 dims).
+10. Paper: PAPER_PLAN_NEUROVASC_RL.md's [X%] gates plus two corrections we owe it — the C3 "diversity vs competence" numbers update, and the eval-protocol section rewritten for the orbit discovery (which is itself publishable as a benchmark-hygiene finding).
+
+The near-term decision tree stays simple: eval3 recovering into the 60s with soft-share retained → let v1b run deep, then bundle 1+3+4 into a v2 relaunch at a natural checkpoint; eval3 declining → same bundle but sooner, with the alpha/replay investigation added. Nothing needs a decision from you until eval3 lands (~4–5h)
+-------
+
+so we have learned a lot from machine 2 v3a experiments ; stuck lane files (v3b) do not work because the way it is programmed right now , when wires finally get stuck , wires are too colied up into knots and loops and they aren't recoverable at that point , you will have to retract 100s of steps before nay recovery is possible , so we are not extactly looking for truly stuck states but the states before where we recover from or never go into those states ,so  another idea emerged , we can classify the steps (actual crunch steps that lead to a successful passage via crunch easily based on nearby planned path parameters - as high as with 90% success rate; similar classifier can also recover priviledge teacher force/contact values that can be use om student's actor network) that we want to resample for this another mode. These steps generally use both cathetar and guidewire and both are getting used and are at close distance (their tips) with each other .  First we need to make such classifier 
+
+--------
+
+
+Which features matter (permutation importance on the transfer task)
+Permutation importance — how much unseen-AUC drops when each feature is shuffled — gives a far cleaner ranking than univariate (which was drowned in redundant tracking dims):
+
+dim	feature	Δauc when removed
+89	gw_slack	+0.237 ← dominant
+77	cath_offset_z (catheter−guidewire tip offset)	+0.123
+58	arc_past_daughter	+0.061
+78	gw_cath_gap (insertion difference)	+0.054
+93	local_radius	+0.045
+39, 59, 17…	a tail of tracking + guidance dims	+0.02–0.04 each
+gw_slack is the contact predictor, by a wide margin — nearly 2× the next feature. That's physically exactly right: slack (inserted length minus tip progress) is accumulated buckling, which is what wall contact produces. Second and fourth are the two catheter-vs-guidewire relative-position features, then local radius. So the features that "really matter" are the buckling/relative-geometry ones — not the tip-tracking dims that topped the univariate list (those ranked high only because they're mutually redundant, not individually informative).
+
+But feature selection didn't raise accuracy — it compressed it
+feature set	hard-transfer AUC (train seed → test unseen online regime)
+full-97 (baseline)	0.787
+top-8 by importance	0.670 (too few — loses the distributed tail)
+top-15 by importance	0.788
+top-25	0.788
+physics hand-picked (12)	0.774
+------
+
+
+
+
+Now our next big problem is to fix the mesh vessel (RCCA) generation that renders most RCCAs unpassable . Invesitage thoroughly how to fix this ; There are three critierias ; it should be vaied enough (which I think it is) ; it should be passable; it should be almost as hard as the real one (not significantly harder and not significantly easier ); Investigate thoroughly , implement and then verify (maybe run these evals with  generated mesh vessel identical to real one ; should give identical result)
+
+
+-------
+
+
+ok , coming back from this detour ; the last run we checked the correct real patient mesh vs v1b best model ; now run v1bp best model vs corrected real patient mesh; after that as we can see the eval rates were flawed because of one generated mesh bug, so find the actual best models (based on explore succ%) , as we can see from the report you just created , they come much later ; do both for v1b and v1bp; so three runs more total
+
+
+---------
+
+
+Now our next big problem is to fix the mesh vessel (RCCA) generation that renders most RCCAs unpassable . Invesitage thoroughly how to fix this ; There are three critierias ; it should be vaied enough (which I think it is) ; it should be passable; it should be almost as hard as the real one (slightly harder will do but not significantly easier one); Investigate thoroughly , implement and then verify (maybe run these evals with  generated mesh vessel identical to real one ; should give identical result)

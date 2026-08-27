@@ -167,6 +167,70 @@ def _install_pinned_surface_patch():
     RCCAVariedFromMesh._pinned_surface_patch = True
 
 
+_NAV_BRANCH_NAMES = {
+    "RCCA": "Centerline curve - RCCA.mrk",
+    "LCCA": "Centerline curve - LCCA.mrk",
+}
+
+
+def _retarget_inside_branch(interv, tag, insert_idx, min_arclength_mm):
+    """Insert the wire INSIDE `tag`'s branch and repoint the target sampler at it.
+
+    Used for the different-vessel transfer experiment: an RCCA-trained policy is
+    evaluated on the LCCA of the same patient. The wire starts already inside the
+    carotid rather than in the (11) bridge, because no bridge branch feeds the
+    LCCA — its point[0] IS the aortic-arch junction (r = 14.7 mm), shared
+    bit-identically with (11)[0].
+
+    Three things must all be set or the run silently measures the wrong vessel:
+      * `vt._insertion` — the PRIVATE one. `_generate()` re-asserts
+        `self.insertion = self._insertion`, so assigning the public alias alone
+        is reverted on the next reset.
+      * `tgt.branches` AND `tgt._branches_initialized = None` — CenterlineRandom
+        rebuilds its pool only when `_branches_initialized != vessel_tree.branches`.
+        The pinned tree's branch tuple never changes again, so without the reset
+        the RCCA pool built at construction persists and the run navigates to
+        RCCA targets while being logged as LCCA.
+      * `min_arclength_from_start` — measured from the branch's OWN point[0],
+        which for the LCCA is the arch junction. Left at the inherited 40 mm it
+        admits targets ~22 mm ahead of the insertion, and nothing anywhere
+        compares a target against the insertion, so a target BEHIND it yields a
+        well-formed reversed path into the arch.
+
+    Pickling-safe: module level, mutates only plain attributes. Workers are
+    spawned, so closures and locally-defined classes cannot be used here.
+    Call AFTER `vt._generate()` and BEFORE `BenchEnv5` is constructed.
+    """
+    import numpy as np
+    from eve.intervention.vesseltree.vesseltree import Insertion
+
+    name = _NAV_BRANCH_NAMES[tag]
+    vt = interv.vessel_tree
+    br = next(b for b in vt.branches if str(b.name) == name)
+    c = np.asarray(br.coordinates, dtype=np.float64)
+    cum = np.concatenate(([0.0], np.cumsum(
+        np.linalg.norm(np.diff(c, axis=0), axis=1))))
+
+    k = int(min(max(1, int(insert_idx)), len(c) - 2))
+    d = c[k + 1] - c[k]
+    d = d / max(float(np.linalg.norm(d)), 1e-9)
+    ins = Insertion(c[k], d)
+    vt._insertion = ins
+    vt.insertion = ins
+
+    tgt = interv.target
+    tgt.branches = [name]
+    tgt.min_arclength_from_start = float(min_arclength_mm)
+    tgt._branches_initialized = None
+
+    keep = cum >= float(min_arclength_mm)
+    radii = np.asarray(getattr(br, "radii", np.full(len(c), np.nan)), dtype=float)
+    s = float(cum[k])
+    return (s, float(radii[k]), int(keep.sum()),
+            float(cum[keep].min() - s) if keep.any() else float("nan"),
+            float(cum[keep].max() - s) if keep.any() else float("nan"))
+
+
 def _tree_is_passable(vt, wire_radius_mm: float = 0.18, per_tri: int = 12,
                       min_median_mm: float = 0.0) -> bool:
     """Gate on the navigated branch's clearance profile.
@@ -269,6 +333,23 @@ def make_env(a, seed: int, change_every: int, mode: str):
         print(f"[eval-anat] REAL PATIENT: collision surface pinned to the "
               f"ORIGINAL segmented mesh ({_orig_mesh}); centerlines, insertion, "
               f"targets, devices unchanged from every prior run")
+
+        if getattr(a, "insert_inside_branch", "none") != "none":
+            s, r, n_t, pl_min, pl_max = _retarget_inside_branch(
+                interv, a.insert_inside_branch, int(a.insert_point_idx),
+                float(a.target_min_arclength_mm))
+            print(f"[eval-anat] NAV BRANCH={a.insert_inside_branch} "
+                  f"insert idx={a.insert_point_idx} s={s:.2f}mm r={r:.2f}mm "
+                  f"min_arc={a.target_min_arclength_mm}mm targets={n_t} "
+                  f"path_len={pl_min:.1f}..{pl_max:.1f}mm")
+            # Structural guard against the silent reversed-path failure: nothing
+            # else in the stack compares a sampled target against the insertion,
+            # and a target behind it yields a well-formed path into the arch.
+            assert n_t > 0, "empty target pool — min_arclength exceeds the branch"
+            assert pl_min > 10.0, (
+                f"targets at or behind the insertion (pl_min={pl_min:.1f} mm); "
+                f"raise --target_min_arclength_mm")
+            print(f"[eval-anat] GUARD ok: {n_t} targets, all ahead of the tip")
     else:
         rs = float(getattr(a, "radius_scale", 1.0))
         interv = DualDeviceNavRCCAVaried(
@@ -388,6 +469,20 @@ def main():
                    choices=["frontier", "avg"])
     p.add_argument("--avg_gw_weight", type=float, default=0.5)
     p.add_argument("--target_branch", default="Centerline curve - RCCA.mrk")
+    p.add_argument("--insert_inside_branch", choices=["none", "RCCA", "LCCA"],
+                   default="none",
+                   help="DIFFERENT-VESSEL TRANSFER EXPERIMENT. Insert the wire "
+                        "INSIDE the named branch instead of the (11) bridge, and "
+                        "sample targets on that branch. 'none' (default) leaves "
+                        "the (11)->RCCA behaviour byte-identical. Requires "
+                        "--real_patient_anatomy; incompatible with "
+                        "--require_passable.")
+    p.add_argument("--insert_point_idx", type=int, default=2,
+                   help="Centerline index within --insert_inside_branch. Index 0 "
+                        "must be avoided: LCCA[0] and (11)[0] are the SAME point "
+                        "and both resolve to the arch branch in a 3-way distance "
+                        "tie, which would plan the path from the aorta. Ignored "
+                        "when --insert_inside_branch none.")
     p.add_argument("--require_passable", action="store_true",
                    help="reject-and-regenerate each anatomy until the guidewire "
                         "geometrically fits everywhere along the navigated branch. "
@@ -410,6 +505,30 @@ def main():
                         "real-patient run differs from the generated runs "
                         "ONLY in the collision surface")
     a = p.parse_args()
+
+    if a.insert_inside_branch != "none":
+        # These two guards catch failures that otherwise produce a run which
+        # looks perfect and measures the wrong thing.
+        if not getattr(a, "real_patient_anatomy", False):
+            p.error("--insert_inside_branch requires --real_patient_anatomy: "
+                    "RCCAVariedFromMesh._generate perturbs only the RCCA and RVA, "
+                    "so every 'distinct' generated anatomy would share one "
+                    "identical LCCA.")
+        if getattr(a, "require_passable", False):
+            p.error("--insert_inside_branch is incompatible with "
+                    "--require_passable: _tree_is_passable hardcodes "
+                    "'RCCA' in the branch name behind a bare except, so it would "
+                    "gate on the wrong vessel without raising.")
+        forced = _NAV_BRANCH_NAMES[a.insert_inside_branch]
+        if a.target_branch != forced:
+            print(f"[eval-anat] forcing --target_branch {forced} to match "
+                  f"--insert_inside_branch {a.insert_inside_branch}")
+            a.target_branch = forced
+        # Forcing target_branch BEFORE build_env_kwargs reads it keeps env5's
+        # _target_branch_short in sync, which is what keeps the privileged
+        # "in target daughter" bit (obs 14) from becoming "wrong daughter"
+        # (obs 15) on every step of every episode. Under --privileged_actor the
+        # ACTOR consumes that tail, so a mismatch corrupts the policy input.
 
     out_dir = a.out_dir or os.path.join(
         os.path.dirname(os.path.abspath(a.checkpoint)),

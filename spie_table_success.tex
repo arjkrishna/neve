@@ -1,0 +1,108 @@
+% ============================================================================
+%  Navigation success by depth -- FORMAT FIXED
+%  Requires: \usepackage{booktabs}
+%
+%  FORMAT PROBLEMS IN THE ORIGINAL
+%    1. Column spec was {lcccc} = 5 columns, but 7 columns of data were written.
+%       LaTeX would error ("Extra alignment tab").
+%    2. The six data columns are two groups of three (synthetic / patient) with
+%       nothing marking the boundary -- a reader cannot tell where one evaluation
+%       set ends and the other begins.
+%    3. The caption described only the synthetic set, though the table now
+%       carries both.
+%    4. "\%" repeated in every cell; moved to the caption so the numbers align.
+%
+%  ⚠ DATA PROBLEMS -- these change the claim, not just the layout. See the
+%    block below the table.
+% ============================================================================
+
+\begin{table}[ht]
+\caption{Navigation success by target depth, on 50 held-out synthetic anatomies and on the
+patient-derived anatomy (98 episodes each; deterministic policy, 600-step limit, 5\,mm success
+threshold). All values are percentages. No model was exposed to the patient-derived anatomy
+during training.}
+\label{tab:success}
+\begin{center}
+\begin{tabular}{l ccc | ccc}
+\toprule
+ & \multicolumn{3}{c|}{\textbf{Validation set}} & \multicolumn{3}{c}{\textbf{Test set}} \\
+ & \multicolumn{3}{c|}{50 held-out synthetic anatomies} & \multicolumn{3}{c}{Patient-derived anatomy} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+Model & Overall & Mid-ICA & Cavernous & Overall & Mid-ICA & Cavernous \\
+\midrule
+Configuration A & ---            & ---   & ---            & 63.3          & 65.9 & 26.7 \\
+Configuration B & \textbf{84.7}  & 100.0 & 53.1           & \textbf{75.5} & 90.2 & 33.3 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+% ============================================================================
+%  ⚠ DATA PROBLEMS FOUND IN THE SUBMITTED VERSION
+%
+%  (1) CONFIGURATION A's SYNTHETIC ROW WAS NEVER MEASURED.
+%      The submitted values were 68.4 / 100 / 53.1. The calibrated held-out
+%      synthetic evaluation was run for Configuration B only; the Configuration A
+%      run was queued and then CANCELLED at your request. There is no 68.4% in
+%      any run artefact. Note also that its cavernous value (53.1) is identical
+%      to Configuration B's, which is the signature of a copy-paste.
+%      -> Shown as "---" above. To fill it: ~1.5 h, no training required.
+%
+%  (2) CONFIGURATION B's PATIENT ROW MIXED TWO CHECKPOINTS.
+%      Submitted: 72.4 / 90.2 / 53.3. Verified from the run artefacts:
+%          earlier checkpoint : 72.4 / 63.4 / 70.0
+%          later   checkpoint : 75.5 / 90.2 / 33.3
+%      So 72.4 came from the earlier checkpoint, 90.2 from the later, and 53.3
+%      from neither. The table above uses the LATER checkpoint throughout.
+%
+%  (3) CHECKPOINT SELECTION MUST MATCH ACROSS CONFIGURATIONS.
+%      The submitted Configuration A patient row (52.0 / 58.5 / 6.7) is correct,
+%      but it is the EARLIER checkpoint, compared against a Configuration B row
+%      drawn partly from the later one. That comparison flatters B twice over.
+%      Verified Configuration A rows:
+%          earlier checkpoint : 52.0 / 58.5 /  6.7
+%          later   checkpoint : 63.3 / 65.9 / 26.7
+%      The table above uses the later checkpoint for BOTH, which is the honest
+%      pairing and still shows the effect (75.5 vs 63.3 overall).
+%
+%  (4) THE CCA COLUMN IS ABSENT. Fine as an editorial choice -- both
+%      configurations solve it (100% and 100% at the later checkpoints) -- but
+%      state in the text that the proximal segment is solved, or a reader will
+%      assume it was omitted because it was unfavourable.
+% ============================================================================
+
+% ----------------------------------------------------------------------------
+%  If you prefer booktabs house style (which avoids vertical rules), replace the
+%  rule with extra inter-group spacing -- same visual separation, no "|":
+%
+%      \begin{tabular}{l ccc @{\hspace{2.5em}} ccc}
+%
+%  and drop the "|" from the two \multicolumn{3}{c|} specifiers.
+% ----------------------------------------------------------------------------
+
+% ----------------------------------------------------------------------------
+%  ALTERNATIVE: all four checkpoints, showing the selection effect explicitly.
+%  Use this if you want the checkpoint-selection point to be visible rather than
+%  resolved silently in favour of the later ones.
+% ----------------------------------------------------------------------------
+%
+% \begin{table}[ht]
+% \caption{Navigation success by target depth for both configurations at two
+% checkpoints each. All values are percentages.}
+% \label{tab:success-full}
+% \begin{center}
+% \begin{tabular}{ll ccc ccc}
+% \toprule
+%  & & \multicolumn{3}{c}{Held-out synthetic} & \multicolumn{3}{c}{Patient-derived} \\
+% \cmidrule(lr){3-5} \cmidrule(lr){6-8}
+% Model & Checkpoint & Overall & Mid-ICA & Cavernous & Overall & Mid-ICA & Cavernous \\
+% \midrule
+% \multirow{2}{*}{Configuration A} & earlier & ---   & ---   & ---  & 52.0 & 58.5 & \phantom{0}6.7 \\
+%                                  & later   & ---   & ---   & ---  & 63.3 & 65.9 & 26.7 \\
+% \cmidrule(lr){1-8}
+% \multirow{2}{*}{Configuration B} & earlier & 83.7  & 100.0 & 50.0 & 72.4 & 63.4 & 70.0 \\
+%                                  & later   & \textbf{84.7} & 100.0 & 53.1 & \textbf{75.5} & 90.2 & 33.3 \\
+% \bottomrule
+% \end{tabular}
+% \end{center}
+% \end{table}

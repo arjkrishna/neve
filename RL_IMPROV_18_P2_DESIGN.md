@@ -1,5 +1,11 @@
 # RL_IMPROV_18 — P2: Privileged-Actor Teacher, Residual on the Scripted Heuristic
 
+> ⚠ **SUPERSEDED IN PART — see §9 (added 2026-08-24).** Sections 3, 4 and 7 were written
+> 2026-07-28. Six of their conclusions were overturned by the mesh investigation of
+> 07-29 → 08-03, including the §7 open question, which is answered and dissolved. The
+> original text is left unedited as the record of what we believed at the time; §9
+> states what is now true and why each earlier reading was wrong.
+
 Branch `rl_improv_18_p2` (from `rl_improv_17_rlpd` @ 7fc1efb). Roadmap: RL_PARADIGM_ROADMAP.md P2.
 Trigger: P1 RLPD closed negative 2026-07-16 (evals 0.0/0.0; start-state deterministic
 mean never left random-init across 226k updates at realized UTD 0.39 — from-scratch
@@ -273,3 +279,235 @@ an obs-only student; student evaluated WITHOUT the privileged tail. Add an aux h
 predicting the privileged tail from history. Optionally warm-start from the teacher's prefix
 weights. **Gate:** only worth doing once the teacher's real-anatomy number is worth
 inheriting — currently 35.7%, of which the heuristic supplies 25.5%.
+
+---
+
+# 9. CORRECTIONS — 2026-07-29 → 08-03
+
+**Read this before §3, §4 or §7.** Those sections were written 07-28. Everything below
+landed afterwards and overturns six of their conclusions, including the §7 open question,
+which is now answered and dissolved. Nothing above this line has been edited; the record of
+what we believed on 07-28 is left intact deliberately.
+
+## 9.1 The real-patient evaluation never evaluated the real patient
+
+`--real_patient_anatomy` built `DualDeviceNavRCCAVaried` with every perturbation amplitude
+zeroed. That reproduces the patient **centerlines** to zero floating-point error — verified,
+`max|diff| = 0.000000 mm` — which is exactly why it passed every check we had: path lengths,
+target sampling, branch identity and the geometry hash all matched.
+
+But `RCCAVariedFromMesh` **always re-meshes the tree from those centerlines**
+(`rccavariedfrommesh.py:10`; `mesh_path → generate_temp_mesh`). The wire collides with the
+*surface*, not the centerline, and the regenerated surface is not the patient's:
+
+| | `--real_patient_anatomy` (old) | true original `.obj` |
+|---|---|---|
+| class | `DualDeviceNavRCCAVaried` (amps 0) | `DualDeviceNav` |
+| mesh cells | 3,721 | 3,584 |
+| median clearance | 1.23 mm | **2.14 mm** |
+| p05 / min clearance | 0.40 / 0.06 mm | 1.20 / 0.22 mm |
+| blocked stations (wire radius 0.18 mm) | **2 / 235** | **0 / 235 — passable** |
+| first block | raw 120.4 mm → **proj_s ≈ 154.0** | none |
+| centerlines | **identical, max\|diff\| = 0.000000 mm** | |
+
+**Behavioural confirmation, measured independently.** On the re-meshed surface, 91% of
+real-patient failures arrest in a 2 mm window: v1b 63/69 (modal 153.4, 51×), v1bp 63/69
+(modal 153.3, 61×), and the **parameterless heuristic** 41/74. `max solved path_len = 156.2`
+for all three. Geometry predicted 154.0; three controllers were measured at 153.4 — **0.6 mm
+agreement, nothing fitted to anything.**
+
+A station that arrests a hand-written centerline follower *and* two independently trained
+policies at the same tenth of a millimetre cannot be a policy defect.
+
+**And it is not the siphon.** 153.4 mm sits 7 mm past the ICA-mid cut and **57 mm before the
+siphon band begins (210 mm)**. §4.3 #4's "absolute wall" was an arrest well proximal to the
+anatomy it was attributed to.
+
+### The fix, and the wrong fix that preceded it
+
+Constructing `DualDeviceNav` directly is **not** the fix: it also moves the insertion point to
+the femoral entry and swaps the target sampler to four branches with no minimum arclength. A
+4-episode smoke test returned `path_len` 594–752 mm against 103–156 mm for every prior run —
+a different task, not a different mesh. Had that gone straight to 98 episodes it would have
+produced a confident, catastrophic, and entirely spurious result.
+
+The correct fix keeps `DualDeviceNavRCCAVaried` — insertion at the (11) bridge, RCCA-only
+targets, same devices and frames — and swaps **only the collision surface** for
+`DualDeviceNav`'s `FromMesh` output, which is the original `.obj` already rotated into the
+branch frame. One variable. (`eb753d9`)
+
+Implementation note worth keeping: `_generate()` nulls `_mesh_path` and `reset()` calls it, so
+the re-meshed surface returns on the first reset. The pin must be a **class-method patch** —
+a closure bound to the instance, or a class defined inside a function, both fail to pickle to
+spawned workers.
+
+## 9.2 The synthetic anatomies were largely impassable
+
+The same defect at scale. Measured with `monitoring/mesh_clearance.py` (**no controller
+involved** — clearance is a property of the geometry):
+
+| mesh | median | p05 | blocked stations |
+|---|---|---|---|
+| patient-derived reference | **2.14 mm** | 1.20 | 0 / 235 |
+| generated, `radius_scale = 1.0` (as trained) | 1.09–1.33 mm | 0.22–0.63 | **4 of 6 anatomies blocked** |
+
+Generated vessels carry roughly **half** the clearance of the source anatomy, and two thirds
+of a six-anatomy sample contain stations where the 0.36 mm guidewire physically cannot fit.
+Blocked stations at raw arclength 116–134 mm map to proj_s ≈ 150–168, bracketing the measured
+arrest.
+
+**Per-anatomy, model-independent walls.** Pooled arrest across the 50-anatomy eval scatters
+(SD 34 mm), which reads as ordinary navigation failure. Grouping by anatomy hash shows each
+anatomy has its own fixed station: **80% (v1b) / 69% (v1bp)** of anatomies with ≥2 deep
+failures have within-anatomy arrest SD < 2 mm, carrying **45% / 41% of all failure mass**. The
+clincher is cross-model agreement on the same mesh — 11d068 @152.1, bfadcd @166.3, 8ba8a3
+@157.2, dd7d9c @160.8, all ±0.00 for **both** models.
+
+### The fix: gate and calibrate
+
+`--require_passable` rejects and regenerates until an anatomy satisfies **two** conditions:
+min clearance ≥ wire radius (the device fits at all) **and** median clearance ≥
+`--passable_min_median_mm` (default 2.00). The second matters because fitting is not
+sufficient — a raw generated mesh at 1.26 mm median is navigable in principle yet far tighter
+than any real patient.
+
+`--radius_scale` compensates the mesher's erosion. Measured calibration:
+
+| radius_scale | median | p05 | min | blocked / 3 |
+|---|---|---|---|---|
+| ORIGINAL `.obj` | 2.14 | 1.20 | 0.22 | 0 |
+| 1.0 (as trained) | 1.26 | 0.46 | 0.24 | 1 |
+| 1.4 | 1.80 | 1.12 | 0.68 | 0 |
+| **1.6** | **2.14** | **1.13** | 0.75 | **0** |
+| 1.8 | 2.49 | 1.16 | 0.75 | 0 |
+
+**1.6 reproduces the patient almost exactly** — equal median, marginally *tighter* p05 — and
+pins the mesher's erosion at ~37% of radius. Gating at generation time keeps all 98 episodes
+on qualifying anatomies; post-filtering would have left ~33 with a ±17 pp CI.
+
+## 9.3 Checkpoint selection was corrupted by the same bug
+
+The single-anatomy eval crowned **early** checkpoints. Scoring every checkpoint against
+explore success within ±150k steps:
+
+| run | eval-picked | its local explore succ | **true best** | its local explore succ |
+|---|---|---|---|---|
+| v1b | 757854 | 56.1% | **3259127** | **63.2%** |
+| v1bp | 514264 | 53.3% | **2002292** | **59.2%** |
+
+Both crowned checkpoints sit at roughly a fifth of training. Selecting on a high-variance
+n=1-anatomy signal does not merely add noise — it **systematically favours whichever
+checkpoint overfits that particular tree**.
+
+## 9.4 Corrected results
+
+**Real patient, original segmented surface** (98 eps, deterministic, 600 steps):
+
+| model | overall | CCA | ICA-mid | siphon |
+|---|---|---|---|---|
+| v1b ckpt757854 (eval-picked) | 52.0% | 92.6% | 58.5% | 6.7% (2/30) |
+| v1b ckpt3259127 (true best) | 63.3% | 100% | 65.9% | 26.7% (8/30) |
+| v1bp ckpt514264 (eval-picked) | 72.4% | 88.9% | 63.4% | **70.0% (21/30)** |
+| **v1bp ckpt2002292 (true best)** | **75.5%** | 100% | **90.2%** | 33.3% (10/30) |
+
+**Calibrated, verified-passable synthetic** (50 anatomies, `--require_passable`,
+`--radius_scale 1.6`):
+
+| model | overall | CCA | ICA-mid | siphon |
+|---|---|---|---|---|
+| **v1bp ckpt2002292** | **84.7%** (83/98) | 100% (26/26) | 100% (40/40) | 53.1% (17/32) |
+| v1bp ckpt514264 | 83.7% (82/98) | 100% (26/26) | 100% (40/40) | 50.0% (16/32) |
+| v1b ckpt3259127 | **NOT RUN** — cancelled mid-queue; ~1.5 h to fill | | | |
+
+**CCA and ICA-mid are solved on synthetic anatomy — 66/66 across both models, zero failures.
+Every remaining failure in that evaluation is a siphon target.**
+
+## 9.5 What this overturns in §3, §4, §7
+
+| where | said | now |
+|---|---|---|
+| §4.1 | both runs "ended by OOM" | **IPC-deadlock watchdog** (`os._exit 42`); `grep OOM` on both `main.log` = 0 hits. §6.2 item 7 is misdiagnosed and should be re-scoped to deadlock robustness |
+| §4.2 | real patient 35.7% / 35.7% / H₀ 25.5% | measured on a reconstruction. True surface: 52.0 → 63.3 (v1b), **72.4 → 75.5** (v1bp) |
+| §4.2 | 50 generated 57.1 / 55.1 | measured on largely impassable anatomies. Calibrated: **84.7 / 83.7** |
+| §4.3 #4 | "the siphon is an absolute wall, 0/30" | **retracted** — an arrest 57 mm proximal to the siphon. v1bp reaches 70.0% siphon on the true surface |
+| §4.3 #5 | "the reward pair is a null result" | **retracted** — on the corrected mesh, **+20.4 pp overall and +63.3 pp at the siphon**. It improves recovery and removes the catheter shove; on a walled mesh nothing reached a tight curve, so the benefit was unmeasurable, not absent |
+| §4.3 #6 | "the generator makes EASIER vessels than reality" | **inverted** — it makes *impassable* ones, at half the calibre |
+| §4.3 #9 | "recovery never emerged; soft share 2–6%" | detector-dependent (canonical: 22.6% / 29.5%). Its successor finding (r = −0.82) is **provisional** — computed on walled anatomies, never re-stratified |
+| §6.4 #12 | P2b gate "currently 35.7%" | **75.5%** — gate passed |
+| §7 | "why is the siphon 0/30?" | **dissolved.** It was never the siphon |
+
+## 9.6 Measurement errors made *during* this investigation
+
+Recorded because each was asserted before being measured, and each cost a cycle:
+
+1. **"Lumen erosion refuted — 1% distal shrink."** Wrong: measured with nearest-**vertex**
+   distance. On a 6 mm-triangle mesh the vertices sit outside the facets and overstate
+   clearance. Surface-sampled measurement gives ~45%. **Never measure lumen clearance from
+   mesh vertices.**
+2. **"The re-mesh is catastrophically under-resolved."** Wrong: the original collision mesh
+   is equally coarse (6.28 vs 6.46 mm median edge) and *is* passable. Coarseness is a
+   long-standing property of the benchmark, not a Gen-4 regression. Note the *visual* mesh is
+   12× finer than the one physics collides against.
+3. **"Collision-chord discretization is the cause."** Eliminated by the historical fixed-mesh
+   run: same devices, same settings, traversed the siphon.
+4. **"Depth-stratified checkpoint selection is required."** Based on the real-patient siphon
+   split (70.0% vs 33.3%, ~3 SE). Across 50 anatomies the two are indistinguishable — 53.1%
+   vs 50.0%, one episode. The split was **anatomy-specific**; selecting on it would overfit a
+   single vessel. n=30 on one anatomy cannot support a claim about a policy.
+5. **"Success% tracks recovery%."** Mixed a per-**event** rate against a per-**episode** rate.
+   Separated, v1b's correlation is r = −0.82.
+
+## 9.7 Code-state findings that contradict §2
+
+From an audit of the shipped `runner.yml` / `env_train.yml` / launchers:
+
+1. **The algorithm is SAC**, not AWAC — both launchers pass `--algo sac`; AWAC is gated behind
+   `self.algo == 'awac'` and inert. `awac_lambda: 3.0` still appears in `runner.yml` but is dead.
+2. **The asymmetric actor-critic is OFF in v1b and v1bp.** `--privileged_actor` sets
+   `privileged_obs_dim = 0`, making `GaussianPolicy`'s input slice a no-op; `runner.yml`
+   records policy `n_observations: 125`, identical to the critics. **The shipped policy reads
+   SOFA nodal forces at training *and* test time** — it is a teacher, not a deployable
+   controller. Both headline numbers are teacher numbers.
+3. **No student was ever trained.** `dagger|distill|student` returns only future-tense
+   comments. No observation-only number exists anywhere in the repo.
+4. **The planned-path ↔ force correspondence is asserted, not demonstrated.** Its dominant
+   predictor (`gw_slack`) is *numerically identical* to privileged dim 23, computed from the
+   same projection — an identity, not a proxy.
+5. **UTD is 0.99** (measured), not the 0.25 in `PAPER_PLAN`; **throughput 10–11 env-steps/s**,
+   not 47.
+6. **Eval anatomy seeding is misdescribed** in §3: the per-worker factory seed builds only the
+   first tree; the *episode* seed drives every subsequent regeneration.
+
+## 9.8 State after these corrections
+
+**Implemented and verified**
+- `--real_patient_anatomy` — pins the original surface (`eb753d9`)
+- `--require_passable`, `--passable_min_median_mm`, `--radius_scale` (`cb6bceb`)
+- `--stochastic_eval` (default off) — result was a clean null: strict superset, +1 episode.
+  Note it was measured on the **walled** surface, so it tested nothing meaningful; cheap to redo
+- `monitoring/mesh_clearance.py` — passability gate, no controller required
+- Stuck/recovery toolchain: `extract_stuck`, `analyze_stuck`, `verify_stuck`, `report_stuck`,
+  `report_single`; explore/eval separated exactly by the `seed=` field in `EPISODE_START`
+  (main.log time windows leak — they caught 567 of 980)
+
+**Parked mid-investigation**
+- Mesh-generator fix (`MESH_GENERATOR_FIX_PLAN.md`): diagnosis measured; **ablation written and
+  never run** (`monitoring/mesh_ablation.py`); mechanism hypothesis unconfirmed. Note the eval
+  path is now *worked around* by `--radius_scale`, but **training still generates uncalibrated,
+  largely impassable anatomies** — this is the substantive open item
+
+**Owed re-analysis — CPU only, data in hand**
+- Re-stratify r = −0.82 on audited anatomies
+- v1b calibrated-synthetic eval (~1.5 h) to complete §9.4
+
+**Never built**
+- P2b student (gate now passed at 75.5%)
+- A genuinely asymmetric run (`privileged_obs_dim > 0`)
+- The correspondence probe
+
+**Re-prioritised by these results**
+- **v1c crunchpass premise is contested.** It amplifies soft recoveries; grind-only episodes
+  outperform soft in *both* runs (99%/95% vs 95%/76%), and recovery type appears to proxy stall
+  *severity* rather than skill. Break that confound within matched depth strata before launching
+- The distribution gap runs the **opposite** way to §4.3 #6: training anatomies are harder than
+  reality in the sense of being impassable, not harder in the sense of being more tortuous
