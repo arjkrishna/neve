@@ -11075,3 +11075,122 @@ Clear structure. Let me write the extractor — keeping only user prose and my v
 
 ---
 
+
+*(Claude [257] was cut off mid-turn because the export ran during it. Its conclusion:)*
+
+Done and pushed (`41de7d6`). **SESSION_TRANSCRIPT.md** — 514 turns, 1.1 MB, ~182k words. The extractor is committed as `monitoring/extract_chat.py`.
+
+It recovers more than expected: the JSONL retains the *entire* session, not just the live context window. So the export starts at the session's original first message — compacted out of context long ago — and includes the four compaction-summary blocks at lines 1148, 2742, 5143 and 8304. The reasoning behind early decisions is recoverable from this file even though it isn't recoverable from the conversation.
+
+Leakage audit clean: zero hits for `tool_use`, `tool_result`, `system-reminder`, `ide_opened_file`, `local-command-stdout`. One `/loop` skill-instruction block survived at line 1451 because it arrived as a user turn.
+
+Three layers of context now exist: **HANDOFF.md** (the distillation someone should read), **SESSION_TRANSCRIPT.md** (the searchable archive underneath it), and the session JSONL copy (now optional — its only remaining advantage is `--resume` with the thread intact).
+
+---
+
+## ▸ User [258]
+
+Once again , what was the problem in evalutasion when done on real patient RCCA , I know you generated mesh (for some reason insteading of loading it directly) and it was not able to pass after a point and then you loaded real mesh and it got fixed; what was it that we discovered?
+
+### Claude [258]
+
+Here's the whole chain.
+
+**What we did, and why it looked reasonable.** The evaluator was built on the procedural pipeline (for the 50-anatomy generalization runs). So "evaluate on the real patient" was implemented as **"run the procedural generator with all variation turned off"** — zero displacement amplitude, zero tortuosity, radius scale 1.0.
+
+That reasoning was half right, and the half that was right is what made it invisible: **zeroing the amplitudes reproduces the patient's centerlines exactly.** Verified later at `max|diff| = 0.000000 mm`. Every check we had — path lengths, target sampling, branch identity, the geometry hash — is computed from centerlines, so every one of them passed.
+
+**What was actually wrong.** `RCCAVariedFromMesh` **always rebuilds the vessel surface from the centerlines**, regardless of the amplitude settings. Its own docstring says so: voxelize at [0.6, 0.6, 0.9] mm, Gaussian-smooth twice, marching cubes, decimate.
+
+**The guidewire collides with the surface, not the centerline.** So we had the patient's skeleton wrapped in a reconstructed wall — and the reconstruction is narrower:
+
+| | median clearance | p05 | blocked stations |
+|---|---|---|---|
+| original segmented `.obj` | **2.14 mm** | 1.20 | **0 / 235 — passable** |
+| the regeneration we were using | 1.23 mm | 0.40 | **2 / 235**, first at raw 120.4 mm |
+
+Roughly 37% of radius lost. The first blocked station maps to **proj_s ≈ 154.0 mm**.
+
+**How we caught it.** By looking at *where* failures happened rather than *how many*. On the real patient, **91% of failures arrested in a 2 mm window**: v1b 63/69 with the mode at 153.4 mm, v1bp 63/69 at 153.3 mm — and the deepest target ever solved was `path_len = 156.2 mm` for **both**.
+
+**The proof that it was the environment.** The heuristic. **H0 is a hand-written centerline follower with no learned parameters** — it cannot "fail to learn" anything. It arrests at the same 153.3–153.4 mm.
+
+A station that stops a parameterless controller *and* two independently trained networks at the same tenth of a millimetre is not a policy defect. And geometry predicted 154.0 while behaviour measured 153.4 — **0.6 mm agreement between a clearance calculation and three controllers, with nothing fitted to anything.**
+
+**What it meant for the headline claim.** 153.4 mm sits **57 mm before the siphon band begins** (210 mm). So "the siphon is an absolute wall, 0/30" was describing an arrest in the mid-ICA. **Nothing ever reached the siphon to fail there.**
+
+**The fix — including the wrong one first.** The obvious fix, constructing `DualDeviceNav` directly, was **wrong**: it also moves the wire's start to the femoral entry and swaps the target sampler. A 4-episode smoke test returned `path_len` 594–752 mm against the usual 103–156 mm — a different task entirely. Had that gone straight to 98 episodes it would have produced a confident, catastrophic, spurious result.
+
+The correct fix keeps everything — insertion, targets, devices, frames — and swaps **only the collision surface**. One variable. **35.7% → 52.0%** on the same checkpoint; **75.5%** once the checkpoint selection was also corrected.
+
+**The bigger discovery.** The same defect affects the **generated** anatomies, which is where it actually hurts: 4 of 6 sampled are impassable to the 0.36 mm guidewire, and ~40–45% of the 50-anatomy failure mass is environment rather than policy. **Training still runs on those meshes** — that's the open item in the handoff.
+
+One correction about my own process, since it's the reusable lesson: I first measured erosion with *nearest-vertex* distance and got 1%, and briefly declared erosion refuted. On a 6 mm-triangle mesh the vertices sit outside the facets. Sampling the triangle *surfaces* gives ~45%. The wrong measurement sent me chasing three other theories — coarseness, collision chords, decimation — before the right one.
+
+---
+
+## ▸ User [259]
+
+"and swaps only the collision surface." ---> You mean loading mesh from obj as we were doing it before
+
+### Claude [259]
+
+Yes — exactly that. It's the same `.obj` the fixed-mesh runs used before the procedural pipeline existed: `vessel_architecture_collision.obj`, which `DualDeviceNav` loads.
+
+One nuance worth knowing, because it's why the fix isn't literally "point at the file on disk":
+
+```python
+_orig_mesh = DualDeviceNav().vessel_tree.mesh_path   # ← the loaded original
+...
+vt._pinned_mesh = _orig_mesh                          # ← pin it
+```
+
+We take `DualDeviceNav`'s **`FromMesh` output**, not the raw file. `FromMesh` writes a temp copy of the original rotated into the branch coordinate frame (`rotation_yzx_deg=[90,-90,0]`), because the raw `.obj` lives in the mesh frame while the centerlines live in the branch frame. Pointing at the raw file would drop a correctly-shaped surface into the wrong frame relative to the centerlines — geometry that looks fine in isolation and is misaligned with everything the wire navigates against.
+
+Verified it's the genuine article: that temp mesh has 3,584 cells, matching `vessel_architecture_collision.obj` exactly, versus 3,721 for the regeneration.
+
+So the structure is: **keep the procedural class for everything it was already doing right** — insertion at the (11) bridge, RCCA-only targets with the 40 mm minimum, devices, frames — and **override just its surface** with the loaded one. That single-variable framing is what makes 35.7% → 52.0% attributable to the mesh and nothing else.
+
+The one implementation wrinkle: `_generate()` nulls `_mesh_path`, and `reset()` calls `_generate()`, so a plain assignment gets reverted on the first episode. Hence the class-method patch that re-pins it after every regeneration.
+
+---
+
+## ▸ User [260]
+
+From what point in session_transcript.md ; did we start our current line of teacher student experiment; I mean point to me the analsys/discussion when it started
+
+### Claude [260]
+
+The teacher–student line has two distinct starting points in `SESSION_TRANSCRIPT.md`:
+
+**Where the idea was born — Claude [114], lines ~5034–5079.** This is the paradigm-research synthesis, and it opens with your instinct rather than mine:
+
+> *"Excellent instinct — before burning more cycles bracketing a penalty coefficient, it's worth asking whether the **paradigm** is the bottleneck."*
+
+The load-bearing passage is at **line 5068**:
+
+> *"**The single highest-EV unlock the sweep surfaced:** 'Privileged Sensing Scaffolds RL' shows that our critic-only privileged setup **leaves most of the achievable gap unclaimed** — routing privileged obs into the **actor** recovered ~79% of it at exactly our sample scale. This re-explains our advantage-collapse at a deeper level: **the deployable actor literally cannot see the stall trigger the critic keys on.** Train a **privileged-actor teacher**… then DAgger-distill to the deployable student."*
+
+And immediately after it, **lines 5070–5074**, the three-phase plan everything since has followed: Phase 1 RLPD-ize the trainer; **Phase 2 (the unlock)** privileged-actor teacher as residual-on-heuristic → DAgger-distill to a student; Phase 3 GMM → Q-chunking if the stall ceiling persists.
+
+**Where it actually started running — Claude [126], line ~5585.** Phase 1 came first and closed negative. Then:
+
+> *"**(d)** P2a is implemented, validated, pushed (`rl_improv_18_p2` @ `3b71383`), and **running** — `rcca_p2_teacher_v1` is up with workers already inserting wire."*
+
+The turn just above it is the implementation trail — the `(2,2)` vs `(4,)` action-shape mismatch between the heuristic and the action space, the argparse flags, the launcher rewrite.
+
+**Worth noting about the origin.** The premise stated at line 5068 is **exactly what the LCCA experiment and the code audit have since complicated**. The reasoning was "the deployable actor cannot see the stall trigger, so give it to the actor and distil back." What we've since established is that the teacher was built and the **student never was** — so we're sitting on the half of Phase 2 that isn't deployable, and every headline number is a teacher number.
+
+Full arc: **Claude [114]** (idea) → **User [116]** at line 5123, "Yes do it on a fresh branch" (Phase 1 authorised) → RLPD closes negative → **Claude [126]** (P2a launched) → the v1 weight-sync bug → v1b → v1bp → the mesh investigation.
+
+---
+
+## ▸ User [261]
+
+ok now uodate the session.... md file with last three chats ; no need to scan the json ; just upodate these 3
+
+### Claude [261]
+
+Appended turns 258–260 directly, without re-scanning the JSONL, and completed the truncated tail of Claude [257] (the export ran mid-turn, so its conclusion was missing).
+
+---
