@@ -69,6 +69,10 @@ def build_episode_schedule(n_episodes, branches, base_seed=42, heuristic_mode=Fa
 EVAL_SEEDS = "1,2,3,5,6,7,8,9,10,12,13,14,16,17,18,21,22,23,27,31,34,35,37,39,42,43,44,47,48,50,52,55,56,58,61,62,63,68,69,70,71,73,79,80,81,84,89,91,92,93,95,97,102,103,108,109,110,115,116,117,118,120,122,123,124,126,127,128,129,130,131,132,134,136,138,139,140,141,142,143,144,147,148,149,150,151,152,154,155,156,158,159,161,162,167,168,171,175"
 EVAL_SEEDS = EVAL_SEEDS.split(",")
 EVAL_SEEDS = [int(seed) for seed in EVAL_SEEDS]
+# Gen-5 --topbrain: container mount point of the built TopBrain anatomies
+# (host topbrain_data/anatomies). Read-only in practice — nothing in this
+# script writes under it.
+TOPBRAIN_DIR = "/opt/eve_training/topbrain_data/anatomies"
 HEATUP_STEPS = 2e4  # 20k steps
 TRAINING_STEPS = 2e7
 CONSECUTIVE_EXPLORE_EPISODES = 100
@@ -478,6 +482,24 @@ def main(args):
     # fail fast on a mismatch. Set BEFORE any worker process is created.
     os.environ["EVE_RL_BUCKLE_COEF"] = repr(_buckle_coef)
 
+    # Gen-5 TopBrain anatomy set — argument validation, hoisted ABOVE the
+    # Gen-4 block so a mutually-exclusive invocation fails BEFORE
+    # DualDeviceNavRCCAVaried runs its mesh-generating constructor. The
+    # TopBrain branches themselves sit AFTER the procedural if/else (train)
+    # and after the eval if/else, so not one existing line of the Gen-4 path
+    # is touched and a run without --topbrain is byte-identical to v1bp.
+    if getattr(args, "topbrain", False):
+        if getattr(args, "procedural_rcca", False):
+            raise ValueError(
+                "--topbrain and --procedural_rcca are mutually exclusive: "
+                "both replace the vessel tree. --procedural_rcca perturbs "
+                "ONE loaded RCCA with sinusoids (a synthetic family); "
+                "--topbrain loads REAL patient siphons grafted onto the "
+                "same fixed host tree. Pass exactly one."
+            )
+        if args.env_version != 5:
+            raise ValueError("--topbrain requires --env_version 5.")
+
     # Gen-4 procedural anatomy — per-worker RCCA->siphon variation. Each
     # worker gets a distinctly-seeded DualDeviceNavProcedural that
     # re-randomizes the vessel every --procedural_change_every episodes.
@@ -553,6 +575,132 @@ def main(args):
         )
     else:
         intervention = DualDeviceNav(insertion_z=args.insertion_z)
+
+    # Gen-5 TopBrain anatomy — per-worker REAL-patient siphon variation.
+    # The exact shape of the Gen-4 branch above, and deliberately placed
+    # AFTER it: --topbrain is mutually exclusive with --procedural_rcca
+    # (validated above), so that branch took its `else` and bound a
+    # throwaway fixed-mesh DualDeviceNav (a centerline load only — no
+    # meshing, no SOFA, master process, once); we rebind it here. That
+    # keeps this edit pure-addition, so the v1bp path cannot drift.
+    #
+    # SINGLE VARIABLE vs the v1bp teacher: only where the anatomy comes
+    # from. Verified by reading both constructors rather than trusting the
+    # pipeline doc — DualDeviceNavTopBrain is parameter-for-parameter
+    # identical to DualDeviceNavRCCAVaried in devices (JShaped mic_guide
+    # 0.36 / mic_cath 0.6-0.7, velocity_limit (30, 1.5), young 1e3),
+    # simulation (SofaBeamAdapter friction=0.001), fluoroscopy
+    # (TrackingOnly, image_frequency 7.5, image_rot_zx [20, 5]) and target
+    # (CenterlineRandom, threshold 5, branches=[RCCA],
+    # min_arclength_from_start 40 mm). The insertion is derived ONCE from
+    # the shared host trunk and never re-derived per anatomy
+    # (TopBrainAnatomySet._select re-binds branches/mesh but restores the
+    # same self.insertion), so the wire START is fixed and identical across
+    # all anatomies — exactly as the procedural branch fixes it at the RCCA
+    # ostium. Same (y,-z,-x) vessel-CS frame. Reward, observation and
+    # terminal logic are untouched, so the v1bp policy warm-starts.
+    if getattr(args, "topbrain", False):
+        # Imported INSIDE the branch, exactly as the procedural branch
+        # imports DualDeviceNavRCCAVaried, so a run without --topbrain never
+        # touches the module and cannot fail on a missing bind-mount.
+        # Imported by MODULE PATH, not re-exported through a package
+        # __init__: TOPBRAIN_PIPELINE.md Fix D5 — adding it to
+        # eve/intervention/vesseltree/__init__.py would break the 10
+        # launchers that mount that __init__ without the new module.
+        from eve_bench.dualdevicenavtopbrain import DualDeviceNavTopBrain
+        _tb_dir = str(getattr(args, "topbrain_dir", TOPBRAIN_DIR))
+        _tb_base_seed = int(getattr(args, "topbrain_seed", 12345))
+        _tb_change = int(getattr(args, "topbrain_change_every", 10))
+        _tb_exclude = list(getattr(args, "topbrain_exclude", None) or [])
+        _tb_holdout = list(getattr(args, "topbrain_holdout", None) or [])
+        # No training worker may ever see a held-out patient: the training
+        # exclusion is the unusable set UNION the eval holdout.
+        _tb_train_exclude = sorted(set(_tb_exclude) | set(_tb_holdout))
+        # Target depth. At the shipped 40.0 mm roughly half of every
+        # worker's targets land on the 133 mm of host trunk that is
+        # byte-identical across all 22 patients, carrying no
+        # inter-patient signal. 133.0 is the MEASURED graft seam (first
+        # >1 mm departure at 133.6-134.6 mm), so it forces every target
+        # into real patient siphon anatomy.
+        _tb_tmin = float(getattr(args, "topbrain_target_min_arclength", 40.0))
+
+        if args.checkpoint_dir:
+            # Mesh-matched recovery restore, as Gen-4 (#3). It is SAFE here
+            # for the same reason and by a stronger argument: the TopBrain
+            # fingerprint IS the anatomy name (Fix D3, alphanumeric-stripped
+            # to satisfy checkpoint_restore.py's _mesh-([A-Za-z0-9]+)_
+            # regex), so pin_next -> regenerate_to_fingerprint selects the
+            # exact anatomy a checkpoint was captured on — an exact lookup,
+            # not a replayed regeneration. The pool MUST be a
+            # fingerprinted stuck harvest from a prior --topbrain run;
+            # procedural or fixed-mesh checkpoints are correctly ineligible
+            # and those episodes fall through to the ostium start. Under a
+            # pin the anatomy schedule is inert (the checkpoint, not the
+            # worker id, dictates the mesh), so --topbrain_change_every
+            # does nothing.
+            print(
+                "[Gen-5] --topbrain + --checkpoint_dir: mesh-matched "
+                "recovery-curriculum restore ON — each worker's tree is "
+                "pinned to the picked checkpoint's ANATOMY. Pool must be a "
+                "TopBrain-fingerprinted stuck harvest (else nothing is "
+                "eligible and episodes start at the ostium)."
+            )
+
+        # Factory returns a FULL env (BenchEnv5 wrapping a distinctly-seeded
+        # TopBrain intervention). Worker i -> seed base+i, exactly as the
+        # procedural factory does. Anatomy choice is a PURE FUNCTION of
+        # (seed, generation) — TopBrainAnatomySet._index_for permutes the
+        # set per block of n, so each worker covers its set evenly and no
+        # re-seed can desynchronise it.
+        def topbrain_env_factory(worker_id):
+            interv = DualDeviceNavTopBrain(
+                anatomy_dir=_tb_dir,
+                seed=_tb_base_seed + worker_id,
+                episodes_between_change=_tb_change,
+                exclude=_tb_train_exclude,
+                         target_min_arclength_mm=_tb_tmin,
+                     )
+            env = BenchEnv5(
+                intervention=interv, mode="train", visualisation=False,
+                **env_kwargs
+            )
+            # As Gen-4 (#3): the wrapper must sit on the WORKER'S own env
+            # (not the master template wrapped below for sizing) so pin_next
+            # re-selects THIS worker's anatomy in-process. Distinct rng_seed
+            # per worker so the per-episode checkpoint picks diverge.
+            if args.checkpoint_dir:
+                from util.checkpoint_restore import CheckpointRestoreWrapper
+                env = CheckpointRestoreWrapper(
+                    env,
+                    checkpoint_dir=args.checkpoint_dir,
+                    rng_seed=42 + worker_id,
+                )
+            return env
+        # The runner takes ONE env_train_factory (see env_train_factory=
+        # procedural_env_factory below); rebinding that name is how the
+        # TopBrain factory is plumbed through without editing the call.
+        procedural_env_factory = topbrain_env_factory
+        # Representative instance for network sizing / config save only;
+        # the workers get topbrain_env_factory(i).
+        intervention = DualDeviceNavTopBrain(
+            anatomy_dir=_tb_dir,
+            seed=_tb_base_seed,
+            episodes_between_change=_tb_change,
+            exclude=_tb_train_exclude,
+                           target_min_arclength_mm=_tb_tmin,
+                       )
+        _tb_train_names = list(intervention.vessel_tree.anatomy_names)
+        print(
+            f"[Gen-5] TopBrain anatomy set (fixed shipped host tree, REAL "
+            f"patient right-ICA siphons grafted at 130 mm arclength, start "
+            f"FIXED at the shared-trunk insertion): dir={_tb_dir} | "
+            f"TRAIN {len(_tb_train_names)}: {_tb_train_names} | "
+            f"HELD-OUT (eval only, never trained) {len(_tb_holdout)}: "
+            f"{_tb_holdout} | EXCLUDED-unusable {len(_tb_exclude)}: "
+            f"{_tb_exclude} | base_seed={_tb_base_seed}, "
+            f"change_every={_tb_change} eps, per-worker seeds "
+            f"{_tb_base_seed}..{_tb_base_seed + n_worker - 1}"
+        )
 
     # Plan v12 Stage 1 — multi-target heatup harvester. When
     # --multi_target_heatup is set, swap BenchEnv5 (single-target) for
@@ -639,6 +787,50 @@ def main(args):
         )
     else:
         intervention_eval = DualDeviceNav(insertion_z=args.insertion_z)
+
+    # Gen-5 TopBrain held-out eval — mirrors the procedural held-out logic
+    # above and, like the train branch, sits after it so no existing line
+    # changes (--topbrain excludes --procedural_rcca, so that branch took
+    # its `else` and bound a throwaway DualDeviceNav; rebound here).
+    #
+    # DECISION: CYCLE the holdout, do NOT pin one anatomy.
+    # The procedural branch pins (episodes_between_change=10**9) because its
+    # held-out vessel is ONE draw from a continuous sinusoid family —
+    # cycling would merely resample the same distribution and add variance
+    # for nothing. Here the holdout is a handful of DISTINCT REAL PATIENTS
+    # and inter-patient transfer is the entire quantity this run exists to
+    # measure; pinning would report one patient's idiosyncrasy as the
+    # generalization number.
+    #
+    # Cycling costs NO cross-checkpoint comparability here, which is the
+    # only real argument for pinning. runner.eval(seeds=EVAL_SEEDS) drives
+    # every eval episode with a FIXED seed off the 98-seed list;
+    # MonoPlaneStatic.reset derives vessel_seed from it and
+    # TopBrainAnatomySet.reset re-seeds and zeroes its generation counter,
+    # so with episodes_between_change=1 the anatomy is a PURE FUNCTION of
+    # the eval seed (_index_for -> permutation under
+    # default_rng([vessel_seed, 0])). Every checkpoint therefore evaluates
+    # the IDENTICAL seed->anatomy assignment: matched pairs across
+    # checkpoints, spread over all held-out patients. Lower variance than a
+    # pin, in fact, since each eval averages the holdout instead of
+    # sampling one member of it.
+    #
+    # seed=base-1 keeps the eval env's base seed disjoint from every
+    # worker's, exactly as the procedural branch does.
+    if getattr(args, "topbrain", False):
+        from eve_bench.dualdevicenavtopbrain import DualDeviceNavTopBrain
+        intervention_eval = DualDeviceNavTopBrain(
+            anatomy_dir=str(getattr(args, "topbrain_dir", TOPBRAIN_DIR)),
+            seed=int(getattr(args, "topbrain_seed", 12345)) - 1,
+            episodes_between_change=1,
+            only=list(getattr(args, "topbrain_holdout", None) or []),
+                                target_min_arclength_mm=_tb_tmin,
+                            )
+        print(
+            f"[Gen-5] held-out eval anatomies (CYCLED, one per episode, "
+            f"seed-determined and identical at every checkpoint): "
+            f"{list(intervention_eval.vessel_tree.anatomy_names)}"
+        )
     env_eval = EnvClass(
         intervention=intervention_eval, mode="eval", visualisation=False, **env_kwargs
     )
@@ -2129,6 +2321,91 @@ if __name__ == "__main__":
         help="Regenerate each worker's procedural vessel every N episodes "
              "(default 10). Each regen triggers a SOFA scene rebuild "
              "(~seconds), amortized over N minutes-long episodes.",
+    )
+    parser.add_argument(
+        "--topbrain",
+        action="store_true",
+        help=(
+            "Gen-5 TopBrain anatomy set — keep the shipped DualDeviceNav "
+            "host tree (arch, trunk, cervical vessel) FIXED and swap in a "
+            "REAL patient right-ICA siphon per anatomy "
+            "(DualDeviceNavTopBrain: TopBrain patients grafted onto the "
+            "host RCCA at 130 mm arclength, same (y,-z,-x) vessel-CS frame "
+            "and identical devices/simulation/fluoroscopy/target as "
+            "DualDeviceNavRCCAVaried, so the observations match and a "
+            "procedurally trained policy warm-starts). The wire START is "
+            "FIXED at the shared-trunk insertion (identical every anatomy "
+            "and every worker) — this isolates siphon navigation across "
+            "real inter-patient variation instead of a synthetic sinusoid "
+            "family. Worker i seeded --topbrain_seed + i and re-selects "
+            "every --topbrain_change_every episodes; eval runs the "
+            "--topbrain_holdout patients, which no worker ever trains on. "
+            "Env v5 only. Mutually exclusive with --procedural_rcca. "
+            "Invalidates fixed-mesh and procedural caches/checkpoints. May "
+            "be combined with --checkpoint_dir for a mesh-matched recovery "
+            "curriculum: the checkpoint fingerprint IS the anatomy name, so "
+            "the pool must be a TopBrain-fingerprinted stuck harvest."
+        ),
+    )
+    parser.add_argument(
+        "--topbrain_dir", type=str, default=TOPBRAIN_DIR,
+        help="Directory of built TopBrain anatomy folders for --topbrain "
+             "(default " + TOPBRAIN_DIR + ", the container mount point). "
+             "Each subfolder holds Centrelines_comb/ plus the baked "
+             "vessel_architecture_collision.obj.",
+    )
+    parser.add_argument(
+        "--topbrain_seed", type=int, default=12345,
+        help="Base RNG seed for --topbrain (worker i uses base+i). Anatomy "
+             "choice is a pure function of (seed, generation), so a "
+             "worker's sequence is reproducible and re-seeding cannot "
+             "desynchronise it. Eval uses base-1, disjoint from every "
+             "worker.",
+    )
+    parser.add_argument(
+        "--topbrain_change_every", type=int, default=10,
+        help="Select a new anatomy for each worker every N episodes "
+             "(default 10), passed as episodes_between_change. Each switch "
+             "triggers a SOFA scene rebuild (~seconds), amortized over N "
+             "minutes-long episodes. Inert under --checkpoint_dir, where "
+             "the restored checkpoint pins the anatomy.",
+    )
+    parser.add_argument(
+        "--topbrain_exclude", nargs="+",
+        default=["topcow_mr_013", "topcow_mr_014", "topcow_mr_015"],
+        help="Anatomies dropped as UNUSABLE — excluded from training AND "
+             "eval (not a holdout). Default is the strict-22 set from "
+             "TOPBRAIN_PIPELINE.md's enclosure check: mr_015 pinches shut "
+             "over its distal 22 mm (23 centerline points outside the mesh, "
+             "up to 7.19 mm, 11%% of its targets unreachable), mr_013 and "
+             "mr_014 are borderline (5 pts / 1.37 mm and 3 pts / 2.11 mm).",
+    )
+    parser.add_argument(
+        "--topbrain_holdout", nargs="+",
+        default=["topcow_mr_005", "topcow_mr_012", "topcow_mr_020",
+                 "topcow_mr_026"],
+        help="Anatomies RESERVED FOR EVAL: excluded from every training "
+             "worker and the only ones the eval env sees, so the eval "
+             "number is a true unseen-patient transfer estimate. The eval "
+             "env CYCLES them (one per episode, seed-determined, identical "
+             "at every checkpoint). Default is a deterministic spread "
+             "across the id range and is NOT difficulty-balanced — re-pick "
+             "it stratified by difficulty once the navigability audit "
+             "lands, otherwise the transfer number is biased by whichever "
+             "patients happen to fall easy or hard.",
+    )
+    parser.add_argument(
+        "--topbrain_target_min_arclength", type=float, default=40.0,
+        help="Minimum target arclength from the RCCA entry, mm, for "
+             "--topbrain (default 40.0 = the shipped procedural value). "
+             "The 22 anatomies share the host trunk byte-identically out "
+             "to a MEASURED graft seam at ~133 mm; at 40.0 roughly "
+             "47-51%% of targets land there and carry no inter-patient "
+             "signal, so a course-memorising policy banks them for free. "
+             "Set 133.0 to force every target into real patient siphon "
+             "anatomy (costs ~49%% of the pool, leaving ~98/anatomy). "
+             "Applies to BOTH the training workers and the held-out eval "
+             "so the two stay comparable.",
     )
     parser.add_argument(
         "--aux_coef",

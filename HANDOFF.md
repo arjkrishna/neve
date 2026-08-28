@@ -348,3 +348,163 @@ table plus **12 gaps and 12 risks**. Highest-priority items from that audit:
 | `eve/eve/intervention/vesseltree/rccavariedfrommesh.py` | procedural anatomy generation |
 | `eve/eve/intervention/vesseltree/util/meshing.py` | the re-mesher (the defect lives here) |
 | `monitoring/` | all analysis tooling (§2.3) |
+
+---
+
+# 9. TOPBRAIN ANATOMY SET — operations and findings (2026-08-28)
+
+Appended, not a rewrite. Sections 0–8 above are unchanged and still accurate except where
+this section explicitly supersedes them.
+
+## 9.1 What the set is
+
+25 anatomies at `topbrain_data/anatomies/`, built on branch `rl_improv_16_resume` (build
+record: `TOPBRAIN_PIPELINE.md`, pulled into this branch). They are **the shipped host
+patient's own tree** — arch, brachiocephalic trunk, cervical carotid — with a different
+real patient's **right ICA siphon** grafted onto the distal third, sourced from the
+TopBrain 2025 MICCAI release (Zenodo 16878417; 25 MR/CT pairs; open Swiss licence,
+non-commercial, **attribution mandatory**, data owner University Hospital Zurich).
+
+Measured, not assumed:
+
+- 15 of 16 centerlines are byte-identical across all 25 **and to the host's**.
+- The RCCA courses coincide to rms < 0.01 mm out to **s = 133.6 mm** (the graft seam).
+- Declared radii diverge 31 mm earlier, at **s = 102.5 mm** — the pipeline overwrote the
+  host's own mid-ICA narrowing (host r 1.27–1.60 mm) with a smoothstep ramp UP to
+  2.25–2.90 mm. The "shared" band is therefore **wider** than the host's, not identical.
+- Coordinate mapping, derived from 9,133 STEP samples: **s_RCCA = path_len − 33.31 mm**
+  (sd 0.042). The seam is path_len **166.91 mm**.
+- Only `mr_025` has a mid-vessel blockage touching any evaluated target (s = 166.8–168.3 mm,
+  min clearance 0.218 mm). At the 0.18 mm guidewire radius there are **zero** mid-vessel
+  blockages anywhere in the cohort. Cohort reachability ceiling 97.5–100%.
+
+## 9.2 Running TRAINING on the set
+
+```bash
+bash launch_rcca_topbrain_v1.sh          # container rcca_topbrain_v1
+docker logs -f rcca_topbrain_v1
+docker stop -t 60 rcca_topbrain_v1
+```
+
+The launcher is `launch_rcca_p2_teacher_v1bp.sh` with the anatomy source swapped and four
+extra mounts. Every algorithm flag is byte-identical to v1bp. New flags, all default-OFF —
+a run without `--topbrain` is byte-identical to legacy (proven: 277 insertions, 0 deletions
+in `DualDeviceNav_train.py`; paired before/after config dumps differ only in `_id` memory
+addresses):
+
+| flag | meaning |
+|---|---|
+| `--topbrain` | use `DualDeviceNavTopBrain` instead of `--procedural_rcca`. Mutually exclusive; raises on both. Requires `--env_version 5`. |
+| `--topbrain_dir` | container path to `anatomies/` |
+| `--topbrain_seed` | base seed; worker *i* gets base+*i* (as `--procedural_seed` does) |
+| `--topbrain_change_every` | episodes between anatomy switches (10) |
+| `--topbrain_exclude` | anatomies dropped from BOTH train and eval |
+| `--topbrain_holdout` | reserved for eval; added to the train exclude so no worker sees them |
+| `--topbrain_target_min_arclength` | **the important one.** Minimum target arclength from the RCCA ostium. Default 40.0 = legacy. **Use 133.0** — see 9.4. |
+
+Extra mounts beyond the v1bp set (Fix D5: do NOT add the loader to
+`vesseltree/__init__.py` — that file is bind-mounted by 10 launchers that lack the module):
+`topbrainanatomyset.py` → the INSTALLED eve package path; `dualdevicenavtopbrain.py` →
+BOTH eve_bench locations; `topbrain_data` → `/opt/eve_training/topbrain_data:ro`.
+
+## 9.3 Running EVALUATION on the set
+
+```bash
+TOPBRAIN_ONLY="topcow_mr_007 topcow_mr_008 topcow_mr_017 topcow_mr_022" \
+NAME=eval_tb CHANGE_EVERY=1 \
+  bash launch_eval_topbrain.sh <checkpoint-path-inside-container> 220
+```
+
+`launch_eval_topbrain.sh` is `launch_eval_anatomies.sh` plus the four mounts, defaulting
+`EXTRA_FLAGS` to `--topbrain` and the three v1bp reward-pair flags that are NOT in the
+inherited defaults (`--cath_slack_coef 0.5 --progress_tip_mode avg --avg_gw_weight 0.5`).
+Omitting those three changes the observation width and the strict load fails loudly.
+Omit `TOPBRAIN_ONLY` to evaluate all 22 retained anatomies.
+
+Output lands in `<ckpt-dir>/eval_anatomies_<ckpt-name>/`. **`episodes.csv` and
+`anatomy_success.csv` are OVERWRITTEN by each run**; the per-run authoritative records are
+the timestamped `episodes_official_*.jsonl` and the `logs/<ts>/`, `snapshots/<ts>/` dirs.
+
+**Anatomy assignment is a pure function of the eval seed.** Two runs with the same
+`SEED_BASE` and episode count are matched pair-for-pair — verified: 220/220 shared seeds
+drew the identical anatomy AND the identical target. Use paired statistics.
+
+## 9.4 The finding that dictates the target-depth flag
+
+At the legacy 40 mm, **47–51% of targets land proximal to the seam**, on geometry
+byte-identical across every patient. Measured on `ckpt2002292` (the v1bp teacher, trained
+on the procedural set, so all 22 are unseen to it), 220 episodes, all 22 anatomies:
+
+| targets | teacher | H0 (checkpoint0) | delta | p |
+|---|---|---|---|---|
+| shared host course | **96/96 = 100%** | 66/96 = 68.8% | +31.2 pp | <0.0001 |
+| **grafted (unseen) anatomy** | 69/124 = **55.6%** | 71/124 = **57.3%** | **−1.6 pp** | **0.90** |
+| all | 165/220 = 75.0% | 137/220 = 62.3% | +12.7 pp | 0.0054 |
+
+**Training on the procedural set bought a large, highly significant gain on the anatomy it
+trained around, and nothing measurable on unseen anatomy.** By section both controllers
+degrade monotonically with depth (H0 73.2 → 61.8 → 52.1%; teacher 100 → 77.6 → 47.9%), and
+the teacher's advantage is proximal only. This is the LCCA 0/98 result measured a second,
+independent way.
+
+Hence `--topbrain_target_min_arclength 133.0`: it deletes the free episodes so the run
+trains and is scored only where the headroom actually is.
+
+## 9.5 RETRACTED — do not cite these
+
+- **"91.8% on unseen patients."** Inflated three ways: a holdout of four anatomies picked
+  for being defect-free; 44% of episodes on shared host course (100% of which succeed); and
+  a shallower target mix. All-22 is 75.0%, and 55.6% on grafted targets.
+- **"Siphon 84.6% vs the host's 33.3%."** H0 scores ~78.6% on the same anatomies. The
+  teacher added nothing in the siphon.
+- **"The cohort meshes are deflated and therefore harder."** Refuted by re-baking the HOST
+  through the cohort's own mesher: the cohort trunk is then +1.0% WIDER, 20/22 wider.
+  96–99% of the apparent gap is the shared mesh generator, not the patients.
+- **Any section-level number from a 4-anatomy subset.** Intervals there are ±25 points.
+  Only the 220-episode all-22 runs support a trend.
+
+## 9.6 Anatomy exclusions, with the measurement behind each
+
+| anatomy | why |
+|---|---|
+| `mr_015` | surface ends ~20 mm short; 23 centerline points outside it, up to 7.19 mm |
+| `mr_013`, `mr_014` | centerline outside mesh (5 pts / 1.37 mm; 3 pts / 2.11 mm) |
+| `mr_025` | mid-siphon pinch at s = 166.8–168.3 mm that no distal trim removes. Its 9 eval episodes split perfectly on it: 4 targets proximal ALL succeeded (30–75 steps), 5 distal ALL failed by timeout. Excluding it takes 44.4% → 100% (Fisher p = 0.0079). Unreachable targets would feed unearnable negative reward into training. |
+
+Retained: 21. The current run holds out `mr_007 / mr_008 / mr_017 / mr_022`, stratified
+across the observed difficulty range — **not** the earlier `004/008/017/023`, which were
+picked for cleanliness and produced the inflated 91.8%.
+
+## 9.7 Open on this set
+
+- The host collision surface reads **1.65× its own declared radii** (1.94–2.27× over the
+  siphon) while the host VISUAL mesh reads 1.0019. If confirmed, every host number — siphon
+  ceiling, 75.5%, `--real_patient_anatomy` — was obtained inside a vessel roughly twice as
+  wide as the patient's. Half a day of signed-distance work to settle. **Highest-stakes
+  open item in the project.**
+- The mesher applies a uniform **−0.31 mm** inward offset (half its 0.6 mm voxel) to every
+  surface it makes, host included. Fixable by pre-dilating radii or gridding at 0.3 mm,
+  into a NEW directory — never overwrite.
+- The **167–200 mm dip** (59.5%, below the 82.6% of the band beyond it) survives every
+  reachability correction with zero episodes excluded. Pure policy defect, spread over 12
+  anatomies, and the most informative anomaly in the data.
+- `--topbrain` + `--checkpoint_dir` **crashes every worker** (`checkpoint_restore.py` admits
+  any non-`fixed` tag without checking it belongs to this anatomy set). Neither launcher
+  passes `--checkpoint_dir`, so it is latent, but it needs a guard.
+
+## 9.8 First TopBrain training run — `rcca_topbrain_v1`, 2026-08-28
+
+Launched at 133 mm target depth, 17 training anatomies, 4 held out, all other flags
+byte-identical to v1bp. Eval history:
+
+| eval | explore eps | steps | success | steps-to-success | translation speed |
+|---|---|---|---|---|---|
+| 1 (H0 baseline) | 0 | 0 | **73.5%** | 497 | 3.64 mm/s |
+| 2 | 2,200 | 256,370 | **99.0%** | 68 | 25.7 mm/s |
+| 3 | 5,300 | 505,230 | **99.0%** | 71 | — |
+
+Saturated by the second eval. **Unverified at time of writing**: the policy drives at
+~86% of the 30 mm/s insertion limit, a 7× speed increase over the heuristic. Before this
+number is used anywhere, check `buckle_phi` and the `fold=n/20` counter — a 99% obtained by
+ramming rather than tracking is a simulator artifact, not a policy. Checkpoints stored:
+`checkpoint256370`, `checkpoint505230`.

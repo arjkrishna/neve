@@ -58,6 +58,30 @@ USAGE (inside the training container, same mounts as the launcher)
 
 The architecture flags MUST match the run that produced the checkpoint or the
 strict state_dict load fails loudly (which is the intended behavior).
+
+TOPBRAIN COHORT (--topbrain, default off)
+-----------------------------------------
+`--topbrain` swaps the procedural env for `DualDeviceNavTopBrain`: the shipped
+host tree carrying a REAL TopBrain-2025 patient right-ICA siphon grafted on at
+130 mm, one per folder under `--topbrain_dir`. Devices, insertion pose and
+target-sampler configuration are the same as `DualDeviceNavRCCAVaried` — which
+is what makes the number comparable with every host result in the program, and
+which `--verify_variation` DIFFS AND PRINTS rather than assuming.
+
+  --topbrain_exclude        default drops topcow_mr_013/014/015 (the 2026-08
+                            audit cut), leaving the retained 22
+  --topbrain_only           held-out arm; authoritative (exclude not applied)
+  --topbrain_trim_stations  drop the last N stations of the target branch from
+                            the TARGET POOL only — never from the geometry, the
+                            mesh or the pathfinder. N=0 is an exact no-op.
+
+Attribution: env5 stamps `mesh_fp=<name-fingerprint>` on every EPISODE_START,
+so the report prints a per-anatomy table, cross-checks name against geometry
+hash 1:1, and writes `anatomy_success.csv`; `episodes.csv` gains anatomy /
+geometry_hash / seed columns in this mode only.
+
+Every one of these is inert without `--topbrain`; with none of them the script
+behaves exactly as before.
 """
 
 import argparse
@@ -165,6 +189,147 @@ def _install_pinned_surface_patch():
 
     RCCAVariedFromMesh._generate = _generate
     RCCAVariedFromMesh._pinned_surface_patch = True
+
+
+def _install_target_pool_trim_patch():
+    """Make CenterlineRandom honour an instance attribute `_trim_last_stations`.
+
+    Drops the last N centerline stations of each sampled branch from the TARGET
+    POOL. Nothing else: the branch coordinates, the mesh, the pathfinder and
+    `at_tree_end` all keep the full station list, so only which points may be
+    CHOSEN as a target changes.
+
+    Why it is wanted: the terminal-station deficit is universal — the last one
+    or two stations of a real centerline sit at/through the capped end of the
+    surface, so a target there can be geometrically unreachable. Measured in
+    the retained-22 cohort at wire radius 0.18 mm: mr_027 blocked at the
+    terminal station only, and the HOST itself blocked at 3 / outside at 2 over
+    s = 223.9-225.9 mm. Trimming makes the cohort and the host comparable on
+    reachable targets instead of on how each one's centerline was clipped.
+
+    `_arclength_from_start_mask` is the right seam: it is called ONLY from
+    `_init_centerline_point_cloud`, once per branch with that branch's own
+    ordered coordinates, and both the pooled and the per-branch target lists
+    are built through it — so a False in the mask removes the station from the
+    target pool and from nowhere else. `branches=[RCCA]` in both this env and
+    DualDeviceNavRCCAVaried, so the only branch it ever sees is the navigated
+    one (asserted at build time in make_env).
+
+    Workers are SPAWNED, so this patches the CLASS (as
+    `_install_pinned_surface_patch` does); the instance carries only a plain
+    int, which pickles. N = 0 / attribute absent is an exact no-op: the
+    original mask object is returned unmodified, not a copy.
+    """
+    from eve.intervention.target.centerlinerandom import CenterlineRandom
+
+    if getattr(CenterlineRandom, "_target_pool_trim_patch", False):
+        return
+    _orig_mask = CenterlineRandom._arclength_from_start_mask
+
+    def _arclength_from_start_mask(self, points):
+        mask = _orig_mask(self, points)
+        n_trim = int(getattr(self, "_trim_last_stations", 0) or 0)
+        if n_trim <= 0 or len(mask) == 0:
+            return mask
+        mask = np.asarray(mask, dtype=bool).copy()
+        mask[-min(n_trim, len(mask)):] = False
+        return mask
+
+    CenterlineRandom._arclength_from_start_mask = _arclength_from_start_mask
+    CenterlineRandom._target_pool_trim_patch = True
+
+
+# TopBrain cohort: the 3 anatomies cut by the 2026-08 audit. Name-based, so
+# the exclusion survives any re-baking of the meshes.
+_TOPBRAIN_DEFAULT_EXCLUDE = ["topcow_mr_013", "topcow_mr_014", "topcow_mr_015"]
+_TOPBRAIN_DEFAULT_DIR = "/opt/eve_training/results_topbrain/anatomies"
+
+
+def _topbrain_parity_report(interv) -> bool:
+    """Prove the TopBrain env is task-identical to DualDeviceNavRCCAVaried.
+
+    The whole point of running the cohort is COMPARABILITY with every host
+    number already in the program, so "the docstring says they match" is not
+    good enough — an insertion or target-pool difference would turn a
+    difficulty probe into a different-task measurement (exactly the failure
+    mode `_retarget_inside_branch` documents). This constructs the procedural
+    env and diffs the three things that define the task: the device set, the
+    insertion pose, and the target sampler's configuration.
+
+    Returns True when everything matches. Preflight only (it builds a
+    procedural tree, which costs a marching-cubes pass).
+    """
+    from eve_bench.dualdevicenavrccavaried import DualDeviceNavRCCAVaried
+
+    ref = DualDeviceNavRCCAVaried(seed=12344, episodes_between_change=10 ** 9)
+    ok = True
+
+    def _cmp(label, got, exp):
+        nonlocal ok
+        same = got == exp
+        ok = ok and same
+        print(f"  [{'ok ' if same else 'DIFF'}] {label}: {got!r}"
+              + ("" if same else f"   != RCCAVaried {exp!r}"))
+
+    dev_attrs = ("name", "length", "velocity_limit", "tip_outer_diameter",
+                 "straight_outer_diameter", "tip_inner_diameter",
+                 "straight_inner_diameter", "mass_density_tip",
+                 "mass_density_straight", "young_modulus_tip",
+                 "young_modulus_straight", "beams_per_mm_straight",
+                 "visu_edges_per_mm")
+    print("[eval-anat] PARITY vs DualDeviceNavRCCAVaried — devices")
+    _cmp("n_devices", len(interv.devices), len(ref.devices))
+    for d_got, d_exp in zip(interv.devices, ref.devices):
+        _cmp(f"device {getattr(d_exp,'name','?')} class",
+             type(d_got).__name__, type(d_exp).__name__)
+        for at in dev_attrs:
+            _cmp(f"device {getattr(d_exp,'name','?')}.{at}",
+                 getattr(d_got, at, None), getattr(d_exp, at, None))
+
+    print("[eval-anat] PARITY — insertion (the wire's start pose)")
+    p_got = np.asarray(interv.vessel_tree.insertion.position, dtype=float)
+    p_exp = np.asarray(ref.vessel_tree.insertion.position, dtype=float)
+    d_got = np.asarray(interv.vessel_tree.insertion.direction, dtype=float)
+    d_exp = np.asarray(ref.vessel_tree.insertion.direction, dtype=float)
+    dp = float(np.max(np.abs(p_got - p_exp)))
+    dd = float(np.max(np.abs(d_got - d_exp)))
+    print(f"  position  topbrain={np.round(p_got,6).tolist()} "
+          f"rccavaried={np.round(p_exp,6).tolist()}  max|diff|={dp:.9f} mm")
+    print(f"  direction topbrain={np.round(d_got,6).tolist()} "
+          f"rccavaried={np.round(d_exp,6).tolist()}  max|diff|={dd:.9f}")
+    if dp > 1e-9 or dd > 1e-9:
+        ok = False
+        print("  [DIFF] insertion differs — the wire does NOT start where "
+              "every host number started")
+    else:
+        print("  [ok ] insertion byte-identical")
+
+    print("[eval-anat] PARITY — target sampler")
+    t_got, t_exp = interv.target, ref.target
+    _cmp("target class", type(t_got).__name__, type(t_exp).__name__)
+    for at in ("branches", "threshold", "min_arclength_from_start",
+               "min_distance_between_possible_targets"):
+        _cmp(f"target.{at}", getattr(t_got, at, None), getattr(t_exp, at, None))
+
+    print("[eval-anat] PARITY — sim / view / env")
+    _cmp("simulation class", type(interv.simulation).__name__,
+         type(ref.simulation).__name__)
+    _cmp("simulation.friction", getattr(interv.simulation, "friction", None),
+         getattr(ref.simulation, "friction", None))
+    _cmp("fluoroscopy class", type(interv.fluoroscopy).__name__,
+         type(ref.fluoroscopy).__name__)
+    _cmp("fluoroscopy.image_rot_zx",
+         list(interv.fluoroscopy.image_rot_zx), list(ref.fluoroscopy.image_rot_zx))
+    _cmp("fluoroscopy.image_frequency", interv.fluoroscopy.image_frequency,
+         ref.fluoroscopy.image_frequency)
+    _cmp("normalize_action", interv.normalize_action, ref.normalize_action)
+    _cmp("stop_device_at_tree_end", interv.stop_device_at_tree_end,
+         ref.stop_device_at_tree_end)
+
+    print(f"[eval-anat] PARITY VERDICT: "
+          f"{'MATCH — comparable with every host result' if ok else 'MISMATCH — DO NOT COMPARE'}")
+    ref.close()
+    return ok
 
 
 _NAV_BRANCH_NAMES = {
@@ -276,7 +441,73 @@ def make_env(a, seed: int, change_every: int, mode: str):
     from eve_bench.dualdevicenavrccavaried import DualDeviceNavRCCAVaried
     from util.env5 import BenchEnv5
 
-    if getattr(a, "real_patient_anatomy", False):
+    if getattr(a, "topbrain", False):
+        # THE TOPBRAIN COHORT — real patient siphons instead of procedural ones.
+        #
+        # Each anatomy is the shipped HOST tree (arch, trunk, cervical vessels)
+        # with one real TopBrain-2025 patient right-ICA siphon grafted on at 130
+        # mm arclength. Everything proximal to the graft — including branch (11),
+        # which carries the insertion — is shared bit-identically across the set
+        # and with the host, so the wire starts in the same place, the devices
+        # are the same, and the target sampler is configured the same. That is
+        # what makes an H0 number here comparable with every host number in the
+        # program; run `--verify_variation` to have that PROVEN rather than
+        # assumed (it diffs devices / insertion / target against
+        # DualDeviceNavRCCAVaried and prints a verdict).
+        #
+        # Unlike RCCAVariedFromMesh there is nothing to generate: the collision
+        # meshes are baked to disk, so no _pinned_mesh / _require_passable /
+        # radius_scale machinery applies here (main() rejects those combinations).
+        from eve_bench.dualdevicenavtopbrain import DualDeviceNavTopBrain
+
+        only = list(a.topbrain_only) if getattr(a, "topbrain_only", None) else None
+        # `only` is authoritative when given: find_anatomies applies only-then-
+        # exclude, so silently intersecting it with the default 3-name cut would
+        # turn "--topbrain_only topcow_mr_014" into an empty-set crash whose
+        # cause is invisible in the log.
+        exclude = None if only else list(getattr(a, "topbrain_exclude", None) or [])
+        interv = DualDeviceNavTopBrain(
+            anatomy_dir=a.topbrain_dir,
+            seed=seed,
+            episodes_between_change=change_every,
+            only=only,
+            exclude=exclude,
+            target_min_arclength_mm=float(a.target_min_arclength_mm),
+        )
+        vt = interv.vessel_tree
+        # ATTRIBUTION, printed by every process that builds an env: the roster
+        # this worker can draw from, and the anatomy it opens on. env5 then
+        # stamps `mesh_fp=<name-fingerprint>` on every EPISODE_START, and
+        # analyze() turns that into the per-anatomy table. A prior experiment in
+        # this program was nearly reported backwards because the arms could not
+        # be told apart in the result files; this makes it checkable by eye.
+        print(f"[eval-anat] TOPBRAIN cohort from {a.topbrain_dir}: "
+              f"{vt.anatomy_count} anatomies "
+              f"{'(only=' + ','.join(only) + ')' if only else '(exclude=' + ','.join(exclude or []) + ')'}")
+        print(f"[eval-anat] TOPBRAIN roster: {','.join(vt.anatomy_names)}")
+        print(f"[eval-anat] TOPBRAIN seed={seed} episodes_between_change="
+              f"{change_every} opening_anatomy={vt.current_anatomy} "
+              f"fingerprint={vt.mesh_fingerprint}")
+
+        n_trim = int(getattr(a, "topbrain_trim_stations", 0) or 0)
+        if n_trim > 0:
+            # Guard the assumption the patch relies on: the mask hook fires per
+            # branch and cannot see WHICH branch, so it is only equivalent to
+            # "trim the navigated branch" while the sampler draws from exactly
+            # that one branch.
+            assert list(interv.target.branches or []) == [a.target_branch], (
+                f"--topbrain_trim_stations assumes the target sampler draws "
+                f"from exactly [{a.target_branch}], got "
+                f"{list(interv.target.branches or [])}")
+            _install_target_pool_trim_patch()
+            interv.target._trim_last_stations = n_trim
+            interv.target._branches_initialized = None   # force a pool rebuild
+            rcca = next(b for b in vt.branches if str(b.name) == a.target_branch)
+            print(f"[eval-anat] TOPBRAIN target-pool trim: dropping the last "
+                  f"{n_trim} station(s) of {a.target_branch} from the TARGET "
+                  f"POOL only (branch has {len(rcca.coordinates)} stations; "
+                  f"geometry, mesh and pathfinder untouched)")
+    elif getattr(a, "real_patient_anatomy", False):
         # THE REAL PATIENT ANATOMY — the ORIGINAL segmented surface.
         #
         # 2026-07-29 FIX. The previous implementation built
@@ -441,6 +672,40 @@ def main():
                         "one GENERATED variant. Self-check: with zero "
                         "amplitude the geometry is seed-independent, so "
                         "--verify_variation must report IDENTICAL.")
+    # --- TopBrain cohort (DEFAULT OFF; none of these change anything unless
+    #     --topbrain is given) ---
+    p.add_argument("--topbrain", action="store_true",
+                   help="evaluate on the TOPBRAIN COHORT: the shipped host "
+                        "tree with a REAL TopBrain-2025 patient right-ICA "
+                        "siphon grafted on at 130 mm, one anatomy per "
+                        "folder under --topbrain_dir, instead of the "
+                        "procedural RCCAVariedFromMesh env. Devices, "
+                        "insertion and target semantics are the same as "
+                        "DualDeviceNavRCCAVaried — run --verify_variation to "
+                        "have that diffed and printed rather than assumed.")
+    p.add_argument("--topbrain_dir", default=_TOPBRAIN_DEFAULT_DIR,
+                   help="directory of <anatomy>/ folders, each holding "
+                        "vessel_architecture_collision.obj + Centrelines_comb/")
+    p.add_argument("--topbrain_exclude", nargs="+",
+                   default=list(_TOPBRAIN_DEFAULT_EXCLUDE),
+                   help="anatomy names to drop (default: the 3 cut by the "
+                        "2026-08 audit, leaving the retained 22). Ignored "
+                        "when --topbrain_only is given.")
+    p.add_argument("--topbrain_only", nargs="+", default=None,
+                   help="restrict to these anatomy names — the held-out "
+                        "evaluation arm (train with --topbrain_exclude on the "
+                        "same names). Authoritative: --topbrain_exclude is "
+                        "not also applied.")
+    p.add_argument("--topbrain_trim_stations", type=int, default=0,
+                   help="drop the last N centerline stations of the target "
+                        "branch from the TARGET POOL only — never from the "
+                        "geometry, the mesh or the pathfinder. The terminal "
+                        "station deficit is universal (measured: mr_027 "
+                        "blocked at its last station, and the HOST blocked "
+                        "at 3 / outside at 2 over s=223.9-225.9 mm), so N=1 "
+                        "or 2 compares reachable targets instead of "
+                        "centerline clipping. N=0 (default) is an exact "
+                        "no-op.")
     # --- architecture flags: MUST match the checkpoint's run ---
     p.add_argument("--hidden", nargs="+", type=int, default=[256, 256])
     p.add_argument("--embedder_layers", type=int, default=0)
@@ -505,6 +770,36 @@ def main():
                         "real-patient run differs from the generated runs "
                         "ONLY in the collision surface")
     a = p.parse_args()
+
+    if a.topbrain:
+        # Every one of these silently means "not the cohort": the TopBrain
+        # meshes are BAKED, so anything that regenerates, re-pins or rescales a
+        # procedural surface would either be ignored (and the run mislabelled)
+        # or applied to the wrong class. Refuse instead of guessing.
+        for flag, val, why in (
+            ("--real_patient_anatomy", a.real_patient_anatomy,
+             "both select a fixed anatomy; --topbrain already IS real patient "
+             "geometry (25 of them), so combining the two is ambiguous"),
+            ("--frozen_anatomy", a.frozen_anatomy,
+             "the cohort's whole purpose is to vary anatomy; pin a single one "
+             "with --topbrain_only <name> instead"),
+            ("--require_passable", a.require_passable,
+             "the passability gate reject-and-regenerates a PROCEDURAL surface; "
+             "baked meshes cannot be redrawn (and the retained 22 were already "
+             "screened by exact signed distance)"),
+        ):
+            if val:
+                p.error(f"--topbrain is incompatible with {flag}: {why}")
+        if a.insert_inside_branch != "none":
+            p.error("--topbrain is incompatible with --insert_inside_branch: "
+                    "that path requires --real_patient_anatomy and rewrites the "
+                    "insertion, which would break comparability with the host")
+        if float(a.radius_scale) != 1.0:
+            p.error("--topbrain is incompatible with --radius_scale: it "
+                    "compensates the procedural mesher's erosion, and the "
+                    "baked cohort meshes come from the real segmentations")
+    elif a.topbrain_trim_stations:
+        p.error("--topbrain_trim_stations requires --topbrain")
 
     if a.insert_inside_branch != "none":
         # These two guards catch failures that otherwise produce a run which
@@ -576,14 +871,45 @@ def main():
     if a.verify_variation:
         print(f"[eval-anat] preflight (episodes_between_change={change_every}) …")
         env = make_env(a, seed=a.seed_base, change_every=change_every, mode="eval")
+        parity_ok = True
+        if a.topbrain:
+            # Comparability is the entire premise of the probe, so verify it
+            # here rather than trusting TOPBRAIN_PIPELINE.md.
+            parity_ok = _topbrain_parity_report(env.intervention)
         hashes = []
+        names = []
         for i, s in enumerate(seeds[:4]):
             env.reset(seed=s)
             hashes.append(geometry_hash(env))
-            print(f"  episode {i} seed={s} geometry={hashes[-1]}")
+            fp = getattr(env.intervention.vessel_tree, "mesh_fingerprint", "?")
+            names.append(str(fp))
+            print(f"  episode {i} seed={s} geometry={hashes[-1]} "
+                  f"mesh_fp={fp}")
         env.close()
         uniq = len(set(hashes))
-        single_expected = a.real_patient_anatomy or a.frozen_anatomy
+        if a.topbrain:
+            # The name-based fingerprint IS the anatomy identity here, so a
+            # geometry hash and a fingerprint must partition the episodes the
+            # same way. If they disagree, attribution in the result files is
+            # not trustworthy and no per-anatomy number may be reported.
+            pairs = sorted(set(zip(hashes, names)))
+            print(f"[eval-anat] TOPBRAIN attribution: "
+                  f"{len(set(hashes))} distinct geometries / "
+                  f"{len(set(names))} distinct fingerprints; pairs={pairs}")
+            if len(set(hashes)) != len(set(names)) or len(pairs) != len(set(hashes)):
+                print("[eval-anat] ABORT: geometry hash and name fingerprint "
+                      "do not agree — per-anatomy attribution would be wrong.")
+                return 2
+            if not parity_ok:
+                print("[eval-anat] ABORT: the cohort env is NOT task-identical "
+                      "to DualDeviceNavRCCAVaried; results would not be "
+                      "comparable with any host number.")
+                return 2
+        # `--topbrain_only <one name>` is a legitimate single-anatomy run (the
+        # exact-balance per-anatomy arm), so one geometry is correct there.
+        single_expected = (a.real_patient_anatomy or a.frozen_anatomy
+                           or (a.topbrain and a.topbrain_only is not None
+                               and len(a.topbrain_only) == 1))
         if single_expected:
             # One tree is the POINT here: real-patient (zero perturbation =>
             # seed-independent) or a legacy frozen variant.
@@ -640,6 +966,22 @@ def main():
         print(f"[eval-anat] anatomy regeneration: every {change_every} "
               f"episode(s), per-worker streams (seeds {a.seed_base + 10000}, "
               f"{a.seed_base + 20000}, … x{a.n_worker})")
+        if a.topbrain:
+            # HOW THE COHORT IS SAMPLED — read this before quoting a
+            # per-anatomy rate. TopBrainAnatomySet.reset() zeroes _generation
+            # whenever it is handed a seed (it always is here), so from episode
+            # 1 on the anatomy is _index_for(0) = a pure function of that
+            # EPISODE's vessel seed, not a round-robin over the roster. The
+            # pooled cohort rate is therefore unbiased, but coverage is
+            # multinomial: with 22 anatomies some will draw few episodes. For an
+            # exactly balanced per-anatomy number, run one arm per anatomy with
+            # --topbrain_only <name>. The per-anatomy table in the report prints
+            # the OBSERVED counts, so the imbalance is never hidden.
+            print("[eval-anat] TOPBRAIN sampling: anatomy per episode is a "
+                  "pure function of that episode's seed (not round-robin) — "
+                  "coverage is multinomial; the report prints observed "
+                  "per-anatomy counts. Use --topbrain_only <name> for an "
+                  "exactly balanced single-anatomy arm.")
     print(f"[eval-anat] step budget: {a.max_steps} "
           f"(training/eval standard = 600)")
     print(f"[eval-anat] action selection: "
@@ -714,12 +1056,13 @@ def main():
             }) + "\n")
 
     # ---------------- depth-resolved report from the STEP logs -----------
-    analyze(log_dir, out_dir, n_expected=len(seeds), k_official=k_off)
+    analyze(log_dir, out_dir, n_expected=len(seeds), k_official=k_off,
+            named_anatomies=bool(a.topbrain))
     return 0
 
 
 def analyze(log_dir: str, out_dir: str, n_expected: int = None,
-            k_official: int = None):
+            k_official: int = None, named_anatomies: bool = False):
     """Join EPISODE_START / STEP (path_len) / EPISODE_OUTCOME per episode.
 
     MUST key state by pid: `env_eval` is built in the main process and
@@ -734,7 +1077,18 @@ def analyze(log_dir: str, out_dir: str, n_expected: int = None,
     WT = re.compile(r"wall_time=([0-9.]+)")
     PL = re.compile(r"path_len=([0-9.]+)")
     PID = re.compile(r"pid=([0-9]+)")
-    ANA = re.compile(r"anatomy=([0-9a-f]+)")
+    # Widened from [0-9a-f]+ to alphanumerics. For the procedural env the field
+    # is a 12-char md5 and both patterns match the identical substring, so this
+    # is a no-op there; TopBrain's identity, however, is the NAME (topcowmr023),
+    # which the hex-only pattern could not have matched.
+    ANA = re.compile(r"anatomy=([0-9A-Za-z]+)")
+    # `mesh_fp` is env5's echo of vessel_tree.mesh_fingerprint. For the
+    # procedural env that is "s<seed>g<gen>" and is NOT an anatomy identity (the
+    # seed is reassigned on every reset — this is exactly how the single-anatomy
+    # eval bug hid). For TopBrainAnatomySet it IS the identity: the anatomy name
+    # stripped to alphanumerics. Only used when `named_anatomies` says so.
+    MFP = re.compile(r"mesh_fp=([0-9A-Za-z]+)")
+    SEED = re.compile(r"seed=([0-9]+)")
     rows = []
     for path in sorted(glob.glob(os.path.join(log_dir, "*.log"))):
         live = {}                      # pid -> in-progress episode state
@@ -750,10 +1104,14 @@ def analyze(log_dir: str, out_dir: str, n_expected: int = None,
                         rows.append(prev)
                     m = WT.search(line)
                     ma = ANA.search(line)
+                    mf = MFP.search(line)
+                    ms = SEED.search(line)
                     live[pid] = {"t": float(m.group(1)) if m else 0.0,
                                  "pl": None, "succ": False, "steps": 0,
                                  "pid": pid,
-                                 "anat": ma.group(1) if ma else None}
+                                 "anat": ma.group(1) if ma else None,
+                                 "name": mf.group(1) if mf else None,
+                                 "seed": ms.group(1) if ms else None}
                     continue
                 st = live.get(pid)
                 if st is None:
@@ -832,6 +1190,69 @@ def analyze(log_dir: str, out_dir: str, n_expected: int = None,
     else:
         print("anatomies: NOT LOGGED (env5 lacks the anatomy= field — "
               "mount the RL_IMPROV_18 env5.py to verify diversity)")
+
+    # --- NAMED per-anatomy attribution (TopBrain cohort only) ------------
+    # Default-off: for the procedural env `mesh_fp` is s<seed>g<gen>, which is
+    # not an anatomy identity, so printing a table keyed on it would be worse
+    # than useless. Under --topbrain it is the loader's name fingerprint, and
+    # this is the table the difficulty probe is for.
+    if named_anatomies:
+        named = [r for r in rows if r.get("name")]
+        if not named:
+            print("*** TOPBRAIN ATTRIBUTION MISSING: no mesh_fp= field in the "
+                  "STEP logs. Per-anatomy rates CANNOT be reported — mount the "
+                  "RL_IMPROV_18 env5.py. ***")
+        else:
+            if len(named) != len(rows):
+                print(f"*** {len(rows)-len(named)} of {len(rows)} episodes "
+                      f"carry no mesh_fp — per-anatomy table is incomplete ***")
+            # Cross-check the two independent identities. They must partition
+            # the episodes identically; if a name maps to two geometries (or
+            # vice versa) the attribution is unsafe and must not be quoted.
+            by_name = {}
+            for r in named:
+                by_name.setdefault(r["name"], set()).add(r.get("anat"))
+            by_geom = {}
+            for r in named:
+                by_geom.setdefault(r.get("anat"), set()).add(r["name"])
+            bad = ([f"{k}->{sorted(v)}" for k, v in by_name.items() if len(v) > 1]
+                   + [f"{k}->{sorted(v)}" for k, v in by_geom.items() if len(v) > 1])
+            if bad:
+                print(f"*** ATTRIBUTION INCONSISTENT (name<->geometry is not "
+                      f"1:1): {bad} — DO NOT report per-anatomy rates ***")
+            else:
+                print(f"attribution check: {len(by_name)} names <-> "
+                      f"{len(by_geom)} geometry hashes, 1:1 — per-anatomy "
+                      f"rates are trustworthy")
+            print(f"\n{'anatomy':16s} {'succ':>9s} {'rate':>8s} {'95% CI':>16s} "
+                  f"{'path_len mm':>14s}")
+            per_rows = []
+            for name in sorted(by_name):
+                d = [r for r in named if r["name"] == name]
+                ks = sum(1 for r in d if r["succ"])
+                l2, h2 = wilson(ks, len(d))
+                print(f"{name:16s} {ks:4d}/{len(d):-4d} "
+                      f"{100*ks/len(d):7.1f}% "
+                      f"{100*l2:6.1f}-{100*h2:-5.1f}% "
+                      f"{min(r['pl'] for r in d):6.0f}-"
+                      f"{max(r['pl'] for r in d):-6.0f}")
+                per_rows.append((name, len(d), ks,
+                                 sorted(set(r.get("anat") for r in d))[0],
+                                 min(r["pl"] for r in d),
+                                 max(r["pl"] for r in d)))
+            counts = [c for _, c, _, _, _, _ in per_rows]
+            print(f"coverage: {len(per_rows)} anatomies, episodes/anatomy "
+                  f"min {min(counts)} median {int(np.median(counts))} "
+                  f"max {max(counts)} (sampling is seed-driven, not "
+                  f"round-robin — see the TOPBRAIN sampling note above)")
+            ap = os.path.join(out_dir, "anatomy_success.csv")
+            with open(ap, "w") as fh:
+                fh.write("anatomy,geometry_hash,n_episodes,n_success,"
+                         "success_rate,path_len_min_mm,path_len_max_mm\n")
+                for nm, c, s, g, p0, p1 in per_rows:
+                    fh.write(f"{nm},{g},{c},{s},{s/c:.4f},{p0:.1f},{p1:.1f}\n")
+            print(f"per-anatomy CSV: {ap}")
+
     print(f"{'section':10s} {'succ':>10s} {'rate':>8s} {'95% CI':>16s} "
           f"{'path_len mm':>14s}")
     for s in ("CCA", "ICA-mid", "siphon"):
@@ -854,10 +1275,22 @@ def analyze(log_dir: str, out_dir: str, n_expected: int = None,
 
     csv_path = os.path.join(out_dir, "episodes.csv")
     with open(csv_path, "w") as fh:
-        fh.write("wall_time,path_len_mm,section,steps,success\n")
-        for r in sorted(rows, key=lambda r: r["t"]):
-            fh.write(f"{r['t']:.3f},{r['pl']:.1f},{section_of(r['pl'])},"
-                     f"{r['steps']},{int(r['succ'])}\n")
+        # Extra columns ONLY under --topbrain, appended at the end so any
+        # header-aware reader of the legacy 5-column file keeps working; the
+        # default run writes the identical bytes it always did.
+        if named_anatomies:
+            fh.write("wall_time,path_len_mm,section,steps,success,"
+                     "anatomy,geometry_hash,seed\n")
+            for r in sorted(rows, key=lambda r: r["t"]):
+                fh.write(f"{r['t']:.3f},{r['pl']:.1f},{section_of(r['pl'])},"
+                         f"{r['steps']},{int(r['succ'])},"
+                         f"{r.get('name') or ''},{r.get('anat') or ''},"
+                         f"{r.get('seed') or ''}\n")
+        else:
+            fh.write("wall_time,path_len_mm,section,steps,success\n")
+            for r in sorted(rows, key=lambda r: r["t"]):
+                fh.write(f"{r['t']:.3f},{r['pl']:.1f},{section_of(r['pl'])},"
+                         f"{r['steps']},{int(r['succ'])}\n")
     print(f"\nper-episode CSV: {csv_path}")
 
 

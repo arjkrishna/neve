@@ -11194,3 +11194,124 @@ ok now uodate the session.... md file with last three chats ; no need to scan th
 Appended turns 258–260 directly, without re-scanning the JSONL, and completed the truncated tail of Claude [257] (the export ran mid-turn, so its conclusion was missing).
 
 ---
+
+---
+
+# SESSION SEGMENT — TopBrain anatomy set (2026-08-26 → 2026-08-28)
+
+**Condensed record**, written at the end of the segment rather than extracted turn-by-turn
+from the JSONL. It preserves the questions asked, what was measured, and — importantly —
+the claims that were made and then retracted, because the retractions are the reusable
+lesson. Turn numbering does not continue from the sections above.
+
+## The arc
+
+**Audit request.** "Audit them and check thoroughly whether their quality (mesh decimation
+extent etc.) is about the same as our host patient." Mesh decimation turned out
+essentially identical (3654–3731 cells vs the host's 3584; edge median 6.49 vs 6.28). But
+the audit's host reference row read 494 mm clearance — impossible. Cause: the host's raw
+`.obj` is in the mesh frame while `load_branches()` returns the branch frame. Fixed by
+measuring `DualDeviceNav().vessel_tree.mesh_path`. **The same frame trap documented
+earlier in this file, walked into again.**
+
+**Provenance, inferred wrongly then corrected.** Geometry showed 15 of 16 centerlines
+byte-identical across all 25 and 91% of mesh vertices coincident, from which I concluded
+"these are not 25 patients, they are one template procedurally varied." The user
+corrected: they are independent subjects, partial CCA→ICA of the right side. Both are
+true — a real per-patient ICA grafted onto a shared host carrier. My supporting argument
+(all 25 wider than the host, so not real) was a bad inference from a single reference
+patient. Later confirmed three independent ways: the graft seam at s = 133.6 mm, the
+TopBrain labelmap having `R-ICA` but **no CCA label at all**, and a pre-existing note in
+`carotidsiphon.py` stating the intent to fit distal control points from TopCoW ICA
+centerlines.
+
+**The deflation question.** "Are these meshes thinner/tighter than host… can you fix it."
+A workflow measured clearance/stated-radius at 0.69–0.79 for the cohort against 1.07 for
+the host, and I called it a regeneration defect. Adversarial verification broke both
+halves: the cross-sections have 11–13 sides, not the 4 I had inferred from R_min/R_max, so
+chord error explains ~3 points of ~13; and the host's 1.07 is itself an artifact —
+`DualDeviceNav` carries **two** surfaces, and the collision mesh the wire actually hits
+reads **1.647×** its own declared radii while the visual mesh reads 1.0019. Re-baking the
+HOST through the cohort's own mesher then showed the cohort trunk is **+1.0% wider**,
+20/22 wider. 96–99% of the apparent gap is the shared mesh generator. **Nothing about the
+cohort needed fixing; the host collision surface is the anomaly.**
+
+**The dataset.** Downloaded TopBrain 2025 from Zenodo 16878417, MD5-verified. 25 MR/CT
+pairs; source labels at 0.297 × 0.297 × 0.600 mm, i.e. 2× finer in-plane than the 0.6/0.9
+voxelisation the mesher uses. Subject IDs skip 009 and 019 **in the release itself**, so
+the cohort is the complete MR set and nothing was dropped in processing.
+
+**The result that did not survive.** `ckpt2002292` scored 90/98 = **91.8%** on four
+held-out anatomies, siphon 84.6%. The user pushed twice: "too good to be true; what's the
+caveat," then "even siphon which is all new, accuracy is very high." Both pushes were
+right. Decomposition: 43 of 98 episodes never left host-identical course and 43/43
+succeeded; the genuinely out-of-distribution figure was 85.5%. Running all 22 anatomies —
+removing the holdout selection bias, since all 22 are equally unseen to a
+procedurally-trained checkpoint — gave **75.0%**, and **55.6%** on grafted targets alone.
+The four had been picked for being defect-free, which is exactly the bias.
+
+**The clean finding.** Running `checkpoint0` (the scripted centerline follower) over the
+identical 220 episodes — verified matched pair-for-pair, 220/220 shared seeds drawing the
+identical anatomy and identical target:
+
+| targets | teacher | H0 | delta | p |
+|---|---|---|---|---|
+| shared host course | 96/96 = 100% | 66/96 = 68.8% | +31.2 pp | <0.0001 |
+| grafted (unseen) | 69/124 = 55.6% | 71/124 = 57.3% | −1.6 pp | 0.90 |
+
+**Training bought a large significant gain on the anatomy it trained around and nothing
+measurable on unseen anatomy.** The LCCA 0/98 result, measured a second independent way.
+
+**The reachability hypothesis.** "There may be some problem anatomies that do not allow
+the wire to go after a certain point." Correct for `mr_025` and spectacularly so — its 9
+episodes split perfectly on its pinch at s = 166.8 mm: 4 proximal targets all succeeded in
+30–75 steps, 5 distal all failed by timeout (Fisher p = 0.0079). But wrong cohort-wide:
+zero mid-vessel blockages at the guidewire radius across all 22, ceiling 97.5–100%, and
+the correction moves 75.0% by at most +2.5 points. `mr_007` has minimum clearance 1.029 mm
+along its entire length and still scores 54.5%.
+
+**A section inversion, caught by reasoning not measurement.** H0's 4-anatomy slice showed
+siphon 78.6% above CCA 63.6%, which the user pointed out is structurally impossible for a
+deterministic controller that must traverse the earlier sections. Correct: on all 22 the
+ordering is monotonic (73.2 → 61.8 → 52.1%), and the inversion was ±25-point noise on
+n = 11–14. The lesson stands generally — **no section-level number from a 4-anatomy subset
+supports a trend.**
+
+**The training run.** Launched at `--topbrain_target_min_arclength 133.0` so every target
+sits past the graft seam, on the reasoning that at 40 mm roughly half of every worker's
+episodes would be a 100%-solved shared trunk. H0 baseline 73.5%; saturated at 99.0% by the
+second eval and held there. Unverified caveat recorded in HANDOFF §9.8: the policy drives
+at ~86% of the insertion velocity limit, and whether that is competence or a simulator
+exploit has not been checked.
+
+## Corrections made to my own claims during this segment
+
+1. "Not 25 patients, one template varied" — wrong conclusion from correct measurements.
+2. "Uniform ~26% deficit, the regeneration signature" — wrong mechanism; refuted by
+   direct side-counting and by re-baking the host.
+3. "The host reads 1.07, so chord error cannot explain it" — the host reading was itself
+   the artifact.
+4. "91.8% on unseen patients" — three separate inflations.
+5. "Siphon 84.6% vs the host's 33.3%" — H0 gets ~78.6% on the same anatomies.
+6. "The >240 mm collapse is terminal end-cap erosion" — refuted; 0 exterior points in all
+   22, correction moves it 16.7% → 19.4%.
+7. "17 of H0's failures ended in the RVA" — read from a log field; the snapshot showed an
+   arrest along the planned path, not a wrong-branch excursion.
+8. "H0 beats the teacher in the siphon" — overstated; the intervals overlap heavily. The
+   defensible claim is no measurable difference.
+9. "Host path_len 103–156 mm" — the true span is 74.1–268.7 mm.
+10. Three blocking defects reported against the training launch — one (`--checkpoint_dir`)
+    could not fire, and the other two were caveats on interpretation, not blockers. The
+    user challenged this twice before I stated it plainly.
+
+## Environment notes worth carrying
+
+- Heredoc'd content in this shell **mangles backslashes** — it produced a literal `\n`
+  inside a launcher command line, which would have passed `n` as an anatomy name. It also
+  silently defeated the first repair attempt. Build backslashes with `chr(92)`, and verify
+  with `cat -A`.
+- Writing markdown via heredoc fails on quoting; use the Write tool to a scratch file and
+  `cat >>`.
+- `episodes.csv` in an eval output directory is overwritten per run. The timestamped
+  `episodes_official_*.jsonl` files are the authoritative per-run records — an agent
+  misidentified one of them as the host run and drew two wrong conclusions from it.
