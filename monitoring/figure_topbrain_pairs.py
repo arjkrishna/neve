@@ -185,24 +185,34 @@ def draw(ax, case, legend):
     ax.set_ylabel("y (vessel-CS, mm)", fontsize=7, labelpad=-2)
     ax.set_zlabel("z (vessel-CS, mm)", fontsize=7, labelpad=-2)
     ax.tick_params(labelsize=6, pad=0)
-    ax.set_title("%s   route %.0f mm, siphon %.0f mm%s"
-                 % (case["stem"], case["len"], case["len"] - case["s"][k],
+    side = "left ICA, mirrored" if case["stem"].endswith("_L") else "right ICA"
+    ax.set_title("%s  (%s)   route %.0f mm, siphon %.0f mm%s"
+                 % (case["stem"], side, case["len"], case["len"] - case["s"][k],
                     "   (RVA repaired)" if rva_repaired(case) else ""),
                  fontsize=9)
     if legend:
         ax.legend(handles=HANDLES, loc="upper left", fontsize=7)
 
 
+# group by patient: "topcow_mr_007" and "topcow_mr_007_L" belong together
+groups = {}
+for c in cases:
+    base = c["stem"][:-2] if c["stem"].endswith("_L") else c["stem"]
+    groups.setdefault(base, []).append(c)
+for g in groups.values():                    # right first, then left
+    g.sort(key=lambda c: c["stem"].endswith("_L"))
+print("patients: %d (%d with both sides)"
+      % (len(groups), sum(1 for g in groups.values() if len(g) == 2)), flush=True)
+
 n = 0
-for i in range(0, len(cases), 2):
-    pair = cases[i:i + 2]
+for base in sorted(groups):
+    pair = groups[base]
     fig = plt.figure(figsize=(8.5 * len(pair), 9.5))
     for j, case in enumerate(pair):
         ax = fig.add_subplot(1, len(pair), j + 1, projection="3d")
         draw(ax, case, legend=(j == 0))
-    ids = "_".join(c["stem"].replace("topcow_", "") for c in pair)
     fig.tight_layout()
-    path = os.path.join(OUT, "topbrain_pair_%02d_%s.png" % (i // 2 + 1, ids))
+    path = os.path.join(OUT, "topbrain_%s.png" % base.replace("topcow_", ""))
     fig.savefig(path, dpi=160)
     plt.close(fig)
     n += 1
