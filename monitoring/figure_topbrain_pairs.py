@@ -20,6 +20,8 @@ rather than each panel being re-framed to its own contents.
       python3 /opt/eve_training/monitoring/figure_topbrain_pairs.py
               /opt/eve_training/topbrain_data/anatomies /results/figs/topbrain
 """
+import argparse
+import fnmatch
 import os
 import sys
 import glob
@@ -37,8 +39,17 @@ sys.path.insert(0, "/opt/eve_training/eve_bench")
 from eve_bench.dualdevicenav import load_branches
 from eve.intervention.vesseltree.util.meshing import generate_temp_mesh
 
-ROOT = sys.argv[1] if len(sys.argv) > 1 else "/opt/eve_training/topbrain_data/anatomies"
-OUT = sys.argv[2] if len(sys.argv) > 2 else "/opt/eve_training/results/figs/topbrain"
+_ap = argparse.ArgumentParser()
+_ap.add_argument("root", nargs="?", default="/opt/eve_training/topbrain_data/anatomies")
+_ap.add_argument("out", nargs="?", default="/opt/eve_training/results/figs/topbrain")
+_ap.add_argument("--exclude", default=None,
+                 help="fnmatch pattern of anatomy folders to skip, e.g. '*_L'")
+_ap.add_argument("--pair", choices=("patient", "sequential"), default="patient",
+                 help="patient: one person per image, right beside mirrored "
+                      "left. sequential: consecutive anatomies, which is how "
+                      "the figures were paired before both sides existed.")
+_args = _ap.parse_args()
+ROOT, OUT = _args.root, _args.out
 os.makedirs(OUT, exist_ok=True)
 
 ELEV, AZIM = 16, -68
@@ -103,7 +114,11 @@ def arclength(p):
 
 
 folders = sorted(glob.glob(os.path.join(ROOT, "*", "Centrelines_comb")))
-print("anatomies: %d" % len(folders), flush=True)
+if _args.exclude:
+    folders = [f for f in folders
+               if not fnmatch.fnmatch(f.split(os.sep)[-2], _args.exclude)]
+print("anatomies: %d%s" % (len(folders),
+      " (excluding %s)" % _args.exclude if _args.exclude else ""), flush=True)
 
 cases = []
 for f in folders:
@@ -194,25 +209,35 @@ def draw(ax, case, legend):
         ax.legend(handles=HANDLES, loc="upper left", fontsize=7)
 
 
-# group by patient: "topcow_mr_007" and "topcow_mr_007_L" belong together
-groups = {}
-for c in cases:
-    base = c["stem"][:-2] if c["stem"].endswith("_L") else c["stem"]
-    groups.setdefault(base, []).append(c)
-for g in groups.values():                    # right first, then left
-    g.sort(key=lambda c: c["stem"].endswith("_L"))
-print("patients: %d (%d with both sides)"
-      % (len(groups), sum(1 for g in groups.values() if len(g) == 2)), flush=True)
+if _args.pair == "patient":
+    # "topcow_mr_007" and "topcow_mr_007_L" are one person, so they belong in
+    # one image. Immune to a missing donor, unlike positional pairing.
+    groups = {}
+    for c in cases:
+        base = c["stem"][:-2] if c["stem"].endswith("_L") else c["stem"]
+        groups.setdefault(base, []).append(c)
+    for g in groups.values():                # right first, then left
+        g.sort(key=lambda c: c["stem"].endswith("_L"))
+    batches = [(b.replace("topcow_", ""), groups[b]) for b in sorted(groups)]
+    print("patients: %d (%d with both sides)"
+          % (len(groups), sum(1 for g in groups.values() if len(g) == 2)),
+          flush=True)
+else:
+    batches = []
+    for i in range(0, len(cases), 2):
+        chunk = cases[i:i + 2]
+        ids = "_".join(c["stem"].replace("topcow_", "") for c in chunk)
+        batches.append(("pair_%02d_%s" % (i // 2 + 1, ids), chunk))
+    print("sequential pairs: %d" % len(batches), flush=True)
 
 n = 0
-for base in sorted(groups):
-    pair = groups[base]
+for base, pair in batches:
     fig = plt.figure(figsize=(8.5 * len(pair), 9.5))
     for j, case in enumerate(pair):
         ax = fig.add_subplot(1, len(pair), j + 1, projection="3d")
         draw(ax, case, legend=(j == 0))
     fig.tight_layout()
-    path = os.path.join(OUT, "topbrain_%s.png" % base.replace("topcow_", ""))
+    path = os.path.join(OUT, "topbrain_%s.png" % base)
     fig.savefig(path, dpi=160)
     plt.close(fig)
     n += 1
