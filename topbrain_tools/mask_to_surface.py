@@ -103,7 +103,7 @@ def write_vtp(verts, faces, path):
     return smooth.GetOutput().GetNumberOfPoints()
 
 
-def process(mask_path, out_dir, label, side):
+def process(mask_path, out_dir, label, side, suffix="rICA"):
     import nibabel as nib
     from skimage import measure
 
@@ -130,9 +130,9 @@ def process(mask_path, out_dir, label, side):
     if ends is None:
         return None, err
 
-    vtp = os.path.join(out_dir, stem + "_rICA.vtp")
+    vtp = os.path.join(out_dir, stem + "_%s.vtp" % suffix)
     n = write_vtp(world, faces, vtp)
-    seeds = os.path.join(out_dir, stem + "_rICA_seeds.json")
+    seeds = os.path.join(out_dir, stem + "_%s_seeds.json" % suffix)
     with open(seeds, "w") as f:
         json.dump({"source": ends[0].tolist(), "target": ends[1].tolist(),
                    "note": note, "surface_points": int(n)}, f)
@@ -146,6 +146,8 @@ def main():
     ap.add_argument("--out", default="topbrain_data/surfaces")
     ap.add_argument("--label", type=int, default=ICA_LABEL)
     ap.add_argument("--side", default="right", choices=["right", "left"])
+    ap.add_argument("--suffix", default="rICA",
+                    help="filename tag, e.g. lICA when --label 6")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
 
@@ -160,7 +162,7 @@ def main():
     for p in masks:
         stem = os.path.basename(p)[:44]
         try:
-            res, err = process(p, a.out, a.label, a.side)
+            res, err = process(p, a.out, a.label, a.side, a.suffix)
         except Exception as e:                      # noqa: BLE001
             res, err = None, "%s: %s" % (type(e).__name__, e)
         if res is None:

@@ -9,8 +9,12 @@ and fixed along the way. The fixes are the point. Most of them were invisible to
 the check that was in place when they were introduced, and several were only
 caught because a later, stricter check was written.
 
-**Result:** 25 anatomies at `topbrain_data/anatomies/`, of which **24 are usable**
-and `topcow_mr_015` should be excluded (see [Known failure](#known-failure)).
+**Result:** 49 anatomies at `topbrain_data/anatomies/`, of which **47 are usable**.
+Exclude `topcow_mr_015` and `topcow_mr_003_L` (see [Known failures](#known-failures)).
+
+The set is built from BOTH internal carotids of each patient: 25 from the right
+ICA (label 4) and 24 from the left (label 6, mirrored), the left of `mr_006`
+being a truncated mask. See [Both sides](#both-sides-doubling-the-set).
 
 ---
 
@@ -279,6 +283,82 @@ in [Stage E](#stage-e--verification), reached 24/25.
 
 ---
 
+## Both sides: doubling the set
+
+The release labels the left ICA as class 6 alongside the right as class 4, and
+measurement showed the two are equally usable: craniocaudal extent averages
+66 mm on the right and 64 mm on the left, and both are present in all 25
+patients. So the left ICA doubles the set with no new download, no new licence
+and no new annotation.
+
+### Mirror, not rotate
+
+A left ICA grafted unchanged onto a right-sided host carries left-handed
+curvature on the right side of the body, because the graft places donors with a
+proper rotation, which preserves handedness. Only a reflection changes it: a
+180 degree rotation cannot, since torsion is rotation-invariant and merely
+changes sign under reflection.
+
+Whether the correction is worth making was measured rather than assumed, using
+integrated torsion, which is invariant to the graft's placement and flips sign
+under reflection:
+
+| | mean | median | positive |
+|---|---|---|---|
+| right ICA | +1.95 rad | -0.89 | 12/25 |
+| left ICA | -2.00 rad | -1.06 | 9/25 |
+| left mirrored | +2.00 rad | +1.06 | |
+
+Two things follow. Individually these vessels are NOT strongly handed: both
+distributions straddle zero and span roughly -27 to +37, so any single left
+siphon would sit comfortably inside the range of real right ones. But the
+population means are near-exact mirrors, and 19 of 25 patients show opposite
+torsion sign between their own two sides, so the mirror relationship is real.
+Mirroring brings the donor population onto the recipient side's distribution
+(mean difference 0.05 rad, against 3.95 unmirrored), and costs one sign flip.
+So the left donors are mirrored: `sp * [-1, 1, 1]` in RAS.
+
+### Guard against truncated donors
+
+`mr_006`'s left ICA is a 19.5 mm fragment where every other donor is 76-139 mm.
+`MIN_SIPHON_MM` rejects anything under 60 mm, which caught exactly that one.
+
+    python topbrain_tools/mask_to_surface.py <mask_dir> --out surfaces_left         --label 6 --side left --suffix lICA
+    conda run -n vmtk_env python topbrain_tools/vmtk_centerline.py         topbrain_data/surfaces_left --out topbrain_data/centerlines_left --suffix lICA
+    python topbrain_tools/graft_siphon.py --centerlines topbrain_data/centerlines_left         --out topbrain_data/anatomies --mirror --name-suffix _L
+
+Only 2 of the 24 left anatomies needed an RVA repair, against 4 of the 25
+right ones, and none was rejected for lumen overlap.
+
+### Why TopCoW does NOT extend this further
+
+TopCoW is the obvious next source: same group, same label convention
+(4 = R-ICA, 6 = L-ICA), same licence, and a much larger cohort of 125 CTA and
+MRA pairs against TopBrain's 25 released MR volumes. TopBrain is even built on
+it, which is why our cases are named `topcow_mr_XXX`.
+
+It does not work, and the reason is invisible from the label names. Measured on
+the 25 patients present in both releases, on the identical image grid
+(508 x 585 x 189, same spacing, so not a cropping artifact):
+
+| | R-ICA craniocaudal extent |
+|---|---|
+| TopCoW `cow_seg_labelsTr` | **18.4 mm** |
+| TopBrain `labelsTr_topbrain_mr` | **67.1 mm** |
+
+TopCoW annotates only the ICA stub adjacent to the circle of Willis, because
+that is what a *Circle of Willis* challenge needs. TopBrain re-annotated the
+same scans over the whole brain and carried the ICA far further down. An 18 mm
+label cannot yield a 100 mm siphon, so the 100 extra TopCoW patients are of no
+use here.
+
+Worth recording how cheaply this was settled: the TopCoW release is a 10.5 GB
+archive, but a ZIP's central directory sits at its end and Zenodo serves range
+requests, so `topbrain_tools/remote_zip.py` indexed it with a single request and
+pulled just the 250 label masks, 47 MB, leaving the 10 GB of images untouched.
+
+---
+
 ## Stage D — baking the meshes
 
 `topbrain_tools/bake_meshes.py`
@@ -385,23 +465,23 @@ can be made.
 ### Current numbers
 
 ```
-25 anatomies
+49 anatomies (25 right ICA + 24 mirrored left ICA)
   route length   201 - 263 mm   (host 238)
-  rise           155 - 183 mm   (host 185 over its whole length)
+  rise           154 - 187 mm   (host 185 over its whole length)
   worst bend      18 -  45 deg  (host 37)
   junction bend    7 -  38 deg  (host worst bend 37)
-  min diameter  1.60 - 4.00 mm  (host 2.43)
+  min diameter  1.05 - 4.02 mm  (host 2.43)
 
   descending routes: none
-  junctions bending harder than the host's own worst bend: 1/25
-  24/25 pass the static checks
+  junctions bending harder than the host's own worst bend: 1/49
+  47/49 pass the static checks
 ```
 
 SOFA rollouts confirmed on a sample, with targets forced past the 130 mm graft
 junction (165–228 mm along the route) so the real siphon is exercised rather
 than the shared trunk. Both devices advance 190 mm; tips move 121–163 mm.
 
-### Known failure
+### Known failures
 
 **`topcow_mr_015` should be excluded.** Its distal 22 mm pinches shut: 23
 centerline points outside the mesh, 22 of them consecutive, up to **7.19 mm**
@@ -411,9 +491,16 @@ which is around two voxels at the mesher's 0.6/0.9 mm spacing.
 It still *runs* in SOFA without complaint, which is exactly why the enclosure
 check was worth writing.
 
+`topcow_mr_003_L` fails the same way, more locally: 6 consecutive points up to
+2.12 mm beyond the wall at 211-216 mm, where its lumen narrows to 2.03 mm.
+
 ```python
-DualDeviceNavTopBrain(exclude=["topcow_mr_015"])
+DualDeviceNavTopBrain(exclude=["topcow_mr_015", "topcow_mr_003_L"])
 ```
+
+A train/test split must keep BOTH ICAs of a patient on the same side. The left
+and right siphon of one person are not independent samples, and splitting them
+across train and test would leak.
 
 Two more are **borderline and tolerated**, not clean: `mr_013` (5 points, up to
 1.37 mm) and `mr_014` (3 points, up to 2.11 mm). Drop them too for a strict set
