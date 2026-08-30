@@ -30,6 +30,10 @@ def main():
     ap.add_argument("--decimate", type=float, default=0.99)
     ap.add_argument("--force", action="store_true",
                     help="re-bake even if the .obj is already there")
+    ap.add_argument("--shard", default=None,
+                    help="i/n: bake only every n-th anatomy starting at i. Lets "
+                         "several workers split the set without coordinating, "
+                         "since each writes only into its own anatomy folders.")
     a = ap.parse_args()
 
     sys.path.insert(0, "/opt/eve_training/eve_bench")
@@ -37,6 +41,10 @@ def main():
     from eve.intervention.vesseltree.util.meshing import generate_mesh
 
     folders = sorted(glob.glob(os.path.join(a.anatomies, "*", "Centrelines_comb")))
+    if a.shard:
+        i, n = (int(x) for x in a.shard.split("/"))
+        folders = folders[i::n]
+        print("shard %d of %d" % (i, n))
     if not folders:
         print("no anatomies under %s" % a.anatomies)
         return 1
