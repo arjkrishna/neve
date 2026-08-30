@@ -11315,3 +11315,127 @@ exploit has not been checked.
 - `episodes.csv` in an eval output directory is overwritten per run. The timestamped
   `episodes_official_*.jsonl` files are the authoritative per-run records — an agent
   misidentified one of them as the host run and drew two wrong conclusions from it.
+
+---
+
+# SESSION SEGMENT 2 — recovery forensics and the second TopBrain run (2026-08-28 → 30)
+
+Condensed record, written at the end of the segment. Continues the segment above.
+
+## The cross-matrix recovery analysis
+
+Asked: how do the two model families solve the task, in recovery terms, on their own
+anatomy and on each other's — all four cells, with the grind/soft/hard/unrecovered
+taxonomy. The controlled column is the HOST: five policies on 98 identical seeds with
+byte-identical seed-to-mesh maps.
+
+**Every trained policy stalls MORE than the scripted heuristic** (6.07 / 3.71 / 3.41 /
+2.14 per 1000 steps against its 2.01). What training installed is not stall avoidance but
+**retraction**: the heuristic has 0 hard recoveries in 51,339 steps and a maximum
+retraction of 5.51 mm *ever*, while `ckpt2002292` resolves 90.4% of its stalls against the
+script's 33.0%.
+
+**The host siphon ceiling is a REACH problem, not an escape problem.** 96.7% of
+`ckpt2002292`'s siphon episodes stall and 96.1% of those stalls resolve — the highest
+resolution rate of any band measured — and it still fails 20/30. 16 of those 20 recovered
+from every single stall and failed anyway. Max slack in a siphon failure is 0.4 mm: the
+wire tracks the lumen perfectly and simply is not driven far enough before the 600-step
+cap, ending a median 106.7 mm short. Every failure is a timeout.
+
+**Two mechanisms, genuinely different.** Family A (v1bp) does a *deep re-approach* —
+withdraws far past what is needed (the four clearings that saved an episode pulled back a
+median 67.8 mm), 0.42-0.57 mm of slack released per mm withdrawn, so ~60% of the pullback
+buys nothing. Family B (TopBrain) does a *local un-kink* — 9.6 mm retraction releasing
+15.3 mm of slack, ratio 0.98, more than double A's efficiency, only 13.3% cosmetic against
+A's 57% — but it usually does not act: in 23 of 39 coiled host episodes it never commands
+a >=1 mm retraction at all.
+
+## The finding that reframes the taxonomy
+
+Asked whether soft/hard recoveries actually mean a solved buckle. Built and validated an
+operational definition (buckle present via `fold_load >= 4` calibrated against an
+18,541-window null; reduced via `fold_close == 0`; passed via `adv25 >= 15 mm`, a threshold
+that sits inside an 11-mm-wide empty gap in the data so any cut in 14-25 mm gives identical
+labels). Negative control passed cleanly: `checkpoint0` yields **zero** clearing events.
+
+**Only 18.1% of soft/hard recoveries genuinely clear a buckle** — 6.3% of all stalls.
+Over half of soft events have no buckle present at all. "Resolved 90.4%" certifies a
+retraction plus one millimetre of advance and nothing more. The taxonomy has been
+over-read throughout this project, by me included.
+
+Neither family could be ranked as the better clearer — on six of seven axes within-family
+checkpoint variation exceeds between-family variation. What ranks firmly: **both learned
+families >> the heuristic**, which clears nothing, ever, while meeting buckles constantly.
+
+## The per-anatomy question, answered negatively
+
+Asked why grafted success varies 0-100% across the 22. The honest answer is that **it
+does not, statistically**: Pearson X2 = 28.47, df = 21, permutation p = 0.105 on n = 1-10
+per anatomy. Most of the apparent spread is target-depth sampling — the four 100%
+anatomies all drew shallow targets. The matched heuristic *does* show heterogeneity
+(p = 0.041), so a real anatomy-difficulty axis exists and the trained policy does not
+track it. Across 32 geometric measures with FWER correction, nothing survives for the
+policy; excluding `mr_025`, zero of 32 reach even nominal significance.
+
+Two geometry findings worth keeping: the grafts are **gentler** than the host (Rc_min
+3.97 host vs 4.77 cohort median; the host has 6 inflections, more than all 22), and
+**declared radius is a trap** — median (clearance - declared radius) is +0.38 mm for the
+host but -0.75 mm for every one of the 22, so declared radius overstates true bore by
+~1.1 mm in the cohort.
+
+## The framing correction
+
+I had been reporting "the teacher adds nothing over the heuristic on grafted targets" as
+the headline. Corrected on push-back, and the correction stands: the heuristic is a strong
+hand-engineered baseline with planned-path access, its failures are systematically
+non-adaptive (58.5% of its TopBrain stalls are it parked on the ostium takeoff), and the
+policy beats it by **+26.8 in CCA and +15.8 in ICA-mid** on unseen anatomy. Matching it in
+the deepest siphon while beating it everywhere else is graceful transfer, not absent
+learning. **55.6% on genuinely novel distal anatomy, trained on one patient plus synthetic
+perturbation**, sits inside the field's 40-59% band — reached without a single real
+patient's siphon in training. The procedural generator overshooting reality (0 of 22 real
+siphons are tighter or sharper than what it trained against) is why the policy does not
+collapse off-distribution. That is the result worth writing up.
+
+## The explore-curve error
+
+Claimed the training set was "solved at initialization" from a reading of 95% on the first
+300 explore episodes. **Wrong** — I had ordered by `global_steps`, which is a per-worker
+counter, not a global clock. Ordered by `wall_time` the run starts at **69.0%** on the
+first 100 (pure heatup), rises through heatup to 84.1%, and jumps to 98.7% once updates
+begin. That reconciles with H0's 73.5%, as it should. The corrected reading: there was
+~30 points of real headroom and the policy took all of it **within ~500 episodes**, after
+which the last 3,000+ episodes buy nothing the validation eval can see.
+
+Also corrected: a hand-rolled reimplementation of the stall detector found 45 stalls where
+the shipped `extract_stuck.py` finds 1,059 on the same stream — because the shipped
+version uses `abs(cmd_action[0])`, counting retraction commands as pushing. Always run the
+shipped script.
+
+## Recovery between checkpoints — checked, negative
+
+Bucketed the authoritative extractor output per 500 explore episodes to test whether
+improved recovery explains the host's 44.9% -> 64.3% between `ck256370` and `ck505230`.
+It does not. Heatup stalls in **52% of episodes at 5.49/1k**; by bucket 2 that is 7.2% at
+0.98/1k — a 5.6x collapse inside 500 episodes. Across the two checkpoints stalls drift
+0.63 -> 0.50 per 1k and resolution is flat within noise on denominators of 17-33 events.
+The policy learned stall *avoidance*, not stall *escape*, and learned it before the first
+checkpoint was written. Whatever bought the host improvement is invisible to every
+recovery instrument we have.
+
+## The second run
+
+Relaunched identical config from step 0 (`2026-08-29_235446_rcca_topbrain_v1`) after
+establishing that the first run was stopped prematurely — its validation was flat at
+99.0/99.0 while the host moved 19.4 points. Seven checkpoints were force-added to git
+(28 MB, models only) so a second machine can run host TEST evals by `git pull`.
+
+New finding from the relaunch: **H0 came in at 55.1% against the first run's 73.5%** on an
+identical launcher, holdout and seed list. Network initialisation shifts
+`a_heur + a_policy`, so the null hypothesis carries ~18 points of run-to-run variance.
+
+Resource measurement: GPU is at **2% utilisation** and has never been the constraint
+(256x256 MLP, vector observations, replay buffer in host shared memory). **Host RAM binds
+at 20.4/23.47 GiB.** At 0.503 s of CPU per SOFA step on 12 cores the ceiling is ~24
+env-steps/s against the 16 currently achieved — so more RAM buys ~1.5x via 24 workers,
+after which cores bind, not memory.

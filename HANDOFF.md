@@ -508,3 +508,157 @@ Saturated by the second eval. **Unverified at time of writing**: the policy driv
 number is used anywhere, check `buckle_phi` and the `fold=n/20` counter — a 99% obtained by
 ramming rather than tracking is a simulator artifact, not a policy. Checkpoints stored:
 `checkpoint256370`, `checkpoint505230`.
+
+---
+
+# 10. EVALUATION PROTOCOL — validation vs test (2026-08-30)
+
+Appended. Supersedes nothing in §9 except where marked.
+
+## 10.1 The two evaluations are different instruments and must not be conflated
+
+**VALIDATION — runs automatically during training.** `env_eval` inside the training
+process, 98 episodes on the 4 held-out TopBrain anatomies, fired every
+`EXPLORE_STEPS_BTW_EVAL` = 250,000 explore steps. It writes the `quality` / `success`
+columns of `<run>.csv`. Its job is liveness and a sanity floor.
+
+**TEST — run separately, after the fact, on the HOST patient.** `eval_anatomies.py` with
+`--real_patient_anatomy`, 98 episodes, on a checkpoint file. Nothing about it happens
+during training. **This is the only instrument in the project that has demonstrated
+resolution, and it is what checkpoint selection must use.**
+
+## 10.2 Why validation cannot be used for checkpoint selection — measured
+
+Run `2026-08-28_075919_rcca_topbrain_v1`:
+
+| checkpoint | VALIDATION (4 held-out TopBrain) | TEST (host patient) |
+|---|---|---|
+| `checkpoint256370` | **99.0%** | **44.9%** |
+| `checkpoint505230` | **99.0%** | **64.3%** |
+
+**Identical on validation, 19.4 points apart on test.** The validation eval saturates:
+97/98 twice gives a Wilson interval of [94.4, 99.8], so it cannot separate 99.0% from
+99.5%, let alone rank two checkpoints. Stopping that run on "validation is flat" was a
+mistake — the policy was still improving substantially and the instrument could not see it.
+
+Root cause: the held-out TopBrain anatomies are too easy. Explore success reaches 98%+
+within ~500 episodes and the last 3,000+ episodes of a run buy nothing the validation eval
+can register.
+
+## 10.3 Running the TEST evaluation
+
+```bash
+EXTRA_FLAGS="--real_patient_anatomy --cath_slack_coef 0.5 --progress_tip_mode avg --avg_gw_weight 0.5" \
+NAME=eval_host_ckXXXX CHANGE_EVERY=1 \
+  bash launch_eval_anatomies.sh <ckpt-path-inside-container> 98
+```
+
+The three flags after `--real_patient_anatomy` are **not** in `launch_eval_anatomies.sh`'s
+inherited defaults and are required for the v1b/v1bp/TopBrain P2-teacher family. Omitting
+them changes the observation width and the strict checkpoint load fails loudly — which is
+the intended behaviour, not a bug.
+
+`--real_patient_anatomy` pins the ORIGINAL segmented collision surface. Do not try to
+reach the host by constructing `DualDeviceNav` directly: that also moves the wire's start
+to the femoral entry and swaps the target sampler, giving `path_len` 594-752 mm against
+the usual 74-269 mm. It is a different task. See §5 traps.
+
+**Output caution.** `<ckpt-dir>/eval_anatomies_<ckpt>/episodes.csv` and
+`anatomy_success.csv` are OVERWRITTEN by every run in that directory. The per-run
+authoritative records are the timestamped `episodes_official_<ts>.jsonl` and the
+`logs/<ts>/` and `snapshots/<ts>/` subdirectories. An agent misidentified one of these
+files as the host run during this session and drew two wrong conclusions from it.
+
+## 10.4 TEST baselines on the host — the ledger to beat
+
+| model | host | CCA / ICA-mid / siphon |
+|---|---|---|
+| `ckpt2002292` (v1bp, procedural-trained) | **75.5%** | 100 / 90.2 / 33.3 |
+| `ckpt514264` (v1bp) | 72.4% | — / — / **70.0** |
+| `ck505230` (TopBrain-trained) | 64.3% | 100 / 63.4 / 33.3 |
+| `ck3259127` (v1b) | 63.3% | — |
+| `ck757854` (v1b) | 52.0% | — |
+| `ck256370` (TopBrain-trained) | 44.9% | 92.6 / 36.6 / 13.3 |
+| `checkpoint0` (scripted heuristic) | **25.5%** | — |
+
+`ckpt514264` scoring 70.0% on the host siphon against `ckpt2002292`'s 33.3% is not a
+typo: the earlier checkpoint is twice as good there. Continued training traded siphon
+depth for shallower gains — the same direction as the LCCA result (13/98 -> 0/98).
+
+## 10.5 Checkpoints are now in git
+
+Seven models force-added past the `saved/eve_paper/...` gitignore (commit `37d85f9`),
+4.3 MB each, 28 MB total. The multi-GB `replay_incremental` buffers are NOT included and
+are not needed to evaluate. Everything else required is already tracked: host anatomy
+(`eve_bench/data/dualdevicenav`, 28 files), `topbrain_data` (425 files), both eval
+launchers, `eval_anatomies.py`. A second machine needs only `git pull`.
+
+## 10.6 CORRECTIONS to §9 and to earlier analysis
+
+- **The recovery taxonomy has been over-read throughout this project.** Only **18.1%** of
+  soft/hard "recoveries" genuinely clear a buckle (soft 9.1%, hard 28.9%); against the
+  full stall ledger it is **6.3%**. `extract_stuck.py:91` closes a stall as resolved on
+  `pass_eps = 1.0 mm` — a retraction plus one millimetre. Over half of soft events have
+  **no buckle present at all**. Indicated repairs: raise `pass_eps` to ~15 mm, move the
+  soft/hard boundary from 8 mm to ~20 mm.
+- **`slack_gw` does NOT detect buckling in this build.** Against an 18,541-window null of
+  clean-advance segments, clean-navigation slack rise (p50 3.97 mm) EXCEEDS stall-window
+  slack rise (p50 2.80 mm), lift ~1.0. Only the >=10 mm tail is usable. **`fold` is the
+  instrument that works** (32x lift at fold >= 4). `cath_slack` is identically +0.0 in
+  every July-2026 log set — emitted but never populated in that build.
+- **The per-anatomy success spread across the 22 is NOT statistically real** for the
+  policy: Pearson X2 = 28.47, df = 21, permutation p = 0.105. The 0-100% range is
+  consistent with binomial noise on n = 1-10 per anatomy. The matched HEURISTIC does show
+  heterogeneity (p = 0.041) — a real anatomy-difficulty axis exists and the trained policy
+  does not track it. Most of the apparent spread is target-depth sampling.
+- **The H0 baseline has ~18 points of run-to-run variance.** Two runs with identical
+  launcher, holdout and `EVAL_SEEDS` gave H0 = 73.5% and 55.1%. Under residual-on-heuristic
+  the untrained policy is not exactly zero, so network init shifts `a_heur + a_policy`.
+  "Beat H0" is a weaker criterion than it looks.
+- **`extract_stuck.py` uses `abs(cmd_action[0])`** in the stall predicate, so retraction
+  commands count as pushing. A hand-rolled version using the signed value finds ~20x fewer
+  stalls. Always run the shipped script.
+
+## 10.7 Machine resources — measured, and what actually binds
+
+| | measured |
+|---|---|
+| logical CPUs | 12 |
+| GPU | RTX 4500 Ada, 24,570 MiB, **1,496 MiB used, 2% util** |
+| training container | **360% CPU** (~3.6 cores), **20.4 / 23.47 GiB RAM** |
+| throughput | **16.07 env-steps/s** total, 1.00 per worker |
+| SOFA cost per step | 0.503 s median |
+
+**GPU is never the constraint** in this configuration: the network is a 256x256 MLP
+(~98k params), observations are 125-dim vectors under `TrackingOnly` (no images
+rendered), and the 2M replay buffer lives in host shared memory, not on the device. It
+would only become a constraint if observations went image-based (`MonoPlaneStatic` +
+a CNN encoder) or the buffer moved to GPU.
+
+**Host RAM binds at 87%.** That is why a concurrent eval risks OOM-killing the training
+run rather than merely slowing it — the v1bp header records "v1b's day-4 host-mem OOM
+horizon" as a known hazard. A concurrent eval at `N_WORKER=4` instead of 16 is the safe
+option and uses cores that are otherwise idle.
+
+**Scaling headroom is ~1.5x, not 2x.** At 0.503 s of CPU per step and 12 cores the
+machine's ceiling is ~24 env-steps/s; we run at 16. Going 16 -> 24 workers (~30 GB RAM)
+should approach it. Going to 32 workers (~40 GB) oversubscribes 12 cores 2.67x and yields
+the same ~24 steps/s with more memory and more scheduler thrash. Past that it is cores,
+not RAM. Step 16 -> 24 and watch for queue stalls — `EVE_RL_MODEL_QUEUE_TIMEOUT_S`,
+`TRAINER_RESULT_TIMEOUT_S` and `WATCHDOG_STALL_S` exist because that has bitten before.
+
+## 10.8 Current run
+
+`2026-08-29_235446_rcca_topbrain_v1`, relaunched from step 0 with config identical to the
+stopped run (17 train / 4 holdout / 133 mm). Validation history:
+
+| eval | steps | success | steps/ep | speed |
+|---|---|---|---|---|
+| 1 (H0) | 0 | 55.1% | 502 | 4.24 |
+| 2 | 253,934 | 100.0% | 63 | 25.5 |
+| 3 | 506,469 | 98.0% | 96 | 21.7 |
+| 4 | 756,995 | 96.9% | 88 | 21.7 |
+
+Peaked at eval 2 and drifting down since — but per §10.2 that is inside the validation
+instrument's noise and means nothing without host TEST evals on
+`checkpoint253934` / `checkpoint506469` / `checkpoint756995`.
