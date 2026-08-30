@@ -255,11 +255,17 @@ def main():
     ap.add_argument("--steps", type=int, default=40)
     ap.add_argument("--host", default=None,
                     help="shipped Centrelines_comb, run as a control")
+    ap.add_argument("--shard", default=None,
+                    help="i/n: check only every n-th anatomy, so workers can "
+                         "split the set")
     ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args()
 
     names = sorted(d for d in os.listdir(a.anatomies)
                    if os.path.isdir(os.path.join(a.anatomies, d, "Centrelines_comb")))
+    if a.shard:
+        i, n = (int(x) for x in a.shard.split("/"))
+        names = names[i::n]
     print("checking %d anatomies in %s\n" % (len(names), a.anatomies))
     print("%-16s %8s %7s %7s %6s %8s %7s %s"
           % ("anatomy", "route", "d_min", "tris", "open", "enclosed", "targets", "status"))

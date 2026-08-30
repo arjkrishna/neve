@@ -80,15 +80,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("surface_dir")
     ap.add_argument("--out", default="topbrain_data/centerlines")
+    ap.add_argument("--suffix", default="rICA")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
 
-    vtps = sorted(glob.glob(os.path.join(a.surface_dir, "*_rICA.vtp")))
+    vtps = sorted(glob.glob(os.path.join(a.surface_dir, "*_%s.vtp" % a.suffix)))
     print("found %d surfaces" % len(vtps))
     ok = 0
     for v in vtps:
-        stem = os.path.basename(v).replace("_rICA.vtp", "")
-        seeds = v.replace("_rICA.vtp", "_rICA_seeds.json")
+        stem = os.path.basename(v).replace("_%s.vtp" % a.suffix, "")
+        seeds = v.replace("_%s.vtp" % a.suffix, "_%s_seeds.json" % a.suffix)
         if not os.path.exists(seeds):
             print("  SKIP %-40s no seeds" % stem[:40]); continue
         try:
