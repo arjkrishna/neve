@@ -662,3 +662,192 @@ stopped run (17 train / 4 holdout / 133 mm). Validation history:
 Peaked at eval 2 and drifting down since — but per §10.2 that is inside the validation
 instrument's noise and means nothing without host TEST evals on
 `checkpoint253934` / `checkpoint506469` / `checkpoint756995`.
+
+---
+
+# 11. MEASURING GEOMETRY — the three traps, and the procedure that avoids them
+
+Every one of these has produced a confident wrong answer in this project, twice each.
+None of them announces itself as an error; each returns plausible-looking numbers.
+This section is the procedure, not a warning.
+
+## 11.1 Trap 1 — the COORDINATE FRAME. Signature: hundreds of millimetres
+
+`load_branches()` returns centerlines in the **branch frame**. The host's
+`vessel_architecture_collision.obj` on disk is in the **mesh frame**. `FromMesh` applies
+`rotation_yzx_deg=[90, -90, 0]` and writes a temp copy already rotated into the branch
+frame. Comparing the raw file against branch-frame centerlines is comparing two different
+coordinate systems.
+
+```python
+# WRONG -- mesh frame vs branch frame
+mesh = pv.read("eve_bench/data/dualdevicenav/vessel_architecture_collision.obj")
+
+# RIGHT -- FromMesh output, already rotated into the branch frame
+from eve_bench.dualdevicenav import DualDeviceNav
+mesh_path = DualDeviceNav().vessel_tree.mesh_path
+```
+
+**The cohort `.obj` files ARE frame-consistent with their own centerlines** — verified for
+all 25 right-ICA and all 24 mirrored-left anatomies. Only the HOST needs the accessor.
+
+DETECTION. A frame mismatch reads in the **hundreds of millimetres**. The original
+occurrence reported host clearance of 494.75 mm on a ~2 mm vessel. If a clearance number
+is not within a small multiple of the lumen radius, stop and check the frame before
+believing anything downstream.
+
+CONFIRMATION that it is the frame and nothing else: every frame-INVARIANT quantity is
+unchanged across the fix (cell count, edge median/p90/max) while every frame-DEPENDENT one
+moves. That test is cheap and it is conclusive.
+
+## 11.2 Trap 2 — the SIGN of signed distance. Signature: everything inside-out
+
+`vtkImplicitPolyDataDistance` derives its sign from surface normals. **All 49 cohort meshes
+are non-watertight** (2-5 open boundary edges, 1-3 non-manifold edges), so the sign is not
+something to assume in either direction. On this build's meshes the filter returns
+**positive INSIDE**, which is the opposite of the usual convention.
+
+Getting it backwards reports every centerline point as outside its own lumen — 219 of 219,
+232 of 232 — which reads as catastrophic mesh corruption and is entirely an artifact.
+
+**PROCEDURE: always run a known-good control in the same script.** When the 24 mirrored-left
+anatomies were checked, the sign came out inverted and the natural conclusion was that the
+mirror had corrupted them. Running the already-validated RIGHT anatomies through the
+identical code showed them reading identically — which located the fault in the convention,
+not the data. One extra loop, and it is the difference between a correct result and a
+fabricated crisis.
+
+Good controls: any right-ICA cohort anatomy (known enclosed), or the host visual mesh.
+A centerline point is inside its own lumen by construction, so a control that reports
+otherwise is measuring the code.
+
+## 11.3 Trap 3 — the ESTIMATOR. Signature: plausible but 5-25x optimistic
+
+Ranked, best first:
+
+1. **`vtkImplicitPolyDataDistance`, signed, densified to <=0.25 mm along the centerline.**
+   Use this. Densification matters: short pinches are stepped over at native station
+   spacing, which is how `mr_025`'s 1.25 mm sub-contact run was nearly missed.
+2. **Exact planar cross-sections** (`vtkCutter` + connectivity, keeping only the loop that
+   encircles the station). Use when the shape of the lumen matters, not just the minimum.
+3. **Dense triangle-SURFACE sampling** (>=20 barycentric points per triangle). Acceptable
+   for medians, **systematically optimistic at the minimum by 5-25x**: host 0.31 mm sampled
+   against 0.041 mm exact; `mr_024` 0.188 against 0.013. It missed `mr_014` entirely.
+4. **Nearest VERTEX — never.** On ~6.5 mm triangles the vertices sit outside the facets.
+   This reported 1% lumen erosion where the true figure was ~45%, and that single bad
+   number sent three separate wrong theories into circulation before it was caught.
+
+## 11.4 The standing recipe
+
+```python
+import vtk, numpy as np, pyvista as pv
+f = vtk.vtkImplicitPolyDataDistance(); f.SetInput(mesh)
+sd = np.array([f.EvaluateFunction(p) for p in densified_centerline])   # <=0.25 mm spacing
+# sign: POSITIVE = inside on this build's meshes. VERIFY with a control every time.
+```
+
+Then, before reporting anything:
+
+1. Is the magnitude within a small multiple of the lumen radius? If not -> frame.
+2. Does a known-good control give the same sign? If not -> normals.
+3. Was the centerline densified? If not -> short defects are invisible.
+4. Are frame-invariant quantities (cells, edge lengths) unchanged from the raw file? If
+   not, something other than a frame transform happened.
+
+## 11.5 One further caution — DECLARED RADIUS is not lumen
+
+`branch.radii` is what obs 47/48/49 and `get_local_tolerance()` consume, and it does not
+agree with the mesh. Median (exact clearance - declared radius):
+
+| | |
+|---|---|
+| host | **+0.38 mm** (accurate, slightly pessimistic) |
+| every one of the 22 cohort anatomies | **-0.75 mm** (optimistic by ~1.1 mm relative to host) |
+
+Cause: the graft pipeline's smoothstep overwrote the host's own mid-ICA narrowing (host
+r 1.27-1.60 mm) with a ramp up to 2.25-2.90 mm, compounding with the mesher's uniform
+-0.31 mm inward offset. So on the cohort the declared radius **overstates true bore by
+roughly a millimetre**, and any analysis keyed to `local_r` is optimistic there while being
+accurate on the host. Measure the mesh when the question is "will the device fit".
+
+## 11.6 Result of running this on the 24 mirrored-LEFT anatomies (2026-08-30)
+
+Checked because the mirror (`sp * [-1, 1, 1]` in RAS) is exactly the kind of operation that
+can be applied to the centerlines and not the mesh, or vice versa. Script:
+`monitoring/check_left_frames.py`; control: `monitoring/check_frames_control.py`.
+
+**FRAME: clean, 0 of 24 mismatched.** Median clearance 1.440-1.941 mm (median 1.759),
+against 1.51-1.96 mm for the already-validated 25 right-ICA anatomies. Indistinguishable,
+and both at lumen scale rather than the hundreds of mm a frame error produces. The mirror
+was applied consistently to mesh and centerlines.
+
+**SIGN: the first pass was wrong and the control caught it.** The initial run reported
+every centerline point of every left anatomy as outside its own wall (219/219, 232/232).
+Running the known-good RIGHT anatomies through identical code produced identical readings,
+locating the fault in the sign convention rather than the data. This is 11.2 in practice.
+
+**ENCLOSURE: only 4 of 24 have any point outside the wall, and only one matters.**
+
+| anatomy | points outside | worst |
+|---|---|---|
+| `topcow_mr_003_L` | **6** | 1.95 mm |
+| `topcow_mr_002_L` | 2 | 1.20 mm |
+| `mr_010_L`, `mr_016_L`, `mr_023_L` | 1 each | < 0.2 mm (grazing) |
+
+The other 19 are entirely enclosed. `mr_003_L`'s 6 points at 211-216 mm independently
+reproduce what `TOPBRAIN_PIPELINE.md` reports for it (6 consecutive points up to 2.12 mm),
+which is why upstream excludes it. **The upstream exclusion of `mr_003_L` is correct and
+sufficient — nothing else in the left set needs dropping on frame or enclosure grounds.**
+
+---
+
+# 12. NEW ANATOMY SET — intake checklist
+
+Run this before any new anatomy set is trained on or reported against. Every item is here
+because it was got wrong at least once, and none of them announced itself: each returned a
+plausible number that was believed for a while. The check is cheap; the re-analysis is not.
+
+## 12.1 Geometry validity — before any conclusion at all
+
+| # | check | guards against | pass criterion |
+|---|---|---|---|
+| 1 | **Frame consistency** — clearance from centerline to its own mesh | comparing mesh-frame `.obj` against branch-frame centerlines. Reported host clearance of **494.75 mm** on a ~2 mm vessel | magnitude within a small multiple of the lumen radius. See 11.1 |
+| 2 | **Signed-distance sign**, with a known-good control in the same script | inverted normals on non-watertight meshes. Reported **every** centerline point of **every** left anatomy as outside its own wall — pure artifact | control reads the same sign. See 11.2 |
+| 3 | **Estimator** — exact `vtkImplicitPolyDataDistance`, densified to <=0.25 mm | nearest-vertex gave **1% erosion where the truth was ~45%**; dense sampling is **5-25x optimistic at the minimum** and missed `mr_014` entirely | exact only. See 11.3 |
+| 4 | **Enclosure** — count centerline points with negative signed distance | `mr_015` (23 points, 7.19 mm outside), `mr_013`, `mr_014`, `mr_003_L` | 0 points outside, or a documented exclusion |
+| 5 | **Watertightness** — open boundary and non-manifold edges | silently invalidates the sign in check 2 | record it; all 49 current meshes have 2-5 open edges, so the sign must always be controlled |
+
+## 12.2 Navigability — is the device physically able to get there
+
+| # | check | guards against | pass criterion |
+|---|---|---|---|
+| 6 | **Mid-vessel vs terminal blockages**, separately | `mr_025`'s pinch at s=166.8-168.3 mm is **95 mm proximal to its terminus**, so no distal trim removes it — 5 of its 9 targets were unreachable and scored as policy failures | mid-vessel blockage = exclude; terminal-only = trimmable |
+| 7 | **Reachability ceiling** — fraction of the admissible target pool distal to any blockage | quoting a success rate against a denominator containing impossible targets | report the ceiling alongside the rate. Current cohort: 97.5-100% |
+| 8 | **Inter-vessel fusion** — centre distance minus both radii, all nearby pairs | 9 of 25 grafted siphons initially interpenetrated a neighbour; 4 needed RVA repair | no negative clearance anywhere |
+| 9 | **SOFA load / reset / step** on every anatomy | a mesh that loads fine and diverges in simulation | all load and step without divergence |
+
+## 12.3 Provenance — what is actually varying
+
+| # | check | guards against | pass criterion |
+|---|---|---|---|
+| 10 | **How many centerlines actually differ across the set** | assuming N anatomies means N independent samples. 15 of 16 centerlines are byte-identical across all 25 **and to the host** — only the RCCA varies, and only distal to s=133.6 mm | know which branch varies and from where |
+| 11 | **Where the seam is**, measured not nominal | the nominal cut is 130 mm; the measured first >1 mm departure is **133.6 mm**, and the declared radii diverge **31 mm earlier at 102.5 mm** | derive both from the data |
+| 12 | **Shared-course fraction of the target pool** | at the default 40 mm, **47-51% of targets** sit on geometry identical across every patient — a policy scores 100% there and it carries zero generalization signal | set `target_min_arclength` past the measured seam for any generalization claim |
+| 13 | **Handedness**, if donors come from the contralateral side | a proper rotation preserves handedness; only reflection changes it. Integrated torsion: right +1.95 rad, left -2.00, left mirrored +2.00 | mirror (`sp * [-1,1,1]` in RAS), do not rotate |
+| 14 | **Declared radius vs measured bore** | declared radius **overstates true bore by ~1.1 mm** on the cohort while being accurate on the host, so obs 47/48/49 are optimistic there | report median (clearance - declared r) per anatomy |
+
+## 12.4 Experimental hygiene — before training on it
+
+| # | check | guards against | pass criterion |
+|---|---|---|---|
+| 15 | **Split leakage** — both ICAs of one patient on the same side of the split | the left and right siphon of one person are not independent samples | patient-level split, never anatomy-level |
+| 16 | **Do not select the held-out set for cleanliness** | choosing 4 defect-free anatomies produced **91.8%**, against **75.0%** on all 22 and **55.6%** on grafted targets | stratify the holdout across the observed difficulty range |
+| 17 | **H0 baseline on the new set** — `checkpoint0`, the scripted follower | not knowing whether the set is harder or easier than the host. Host H0 = **25.5%**; TopBrain H0 = 62-73% | measure it, and expect ~18 points of run-to-run variance from network init |
+| 18 | **Per-anatomy heterogeneity test before any per-anatomy story** | a 0-100% spread across 22 anatomies at n~5 each is **consistent with binomial noise** (perm p = 0.105) | test it; if not rejected, do not explain the spread |
+| 19 | **Depth-stratified target sampling** | depth and anatomy are entangled — the four 100% anatomies all drew shallow targets | stratify, or depth confounds every per-anatomy claim |
+
+## 12.5 The one-line version
+
+Measure the mesh, not the declared radius; use exact signed distance with a control;
+separate mid-vessel defects from terminal artifacts; find out how much of the set is
+actually varying before calling it N anatomies; and never pick the holdout for being clean.
