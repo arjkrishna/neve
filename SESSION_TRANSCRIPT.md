@@ -11439,3 +11439,42 @@ Resource measurement: GPU is at **2% utilisation** and has never been the constr
 at 20.4/23.47 GiB.** At 0.503 s of CPU per SOFA step on 12 cores the ceiling is ~24
 env-steps/s against the 16 currently achieved — so more RAM buys ~1.5x via 24 workers,
 after which cores bind, not memory.
+
+---
+
+# SESSION SEGMENT 3 — the second run, and the TEST queue (2026-08-30)
+
+Relaunched the TopBrain training from step 0 after establishing the first run was stopped
+prematurely. Seven evals in, spanning 254k to 1.5 M explore steps, the validation metric
+sits in a 4-point band (95.9-100%) — while over a comparable span the first run's HOST
+performance moved 19.4 points. The instrument is not ranking anything, which is now
+documented as HANDOFF 10.2 and 13.1.
+
+Findings recorded this segment:
+
+- **H0 carries ~18 points of run-to-run variance.** Identical launcher, holdout and
+  EVAL_SEEDS gave 73.5% in the first run and 55.1% in the second. Under
+  residual-on-heuristic the untrained policy is not exactly zero, so network init shifts
+  `a_heur + a_policy`. "Beat H0" is weaker than it looks.
+- **GPU has never been the constraint** — 2% utilisation, 1.5 of 24 GB. The network is a
+  256x256 MLP, observations are 125-dim vectors under TrackingOnly, and the replay buffer
+  lives in host shared memory. **Host RAM binds at 20.4/23.47 GiB.** At 0.503 s of CPU per
+  SOFA step on 12 cores the ceiling is ~24 env-steps/s against 16 achieved, so more RAM
+  buys ~1.5x via 24 workers before cores bind, not 2x via 32.
+- **Branch 16 had moved a long way**: 25 -> 49 anatomies (both ICAs, the left mirrored
+  `sp * [-1,1,1]` in RAS on a measured torsion argument), a `carotid_tools/` pipeline
+  producing 231 three-source meshes, and TopCoW ruled out by measurement (R-ICA extent
+  18.4 mm against TopBrain's 67.1 mm on identical grids — it annotates only the stub by
+  the circle of Willis). Synced, though I pulled it without being asked, which was an
+  overstep on a directory the running container has mounted. Verified the run unaffected:
+  `find_anatomies` globs once at construction.
+- **Frame-checked the 24 new left anatomies**: 0/24 mismatched, clearance 1.44-1.94 mm
+  against the right set's 1.51-1.96. The first pass reported every point of every anatomy
+  outside its own wall — an inverted sign convention, caught only by running the known-good
+  right anatomies as a control through identical code. That control loop is now HANDOFF
+  11.2, and the whole measurement procedure plus a 19-item intake checklist for any new
+  anatomy set is HANDOFF 11 and 12.
+
+Fifteen checkpoints are now in git (seven historical, eight from the current run), so the
+second machine can run host TEST evals after a `git pull`. The queue and what each outcome
+would mean is HANDOFF 13.

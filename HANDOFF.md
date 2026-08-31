@@ -851,3 +851,74 @@ plausible number that was believed for a while. The check is cheap; the re-analy
 Measure the mesh, not the declared radius; use exact signed distance with a control;
 separate mid-vessel defects from terminal artifacts; find out how much of the set is
 actually varying before calling it N anatomies; and never pick the holdout for being clean.
+
+---
+
+# 13. OUTSTANDING — host TEST queue for run `2026-08-29_235446_rcca_topbrain_v1`
+
+This is the next action. Nothing in the run's own validation can settle it.
+
+## 13.1 Validation history — and why it decides nothing
+
+| eval | explore steps | success | steps/ep | speed mm/s |
+|---|---|---|---|---|
+| 1 | 0 (H0) | **55.1%** | 502 | 4.24 |
+| 2 | 253,934 | 100.0% | 63 | 25.5 |
+| 3 | 506,469 | 98.0% | 96 | 21.7 |
+| 4 | 756,995 | 96.9% | 88 | 21.7 |
+| 5 | 1,010,053 | **95.9%** | 100 | 20.7 |
+| 6 | 1,251,464 | 100.0% | 73 | 22.3 |
+| 7 | 1,507,175 | 99.0% | 82 | 22.5 |
+
+Six evals spanning 254k to 1.5 M steps all sit in a **4-point band, 95.9-100%**. Over a
+comparable span the PREVIOUS run's host performance moved **19.4 points**. The validation
+eval is not ranking anything — see 10.2. Do not read the 100 -> 95.9 -> 100 wander as
+signal; 94/98 is Wilson [89.7, 98.2] and 98/98 is [96.2, 100].
+
+Note also that **`best_checkpoint.everl` is selected by this metric** and therefore is not
+the best model. Ignore it and select on the TEST results below.
+
+## 13.2 The queue, in priority order
+
+All eight checkpoints are committed (`5ebea7d`), so a second machine needs only `git pull`.
+
+| priority | checkpoint | why |
+|---|---|---|
+| 1 | `checkpoint1507175` | deepest ever trained -- 3x further than anything host-tested |
+| 2 | `checkpoint756995` | mid-point; with 1 and 3 it gives the shape of the curve |
+| 3 | `checkpoint253934` | the earliest post-heatup checkpoint; pairs with the previous run's `ck256370` at 44.9% |
+| 4 | `checkpoint1010053` / `checkpoint1251464` | fill in only if 1-3 show a trend worth resolving |
+| 5 | `checkpoint0` | this run's H0 on the HOST. Expected ~25.5%, and confirming it validates the whole comparison |
+
+## 13.3 Command
+
+```bash
+EXTRA_FLAGS="--real_patient_anatomy --cath_slack_coef 0.5 --progress_tip_mode avg --avg_gw_weight 0.5" \
+NAME=eval_host_ckXXXX CHANGE_EVERY=1 \
+  bash launch_eval_anatomies.sh <ckpt-path-inside-container> 98
+```
+
+98 episodes, ~35 min each. The three flags after `--real_patient_anatomy` are not in the
+launcher defaults and are required -- see 10.3. Read results from the timestamped
+`episodes_official_<ts>.jsonl`, never from `episodes.csv`, which is overwritten per run.
+
+## 13.4 What each outcome would mean
+
+Baselines: `ckpt2002292` (v1bp, procedural-trained) **75.5%**; previous TopBrain run's
+`ck505230` **64.3%** at 505k and still climbing when stopped; scripted heuristic **25.5%**.
+
+- **> 75.5%** — the TopBrain-trained policy overtakes the procedurally-trained one on
+  anatomy neither trained on. That is the headline result this line of work has been
+  aiming at, and it would justify the 49-anatomy and synthetic-variant follow-ups.
+- **64-75%** — still improving past 505k but not yet past the procedural teacher. Tells us
+  where the curve is heading and whether more steps are worth it.
+- **~64%, flat against `ck505230`** — the extra 1 M steps bought nothing on the host, and
+  the run should be stopped. This is the outcome that would retire the "it was still
+  climbing" argument for the previous run's premature stop.
+- **< 64%** — over-training, and the earlier checkpoint is the one to keep.
+
+Also worth recording per checkpoint: the CCA / ICA-mid / siphon split. The previous
+TopBrain run lost entirely in ICA-mid (90.2% -> 63.4% against the v1bp teacher) because it
+trained only on targets past 133 mm, while host ICA-mid targets span s_RCCA 114-176 mm.
+If that gap persists at 1.5 M steps it is structural to the 133 mm choice, not a matter of
+training longer.
