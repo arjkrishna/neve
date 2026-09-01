@@ -314,6 +314,53 @@ Four workflows, **64 agents**, across the fix cycle.
   bifurcations consume arclength against the pinned 130 mm seam, and set A's range is not a
   population range because A holds the host and cervical carotid fixed.
 
+## A raised claim, and the control that settles it
+
+Worth recording in full, because the observation is correct, the conclusion drawn from it is
+not, and without the control the same claim will be raised again.
+
+**The observation.** The word "mirror" appears once in the carotid pipeline
+(`graft_three.py`, the siphon), and `load_lower()` does not mirror. So the 24 `_left`
+bifurcation donors are grafted onto a right-sided host unreflected, and **109 of the shipped
+215 composites carry a left-sourced carotid fork**. All of that is true, and it is invisible
+to every check in this document: a mirrored fork is smooth, enclosed, correctly separated,
+and loads in SOFA.
+
+**The consequence is real and measurable.** Signed handedness of the fork,
+`sign((ICA x ECA) . CCA_axis)` — rotation-invariant, and negated only by a reflection:
+
+| donor side | positive handedness | median |
+|---|---|---|
+| left (109 composites) | **77 / 109** (71%) | +0.049 |
+| right (106 composites) | **16 / 106** (15%) | −0.096 |
+
+The two halves of the set genuinely differ in which side the ECA takes off.
+
+**But the premise fails.** Calling this a defect assumes left and right carotid bifurcations
+are mirror images, so that an unmirrored left donor is anatomically wrong. The database
+contains 8 patients who contribute BOTH carotids, which is the control:
+
+> **Same patient, opposite fork handedness: 3 of 8.**
+
+Mirror symmetry predicts ~8/8; chance is ~4/8. Native integrated torsion agrees — left
+14/24 positive, right 7/24, with the same patient's two sides sharing a sign as often as not.
+**Carotid bifurcation handedness is largely patient-specific, not a side property.**
+
+This is precisely the opposite of the siphon, where the same argument DID hold and the mirror
+IS applied: right +1.95 rad, left −2.00, left mirrored +2.00 — a clean separation on a long,
+strongly coiled curve with consistent handedness. A carotid bifurcation is short and variable,
+and the metric that separates siphons does not separate it.
+
+**And the task settles it.** The trained route is **CCA → full ICA**. The ECA is not on it —
+it is the wrong turn. Which side the decoy takes off is a variation in where the distractor
+sits, not an error in the path being learned. Mirroring the 109 left donors would reduce
+decoy-side diversity, rewrite the trained CCA→ICA geometry of half the set, and — since the
+sides are not mirror pairs — produce a fork matching neither the left nor the right patient.
+
+**Verdict: not a defect, and not fixed.** It becomes one only under a condition that does not
+currently hold: adding a LEFT-sided host arch and wanting donors matched to that side, or
+making any side-specific anatomical claim about the set.
+
 ## The pattern worth carrying forward
 
 Every defect here shared a shape: **something chose an unconstrained degree of freedom, or
