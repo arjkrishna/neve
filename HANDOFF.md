@@ -834,6 +834,7 @@ plausible number that was believed for a while. The check is cheap; the re-analy
 | 11 | **Where the seam is**, measured not nominal | the nominal cut is 130 mm; the measured first >1 mm departure is **133.6 mm**, and the declared radii diverge **31 mm earlier at 102.5 mm** | derive both from the data |
 | 12 | **Shared-course fraction of the target pool** | at the default 40 mm, **47-51% of targets** sit on geometry identical across every patient — a policy scores 100% there and it carries zero generalization signal | set `target_min_arclength` past the measured seam for any generalization claim |
 | 13 | **Handedness**, if donors come from the contralateral side | a proper rotation preserves handedness; only reflection changes it. Integrated torsion: right +1.95 rad, left -2.00, left mirrored +2.00 | mirror (`sp * [-1,1,1]` in RAS), do not rotate |
+| 13b | **Before mirroring anything, run the same-patient control** | assuming mirror symmetry without testing it. Siphons: 19/25 patients show opposite sign between their own two sides, so the mirror is right. Carotid FORKS: only 3/8, below chance -- bifurcation handedness is patient-specific, and mirroring the lower donor would rewrite the trained CCA->ICA route to match neither side. See 12.6 | mirror only where the same-patient control supports it |
 | 14 | **Declared radius vs measured bore** | declared radius **overstates true bore by ~1.1 mm** on the cohort while being accurate on the host, so obs 47/48/49 are optimistic there | report median (clearance - declared r) per anatomy |
 
 ## 12.4 Experimental hygiene — before training on it
@@ -922,3 +923,44 @@ TopBrain run lost entirely in ICA-mid (90.2% -> 63.4% against the v1bp teacher) 
 trained only on targets past 133 mm, while host ICA-mid targets span s_RCCA 114-176 mm.
 If that gap persists at 1.5 M steps it is structural to the 133 mm choice, not a matter of
 training longer.
+
+## 12.6 Correction — the mirror rule applies to siphons, not to bifurcations
+
+Row 13 as originally written ("mirror, do not rotate") generalised a siphon result to all
+contralateral donors. That is wrong, and it was caught by the other machine re-running the
+control rather than inheriting the conclusion.
+
+**The observation is correct**: in the three-source set only the siphon is mirrored, and the
+shipped composites are 109 left-donor / 106 right-donor. Fork handedness genuinely differs
+between the halves -- left donors 77/109 (71%) positive, median +0.049; right donors 16/106
+(15%), median -0.096.
+
+**The inference from it was wrong.** The mirror argument requires that left and right are
+mirror images of each other. Same-patient control, on the 8 patients contributing both
+carotids:
+
+| same patient, opposite handedness | |
+|---|---|
+| siphons (mirror applied, and justified) | **19 / 25 = 76%** |
+| carotid forks | **3 / 8 = 37.5%** |
+
+Mirror symmetry predicts ~100%; chance is ~50%. Siphons clear it, forks fall below it. A
+siphon is a long coiled curve with consistent handedness; a carotid bifurcation is short and
+variable, and its handedness is largely patient-specific. Note n = 8 -- the control rejects
+mirror symmetry decisively but establishes little beyond that.
+
+Beware a trap in the supporting numbers: native torsion DOES show a population-level
+difference (left 14/24 positive against right 7/24) while per-patient signs agree as often as
+they disagree. Citing only the population figure looks like evidence of handedness. The
+same-patient control is what separates the two.
+
+**And for this task the question is moot.** The route is CCA -> ICA; the ECA is never a target
+(`CenterlineRandom(branches=[RCCA])`). Its take-off side is variation in where the DISTRACTOR
+sits, not an error in the path being learned. Mirroring the lower donors would reduce
+decoy-side diversity, rewrite the trained CCA->ICA geometry of half the set -- the donor
+supplies the CCA and cervical ICA too, not just the fork -- and, because the sides are not
+mirror pairs, yield a fork matching neither the left nor the right patient.
+
+**It becomes a real defect only if** a left-sided host arch (LCCA route) is added and donors
+must match that side, or if a side-specific anatomical claim is made. Neither applies to a
+right-sided CCA -> ICA task.

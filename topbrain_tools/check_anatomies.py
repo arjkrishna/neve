@@ -15,6 +15,12 @@ So the checks that matter are, per anatomy:
             and lands inside the meshed lumen
   enclose   EVERY RCCA centerline point is inside the mesh. This is the
             erosion test, and the one a centerline-only check cannot make
+  route     the WHOLE insertion-to-target route lies inside the ONE connected
+            mesh component the device is inserted into. 'enclose' cannot make
+            this test: select_enclosed_points answers "inside any closed sheet
+            of this surface", so a vessel the mesher severed into two closed
+            tubes still scores ~100% enclosed - every point is inside one tube
+            or the other - and the device hits a wall halfway up
   targets   the sampling pool is non-empty after the near-ostium exclusion,
             and every target is inside the mesh
   fit       the catheter's outer diameter fits the narrowest lumen
@@ -46,6 +52,33 @@ MAX_OUTSIDE_RUN = 3     # how many consecutive points may sit outside
 GUIDE_OD = 0.36    # mic_guide
 RCCA_KEY = "Centerline curve - RCCA.mrk"
 
+# --- navigable-route check ---------------------------------------------------
+# select_enclosed_points is a point-in-solid test against the WHOLE surface: it
+# returns true if the point is inside ANY closed sheet of it. That makes the
+# 'enclose' score above blind to the one failure that matters most. Measured on
+# a synthetic 1.5 mm-radius tube cut in half by a 0.5 mm gap: the severed pair
+# scores enclosed=0.9950 with a longest-outside-run of 1 point, against 0.9975
+# and 1 for the intact tube. The two are indistinguishable, and the severed one
+# is unnavigable.
+#
+# What the device actually needs is that the entire route from the insertion
+# point to the target lies inside the SINGLE connected component it is inserted
+# into, and that that component is closed around it.
+ROUTE_STEP_MM = 0.25        # route sampling
+# How much contiguous route may sit outside the hosting component before it is
+# a hole rather than a discretisation artefact. The mesher marks the centerline
+# into a 0.6/0.6/0.9 mm cube and smooths it twice with sigma = 1 voxel, so the
+# iso-surface can legitimately fall a voxel or two inside a sharply curving
+# centerline. Measured over the 49 reference anatomies of set A: the largest
+# contiguous gap in any anatomy the validator accepts is 2.75 mm, and the next
+# value in the whole 278-anatomy corpus is 7.0 mm - the histogram is bimodal
+# with nothing in between, so the threshold is not delicate.
+MAX_ROUTE_GAP_MM = 3.0
+MIN_COMPONENT_CELLS = 4     # fewer triangles cannot enclose anything
+# Holes in the hosting component, i.e. edges used by one triangle. Measured max
+# over all 278 anatomies of A and B is 5; anything much larger is a torn wall.
+MAX_HOST_OPEN_EDGES = 12
+
 
 def enclosed(mesh_path, points):
     """Fraction of points strictly inside the mesh, and the worst run outside."""
@@ -63,6 +96,124 @@ def enclosed(mesh_path, points):
         run = 0 if v else run + 1
         worst = max(worst, run)
     return float(inside.mean()), int(worst), inside
+
+
+def _resample(pts, step):
+    """Route resampled at a fixed arclength step, with its arclength."""
+    pts = np.asarray(pts, dtype=float)
+    d = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+    pts = pts[np.concatenate([[True], d > 1e-9])]
+    d = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+    s = np.concatenate([[0.0], np.cumsum(d)])
+    n = max(int(s[-1] / step) + 1, 2)
+    q = np.linspace(0.0, s[-1], n)
+    return np.stack([np.interp(q, s, pts[:, i]) for i in range(3)], axis=1), q
+
+
+def _inside(surf, pts):
+    import pyvista as pv
+    sel = pv.PolyData(np.asarray(pts, dtype=float)).select_enclosed_points(
+        surf, tolerance=0.0, check_surface=False)
+    return np.asarray(sel["SelectedPoints"], dtype=bool)
+
+
+def _open_edges(surf):
+    return int(surf.extract_feature_edges(
+        boundary_edges=True, feature_edges=False, manifold_edges=False,
+        non_manifold_edges=False).n_cells)
+
+
+def navigable_route(mesh_path, route, insertion):
+    """Can the device travel the whole route without leaving the lumen?
+
+    The route must lie inside ONE connected component of the mesh - the one the
+    insertion point is in - and that component must be closed around it. Split
+    the surface into connected components, test enclosure against each one
+    separately, and report where the hosting component stops containing the
+    route. Whether some OTHER component picks the route up again is the
+    difference between a vessel severed into two tubes and a lumen eroded shut;
+    both are unnavigable, but they have different causes.
+    """
+    import pyvista as pv
+    surf = mesh_path if isinstance(mesh_path, pv.DataSet) else pv.read(mesh_path)
+    surf = surf.extract_surface().triangulate()
+
+    pts, s = _resample(route, ROUTE_STEP_MM)
+    # No welding pass: the mesher writes shared vertices, and welding at 1e-6 mm
+    # leaves the component count unchanged on all 278 meshes of A and B.
+    conn = surf.connectivity()
+    rid = np.asarray(conn.cell_data["RegionId"], dtype=int)
+    ncomp = int(rid.max()) + 1
+
+    memb = np.zeros((ncomp, len(pts)), dtype=bool)
+    subs = {}
+    holds_ip = []
+    ip = np.asarray(insertion, dtype=float).reshape(1, 3)
+    for c in range(ncomp):
+        sub = conn.extract_cells(np.nonzero(rid == c)[0]
+                                 ).extract_surface().triangulate()
+        if sub.n_cells < MIN_COMPONENT_CELLS:
+            continue
+        subs[c] = sub
+        memb[c] = _inside(sub, pts)
+        if bool(_inside(sub, ip)[0]):
+            holds_ip.append(c)
+
+    out = {"n_components": ncomp, "route_len": float(s[-1]),
+           "n_route_pts": int(len(pts))}
+    if holds_ip:
+        host = max(holds_ip, key=lambda c: int(memb[c].sum()))
+        out["ip_hosted"] = True
+    elif subs:
+        host = max(subs, key=lambda c: int(memb[c].sum()))
+        out["ip_hosted"] = False
+    else:
+        out["ip_hosted"] = False
+        out["host"] = -1
+        out["cover_frac"] = 0.0
+        out["gap_mm"] = float(s[-1])
+        out["gap_at_mm"] = 0.0
+        out["gap_on_other_comp"] = 0.0
+        out["handoff_mm"] = 0.0
+        out["host_cells"] = 0
+        out["host_open_edges"] = -1
+        out["host_surf"] = None
+        out["inside_host"] = np.zeros(len(pts), dtype=bool)
+        return out
+
+    cover = memb[host]
+    # longest contiguous stretch of route the hosting component does not hold
+    worst = worst_i = worst_j = 0
+    i = 0
+    while i < len(cover):
+        if not cover[i]:
+            j = i
+            while j + 1 < len(cover) and not cover[j + 1]:
+                j += 1
+            if j - i + 1 > worst:
+                worst, worst_i, worst_j = j - i + 1, i, j
+            i = j + 1
+        else:
+            i += 1
+    other = memb.copy()
+    other[host] = False
+    on_other = (float(other[:, worst_i:worst_j + 1].any(axis=0).mean())
+                if worst else 0.0)
+    # Route the hosting component has let go of and some OTHER component has
+    # picked up: the device would have to cross a wall to follow it. Measured
+    # over the 244 anatomies of A and B that pass the gap rule, this is 0.00 mm
+    # in every single one, so any non-zero value is a severance, however short.
+    handoff = float(((~cover) & other.any(axis=0)).sum() * ROUTE_STEP_MM)
+
+    out.update(host=int(host), host_cells=int(subs[host].n_cells),
+               host_open_edges=_open_edges(subs[host]),
+               host_surf=subs[host],
+               cover_frac=float(cover.mean()),
+               gap_mm=float(worst * ROUTE_STEP_MM),
+               gap_at_mm=float(s[worst_i]) if worst else float("nan"),
+               gap_on_other_comp=on_other, handoff_mm=handoff,
+               inside_host=cover)
+    return out
 
 
 def check_one(name, folder, verbose=False, drop_stubs=False):
@@ -157,6 +308,50 @@ def check_one(name, folder, verbose=False, drop_stubs=False):
         out["ok"] = False
         out["notes"].append("insertion point outside the mesh")
 
+    # --- route: one connected component, from the insertion point onward -----
+    # The device enters part-way along the (11) bridge and travels the rest of
+    # the bridge and then the whole RCCA, so that is the route, not the RCCA
+    # alone.
+    if bridge is not None and len(bridge) >= 3:
+        j = int(np.linalg.norm(bridge - ip, axis=1).argmin())
+        lead = (bridge[j:]
+                if np.linalg.norm(bridge[-1] - coords[0])
+                <= np.linalg.norm(bridge[0] - coords[0])
+                else bridge[:j + 1][::-1])
+        route = np.concatenate([lead, coords], axis=0)
+    else:
+        route = coords
+    nav = navigable_route(mesh_path, route, ip)
+    out["n_components"] = nav["n_components"]
+    out["route_cover"] = nav["cover_frac"]
+    out["route_gap_mm"] = nav["gap_mm"]
+    out["route_handoff_mm"] = nav["handoff_mm"]
+    out["host_open_edges"] = nav["host_open_edges"]
+    if not nav["ip_hosted"]:
+        out["ok"] = False
+        out["notes"].append("insertion point is inside no connected component "
+                            "of the mesh")
+    if nav["gap_mm"] > MAX_ROUTE_GAP_MM or nav["handoff_mm"] > 0.0:
+        out["ok"] = False
+        kind = ("SEVERED: the route continues on a detached mesh component"
+                if nav["handoff_mm"] > 0.0 else
+                "PINCHED: the lumen closes and the route leaves the mesh")
+        out["notes"].append(
+            "%s - the component holding the insertion point stops containing "
+            "the route at %.0f mm and does not hold the next %.1f mm of it "
+            "(%.0f%% of the route is unreachable, %.1f mm of it sealed inside "
+            "another component; %d mesh components)"
+            % (kind, nav["gap_at_mm"], nav["gap_mm"],
+               100 * (1 - nav["cover_frac"]), nav["handoff_mm"],
+               nav["n_components"]))
+    elif nav["gap_mm"] > 0:
+        out["notes"].append("tolerated: %.1f mm of route outside the hosting "
+                            "component" % nav["gap_mm"])
+    if nav["host_open_edges"] > MAX_HOST_OPEN_EDGES:
+        out["ok"] = False
+        out["notes"].append("the hosting component is not closed: %d boundary "
+                            "edges" % nav["host_open_edges"])
+
     # target pool, exactly as the env builds it
     from eve.intervention.target.centerlinerandom import CenterlineRandom
 
@@ -179,6 +374,16 @@ def check_one(name, folder, verbose=False, drop_stubs=False):
         out["tgt_arc"] = (float(arc.min()), float(arc.max()))
         tfrac, _, _ = enclosed(mesh_path, pool)
         out["tgt_inside"] = tfrac
+        # ...and again against the hosting component alone. The whole-surface
+        # number counts a target sealed inside a detached island as "inside the
+        # mesh"; only this one says whether the device can reach it.
+        out["tgt_reachable"] = (float(_inside(nav["host_surf"], pool).mean())
+                                if nav.get("host_surf") is not None else 0.0)
+        if out["tgt_reachable"] < tfrac - 1e-9:
+            out["notes"].append(
+                "targets: %.0f%% lie inside the mesh but only %.0f%% inside the "
+                "component the device is inserted into"
+                % (100 * tfrac, 100 * out["tgt_reachable"]))
         if tfrac < 1.0:
             # Judged by the same rule: a target just proud of the wall is
             # still reachable within the 5 mm threshold.
@@ -199,6 +404,77 @@ def check_one(name, folder, verbose=False, drop_stubs=False):
         except OSError:
             pass
     return out
+
+
+def selftest():
+    """Construct the case the 'enclose' check cannot see, with the real mesher.
+
+    A straight 100 mm vessel of radius 1.5 mm with a 4 mm neck at mid-length.
+    The mesher marks the centerline into a 0.6/0.6/0.9 mm cube and smooths it
+    twice with sigma = 1 voxel, so below a neck radius of about 0.8 mm the neck
+    erodes away and the surface comes out as two closed tubes.
+
+    At a 0.6 mm neck the vessel is severed and 'enclose' still scores 0.9950
+    with a longest-outside-run of one point, 0.06 mm beyond the wall - it is
+    testing "inside ANY closed sheet of the surface", and every route point is
+    inside one tube or the other. The route check splits the surface into
+    connected components first and finds that the tube the device is inserted
+    into stops holding the route at mid-length.
+    """
+    import pyvista as pv
+    from eve.intervention.vesseltree.util.branch import BranchWithRadii
+    from eve.intervention.vesseltree.util.meshing import generate_temp_mesh
+
+    z = np.arange(0.0, 100.25, 0.5)
+    coords = np.stack([np.zeros_like(z), np.zeros_like(z), z], axis=1)
+    ip = np.array([0.0, 0.0, 1.0])
+    print("%7s | %6s | %9s %5s %7s %7s | %8s %9s %7s"
+          % ("neck_r", "comps", "enclosed", "run", "out_mm", "enclose",
+             "gap_mm", "handoff", "route"))
+    ok = True
+    for neck, want_severed in ((1.5, False), (1.0, False), (0.8, False),
+                               (0.6, True), (0.4, True)):
+        radii = np.full_like(z, 1.5)
+        radii[np.abs(z - 50.0) <= 2.0] = neck
+        path = generate_temp_mesh(
+            [BranchWithRadii(name="synthetic", coordinates=coords, radii=radii)],
+            "check_anatomies_selftest", 0.99)
+        try:
+            surf = pv.read(path).extract_surface().triangulate()
+            ncomp = int(np.asarray(
+                surf.connectivity().cell_data["RegionId"]).max()) + 1
+            frac, worst, ins = enclosed(path, coords)
+            depth = 0.0
+            if (~ins).any():
+                depth = float(np.linalg.norm(
+                    np.asarray(surf.points)[None, :, :]
+                    - coords[~ins][:, None, :], axis=2).min(axis=1).max())
+            old_fail = bool(depth > MAX_OUTSIDE_MM and worst > MAX_OUTSIDE_RUN)
+            nav = navigable_route(surf, coords, ip)
+            new_fail = bool(nav["gap_mm"] > MAX_ROUTE_GAP_MM
+                            or nav["handoff_mm"] > 0.0)
+            print("%7.1f | %6d | %9.4f %5d %7.2f %7s | %8.2f %9.2f %7s"
+                  % (neck, ncomp, frac, worst, depth,
+                     "FAIL" if old_fail else "pass", nav["gap_mm"],
+                     nav["handoff_mm"], "FAIL" if new_fail else "pass"))
+            if new_fail != want_severed:
+                ok = False
+                print("        ^ the route check should have said %s"
+                      % ("FAIL" if want_severed else "pass"))
+            if want_severed and ncomp < 2:
+                ok = False
+                print("        ^ the mesher did not sever this one; the "
+                      "construction no longer tests what it claims to")
+            if neck == 0.6 and old_fail:
+                print("        (note: 'enclose' now catches the 0.6 mm neck "
+                      "too; the blindness demo needs a thinner neck)")
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    print("selftest %s" % ("OK" if ok else "FAILED"))
+    return 0 if ok else 1
 
 
 def run_sofa(anatomy_dir, names, steps, verbose=False):
@@ -259,7 +535,13 @@ def main():
                     help="i/n: check only every n-th anatomy, so workers can "
                          "split the set")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--selftest", action="store_true",
+                    help="run the route check on a constructed severed vessel "
+                         "and exit")
     a = ap.parse_args()
+
+    if a.selftest:
+        return selftest()
 
     names = sorted(d for d in os.listdir(a.anatomies)
                    if os.path.isdir(os.path.join(a.anatomies, d, "Centrelines_comb")))
@@ -267,8 +549,9 @@ def main():
         i, n = (int(x) for x in a.shard.split("/"))
         names = names[i::n]
     print("checking %d anatomies in %s\n" % (len(names), a.anatomies))
-    print("%-16s %8s %7s %7s %6s %8s %7s %s"
-          % ("anatomy", "route", "d_min", "tris", "open", "enclosed", "targets", "status"))
+    print("%-16s %8s %7s %7s %6s %8s %6s %7s %7s %s"
+          % ("anatomy", "route", "d_min", "tris", "open", "enclosed", "comps",
+             "gap_mm", "targets", "status"))
 
     # Controls: the shipped tree as it ships, and the shipped tree with the
     # same stubs dropped. Any artifact the second one also shows is a property
@@ -277,10 +560,11 @@ def main():
         for label, drop in (("HOST(shipped)", False), ("HOST(-stubs)", True)):
             try:
                 r = check_one(label, a.host, a.verbose, drop_stubs=drop)
-                print("%-16s %8.1f %7.2f %7d %6d %8.3f %7d %s"
+                print("%-16s %8.1f %7.2f %7d %6d %8.3f %6d %7.2f %7d %s"
                       % (label, r.get("route_mm", 0), r.get("dmin", 0),
                          r.get("tris", 0), r.get("open_edges", -1),
-                         r.get("encl_frac", 0), r.get("n_targets", 0),
+                         r.get("encl_frac", 0), r.get("n_components", -1),
+                         r.get("route_gap_mm", -1), r.get("n_targets", 0),
                          "OK" if r["ok"] else "FAIL"))
                 for note in r["notes"]:
                     print("%-16s   -> %s" % ("", note))
@@ -302,9 +586,10 @@ def main():
             rows.append({"name": n, "ok": False, "notes": ["crashed"]})
             continue
         rows.append(r)
-        print("%-16s %8.1f %7.2f %7d %6d %8.3f %7d %s"
+        print("%-16s %8.1f %7.2f %7d %6d %8.3f %6d %7.2f %7d %s"
               % (n, r.get("route_mm", 0), r.get("dmin", 0), r.get("tris", 0),
                  r.get("open_edges", -1), r.get("encl_frac", 0),
+                 r.get("n_components", -1), r.get("route_gap_mm", -1),
                  r.get("n_targets", 0), "OK" if r["ok"] else "FAIL"))
         for note in r["notes"]:
             print("%-16s   -> %s" % ("", note))
