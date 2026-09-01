@@ -1,6 +1,6 @@
 # Three-source carotid anatomies: build record and defect analysis
 
-216 navigable anatomies composed from three real donors each, and an account of a
+215 navigable anatomies composed from three real donors each, and an account of a
 class of bug that produced silently wrong geometry twice in this pipeline.
 
     host arch        eve_bench/data/dualdevicenav      ostium to the first seam
@@ -162,6 +162,14 @@ host's own LVA/RVA confluence stopped setting the floor.
 TopBrain siphon terminus — a defect set A shares, so it is excluded rather than repaired in
 B alone.
 
+**Mesh fusion.** Positive clearance is not enough. The mesher cannot resolve a wall thinner
+than about one voxel-sigma, so two lumens closer than `FUSE_BAND_MM = 0.35` merge even though
+their centerlines never touch: `case_m_024_left` sat at a +0.057 mm gap between its route and
+its own ECA — clear by a `>0` test — and 4 of its 5 anatomies baked into one continuous lumen
+with a **1.60 mm channel against a 0.35 mm catheter**. Every clearance gate is now the fusing
+band rather than zero. Verified on the shipped set: route-vs-host min +0.497 mm, ECA-vs-host
++0.352 mm, and zero route↔ECA rings (was 10).
+
 **ECA re-entry.** `ECA_MESH_R_MM` can inflate a thin distal fork back into the vessel it grew
 from, closing an ICA–ECA ring the catheter could drive around. A plain route-vs-ECA clearance
 test cannot catch it — the fork legitimately shares lumen with the route at its origin, and
@@ -171,7 +179,7 @@ it has ended is a ring, and the ECA is cut back before it. Fired on 5, rejected 
 
 | | |
 |---|---|
-| anatomies | **216**, all unique pairs |
+| anatomies | **215**, all unique pairs |
 | distinct donors | 47 lowers (max 5 uses), 44 siphons (max 8) |
 | route length | 201.2 – 256.0 mm, median 227.1 |
 | donor-section tilt from +z | median 12.1°, p90 22.0°, max 33.2°, none above 40° |
@@ -180,7 +188,7 @@ it has ended is a ring, and the ECA is cut back before it. Fired on 5, rejected 
 | max kink | 18.8 – 52.0°, median 28.8 |
 | seam-1 kink | 3.6 – 29.1°, median 12.2 |
 | ostium radius | 5.8121 mm in all 216, one unique value |
-| validation | **216 / 216** component-aware (set A: 47/49) |
+| validation | **215 / 215** component-aware (set A: 47/49); SOFA rollout 8/8 |
 | repairs | 77 RVA deflections (1.0–7.5 mm), 9 ECA trims, 5 re-entry cuts |
 | inlet trims | 87 anatomies, 1.0 – 24.8 mm |
 | on disk | meshes baked, 108 figures |

@@ -218,6 +218,19 @@ ECA_MESH_R_MM = 1.6
 # choice is between a 27% stenosis and a sealed vessel, not between 73% and 27%.
 ROUTE_MIN_R = 1.60
 CLEAR_MARGIN_MM = 0.5
+# Positive clearance is not enough: two lumens closer than this MERGE in the
+# collision mesh even though their centerlines never overlap.
+#
+# The mesher smooths a binary tube twice at sigma sqrt(2) voxels and iso-
+# surfaces at the half level, so it cannot resolve a wall thinner than roughly
+# one voxel-sigma. Measured on the shipped set: case_m_024_left sits at a
+# centerline gap of +0.057 to +0.075 mm between its route and its own ECA, well
+# clear by the >0 test that was applied -- and 4 of its 5 anatomies bake into a
+# single continuous lumen there, with a 1.60 mm channel against a 0.35 mm
+# catheter radius. A ring the device can drive around, that no patient has.
+#
+# So every clearance gate here is the fusing band, not zero.
+FUSE_BAND_MM = 0.35
 # How the tangent that ORIENTS a donor section is measured.
 #
 # place() rotates an ENTIRE section -- and everything grafted downstream of it
@@ -338,7 +351,7 @@ def eca_reentry(rp, rr, ep, er):
     Returns the ECA arclength to cut at, or None if the fork is clean.
     """
     d = np.linalg.norm(rp[:, None, :] - ep[None, :, :], axis=2)
-    overlapping = ((d - rr[:, None] - er[None, :]) < 0.0).any(axis=0)
+    overlapping = ((d - rr[:, None] - er[None, :]) < FUSE_BAND_MM).any(axis=0)
     if not overlapping.any():
         return None
     end = int(np.argmax(~overlapping)) if (~overlapping).any() else len(overlapping)
@@ -650,9 +663,9 @@ def main():
             # fork is still a fork -- so spend it before deforming a real host
             # vessel to make room.
             eg = clear_profile(ep, er, nb)
-            if eg.min() < 0:
+            if eg.min() < FUSE_BAND_MM:
                 es = arclength(ep)
-                cutoff = float(es[int(np.argmax(eg < 0))]) - CLEAR_MARGIN_MM
+                cutoff = float(es[int(np.argmax(eg < FUSE_BAND_MM))]) - CLEAR_MARGIN_MM
                 if cutoff < ECA_MIN_MM:
                     raise ValueError("ECA clear for only %.0f mm (need %.0f)"
                                      % (max(cutoff, 0.0), ECA_MIN_MM))
@@ -677,7 +690,7 @@ def main():
 
             clear, who = worst(nb)
             rva = None
-            if clear < 0 and who.startswith(rva_name):
+            if clear < FUSE_BAND_MM and who.startswith(rva_name):
                 # Repair against the whole GRAFTED route, not just past 130 mm.
                 # Most of these conflicts sit at 70-130 mm, in the new CCA/ICA,
                 # so measuring only the siphon meant the repair was aimed at a
@@ -712,8 +725,9 @@ def main():
                 if rva is not None:
                     patched = [(n[0], rva[0], rva[1]) if n[0] == rva_name else n for n in nb]
                     clear, who = worst(patched)
-            if clear < 0:
-                raise ValueError("overlap %.2f mm with %s" % (clear, who))
+            if clear < FUSE_BAND_MM:
+                raise ValueError("clearance %.2f mm with %s (fuses below %.2f)"
+                                 % (clear, who, FUSE_BAND_MM))
 
             folder = os.path.join(a.out, name, "Centrelines_comb")
             os.makedirs(folder, exist_ok=True)
