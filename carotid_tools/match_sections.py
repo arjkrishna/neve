@@ -43,6 +43,23 @@ SIPHON_CAP_PER_SIDE = 4
 # deflection. Their LEFT-derived counterparts are unaffected and stay in.
 DEFECTIVE_SIPHONS = {"topcow_mr_013", "topcow_mr_014",
                      "topcow_mr_015", "topcow_mr_025"}
+# Lowers whose own geometry collides with the host no matter which siphon they
+# are given: their ECA leaves the bifurcation already inside the host's
+# vertebral or left common carotid, so there is no distal trim that saves them
+# and no siphon that changes it. Measured, not guessed -- each of these failed
+# on every one of its pairings. Excluding them here rather than letting them
+# fail in the graft frees their capacity for donors that do compose.
+DEFECTIVE_LOWERS = {"case_k_003_left", "case_k_012_right", "case_w_006_right",
+                    "case_w_010_right", "case_w_035_right", "case_w_044_left",
+                    "case_w_048_right", "case_w_049_right",
+                    # Not a collision failure like the eight above: a stenosis
+                    # too tight for the mesher to represent. ROUTE_MIN_R has to
+                    # rewrite 15.9 mm of it and still leaves a zero-radius
+                    # throat in one of its five anatomies, taking the grade from
+                    # 34.9% to 3.4% -- the worst realism loss in the set for an
+                    # anatomy that is still not navigable. Dropping the donor
+                    # costs 5 anatomies and removes both problems at once.
+                    "case_w_014_left"}
 # The catheter is 0.7 mm across, so an ICA tip under 2 mm is not a seam, it is
 # an obstruction.
 MIN_TIP_D = 2.0
@@ -59,7 +76,7 @@ def load_lowers(manifest, ext_dir):
         ext[d["name"]] = d
     out = []
     for m in man["models"]:
-        if m["extend_mm"] > man["max_extend_mm"]:
+        if m["extend_mm"] > man["max_extend_mm"] or m["name"] in DEFECTIVE_LOWERS:
             continue
         rec = {"name": m["name"], "side": m["side"], "path": m["path"],
                "cca_mm": m["cca_mm"], "eca_mm": m["eca_mm"],
@@ -81,12 +98,17 @@ def load_lowers(manifest, ext_dir):
 
 
 def load_siphons(dirs):
-    from graft_siphon import prep_siphon, arclength
+    from graft_siphon import prep_siphon, arclength, anchor_trim
     out = []
     for d, tag in dirs:
         for f in sorted(glob.glob(os.path.join(d, "*_ica.json"))):
             j = json.load(open(f, encoding="utf-8"))
             p, r = prep_siphon(np.array(j["points"], float), np.array(j["radii"], float))
+            # Match the graft's own trim, or the calibre this solver pairs on
+            # is the calibre of a point the graft then discards. The angle
+            # anchor_trim tests is preserved under the left-side mirror, so
+            # the trim depth is the same for both tags.
+            p, r = (lambda k: (p[k:], r[k:]))(anchor_trim(p))
             L = float(arclength(p)[-1])
             nm = os.path.basename(f).replace("_ica.json", "") + tag
             if L < 60 or nm in DEFECTIVE_SIPHONS:

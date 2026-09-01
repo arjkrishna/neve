@@ -99,7 +99,10 @@ def resample(p, r, step=RESAMPLE_MM):
     n = max(int(round(s[-1] / step)) + 1, 2)
     t = np.linspace(0.0, s[-1], n)
     out = np.stack([np.interp(t, s, p[:, i]) for i in range(3)], axis=1)
-    return out, np.interp(t, s, r)
+    # A centerline without radii is legal upstream (an extended ICA may carry
+    # points only), and np.interp raises an opaque depth error on None rather
+    # than saying so. Pass the absence through instead of crashing.
+    return out, (None if r is None else np.interp(t, s, r))
 
 
 def prep_siphon(p, r, step=RESAMPLE_MM, thr=40.0, max_trim=10.0):
@@ -358,19 +361,38 @@ def rva_deflect(q, qr, vp, vr, others, target=REPAIR_TARGET_MM,
     reach = max_amp + 25.0
     near_q = q[pair_gaps(q, qr, vp[live], vr[live]).min(axis=1) < reach]
     near_qr = qr[pair_gaps(q, qr, vp[live], vr[live]).min(axis=1) < reach]
+    # Hold every RVA point to `target` EXCEPT where the shipped host already
+    # violates it, and there hold it only to where it started.
+    #
+    # This matters more than it looks. The host's own LVA terminates on the RVA
+    # tip -- the two last points are 0.0000 mm apart with equal radii, a lumen
+    # gap of -3.1122 mm, because that is the vertebrobasilar confluence and the
+    # basilar stub between them is dropped by is_cranial_stub while the LVA,
+    # having " - " in its name, survives into `neigh`. A scalar min over the
+    # whole vessel therefore reported -3.1122 mm for EVERY candidate direction,
+    # so no amplitude under 3.112 + 0.75 = 3.862 mm could ever pass and the
+    # 0.25 grid rounded that to 4.00. Every deflection in either set came out at
+    # 4.00 mm or more, and the floor was set by a pre-existing property of the
+    # host rather than by the conflict being repaired.
+    #
+    # Per point, the three RVA points that genuinely interpenetrate the LVA keep
+    # their own baseline and everything else is held to the full target, so the
+    # search can return the small bend the geometry actually needs.
     trimmed = []
     for name, op, orad in others:
         g0 = pair_gaps(op, orad, vp[live], vr[live]).min(axis=1)
         if (g0 < reach).any():
-            trimmed.append((name, op[g0 < reach], orad[g0 < reach]))
+            sub_p, sub_r = op[g0 < reach], orad[g0 < reach]
+            base = pair_gaps(sub_p, sub_r, vp[live], vr[live]).min(axis=0)
+            trimmed.append((name, sub_p, sub_r, np.minimum(target, base)))
 
     for amp in np.arange(step, max_amp + 1e-9, step):
         for n in _DIRS:
             moved = vp + amp * w[:, None] * n
             if float(pair_gaps(near_q, near_qr, moved, vr).min()) < target:
                 continue
-            if any(float(pair_gaps(op, orad, moved[live], vr[live]).min()) < target
-                   for _, op, orad in trimmed):
+            if any((pair_gaps(op, orad, moved[live], vr[live]).min(axis=0) < thr).any()
+                   for _, op, orad, thr in trimmed):
                 continue
             return moved, vr.copy(), float(amp), n.copy(), (b0, b1)
     return None

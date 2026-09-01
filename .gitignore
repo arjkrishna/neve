@@ -173,4 +173,17 @@ vmr_data/
 # --- carotid bifurcation database --------------------------------------
 # CarotidAnalyzer lumen/plaque models from Zenodo, ~1 GB. CC-BY-4.0, so
 # citable and reusable, but redistribution is the depositor's job.
-carotid_data/
+# ...but not what WE derive from it. The composed anatomies are our own output
+# and have to travel with the repo for any of this to be usable on another
+# machine, exactly as topbrain_data/anatomies does. The small build records come
+# too, so the shipped set can be checked against the plan that produced it.
+#
+# Note the trailing /* rather than /. Excluding the DIRECTORY makes git stop
+# descending, and a later ! cannot re-include anything underneath it; excluding
+# its CONTENTS leaves the negations below able to fire.
+carotid_data/*
+!carotid_data/anatomies/
+!carotid_data/extended/
+!carotid_data/pairing.json
+!carotid_data/lower_manifest.json
+!carotid_data/excluded_severed.json

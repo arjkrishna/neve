@@ -13,6 +13,16 @@ frame reproduces the donor's curvature and torsion SENSE relative to the
 vessel, not merely its length, and keeps the join C1-continuous because the
 first template point sits on the recipient's own tangent.
 
+The reference axis is +z, the scanner's superior. It used to be the model's
+own `superior` entry from the manifest, which is not an anatomical axis at all
+but the CCA-inlet-to-ICA-tip CHORD -- that is, roughly the direction the
+vessel already runs. Orthogonalising the tangent against a vector nearly
+parallel to it leaves almost nothing to normalise, so the roll of the copied
+segment was decided by numerical noise: three models sat under |n| = 0.15,
+case_m_022_left at 0.047 (2.7 deg), and it duly turned up among the anatomies
+with the worst rise. +z is both the correct anatomical reference and the
+better-conditioned one for every model in the set.
+
 Donors are drawn per recipient rather than averaged: averaging 31 real
 continuations would produce one bland arc and erase the variation that is the
 whole point of using real anatomy.
@@ -28,6 +38,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from analyze_bifurcations import read_centerlines, split_tree, unit
+
+# scanner superior; see the module docstring for why this is not per-model
+SUPERIOR = np.array([0.0, 0.0, 1.0])
 
 
 def arclength(p):
@@ -120,7 +133,7 @@ def main():
         if p is None:
             continue
         p, r = resample(p, r)
-        t = make_template(p, r, np.asarray(d["superior"], float), max_ext)
+        t = make_template(p, r, SUPERIOR, max_ext)
         if t is not None:
             tpls.append((d["name"], t))
     print("usable templates: %d" % len(tpls))
@@ -138,7 +151,7 @@ def main():
         p, r = resample(p, r)
         before = float(arclength(p)[-1])
         name, tpl = tpls[int(rng.integers(len(tpls)))]
-        np_, nr_ = apply_template(p, r, np.asarray(m["superior"], float), tpl,
+        np_, nr_ = apply_template(p, r, SUPERIOR, tpl,
                                   m["extend_mm"] + 0.5)
         if np_ is None:
             fail.append((m["name"], "template too short")); continue

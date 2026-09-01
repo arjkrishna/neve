@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Run a command in the eve-training container with every mount the
+# anatomy tooling needs. Usage:
+#   bash carotid_tools/run_container.sh python3 <script.py> [args...]
+# Container paths are rooted at /opt/eve_training. CPUS=n to change cpus.
+set -u
+export MSYS_NO_PATHCONV=1
+docker run --rm --cpus="${CPUS:-4}" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/DualDeviceNav_train.py:/opt/eve_training/training_scripts/DualDeviceNav_train.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/env.py:/opt/eve_training/training_scripts/util/env.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/env2.py:/opt/eve_training/training_scripts/util/env2.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/env3.py:/opt/eve_training/training_scripts/util/env3.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/env4.py:/opt/eve_training/training_scripts/util/env4.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/env5.py:/opt/eve_training/training_scripts/util/env5.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/util.py:/opt/eve_training/training_scripts/util/util.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/agent.py:/opt/eve_training/training_scripts/util/agent.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/action_curriculum.py:/opt/eve_training/training_scripts/util/action_curriculum.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/checkpoint_restore.py:/opt/eve_training/training_scripts/util/checkpoint_restore.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/buffer_filter.py:/opt/eve_training/training_scripts/util/buffer_filter.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/buckle_reward.py:/opt/eve_training/training_scripts/util/buckle_reward.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/training _scripts/util/snapshot.py:/opt/eve_training/training_scripts/util/snapshot.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/util/diagnostics_logger.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/diagnostics_logger.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/util/probe_evaluator.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/probe_evaluator.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/util/__init__.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/__init__.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/util/experience_cache.py:/usr/local/lib/python3.8/dist-packages/eve_rl/util/experience_cache.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/algo/sac.py:/usr/local/lib/python3.8/dist-packages/eve_rl/algo/sac.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/network/gaussianpolicy.py:/usr/local/lib/python3.8/dist-packages/eve_rl/network/gaussianpolicy.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/network/component/mlp.py:/usr/local/lib/python3.8/dist-packages/eve_rl/network/component/mlp.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/agent/single.py:/usr/local/lib/python3.8/dist-packages/eve_rl/agent/single.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/agent/singelagentprocess.py:/usr/local/lib/python3.8/dist-packages/eve_rl/agent/singelagentprocess.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/agent/synchron.py:/usr/local/lib/python3.8/dist-packages/eve_rl/agent/synchron.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/runner/runner.py:/usr/local/lib/python3.8/dist-packages/eve_rl/runner/runner.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/replaybuffer/vanillashared.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/vanillashared.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/replaybuffer/vanillaepisode.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/vanillaepisode.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/replaybuffer/vanillastep.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/vanillastep.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/replaybuffer/pervanillastep.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/pervanillastep.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/replaybuffer/pervanillashared.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/pervanillashared.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/replaybuffer/replaybuffer.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/replaybuffer.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_rl/eve_rl/replaybuffer/__init__.py:/usr/local/lib/python3.8/dist-packages/eve_rl/replaybuffer/__init__.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/env.py:/usr/local/lib/python3.8/dist-packages/eve/env.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/util/polyline.py:/usr/local/lib/python3.8/dist-packages/eve/util/polyline.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/util/pathcontext.py:/usr/local/lib/python3.8/dist-packages/eve/util/pathcontext.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/util/__init__.py:/usr/local/lib/python3.8/dist-packages/eve/util/__init__.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/reward/arclengthprogress.py:/usr/local/lib/python3.8/dist-packages/eve/reward/arclengthprogress.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/reward/waypointprogress.py:/usr/local/lib/python3.8/dist-packages/eve/reward/waypointprogress.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/reward/__init__.py:/usr/local/lib/python3.8/dist-packages/eve/reward/__init__.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/observation/localguidance.py:/usr/local/lib/python3.8/dist-packages/eve/observation/localguidance.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/observation/meshinvariant.py:/usr/local/lib/python3.8/dist-packages/eve/observation/meshinvariant.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/observation/__init__.py:/usr/local/lib/python3.8/dist-packages/eve/observation/__init__.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/observation/centerlines2d.py:/usr/local/lib/python3.8/dist-packages/eve/observation/centerlines2d.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/observation/target2d.py:/usr/local/lib/python3.8/dist-packages/eve/observation/target2d.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/pathfinder/__init__.py:/usr/local/lib/python3.8/dist-packages/eve/pathfinder/__init__.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/pathfinder/fixedpath.py:/usr/local/lib/python3.8/dist-packages/eve/pathfinder/fixedpath.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/pathfinder/dijkstra2.py:/usr/local/lib/python3.8/dist-packages/eve/pathfinder/dijkstra2.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/intervention/monoplanestatic.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/monoplanestatic.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/intervention/simulation/sofabeamadapter.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/simulation/sofabeamadapter.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/intervention/target/centerlinerandom.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/target/centerlinerandom.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/intervention/vesseltree/__init__.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/__init__.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/intervention/vesseltree/rccavariedfrommesh.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/rccavariedfrommesh.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/intervention/vesseltree/rccaprocedural.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/rccaprocedural.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/intervention/vesseltree/aorticarcharteries/__init__.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/aorticarcharteries/__init__.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/intervention/vesseltree/aorticarcharteries/carotidsiphon.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/aorticarcharteries/carotidsiphon.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/__init__.py:/opt/eve_training/eve_bench/eve_bench/__init__.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/dualdevicenav.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenav.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/dualdevicenav.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenav.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/dualdevicenavrccavaried.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenavrccavaried.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/dualdevicenavrccavaried.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenavrccavaried.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/dualdevicenavprocedural.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenavprocedural.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/dualdevicenavprocedural.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenavprocedural.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/archvariety.py:/usr/local/lib/python3.8/dist-packages/eve_bench/archvariety.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/archvariety.py:/opt/eve_training/eve_bench/eve_bench/archvariety.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/basicwirenav.py:/usr/local/lib/python3.8/dist-packages/eve_bench/basicwirenav.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/basicwirenav.py:/opt/eve_training/eve_bench/eve_bench/basicwirenav.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/saved:/opt/eve_training/results" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/carotid_data:/opt/eve_training/carotid_data" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/carotid_tools:/opt/eve_training/carotid_tools" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/topbrain_data:/opt/eve_training/topbrain_data" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/topbrain_tools:/opt/eve_training/topbrain_tools" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/monitoring:/opt/eve_training/monitoring" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/saved:/opt/eve_training/saved" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/intervention/vesseltree/topbrainanatomyset.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/topbrainanatomyset.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/dualdevicenavtopbrain.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenavtopbrain.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/dualdevicenavtopbrain.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenavtopbrain.py" \
+  -w /opt/eve_training eve-training-fixed "$@"
