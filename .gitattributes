@@ -8,3 +8,7 @@
 # Windows checkout would rewrite the .obj and .json line endings and no
 # longer match a Linux one. Treat them as binary.
 topbrain_data/anatomies/** -text
+
+# Same for the three-source carotid set, for the same reason.
+carotid_data/anatomies/** -text
+carotid_data/extended/** -text
