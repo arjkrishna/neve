@@ -63,7 +63,7 @@ Consequences that matter:
 **Observation**: 125 dims = a **101-dim deployable prefix** (projected device tracking,
 target offset in the image plane, previous command, planned-route guidance, the heuristic's
 own action) + a **24-dim privileged tail** (nodal forces/velocities, contact-impulse proxy,
-accumulated twist, ground-truth branch identity).
+accumulated twist, ground-truth branch identity) -- NOTE the nodal-FORCE dims are identically zero in every buffer ever collected; only velocity and the contact proxy carry signal (see 14.3).
 
 ⚠ **`--privileged_actor` sets `privileged_obs_dim = 0`, which makes the policy's input slice
 a no-op — so the POLICY READS THE PRIVILEGED TAIL AT TRAINING AND TEST TIME.** The shipped
