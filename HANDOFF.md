@@ -108,7 +108,7 @@ Runs detached (`-d`), `--gpus all --shm-size=30g --init`, 16 CPU workers + 1 GPU
 | `--per --balanced_fraction 0.3` | prioritised replay + 30% of each batch from episodes reaching the correct daughter |
 | `--replay_mode step --replay_buffer_size 2000000` | 2M transitions, batch 256 |
 | `--update_per_explore_step 1.0` | UTD 1.0 nominal; **measured 0.99** |
-| `--relax_failure_truncations` | vessel-end truncation OFF so off-path excursions stay recoverable |
+| `--relax_failure_truncations` | **fold-stall and off-path** truncation OFF so off-path excursions stay recoverable. MaxSteps / VesselEnd / SimError still end episodes (see 14.2) |
 | `--buckle_reward_coef 0.5` | potential-based anti-buckling term |
 | ⋆ `--cath_slack_coef 0.5` | v1bp only — catheter-slack potential |
 | ⋆ `--progress_tip_mode avg --avg_gw_weight 0.5` | v1bp only — tip-average progress |
@@ -964,3 +964,589 @@ mirror pairs, yield a fork matching neither the left nor the right patient.
 **It becomes a real defect only if** a left-sided host arch (LCCA route) is added and donors
 must match that side, or if a side-specific anatomical claim is made. Neither applies to a
 right-sided CCA -> ICA task.
+
+---
+
+# 14. OPERATIONS AND FINDINGS NOT PREVIOUSLY RECORDED (June – September 2026)
+
+Assembled 2026-09-01 by sweeping the session transcript, the ~30 project documents and the
+`monitoring/` tree against sections 0-13. Everything here was done, measured, and either
+validated, ruled out, or left open — and none of it was in this file. Status tags:
+**VALIDATED** / **RULED OUT** / **OPEN** / **BUILT, NEVER RUN**. Sources are the doc or
+transcript line range; scripts are named where one exists.
+
+## 14.1 Recovery metrics — four instruments, and what each measured
+
+**Four non-interchangeable metric families exist.** Conflating them produced wrong readings
+more than once.
+
+| family | what it counts | where |
+|---|---|---|
+| event taxonomy | grind / soft / hard / unrecovered by **actually withdrawn** guidewire length, per stall event | `monitoring/extract_stuck.py` |
+| intent-based | % of stalls with negative commanded intent; post-stall 20-step intent in mm/s | v2 investigation |
+| full-cycle prevalence | stuck → retract → re-advance cycles inside successes, per 400-episode window | `saved/v2_micro_investigation/` |
+| eval probe | P(retract \| stalled) on the deterministic policy at eval time | `monitoring/probe_policy_v3.py` |
+
+**The three detector configs, verbatim.** §5.9 says thresholds move rates ~20 pp but never
+records them. The shipped extractor scores every episode under all three simultaneously:
+
+```
+canon:  stall_eps=0.3 push_min=2.0 stuck_steps=12 retract_min=1.0 soft_max=8.0 pass_eps=1.0
+sens:   stall_eps=0.3 push_min=1.0 stuck_steps=8  retract_min=0.5 soft_max=8.0 pass_eps=1.0
+strict: stall_eps=0.5 push_min=4.0 stuck_steps=16 retract_min=1.0 soft_max=8.0 pass_eps=1.0
+```
+
+A stall opens when `proj_s < running_max + stall_eps` AND `abs(cmd_action[gw_trans]) >
+push_min` for `stuck_steps` consecutive steps (counter decays -2 per non-stalled step);
+closes when `proj_s > onset + pass_eps`. Recovery-success ranges 42% (strict) to 65% (sens)
+on v1b; **every ordering between runs survives all three.** VALIDATED. Transcript 8394-8477.
+
+**Retraction depth is a continuum massed at zero — soft/hard/grind is a cut, not a mode.**
+Histogram of escaped-event retraction depth:
+
+| run | <0.5 mm | 0.5-1 | 1-2 | 2-4 | 4-8 | 8-16 | >16 |
+|---|---|---|---|---|---|---|---|
+| v1b | 32% | 5% | 9% | 17% | 17% | 12% | 8% |
+| v1bp | 25% | 5% | 9% | 16% | 19% | 15% | 10% |
+
+No bimodality. The 1 mm and 8 mm boundaries slice a smooth curve. This is why the July "soft
+2-6%" and the canonical "22.6%" are both "right" — and why no design should treat soft and
+grind as distinct behaviours. The July one-off detector was never preserved, so that audit
+is unreproducible. VALIDATED. Transcript 8501-8522.
+
+**Recovery type proxies stall SEVERITY, not skill.** Grind-only episodes convert to success
+at **99% / 95%** (v1b / v1bp) against soft's **95% / 76%**, and the raw crunch signature
+carries **4-8x more steps in failures than successes** in every era. This is why the v1c
+crunchpass lane had to be success-conditioned, and why it was never launched. OPEN — the
+confound must be broken within matched depth strata first. `RL_IMPROV_18_P2_DESIGN.md` §5.1.
+
+**The T1-T7 cross-run ledger (v1b vs v1bp, 22,731 explore episodes).** Four rows not
+elsewhere in this file:
+
+- **T4, depth-stratified:** stalled-episode share is **5-7% at the CCA vs 90-97% at the
+  siphon.** At the siphon v1bp escapes **68%** of stalls yet only **14%** of episodes
+  succeed. **The siphon is a stall-DENSITY problem, not an escape-skill problem** — escape
+  one jam, meet the next.
+- **T5:** recovered-episode conversion **95.2% (v1b) vs 77.0% (v1bp)**; mean catheter-lead
+  fraction 0.34 -> 0.04; v1bp jams *more* (stalled-ep 51.0 -> 57.9%).
+- **T6:** episode-success <-> recovery-success correlation is **r = -0.82 (v1b)** but
+  **-0.21 (v1bp)** — the reward pair *decoupled* them.
+- **Recovered-but-failed episodes die on the clock:** of v1bp's 246, **91% hit the 600-step
+  cap**, median **61 mm short**, last recovery at 97% of the episode. The conversion gap
+  holds in every depth band and is largely **transient** (v1bp bins 3/5 convert at 56%/54%,
+  bins 6/7 at 94%/95%). The durable difference: v1bp never learned stall *avoidance*
+  (stalled-ep flat 53-57% vs v1b's 64 -> 42%).
+
+Refines §3.2's "reward pair is a null" to: **the two runs reached the same ~61% summit by
+opposite routes — avoid-and-run-clean vs stall-and-fight-through.** VALIDATED.
+Transcript 8110-8296, 8524-8551. `extract_stuck.py`, `analyze_stuck.py`, `verify_stuck.py`.
+
+**The v2-era micro-recovery finding.** 53% of explore successes contained a full
+stall -> retract -> resume cycle, but prevalence **faded 86% -> 58% -> 28%** across
+training thirds while post-stall push intent hardened +1.8 -> +7.2 mm/s, and **failures
+retract-and-resume MORE than successes (3.8 vs 1.4 cycles/ep).** Micro-recoveries were
+distilled from exploration noise, not learned. VALIDATED. Transcript 4034-4041.
+
+**Recovery between TopBrain checkpoints — checked, NEGATIVE.** Whether better recovery
+explained the host 44.9 -> 64.3% between `ck256370` and `ck505230`: heatup stalls in 52%
+of episodes at 5.49/1k; by bucket 2 that is 7.2% at 0.98/1k — a 5.6x collapse inside 500
+episodes — and across the two checkpoints stalls drift 0.63 -> 0.50/1k with resolution flat
+within noise. **Stall avoidance was learned before the first checkpoint was written;
+whatever bought the host improvement is invisible to every recovery instrument.**
+RULED OUT. Transcript 11415-11424.
+
+**The buckle-clearing adjudicator — the definition, since §10.6 quotes only its headline.**
+CLEARING := `fold_load >= 4` (buckle present; calibrated against an **18,541-window null**
+of clean-advance segments, where P(null >= 4) = 1.21% vs P(event >= 4) = 39.2%, lift 32x)
+AND `fold_close == 0` (reduced) AND `adv25 >= 15 mm` (passed; the 15 mm cut sits inside an
+**11-mm-wide empty gap** in the data, so any threshold in 14-25 mm gives identical labels)
+AND no re-stall within 20 steps at |dp0| <= 2 mm. Each stall window is split at the
+guidewire peak into a LOADING phase (`first..peak`) and RELEASE phase (`peak..close`), and
+"buckle present" is measured on loading only. Negative control: `checkpoint0` yields zero
+clearing events. `slack_gw` was REJECTED as the buckle instrument because clean-advance
+slack rise (p50 3.97 mm) exceeds stall-window rise (p50 2.80 mm). VALIDATED.
+`monitoring/buckle_clear_final_v1.py` (docstring carries the definition);
+`buckle_clear_adjudicate_v4.py` is buckle-load-normalised and runs the home/foreign cells.
+
+**Functional-success reclassification.** Strict `TargetReached` mis-scores catheter-overshoot
+near-successes (wire bunched inside the catheter at the target). Terminal
+`cum_reward in [-1, +1]` is the clean discriminator (genuine failures land <= -3). Strict
+32.7 / 31.6 / 36.1% -> functional **42.9 / 44.9 / 50.5%**; functional improved +7.6 pp over
+750k steps vs +3 pp strict. Also showed an "eval regression" was classifier noise — the same
+physics moved between truncation buckets. VALIDATED. `RL_IMPROV_10_CHANGES.md` §17.
+Matters because strict success is the only metric quoted anywhere, and it tracks *which
+truncation fires*.
+
+## 14.2 Planned-path classifiers — evaluation history and measured accuracy
+
+**A uniform cross-track tolerance cannot work — measured.** Natural in-lumen drift in the
+aortic trunk is **~9.5 mm**; the bif2 wedge is **13 mm**; the RCCA-target wedge **49 mm**.
+6 mm classified normal trunk navigation as off-path; 10 mm flickered on SOFA jitter. Both
+produced 50/50 episodes ending at **-53 reward** and an infinite ~10-step retract/re-advance
+thrash. RULED OUT. `RL_IMPROV_8_CHANGES.md` §4-5, §12.
+
+**The surviving design: radius-aware tolerance + state-machine `current_branch`.**
+`tol = max(2.0, 1.5 * clip(local_radius, 2, 12))` — trunk r=12 -> 18 mm (9.5 drift safe),
+bif2 r=7 -> 10 mm (13 wedge fails), bridge r=4 -> 6 mm (49 wedge fails). On 50 heuristic
+episodes: WEDGE600 35 -> 17, but successes 4 -> 0. **VALIDATED for classification, OPEN for
+task success** — attributed to flicker where `tol ~ drift`; the proposed asymmetric
+hysteresis (flip off at `ct > tol`, back on only at `ct < 0.7*tol`) was never built.
+`RL_IMPROV_8_CHANGES.md` §14-15; `eve/eve/util/pathcontext.py`.
+
+**Five classifier defects, each of which silently disabled or corrupted off-path detection.**
+Every one presented as a policy failure — episodes burning 600 steps at a wall.
+
+| defect | mechanism | fix | status |
+|---|---|---|---|
+| Bug-A | state machine commits by arclength without checking the tip is on the *path-used segment*; a wedge on `(0).mrk` off-path indices 0-20 read as on-path | on-path-mask check re-layered on the state flag | VALIDATED |
+| junction hysteresis | forward-commit required `proj_s` to leap 20 mm in one step against ~0.5 mm/step advance; branch transitions fell **90%** (LCCA 7 vs 45) | one-sided commit, 10 mm dead-band | VALIDATED |
+| one-step lag | `update_branch_state()` ran AFTER reward/obs with the `is_on_correct_path` cache uninvalidated — the tax, off-branch counter and obs 19/25-28 all used the **previous** step's classification | `Env._on_intervention_stepped` hook; memo self-clears | VALIDATED |
+| hairpin-blind projection | global nearest-segment argmin with no continuity; at the siphon adjacent limbs flip the projection and spike ds by the loop length | **+-30 mm window, 15 mm fallback**; bit-identical to full scan over 200 trials | VALIDATED |
+| KD-tree flip-flop | `off_br` counter reset on every micro-flip (`4->8->10->10->1->3...`) so the grace threshold never fired; **242 of 539 off-branch steps had reward > -0.101** — progress out-paid the penalty | `_stable_on_branch` + 5-step `_pending_flip_count` | VALIDATED, entry/exit reported ~5 steps late |
+
+Plus: the WBT label leaked under `--relax_failure_truncations` (counters kept climbing after
+truncation stopped; three sites still labelled `wrong_branch_timeout`) — fixed, 0 leaked.
+Transcript 70-71, 384, 2277-2334; `RL_IMPROV_7_CHANGES.md` §3, §7; `RL_IMPROV_8_CHANGES.md` §18-19.
+
+**Consumers of the classifier disagree with each other — OPEN.** `is_on_correct_path()`
+applies the on-path-mask override; `arclengthprogress.get_projection()` does not — same wire
+state, two verdicts. The `+1` junction reward uses `_path_daughter_arclengths` (real forks)
+while the heuristic's milestone is a junction with no off-path branch; the reward gate needs
+`arc_past >= 10 mm`, the heuristic fires at `s >= jn_arc - 5` — a **10 mm dead zone**. And
+**`in_wrong_branch` (obs 73) is an exact -1.0 duplicate of `on_path`** — zero extra
+information. The `path_extension_set` unification was never built. `RL_IMPROV_8_CHANGES.md` §32-33.
+
+**Degenerate entry-point features.** `_build_entry_points()` stored the raw bifurcation
+coordinate, so `wrong_pt` and `corr_pt` were **literally identical at every sample** —
+LocalGuidance features 8-13 ("avoid this way" vs "go this way") collapsed to one scalar at
+every fork. Fixed by storing a point 15 mm into each branch. Code VALIDATED; the in-container
+assertion (`|corr - wrong| >= 10 mm`) was never run. `RL_IMPROV_7_CHANGES.md` §4.
+
+**The crunch classifier — the only planned-path classifier with a measured accuracy.** Five
+path-geometry features (`gw_slack` 89, `cath_offset_z` 77, `gw_cath_gap` 78,
+`local_radius` 93, `arc_past_daughter` 58) classify crunch-signature steps at **AUC
+0.92-0.95** on v1b chunks; restricted to **deployable** features, **AUC 0.65-0.77** with 9
+(machine-2: 0.788 with top-15). Three load-bearing refinements: (a) the raw signature marks
+GRINDING — failures carry **4-8x** more crunch steps (eval3 era: 193/failure vs 41/success),
+so the lane must be success-conditioned; (b) v1b's 81.6% crest *was* the crunch-passage era
+(41 crunch steps/success, 50% of successes with >= 3-step passages, vs 7-14 elsewhere);
+eval5's crest was a different mechanism (cleaner avoidance, 14%); (c) physics check: crunch
+steps have **LOWER** contact than free steps — close catheter support prevents buckling.
+Caveat: normalized `gw_cath_gap` rails in late eras — never use that dim alone. VALIDATED.
+Transcript 6805-6817; `saved/p2a_deep_dive/CRUNCH_POOL_STRATEGY.md`.
+
+**The classifier that shipped is NOT the AUC-0.94 one.** `launch_rcca_p2_teacher_v1c.sh` /
+`v1d.sh` implement `is_crunchpass = crunch_sig(obs) AND episode.success` as a **hard
+threshold rule on three obs dims (42/44/93)**: both device translations > 0.25 normalized
+AND local radius <= 0.175. Six container tests pass; default-off. BUILT, NEVER RUN.
+Anyone resuming must know the shipped membership function is a 3-dim box, not the 5-feature
+classifier the AUC was measured on. Transcript 6888-6892.
+
+**One-segment planned route collapses 14 of 51 guidance dims — cost measured at ~6 points.**
+Starting inside a branch makes `FixedPathfinder` take its same-branch shortcut; feature 25
+`is_in_trunk` pins at 1.0 and 26 `is_on_target_daughter` at 0.0 for the whole episode while
+the privileged bit correctly says "in target daughter" — a contradiction never seen in
+training. Nothing errors. The matched RCCA-internal control (69.4% vs 75.5%) priced it at
+~6 points, far short of the ~69 needed to explain LCCA 0%. VALIDATED. `LCCA_TRANSFER_RESULT.md`.
+**Reusable rule: any start-state or topology change must be checked for silently-constant
+observation dimensions before its result is read.**
+
+**Correction to §2.1.** The flag table says `--relax_failure_truncations` turns "vessel-end
+truncation OFF". The code (`env5.py:1251`, `:1042`) disables **fold-stall and off-path**
+truncation; **MaxSteps, VesselEnd and SimError still end episodes.**
+
+## 14.3 Observation values used as force-field proxies
+
+**Exact inventory.** Deployable, guidance block: `gw_slack` = feature **43** =
+`clip((inserted_gw - proj_s)/50, 0, 1)` — wire stored in bowing, the single most informative
+buckle scalar, mesh-relative by construction; `slip` = **44** = raw fold-detector input
+`delta_gw - delta_s`; command-mask flags 45/46; radius now/ahead **47/48**; `clearance =
+cross_track/tol/2` = **49**; gw-cath gap 32; log-depth 50. Privileged tail (24 dims,
+`eve/eve/observation/meshinvariant.py`): 0/1 mean/max node velocity; **2/3 log1p mean/max
+|node force|; 4 argmax-force position; 5/6 mean/max |position - free_position| (the
+contact-impulse proxy)**; 7-10 sin/cos accumulated rotations (windup); 11-13 cath-gw tip
+offset; 14-18 branch one-hot; 19 off-branch counter; 20 fold counter; 21 slip; 22
+cross-track excess; **23 guidewire slack**.
+
+**The SOFA force channel is DEAD.** Privileged dims **2/3/4 are identically zero across all
+568,874 buffer states.** `MechanicalObject.force` / `dofs.force` is a per-solve scratch
+buffer cleared before any post-step read; verified on a live-wire checkpoint (force = 0,
+velocity alive, `externalForce` shape `(0,6)`). The "argmax-force position" feature has been
+argmax-over-zeros noise for the entire program. **RULED OUT: post-step force reads can never
+work.** The only route to true force is `GenericConstraintSolver.constraintForces` /
+`computeConstraintForces=True` — a scene change, deferred as E6, never done. §1 describes
+the tail as "nodal forces/velocities, contact-impulse proxy" without recording that the
+force half is zeros. `RL_IMPROV_15_CHANGES.md` Part B §5/§9; transcript 4048, 4163, 5172.
+
+**`|position - free_position|` was chosen over `force` deliberately.** `force.value`
+includes internal elastic bending, and high bending is *required* to conform to the siphon —
+penalising it inverts into "do not follow tortuosity". `|pos - free_pos|` is nonzero only
+where the wall pushes back. It is the only force-field proxy actually wired into reward.
+VALIDATED. `training _scripts/util/buckle_reward.py`.
+
+**`gw_slack` is deployable AND is a numerical duplicate of privileged dim 23.** Both are
+`(inserted_gw - proj_s)` from the same projection. Consequence: **the paper's "planned-path
+<-> force correspondence" claim is an identity, not a correspondence** — its dominant
+predictor is the same number on both sides. §6.12 lists the probe as "never built" without
+saying the paper's asymmetry pillar rests on it or that the naive version is circular. The
+specified fix (`SPIE_METHODS.md` §2.4, pending): predict contact-impulse / distal nodal
+force from deployable features with **every deployable feature numerically identical to a
+privileged dim excluded**, fit only on audited anatomies, with a shuffled-label control.
+Flagged as likely to return a negative — run it early. OPEN. Transcript 9937-9967.
+
+**Contact labels are scale-starved by four orders of magnitude.** Normalised contact std
+~1e-3 -> `aux_coef * MSE` gradient ~**5e-8** — the aux term was silently ~0 for the whole
+v2 run and was not logged. Aux contact R2 peaked **0.554** at u~131k then regressed to 0.486,
+against a linear ceiling of 0.779. Fix specified as E2: repoint labels `2,3,5,6 -> 0,1,5,6`
+(velocities are alive), loss-time EMA z-scoring behind `--aux_label_znorm`, log the loss.
+BUILT (machine 2), never run on the P2 line — P2 sets `--aux_coef 0` because with a
+privileged actor the labels are inputs. `RL_IMPROV_16_EXPERIMENTS.md` E2.
+
+**Distillation-efficacy probe: the teacher can FEEL contact but does not ACT on it.**
+(A) The aux head infers contact from deployable obs at **r ~ 0.75** against 0.002 for slack
+alone — the trunk carries the knowledge. (B) Behaviourally: **P(retract) is FLAT across
+contact quintiles**, and the policy's correlation with its own contact inference is
+**POSITIVE — it pushes harder when it senses contact.** Diagnosed as credit assignment: the
+critic prefers retract in the buckled tail (AWAC weight 1.042 vs 0.947) but with advantage
+std 0.092 and lambda = 1.0 the weights span **[0.72, 1.25] ~ uniform BC**. VALIDATED as a
+negative; the measured precondition for any P2b student claim. Transcript 4022-4049.
+
+**Gradient-saliency probes — method and both results.** `|d mu / d obs|` over 1,500 buffer
+states, all dims ranked, across snapshots (~10 min `docker exec`). v2 era: **`ep_step` is
+the #1 saliency input for all four action means** plus aux and log_std; the four
+`last_action` dims rank 2-5 (time + momentum = 17% of saliency). ~21 prunable dims: frame
+t-1 body offsets are r = 0.99 duplicates; `in_wrong_branch` is `-on_path`; `d_rem_log`
+ignored; `at_ostium` dead at source on procedural meshes; `curv_ahead` variance-crushed by
+its /10 scaling. v1b (P2 residual, init / 288k / 543k): **ep-counters demoted to rank 21 of
+125; privileged tail ranks 2-3; heuristic-intent dims fall 11 -> 54 -> 78** (the policy
+weans off the script). **The residual design defused the ep_step time-hack** — a real
+architectural result; dim 68 climbing back toward top-5 is the pre-registered early warning.
+VALIDATED (first-order saliency, not causal ablation). `monitoring/probe_policy_v3.py`.
+
+**Deployable features CAN recover the contact signal** — the crunch classifier above
+(AUC 0.65-0.77 deployable-only) is the empirical basis for the P2b student's aux head and
+the strongest evidence the privileged tail is inferable. VALIDATED.
+
+**`obs47` is degenerate exactly where it matters.** `clip(stated_r, 2.0, 12.0)/12` reports
+the floor for every station under 2.0 mm — constant through the siphon. On the host **81.7%**
+of distal stations are clamped, 20 distinct values across ~105 stations, while true radius
+swings 1.40-2.25 mm. On the cohort 12.6% median. Distinct from §12 row 14 (declared radius
+overstates bore): this is a clamp degeneracy in the observation itself. The 2.0 mm floor is
+frozen logic (feeds obs 47/48/49, the off-path classifier, `at_tree_end`).
+`monitoring/obs47_degeneracy.py`. VALIDATED.
+
+**Observation OOD-by-zone instrument exists with outputs on disk and no narrative result.**
+`monitoring/obs_ood_arjun_*.py` -> `ood_out.json`, `ood_clean.json`, `ood2-4.json`: per-zone
+(`Z1_shared_0_103`, `Z2_ramp_103_136`, `Z3_graft_136_end`) distributions of obs47, obs48,
+`tol`, `d_rem_norm` with `frac_in / frac_above / frac_below / shift_iqr`. The only
+measurement of whether the policy's *inputs* are in-distribution on the cohort. OPEN.
+
+**The stuck-lane thresholds are defined on these proxies.** E3's third SumTree lane marks a
+transition stuck if stored `gw_slack` (flat 89) > **0.174** or `contact_max` (flat 103) in
+its top decile (~2.6e-3); `--stuck_fraction 0.15`; composition 30% clean / 15% stuck / 55%
+general. Under `--heur_action_obs` the contact index shifts **103 -> 107**. Flag must be
+immutable per slot so `update_priorities` cannot evict lane membership. BUILT, fully
+tested (400/400 flags, round-trip, back-compat), NEVER RUN on the P2 line.
+`RL_IMPROV_16_EXPERIMENTS.md` E3.
+
+## 14.4 Snapshot / restore / stuck-pool machinery and curricula
+
+**Escapability + restore-fidelity screener — BUILT, TESTED, NEVER RUN.** A wedged state in a
+restore pool teaches the critic `V(stuck) = failure-and-nothing-after`, poisoning the skill
+the curriculum builds. `training _scripts/util/escapability.py` (pure, 5 unit tests) +
+`screen_stuck_pool.py` + `launch_screen_stuck.sh` (41 mounts verified). Verdict logic:
+`restore_faithful` FIRST — restored insertion within 10 mm and slack within 8 mm of capture
+(a sprung buckle fails); then `is_escapable` — a state a scripted pure retract
+`[[-20,0],[-20,0]]` cannot move >= 2 mm in ~40 steps is mechanically wedged; a fold must
+additionally drop slack >= 5 mm or end < 8 mm; off-path needs only retractability.
+`screen_report.json` warns if > 50% of the pool fails restore. Read-only w.r.t.
+`is_on_correct_path()`. `RL_IMPROV_15_CHANGES.md` Part F §4; transcript 1589-1626.
+
+**Stuck-restore as designed FAILS — harvest crunch-ENTRY, not stuck states.** Machine 2:
+*"by the time the wire is truly stuck it is knotted and coiled — you'd have to retract
+hundreds of steps."* This inverts E4. Harvest the last moment before the knot. Companion
+change never made: `CheckpointRestoreWrapper` restores on **every** reset — needs
+`--restore_prob 0.3` so the run keeps learning full navigation. RULED OUT as designed.
+§6 items 8/9 keep the lane alive without recording that its state source was proved wrong.
+`RL_IMPROV_18_P2_DESIGN.md` §5.1; transcript 6797-6815.
+
+**Stuck-pool harvest parameters and the mesh hazard.** `STUCK_CHECKPOINT_DIR` triggers a full
+SOFA `save_checkpoint()` once per episode at `STUCK_FOLD_TRIGGER=10` or
+`STUCK_OFF_BRANCH_TRIGGER=25`, capped 200/worker. **Hazard:** the wrapper picked from the
+directory at random with no mesh matching, so under `--procedural_rcca` a mesh-B worker could
+restore a mesh-A snapshot — wire teleported through a wall. Mitigated by fingerprint filter +
+pinning; the mesh still regenerates every 10 episodes so checkpoints go stale within a
+worker. Rule: stuck-pool restore is fixed-mesh-only unless fingerprinted. Transcript 1202-1475.
+
+**Per-state difficulty dominated policy quality — the single-restore-state sweep.** All 98
+eval seeds from one curated restore state (`pid19116`) with the eval-#1 policy (32.67% on
+mixed states): **84/98 = 85.7%, +53 pp**, in 808 s vs ~5000 s, zero wrong-branch timeouts.
+All 14 failures were the catheter-overshoot fold. VALIDATED. `RL_IMPROV_10_CHANGES.md` §16;
+`training _scripts/eval_policy_from_state.py`, `--eval_only_checkpoint`.
+
+**Target depth -> capability mapping, pre-TopBrain.** The RCCA centerline is 237.5 mm and
+runs CCA + cervical ICA + petrous + cavernous + terminus. In the pid19116 sweep: proximal CCA
+(z 416-510) **100% (45/45)**, cervical ICA (z 510-575) **82.5%**, siphon/terminus
+(z 575-601) **46.2%**. All 14 catheter-overshoot failures at z >= 547. Mechanism: siphon 180
+degree bends + aggressive `cath_trans` -> wire buckles inside the catheter instead of
+emerging. VALIDATED — the mechanism behind §9.4's target-depth finding.
+
+**Action-space curriculum — built, two gotchas.** `ActionCurriculumWrapper`: stage 1
+(0-200k) `cath_trans = gw_trans * 0.8, cath_rot = 0`; stage 2 (200k-500k) catheter x 0.1;
+stage 3 full 4D. **Gotcha 1:** the replay buffer stores the **original** pre-modification
+actions — an action/reward mismatch. **Gotcha 2:** step counting is **per-worker**, so each
+worker advances its own stage. Stage 2 also scales heuristic-mode demos, distorting the
+seeding distribution. OPEN. `RL_TRAINING_LIFECYCLE.md`; `RL_IMPROV_8_CHANGES.md` §32.
+
+**Checkpoint collection / curation pipeline — reusable, idle.** `collect_sofa_checkpoints.py`
+(parallel harvest at 370-385 mm insertion), `select_sofa_checkpoints.py` (all success-ending
+captures are gold; else `looks_clean AND cum_reward >= 0 AND wire_shape_score < threshold`,
+ranked by `step_idx` ASC — shorter = less hidden kinking outside the 5-point tracking
+window; k-means k=4 on target coords), `snapshot_restore_states.py`, `smoke_test_restore.py`
+(the historical bug: restore fired *before* `start.reset()` and was a silent no-op). VALIDATED.
+
+**Cache reward-version guard.** `experience_cache.py` stamps `meta_buckle_coef` from
+`EVE_RL_BUCKLE_COEF` (exported before workers spawn); both load sites fail fast on mismatch;
+upgraded to a 4-field compare when the reward pair landed. The obs-dim guard cannot catch
+this class — same layout, different scoring. VALIDATED. Transcript 1584, 6916-6934.
+
+**Sibling levers on machine-2's Tier-A commit `0cd073c`, all BUILT.** E1b
+`--awac_adv_norm_tau 2.0`: `w = exp((adv/sigma)/tau)`, measured weight span p99/p1
+**1.54 -> 10.2** — the direct fix for the [0.72, 1.25] collapse. E2 `--aux_label_znorm`.
+E8 `monitoring/monitor_pass_v3a.sh` + `probe_policy_v3.py`. CSV columns added:
+`awac_weight_p99p1` = 29, `aux_loss` = 30.
+
+**`CLEAN_RAIL_FILTER` — armed, silent, aimed at the wrong failure.** `EVE_CLEAN_RAIL_MAX=0.15`
+gates clean-lane admission: **0 rejections** across all v2 online successes and 0/480 seed
+episodes. But its criterion is |a| > 0.95 bang-bang, while the actual failure was sub-rail
+mean growth (0.4-0.7) — "0 rejections" is not evidence of health. Also measured:
+`balanced_fraction 0.3` already yields ~67% effective clean-batch composition; 0.6 buys ~78%
+at the cost of halving failure/recovery draws. Transcript 3553-3561, 4835-4846.
+
+## 14.5 Reward-term audits — the mechanisms behind numbers §3 quotes
+
+**The anti-buckle potential, and why it is safe.**
+`phi = -(0.5 * clip(slack - 5, 0, 40)/40 + 0.5 * clip(contact, 0, 2)/2) in [-1, 0]`, added as
+`coef * (phi_t - phi_{t-1})`, `coef = 0.5`. Three deliberate properties: (a) any closed loop in
+(slack, contact) nets exactly zero — **not oscillation-farmable**; (b) the episode sum
+telescopes to `phi_end - phi_start`, so form-then-recover is neutral while **starting
+buckled and unbuckling is net positive** — what makes stuck-pool restores trainable; (c) caps
+are on the **inputs, never the delta**. `_buckle_phi_prev = None` at every reset so a
+restored-buckled state re-baselines. **Deliberately not gated on the classifier** — a gate
+would make phi jump on flicker. Measured in the TopBrain run: the contact channel never
+exceeded 0.02 mm against its 2 mm cap in ~130,000 steps — phi is a pure slack signal there,
+capped at 0.25 reward units, ~4% of a 6.0 return. VALIDATED. `RL_IMPROV_15_CHANGES.md` Part D §1.
+
+**Two reward-farm fixes that gate `relax_failure_truncations`.** (i) `ArcLengthProgress`
+paid **2x forward, 1x backward** inside the target daughter — every oscillation banked
+`+pf * ds`; under relax a wire merely dithering in the RCCA farmed ~3-4 return, equal to a
+success. Fixed to flat 1x symmetric. (ii) `max_steps` carried **no penalty** — loitering to
+the horizon kept all shaping. `MAX_STEPS_PENALTY = -3.0`, checked first so a pure timeout is
+priced -3 not -5. VALIDATED. Part D §3-4.
+
+**Off-path retract tax discount.** The uniform -0.007/step off-path tax also taxed backing
+out of a wrong branch. Dropped to **-0.002** while off-path AND genuinely retracting,
+double-gated: `_off_branch_steps >= 3` (flicker pays full tax) and **executed**
+`delta_gw <= -0.1 mm` (a masked retract that moved nothing pays full tax). VALIDATED. Part D §5.
+
+**The full reward-farm audit (all fixed in Gen-3/4).** In-daughter progress doubling;
+timeout pays nothing while ~+7 is banked (enter-dither-coast is EV-optimal vs a +3 bonus
+risking -5); overshooting the correct daughter trips `VesselEnd` -5 same as a wrong one
+(*approach is paid, stopping is free, going deep is the only penalised action*); translation
+limits were `[-10, +30]` so **neutral policy output = +10 mm/s forward on both devices** —
+now symmetric +-30; the catheter was controlled semi-blind (no tip position, heading or
+cross-track feature); and **all 16 workers explored an identical target sequence**
+(`random.Random()` deepcopied, unseeded explore resets never reseeded) — effective diversity
+1/16 of nominal and PER received 16-way-correlated data. Transcript 44-54.
+
+**Every "256x256" network before Gen-3 was effectively ONE hidden layer.** `mlp.py:83-87`
+had no activation between input and first hidden layer (`# TODO: Add F.relu` left in place);
+`Linear o Linear` is one affine map. Everything in the MLP era, including the 86% RCCA stack,
+ran at half the intended depth. Fixed in Gen-3; old checkpoints are not warm-startable.
+Transcript 64, 382.
+
+**The catheter-shove exploit.** In v1b's late logs the catheter **leads the guidewire by
+> 50 mm on 69% of steps**, max insertion 820 mm (machine 2: coil failures at the 898 mm cap).
+Caused by frontier-only progress pay and unpriced catheter slack. The eval2-3 crest ran at
+**6.2% cath-lead**; the decline at **58-62%**. This is the mechanism the v3c reward pair
+(`--cath_slack_coef 0.5 --progress_tip_mode avg --avg_gw_weight 0.5`) targets. VALIDATED.
+Transcript 6930-6984.
+
+**Waypoint-density reward — both directions RULED OUT.** ENV2 (10 mm, 0.1): net +0.034 at
+400 mm, step penalty wins early -> policy stops at ~47 mm. ENV3 (5 mm, 1.0): +0.14 at 30 mm
+vs +1.83 at 400 mm risky -> locks into the shallow optimum at 7-30 mm. All three trained
+policies insert LESS after training (-95/-96/-98%). Origin of the "no exploitable local
+optimum before the target" constraint. `WAYPOINT_REWARDS_ANALYSIS.md`.
+
+**MaxSteps-grounded-as-terminal — UNFIXED, and it taxes recovery.** With relaxed
+truncations, buckled episodes run to 600, but `if truncated: terminated = True` bootstraps a
+wire mid-recovery at the horizon as "nothing after" — systematically under-valuing
+recoveries that pay off past 600. Left open because it touches the terminal semantics that
+stabilised the RCCA critic. Combined with 14.1's "91% of recovered-but-failed die at the
+cap", this is a concrete, cheap candidate for the conversion deficit. OPEN. Transcript 993-1739.
+
+## 14.6 Evaluation integrity
+
+**The eval ORBIT bug — un-reseeded rotation RNG. SPECIFIED, NEVER FIXED.** `reset_devices`
+draws the initial device rotation from `self._rng`, which advances and never resets, so the
+starting twist of eval episode N depends on **its position in the sequence, not its seed**.
+The identical untrained policy scored **46.9% and 36.7% in two launches**; at position 2 one
+run sent 16/16 into the RVA where the other succeeded 13/16 — that alone was the whole gap.
+Anatomies and targets were byte-identical. Consequences: cross-launch noise floor **~ +-10
+episodes, bimodal**; the same heuristic spans **37-47%**; and within-run deltas are clean
+only while the policy is unchanged, because the orbit is created by the policy's own
+actions. **This is a second, independent mechanism behind §10.6's ~18-point H0 variance,
+and it is a property of the EVALUATOR** — it applies to every eval number in this file,
+including the §13 host queue. "Deterministic eval" has never been true in the sense assumed.
+Fix (specified): make initial rotation a deterministic function of the episode seed; a
+verification test is written. Downgraded because multi-eval averaging is a free workaround.
+OPEN. Transcript 6127-6150, 6582-6586, 6740.
+
+**`global_steps` is a per-worker counter.** Ordering explore episodes by it produced "95% on
+the first 300 -> solved at initialisation". Ordered by `wall_time` the run starts at
+**69.0%** on the first 100 (pure heatup), 84.1% through heatup, 98.7% once updates begin —
+reconciling with H0's 73.5%. VALIDATED as a correction. Transcript 11400-11408.
+
+**`geometry_hash` must hash `vessel_tree.branches`, never the planned path.**
+`pathfinder.path_points_vessel_cs` moves with the target, so an identity hash built on it
+makes every preflight pass meaninglessly. Fixed. Transcript 8406.
+
+**Worker logs drop each worker's final episode** (82 of 98 captured). Use
+`episode_summary.jsonl` for eval accounting — but it is *incomplete for explore* (§5.7).
+The two sources have opposite reliability. Transcript 6134, 6742.
+
+**The generalised lesson from the two retracted nulls.** *An intervention targeting a
+specific capability looks worthless when the evaluation cannot exercise that capability.*
+Both "clean negatives" — the reward pair and stochastic eval — were measured against the
+walled mesh where nothing ever reached a tight curve. Transcript ~9530.
+
+## 14.7 Diagnostic instruments — and their own defects
+
+**`diagnose_collapse.py` — and the baseline bug that inverted its verdict.** Joins the losses
+CSV, probe JSONL, batch-sample JSONL, policy snapshots and worker logs into an event
+timeline, a collapse onset, and a mechanism label. **The bug:** baseline was the median of
+the first 200 updates, which spans startup (loss 6.0 -> 0.06), so update-1 read as a
+"69-126x spike" and both test runs were classified as critic instability. Fixed by taking
+the baseline from updates 100-1100. After the fix both reclassify to
+`policy_collapse_or_suboptimal_attractor`, matching the manual analysis the tool had
+contradicted. Pre-fix conclusions in `DIAG_TEST5_ANALYSIS.md` and `CRITIC_SPIKE_COMPARISON.md`
+are RETRACTED by `CORRECTED_ANALYSIS.md`. **An automated detector's baseline window is a
+domain assumption.**
+
+**The deterministic freeze probe — and why absolute thresholds do not transfer.** `mean|a0|`
+on fixed start states through every snapshot. v1's frozen policy measured 0.086; v1 grew
+0.053 -> 0.255 then whipsawed back to 0.086 ~ its pretrain origin — **the freeze basin IS
+the pretrain-BC attractor.** v2 tripped FREEZE-ALERT at 0.083 while scoring 30.6%, so the
+probe was recalibrated to a **ratio against the run's own pretrain baseline** (OK >= 2x,
+WATCH >= 1.25x; v2 reached 4.7x). Standing lesson: **probe the deterministic policy, not
+explore returns** — v1 held 39% explore success with a dead mean because sigma = 1 sampling
+masked it. VALIDATED. Transcript 3455-4145.
+
+**Stuck detection is still a narrow proxy — spec never implemented.** The shipped detector
+flags "freeze" as action mean ~0 and std < 0.1, which cannot see stuck-in-anatomy where
+actions vary but insertion is ~0. Specified replacement: `stuck_step = (cmd_translation >
+0.05) AND (|delta_ins| < 0.2 mm)`, >= 25 consecutive, with a 25 mm depth-bin mode. Also
+flagged: `monoplanestatic` masks translation internally, so **commanded-vs-executed must be
+logged** to separate "policy wants to push" from "env zeroed it" — the same defect class as
+`extract_stuck.py`'s `abs(cmd_action[0])` (§10.6). OPEN. `reward_analysis_solution.md`.
+
+**Nested multiprocessing silently voids SOFA queue timeouts.** 16 workers each spawning a
+SOFA subprocess via `make_mp()` -> 9+ processes on Docker `/dev/shm`; `queue.get(timeout=60)`
+ignored its timeout — measured gaps of **26 min, 1h36m, 4h18m and 5h48m**, 0 steps after
+9 h. Fixed by `intervention.make_non_mp()` in `util/env.py`. Increasing `--shm-size` only
+delays it. Companion: SOFA "Case 1 should never happen" traced to a 0.01 mm threshold under
+aggressive heatup — `heatup_action_high` reduced to `[[15,1.0],[12,1.0]]`. VALIDATED.
+`SOFA_TIMEOUT_FIX.md`.
+
+**The update-budget formula counts heatup — the 500k-heatup trap.** `update_steps =
+(heatup + explore)/20 - done`, so a 500k heatup demanded **27,500 updates in the first cycle**
+against ~1000 random episodes, each sampled ~880 times — networks overfit to random data.
+This is why `HEATUP_STEPS` is 1e4. Workers also run an entire 100-episode cycle on stale
+weights; sync happens once per cycle. VALIDATED. `RL_TRAINING_LIFECYCLE.md`.
+
+**Heuristic-seeding workers sampled identical targets.** Workers are `deepcopy(env_train)`,
+cloning `CenterlineRandom._rng`; seeding resets with `seed=None`. **100 heuristic episodes
+produced 7 unique targets** against a pool of 898 across 4 branches. Fix specified
+(`--heuristic_seed_base`); later work added branch-balanced scheduling. OPEN in its doc.
+`HEURISTIC_SEEDING_TARGET_DIVERSITY_FIX.md`.
+
+**Heuristic-seeding waste census.** 320 episodes: **116 both-devices-maxed stalls wasting
+59,600 steps = 28.5% of all logged steps**, mean wasted tail 514 steps; 71 short positive
+truncations (truncated, not successful, positive reward — the seed lane's "good" episodes
+are partly mislabelled); 45 actual successes. Detector spec with thresholds
+(`BOTH_MAX_STALL_STEPS 8`, `OFF_BRANCH_GRACE_STEPS 10`, ...) scoped to heuristic mode only.
+OPEN. `HEURISTIC_FAILURE_FIX_IMPLEMENTATION_SPEC.md`.
+
+## 14.8 Algorithm arms — the detail behind §4
+
+**v2b penalty-bracketing failed in the OPPOSITE direction — over-braked.** Two knobs on a
+byte-identical v2 (`action_mean_penalty` 0.005 -> 0.02, `log_alpha_max` -2.3 -> -2.0):
+baseline 2.0% @ 0.36 mm/s, eval1 **0.0%**, eval2 0.0%; deterministic `mean|a0|` frozen at
+1.0x baseline across 180k updates; alpha sat at its floor. The 4x penalty neutralised the
+O(0.01-0.05) early advantage tilt — "the engine never started". RULED OUT; this closes the
+AWAC penalty-bracketing line behind §4's one-liner. `AWAC_STABILITY_EVOLUTION.md`.
+
+**The AWAC pathology chain, named — for anything that reuses a BC term.** Every generation's
+instability was **saturation of the squashed Gaussian** escaping through whichever bound was
+loose: lambda = 3 with adv std 0.092 -> weights [0.72, 1.25] ~ uniform BC of the buffer
+including the policy's own saturated successes; the hard `log_prob` floor at -20 zeroed the
+BC gradient on exactly the far/high-advantage demos; entropy collapsed via **mean-rail**
+even with sigma floored (tanh-Jacobian half is unbounded in the mean: -2.3 -> -10.2 over
+650k updates); a hard clamp on `log_std` has zero gradient outside the band — a one-way
+ratchet. Fixes: soft tanh-rescale `log_std` (-2, 0), `log_alpha` rails (-5, -2.3), leaky
+log-prob floor, `action_mean_penalty`, per-dim clipped noise (was one scalar across 4 dims),
+`EVE_CLEAN_RAIL_MAX` filter, `target_entropy` +1.0. v2 eval **6.1 -> 30.6 -> 49.0%** vs v1's
+13.3% then freeze; train <-> held-out gap ~0. VALIDATED. `RL_IMPROV_15_CHANGES.md` Part E/G.
+
+**RLPD's machinery was validated even though the run closed 0.0/0.0.** LayerNorm held Q
+bounded for 226k updates with no BC anchor — the *stability* claim confirmed. The failure was
+**signal density** (realised UTD ~0.25-0.27 vs the paper's 20), not instability.
+`--critic_layernorm` and `--no_entropy_backup` were kept into P2. **§4 item 1 is
+architectural (throughput-bound UTD) and does not generalise to a faster simulator.**
+
+## 14.9 Specified with concrete designs, never built
+
+- **E6 observation surgery**: prune ~21 dims (t-1 body offsets, `in_wrong_branch`,
+  `d_rem_log`); add catheter **along-path** projection gap `s_gw - s_cath`, catheter
+  cross-track, sin/cos cumulative commanded rotation as a deployable windup proxy, a
+  stuck-duration integrator; fix `curv_ahead` scaling, radius /12 -> /6, target-dz (86%
+  saturated at 50 mm), `at_ostium` dead-at-source, `br_trunk` never fires; **remove
+  `ep_step` from the policy prefix**. Counter-evidence: the P2 residual already demoted
+  ep-counters to rank 21. `RL_IMPROV_16_EXPERIMENTS.md` E6.
+- **E7 escape bonus**: one-shot +0.3 the first time `proj_s` exceeds its pre-stall max after
+  a stall that contained executed retraction (net di0 <= -1.5 mm), latched per event, cap
+  3/episode. Paying on **escape** not retraction is what makes it unfarmable. Approval-gated.
+- **Mode-conditioning** as the cheapest Axis-1 lever: feed a path-derived mode signal
+  (wrong-branch flag, stuck-duration EMA, arclength-to-junction, curvature-ahead) so one net
+  realises two behaviours. Ranked above a GMM head and far above two-actor MoE, which is
+  deferred-last-resort (weakest at the mode boundary, splits data, touches the worker/sync
+  plumbing where a one-line bug already cost 24 h). The root problem is data distribution:
+  as path-following improves, stuck states vanish from the buffer.
+- **The planned-path <-> force correspondence probe** with the circularity exclusion (14.3).
+- **The eval orbit fix** (14.6).
+- **`success@900`** secondary metric — mentioned, never built.
+- **`recovery_tracker.py`** was never committed; exists only as a paste block in
+  `user copy.md`. The committed canonical extractor is `extract_stuck.py`.
+
+## 14.10 Inventory gap — `monitoring/` holds ~350 scripts; §2.3 lists 7
+
+Families now on disk with committed outputs, each of which a future engineer will otherwise
+rewrite: `buckle_clear_*` (~30), `cell1-4_*` (cross-matrix), `attack1/2/3_*` and `refute_*`
+(the mesh/wall refutation suite), `audit22_*`, `check6a/8/10/11/14_*`, `t2/t3/t4_*`
+(TopBrain adjudication), `nav_quality_nq*.py` + `out_nq/` (exact-estimator navigability),
+`obs_ood_arjun_*`, `obs47_degeneracy.py`, `measure_mesh_quality.py`,
+`target_dist_arjun_task*.py`, `split_*_check15_akr.py` (patient-level split optimiser),
+`figure_carotid_anatomies.py` / `figure_topbrain_pairs.py` / `figure_vmr_0248.py`,
+`smoke_topbrain_loader.py`, `topbrain_eval_flag_equiv.py` (BEFORE/AFTER equivalence of
+`eval_anatomies.make_env` — the regression harness for evaluator edits),
+`task2_arrest_colocation.py` (failure-mode classifier on the last-100-step window),
+`probe_policy_v3.py`, `monitor_pass_v3a.sh`, `extract_chat.py`, and
+`training _scripts/validate_experiment.py` (validates log/diagnostic/probe completeness for
+a run, including in-progress ones). The rest is one-off scratch.
+
+**Coordinate-system constants that must match across preprocessing, bench, human-play and
+training:** `rotation_yzx_deg = [90, -90, 0]` and `fluoroscopy_rot_zx = [20, 5]`, used
+identically in `vmr_processing_tools/create_dualdevicenav_format.py`,
+`eve_bench/dualdevicenav.py`, the human-play scripts and the training scripts. The
+anti-pattern is per-model rotations. `COORDINATE_SYSTEM_CONSISTENCY.md` — the intake step
+upstream of §11/§12.
