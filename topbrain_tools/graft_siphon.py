@@ -65,6 +65,11 @@ GRAFT_MM = 130.0        # host arclength at which the real siphon takes over
 BLEND_START_MM = 100.0  # last trustworthy host radius anchor
 RESAMPLE_MM = 1.0
 DISTAL_TRIM_MM = 4.0    # see graft(): keeps the terminus inside its own cap
+# Floor on the SIPHON radius. 0 = off (set A as shipped). The v2 mesher renders
+# radii faithfully, so a one-voxel neck in the label (see label_necks.py) would
+# become a real 0.3 mm pinch instead of being sealed; an ICA is never that
+# narrow, so the floor is a label-error repair, disclosed in the run log.
+ROUTE_MIN_R = 0.0
 UP = np.array([0.0, 0.0, 1.0])   # superior, in the branch and world frames alike
 ANCHOR_THR = 70.0       # max angle between the anchor tangent and the chord
 ANCHOR_MAX_TRIM = 30.0
@@ -232,6 +237,12 @@ def graft(host_pts, host_rad, siph_pts, siph_rad,
     #     the trim has to settle where that point is before they do.
     j = anchor_trim(siph_pts)
     siph_pts, siph_rad = siph_pts[j:], siph_rad[j:]
+    if ROUTE_MIN_R > 0:
+        n_floor = int((siph_rad < ROUTE_MIN_R).sum())
+        if n_floor:
+            print("      floor %.2f mm lifts %d/%d siphon radii (min was %.2f)"
+                  % (ROUTE_MIN_R, n_floor, len(siph_rad), float(siph_rad.min())))
+        siph_rad = np.maximum(siph_rad, ROUTE_MIN_R)
 
     # --- radius repair: ramp host from its 100 mm anchor to the siphon's own
     #     proximal calibre, smoothstep, leaving the real MISR values untouched.
@@ -248,6 +259,12 @@ def graft(host_pts, host_rad, siph_pts, siph_rad,
     t_siph = tangent_at(siph_pts, 0)
     R = frame_rotation(t_siph, t_host)
     moved = (siph_pts - siph_pts[0]) @ R.T + keep_p[-1]
+    # The exact map the siphon's points took, so the v3 mesher can carry the
+    # patient's real ICA SURFACE through it: v_branch = R (v - origin) + anchor,
+    # with `origin` the trimmed proximal point in the (mirrored) source frame.
+    graft.last_xform = {"R": R.tolist(), "origin": siph_pts[0].tolist(),
+                        "anchor": keep_p[-1].tolist(), "anchor_trim_idx": int(j),
+                        "route_from_mm": float(graft_mm)}
 
     pts = np.vstack([keep_p, moved[1:]])
     rad = np.concatenate([keep_r, siph_rad[1:]])
@@ -416,7 +433,13 @@ def main():
     ap.add_argument("--no-repair", action="store_true",
                     help="reject overlapping anatomies outright instead of "
                          "shortening or deflecting that anatomy's RVA")
+    ap.add_argument("--distal-trim", type=float, default=DISTAL_TRIM_MM,
+                    help="mm cut off the terminus; 0 with the v2 mesher")
+    ap.add_argument("--route-min-r", type=float, default=ROUTE_MIN_R,
+                    help="floor on siphon radius, mm; 0 = off")
     a = ap.parse_args()
+    globals()["DISTAL_TRIM_MM"] = float(a.distal_trim)
+    globals()["ROUTE_MIN_R"] = float(a.route_min_r)
 
     host_rcca = os.path.join(a.host, RCCA_FILE)
     tmpl, hp, hr = read_curve(host_rcca)
@@ -521,6 +544,16 @@ def main():
             else:
                 shutil.copy2(os.path.join(a.host, o), os.path.join(folder, o))
         write_curve(tmpl, os.path.join(folder, RCCA_FILE), gp, gr)
+        # v3: where the real surface for this siphon lives, and how it moved
+        side_dir = "surfaces_left" if a.mirror else "surfaces"
+        side_tag = "lICA" if a.mirror else "rICA"
+        stem0 = os.path.basename(f).replace("_ica.json", "")
+        surf = os.path.join(os.path.dirname(os.path.dirname(f)), side_dir, stem0 + "_%s.vtp" % side_tag)
+        xf = dict(graft.last_xform)
+        xf.update(kind="topbrain", centerline_src=f, surface=surf,
+                  mirror=[-1.0, 1.0, 1.0] if a.mirror else [1.0, 1.0, 1.0])
+        with open(os.path.join(a.out, stem, "graft_xform.json"), "w", encoding="utf-8") as fh:
+            json.dump({"sections": [dict(xf, name="siphon")]}, fh, indent=1)
         ok += 1
         if note:
             repaired.append((stem, note, clear))

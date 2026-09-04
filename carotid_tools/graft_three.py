@@ -217,6 +217,13 @@ ECA_MESH_R_MM = 1.6
 # collision mesh: at those calibres the mesher produced no lumen at all, so the
 # choice is between a 27% stenosis and a sealed vessel, not between 73% and 27%.
 ROUTE_MIN_R = 1.60
+# Floor on the SIPHON radius. 0 = off (as shipped). ROUTE_MIN_R is scoped to the
+# donor section on purpose, which left the TopBrain siphon at whatever the label
+# gave it -- including the one-voxel necks label_necks.py finds in 20 of 50
+# vessels. The v2 mesher renders those faithfully, as 0.3-0.6 mm pinches: the
+# first v2 bake of set B flagged three anatomies as non-navigable at 0.37-0.57 mm,
+# every one on a necked _L siphon. Set A gets the same floor from graft_siphon.
+SIPHON_MIN_R = 0.0
 CLEAR_MARGIN_MM = 0.5
 # Positive clearance is not enough: two lumens closer than this MERGE in the
 # collision mesh even though their centerlines never overlap.
@@ -520,8 +527,19 @@ def compose(host_p, host_r, lower, siphon_p, siphon_r):
     eca_r = np.maximum(eca_r, ECA_MESH_R_MM)
 
     # seam 2: ICA tip -> siphon
-    sip_moved, _, _ = place(siphon_p, ica_moved[-1],
-                            tangent_at(ica_moved, len(ica_moved) - 1), SIPHON_SPAN)
+    sip_moved, R2, origin2 = place(siphon_p, ica_moved[-1],
+                                   tangent_at(ica_moved, len(ica_moved) - 1), SIPHON_SPAN)
+    # Both section maps, for the v3 mesher to carry the real surfaces through:
+    # v_branch = R (v - origin) + anchor. The lower's ICA and ECA share the
+    # CCA's map, exactly as their centerlines did.
+    xform = {"lower": {"R": R.tolist(), "origin": origin.tolist(), "anchor": keep_p[-1].tolist()},
+             "siphon": {"R": R2.tolist(), "origin": np.asarray(origin2).tolist(),
+                        "anchor": ica_moved[-1].tolist()}}
+    siphon_min_raw = float(siphon_r.min())
+    siphon_floored = 0.0
+    if SIPHON_MIN_R > 0:
+        siphon_floored = float(np.mean(siphon_r < SIPHON_MIN_R))
+        siphon_r = np.maximum(siphon_r, SIPHON_MIN_R)   # before the ramp aims at siphon_r[0]
     ica_s = arclength(ica_moved)
     ica_r2 = ramp_radius(ica_s, ica_r, ica_s[-1], float(siphon_r[0]))
 
@@ -556,7 +574,11 @@ def compose(host_p, host_r, lower, siphon_p, siphon_r):
             # much of the donor section had to be lifted off it
             "route_min_r_raw": raw_min,
             "route_floor_mm": ROUTE_MIN_R,
-            "route_floored_frac": route_floored}
+            "route_floored_frac": route_floored,
+            "siphon_min_r_raw": siphon_min_raw,
+            "siphon_floor_mm": SIPHON_MIN_R,
+            "siphon_floored_frac": siphon_floored,
+            "xform": xform}
     return route_p, route_r, eca_moved, eca_r, diag
 
 
@@ -570,7 +592,17 @@ def main():
     ap.add_argument("--skip-existing", action="store_true",
                     help="leave already-built anatomies alone, so a replacement "
                          "round costs only the new pairs")
+    # The four constants that pre-compensate the mesher. Defaults reproduce the
+    # shipped set; a v2 build passes the values re-derived for the SDF mesher.
+    ap.add_argument("--route-min-r", type=float, default=ROUTE_MIN_R)
+    ap.add_argument("--eca-mesh-r", type=float, default=ECA_MESH_R_MM)
+    ap.add_argument("--distal-trim", type=float, default=DISTAL_TRIM_MM)
+    ap.add_argument("--fuse-band", type=float, default=FUSE_BAND_MM)
+    ap.add_argument("--siphon-min-r", type=float, default=SIPHON_MIN_R)
     a = ap.parse_args()
+    globals().update(ROUTE_MIN_R=float(a.route_min_r), ECA_MESH_R_MM=float(a.eca_mesh_r),
+                     DISTAL_TRIM_MM=float(a.distal_trim), FUSE_BAND_MM=float(a.fuse_band),
+                     SIPHON_MIN_R=float(a.siphon_min_r))
 
     plan = json.load(open(a.pairing, encoding="utf-8"))
     pairs = plan["pairs"]
@@ -740,6 +772,23 @@ def main():
             write_curve(tmpl, os.path.join(folder, ECA_NAME), ep, er)
             with open(os.path.join(a.out, name, "provenance.json"), "w", encoding="utf-8") as fh:
                 diag["eca_mm"] = float(arclength(ep)[-1])   # after any trim
+                # v3: which real surfaces these sections came from. The lower's
+                # lumen STL sits beside its centerline .vtp in the database and
+                # shares its frame; the siphon's surface is the label surface
+                # stage A wrote, mirrored exactly as its centerline was.
+                lx, sx = diag["xform"]["lower"], diag["xform"]["siphon"]
+                lx.update(kind="zenodo", mirror=[1.0, 1.0, 1.0],
+                          surface=rec["path"].replace("_lumen_centerlines.vtp", "_lumen.stl"),
+                          ica_real_mm=float(rec.get("ica_mm", 0.0)),
+                          extend_mm=float(rec.get("extend_mm", 0.0)))
+                src = sinfo["src"]
+                left = "centerlines_left" in src.replace("\\", "/")
+                stem0 = os.path.basename(src).replace("_ica.json", "")
+                sx.update(kind="topbrain", centerline_src=src,
+                          mirror=[-1.0, 1.0, 1.0] if sinfo["mirror"] else [1.0, 1.0, 1.0],
+                          surface=os.path.join(os.path.dirname(os.path.dirname(src)),
+                                               "surfaces_left" if left else "surfaces",
+                                               stem0 + ("_lICA.vtp" if left else "_rICA.vtp")))
                 # `note` records every repair applied -- an ECA trim, an RVA
                 # shortening or deflection. It was printed to the console and
                 # then dropped, so nothing on disk said which anatomies had a

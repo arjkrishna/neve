@@ -39,8 +39,13 @@ import traceback
 import numpy as np
 
 sys.path.insert(0, "/opt/eve_training/eve_bench")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 CATH_OD = 0.7      # mic_cath straight_outer_diameter, from the env
+# LocalMinDistance(contactDistance=0.3) in sofabeamadapter: the device is a
+# zero-proximity line, so the wall is effectively this much thicker than the
+# mesh. The navigable radius is (meshed lumen radius - CONTACT_MM).
+CONTACT_MM = 0.3
 # A centerline point can sit marginally outside a smoothed wall without any
 # consequence: the pathfinder works off centerlines, not the mesh, and a target
 # a fraction of a millimetre proud of the wall is still well inside the 5 mm
@@ -398,6 +403,30 @@ def check_one(name, folder, verbose=False, drop_stubs=False):
         out["ok"] = False
         out["notes"].append("lumen %.2f mm does not admit the %.2f mm catheter"
                             % (out["dmin"], CATH_OD))
+
+    # --- meshed lumen: what the device actually sees ------------------------
+    # dmin above is the CENTERLINE radius. The v1 mesher rendered a 1.17 mm
+    # declared radius as a 0.35 mm lumen 12 mm short of the terminus, which
+    # this test would have caught and the one above cannot. Distance from
+    # each route point to the surface, end caps excluded, minus the contact
+    # distance, against the catheter radius.
+    try:
+        from sdf_mesher import route_lumen
+        d_m, ins_m, body_m, s_m = route_lumen(surf, coords)
+        okm = ins_m & body_m
+        if okm.any():
+            im = int(np.argmin(np.where(okm, d_m, np.inf)))
+            out["mesh_lumen_min"] = float(d_m[im])
+            out["mesh_lumen_at_mm"] = float(s_m[im])
+            out["mesh_deficit"] = float(np.median(radii[okm] - d_m[okm]))
+            if out["mesh_lumen_min"] - CONTACT_MM < CATH_OD / 2.0:
+                out["ok"] = False
+                out["notes"].append(
+                    "meshed lumen %.2f mm radius at %.0f mm (declared %.2f), minus "
+                    "%.1f contact, does not admit the %.2f mm catheter"
+                    % (out["mesh_lumen_min"], s_m[im], radii[im], CONTACT_MM, CATH_OD))
+    except Exception as e:                                        # noqa: BLE001
+        out["notes"].append("mesh lumen check failed: %s" % e)
     if out.get("_tmp_mesh"):
         try:
             os.remove(out["_tmp_mesh"])
@@ -529,6 +558,7 @@ def main():
     ap.add_argument("--sofa", type=int, default=0,
                     help="run SOFA on this many anatomies (0 = skip)")
     ap.add_argument("--steps", type=int, default=40)
+    ap.add_argument("--only", default=None, help="comma-separated anatomy names")
     ap.add_argument("--host", default=None,
                     help="shipped Centrelines_comb, run as a control")
     ap.add_argument("--shard", default=None,
@@ -548,10 +578,13 @@ def main():
     if a.shard:
         i, n = (int(x) for x in a.shard.split("/"))
         names = names[i::n]
+    if a.only:
+        want = set(a.only.split(","))
+        names = [x for x in names if x in want]
     print("checking %d anatomies in %s\n" % (len(names), a.anatomies))
-    print("%-16s %8s %7s %7s %6s %8s %6s %7s %7s %s"
+    print("%-16s %8s %7s %7s %6s %8s %6s %7s %7s %7s %7s %s"
           % ("anatomy", "route", "d_min", "tris", "open", "enclosed", "comps",
-             "gap_mm", "targets", "status"))
+             "gap_mm", "targets", "m_lumen", "deficit", "status"))
 
     # Controls: the shipped tree as it ships, and the shipped tree with the
     # same stubs dropped. Any artifact the second one also shows is a property
@@ -560,11 +593,12 @@ def main():
         for label, drop in (("HOST(shipped)", False), ("HOST(-stubs)", True)):
             try:
                 r = check_one(label, a.host, a.verbose, drop_stubs=drop)
-                print("%-16s %8.1f %7.2f %7d %6d %8.3f %6d %7.2f %7d %s"
+                print("%-16s %8.1f %7.2f %7d %6d %8.3f %6d %7.2f %7d %7.2f %7.2f %s"
                       % (label, r.get("route_mm", 0), r.get("dmin", 0),
                          r.get("tris", 0), r.get("open_edges", -1),
                          r.get("encl_frac", 0), r.get("n_components", -1),
                          r.get("route_gap_mm", -1), r.get("n_targets", 0),
+                         r.get("mesh_lumen_min", -1), r.get("mesh_deficit", -1),
                          "OK" if r["ok"] else "FAIL"))
                 for note in r["notes"]:
                     print("%-16s   -> %s" % ("", note))
@@ -586,11 +620,12 @@ def main():
             rows.append({"name": n, "ok": False, "notes": ["crashed"]})
             continue
         rows.append(r)
-        print("%-16s %8.1f %7.2f %7d %6d %8.3f %6d %7.2f %7d %s"
+        print("%-16s %8.1f %7.2f %7d %6d %8.3f %6d %7.2f %7d %7.2f %7.2f %s"
               % (n, r.get("route_mm", 0), r.get("dmin", 0), r.get("tris", 0),
                  r.get("open_edges", -1), r.get("encl_frac", 0),
                  r.get("n_components", -1), r.get("route_gap_mm", -1),
-                 r.get("n_targets", 0), "OK" if r["ok"] else "FAIL"))
+                 r.get("n_targets", 0), r.get("mesh_lumen_min", -1),
+                 r.get("mesh_deficit", -1), "OK" if r["ok"] else "FAIL"))
         for note in r["notes"]:
             print("%-16s   -> %s" % ("", note))
 

@@ -146,6 +146,12 @@ saved/eve_paper/neurovascular/full/mesh_ben/
 # regenerable intermediate of it (surfaces, raw release, centerlines).
 topbrain_data/*
 !topbrain_data/anatomies/
+# The v2 (signed-distance mesher) and v3 (real segmented surfaces unioned in)
+# rebuilds, same self-contained form: centerlines, the baked collision mesh,
+# and the build record. See MESHING_PIPELINE_ANALYSIS.md.
+!topbrain_data/anatomies_v2/
+!topbrain_data/anatomies_v3/
+!topbrain_data/label_necks.json
 
 # --- paper ------------------------------------------------------------
 *.tex
@@ -183,7 +189,25 @@ vmr_data/
 # its CONTENTS leaves the negations below able to fire.
 carotid_data/*
 !carotid_data/anatomies/
+!carotid_data/anatomies_v2/
+!carotid_data/anatomies_v3/
 !carotid_data/extended/
 !carotid_data/pairing.json
 !carotid_data/lower_manifest.json
 !carotid_data/excluded_severed.json
+
+# --- v2/v3 intermediates -----------------------------------------------------
+# collision_full.vtp is the 60k-triangle surface each bake keeps ONLY so the
+# triangle budget can be re-cut without re-meshing (topbrain_tools/recut_obj.py).
+# It is ~500 MB across both sets and reproducible from the centerlines in
+# minutes, so it stays out of git. The .obj the environment actually loads is
+# checked in.
+*/anatomies_v2/*/collision_full.vtp
+*/anatomies_v3/*/collision_full.vtp
+
+# The mesher probe: keep the scripts, the measured tables and the two
+# comparison renders; leave out the experimental surfaces and the anatomy
+# copies made for the SOFA timing run, which are all regenerable.
+saved/mesher_probe/*.vtp
+saved/mesher_probe/sweep_*.obj
+saved/mesher_probe/sofa_cost/

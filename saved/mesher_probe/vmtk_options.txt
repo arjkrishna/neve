@@ -1,0 +1,655 @@
+VMTK script modules in this install: 151
+vmtk.vmtkactivetubes vmtk.vmtkbifurcationprofiles vmtk.vmtkbifurcationreferencesystems vmtk.vmtkbifurcationsections vmtk.vmtkbifurcationvectors vmtk.vmtkboundarylayer vmtk.vmtkboundaryreferencesystems vmtk.vmtkbranchclipper vmtk.vmtkbranchextractor vmtk.vmtkbranchgeometry vmtk.vmtkbranchmapping vmtk.vmtkbranchmetrics vmtk.vmtkbranchpatching vmtk.vmtkbranchsections vmtk.vmtkcenterlineattributes vmtk.vmtkcenterlinegeometry vmtk.vmtkcenterlineimage vmtk.vmtkcenterlineinterpolation vmtk.vmtkcenterlinelabeler vmtk.vmtkcenterlinemerge vmtk.vmtkcenterlinemodeller vmtk.vmtkcenterlineoffsetattributes vmtk.vmtkcenterlineresampling vmtk.vmtkcenterlines vmtk.vmtkcenterlinesections vmtk.vmtkcenterlinesmoothing vmtk.vmtkcenterlinesnetwork vmtk.vmtkcenterlinestonumpy vmtk.vmtkcenterlineviewer vmtk.vmtkdelaunayvoronoi vmtk.vmtkdistancetocenterlines vmtk.vmtkendpointextractor vmtk.vmtkflowextensions vmtk.vmtkicpregistration vmtk.vmtkimagebinarize vmtk.vmtkimagecast vmtk.vmtkimagecompose vmtk.vmtkimagecurvedmpr vmtk.vmtkimagefeaturecorrection vmtk.vmtkimagefeatures vmtk.vmtkimageinitialization vmtk.vmtkimagemipviewer vmtk.vmtkimagemorphology vmtk.vmtkimagenormalize vmtk.vmtkimageobjectenhancement vmtk.vmtkimageotsuthresholds vmtk.vmtkimagereader vmtk.vmtkimagereslice vmtk.vmtkimageseeder vmtk.vmtkimageshiftscale vmtk.vmtkimagesmoothing vmtk.vmtkimagetonumpy vmtk.vmtkimagevesselenhancement vmtk.vmtkimageviewer vmtk.vmtkimagevoipainter vmtk.vmtkimagevoiselector vmtk.vmtkimagevolumeviewer vmtk.vmtkimagewriter vmtk.vmtklevelsetsegmentation vmtk.vmtklineartoquadratic vmtk.vmtklineresampling vmtk.vmtklocalgeometry vmtk.vmtkmarchingcubes vmtk.vmtkmesharrayoperation vmtk.vmtkmeshboundaryinspector vmtk.vmtkmeshbranchclipper vmtk.vmtkmeshclipper vmtk.vmtkmeshconnectivity vmtk.vmtkmeshcutter vmtk.vmtkmeshdatareader vmtk.vmtkmeshextractpointdata vmtk.vmtkmeshgenerator vmtk.vmtkmeshlambda2 vmtk.vmtkmeshlinearize vmtk.vmtkmeshmergetimesteps vmtk.vmtkmeshpolyballevaluation vmtk.vmtkmeshprojection vmtk.vmtkmeshreader vmtk.vmtkmeshscaling vmtk.vmtkmeshtetrahedralize vmtk.vmtkmeshtonumpy vmtk.vmtkmeshtosurface vmtk.vmtkmeshtransform vmtk.vmtkmeshtransformtoras vmtk.vmtkmeshvectorfromcomponents vmtk.vmtkmeshviewer vmtk.vmtkmeshvolume vmtk.vmtkmeshvorticityhelicity vmtk.vmtkmeshwallshearrate vmtk.vmtkmeshwriter vmtk.vmtknetworkeditor vmtk.vmtknetworkextraction vmtk.vmtknetworkwriter vmtk.vmtknumpyreader vmtk.vmtknumpytocenterlines vmtk.vmtknumpytoimage vmtk.vmtknumpytomesh vmtk.vmtknumpytosurface vmtk.vmtknumpywriter vmtk.vmtkparticletracer vmtk.vmtkpathlineanimator vmtk.vmtkpointsplitextractor vmtk.vmtkpointtransform vmtk.vmtkpolyballmodeller vmtk.vmtkpotentialfit vmtk.vmtkpythonscript vmtk.vmtkrbfinterpolation vmtk.vmtkrenderer vmtk.vmtkrendertoimage vmtk.vmtksurfaceappend vmtk.vmtksurfacearrayoperation vmtk.vmtksurfacearraysmoothing vmtk.vmtksurfacebooleanoperation vmtk.vmtksurfacecapper vmtk.vmtksurfacecelldatatopointdata vmtk.vmtksurfacecenterlineprojection vmtk.vmtksurfacecliploop vmtk.vmtksurfaceclipper vmtk.vmtksurfaceconnectivity vmtk.vmtksurfaceconnectivityselector vmtk.vmtksurfacecurvature vmtk.vmtksurfacedecimation vmtk.vmtksurfacedistance vmtk.vmtksurfaceendclipper vmtk.vmtksurfacekiteremoval vmtk.vmtksurfaceloopextraction vmtk.vmtksurfacemassproperties vmtk.vmtksurfacemodeller vmtk.vmtksurfacenormals vmtk.vmtksurfacepointdatatocelldata vmtk.vmtksurfacepolyballevaluation vmtk.vmtksurfaceprojection vmtk.vmtksurfacereader vmtk.vmtksurfacereferencesystemtransform vmtk.vmtksurfaceregiondrawing vmtk.vmtksurfaceremeshing vmtk.vmtksurfacescaling vmtk.vmtksurfacesmoothing vmtk.vmtksurfacesubdivision vmtk.vmtksurfacetobinaryimage vmtk.vmtksurfacetomesh vmtk.vmtksurfacetonumpy vmtk.vmtksurfacetransform vmtk.vmtksurfacetransforminteractive vmtk.vmtksurfacetransformtoras vmtk.vmtksurfacetriangle vmtk.vmtksurfaceviewer vmtk.vmtksurfacewriter vmtk.vmtksurfmesh vmtk.vmtktetgen vmtk.vmtktetringenerator
+
+== vmtkimagereader
+   read an image and stores it in a vtkImageData object
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkim  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   Format                       str      default=             range=["vtkxml","vtk","dicom","raw","meta","tiff","png"]  file format
+   GuessFormat                  bool     default=1             guess file format from extension
+   UseITKIO                     bool     default=1             use ITKIO mechanism
+   InputFileName                str      default=              input file name
+   InputFilePrefix              str      default=              input file prefix (e.g. foo_)
+   InputFilePattern             str      default=              input file pattern (e.g. %s%04d.png)
+   DataExtent                   int      default=[-1, -1, -1,  3D extent of the image - raw and png
+   HeaderSize                   int      default=0            range=(0,)  size of the image header - raw only
+   DataSpacing                  float    default=[1.0, 1.0, 1  spacing of the image - raw, tiff, png, itk
+   DataOrigin                   float    default=[0.0, 0.0, 0  origin of the image - raw, tiff, png, itk
+   DesiredOrientation           str      default=native       range=["native","axial","coronal","sagittal"]  desired data orientation - itk only
+   DataByteOrder                str      default=littleendian range=["littleendian","bigendian"]  byte ordering - raw only
+   DataScalarType               str      default=float        range=["float","double","int","short","ushort","uchar"]  scalar type - raw only
+   FileDimensionality           int      default=3            range=(2,3)  dimensionality of the file to read - raw only
+   Flip                         bool     default=[0, 0, 0]     toggle flipping of the corresponding axis
+   AutoOrientDICOMImage         bool     default=1             flip a dicom stack in order to have a left-to-right, posterio-to-anterior, inferior-to-superior image; this is based on the "image orientation (patient)" field in the dicom header
+   ImageOutputFileName          str      default=              filename for the default Image writer
+
+== vmtkimagebinarize
+   binarize the input image producing a label map
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkim  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   ImageInputFileName           str      default=              filename for the default Image reader
+   Threshold                    float    default=0.0           the threshold at which the image should be binarized
+   LowerLabel                   int      default=0             the label to associate to the pixels lower than the threshold
+   UpperLabel                   int      default=1             the label to associate to the pixels higher than the threshold
+   ImageOutputFileName          str      default=              filename for the default Image writer
+
+== vmtkimagemorphology
+   apply binary or grayscale morphology filter to the input image
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkim  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   ImageInputFileName           str      default=              filename for the default Image reader
+   BallRadius                   int      default=[1, 1, 1]    range=(0,)  the radius of the structuring element
+   Operation                    str      default=closing      range=["dilate","erode","open","close"]  the morphological operation to perform
+   ImageOutputFileName          str      default=              filename for the default Image writer
+
+== vmtkimagesmoothing
+   smooth an image with a Gaussian kernel or anisotropic diffusion
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkim  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   ImageInputFileName           str      default=              filename for the default Image reader
+   Method                       str      default=gauss        range=["gauss","anisotropic"]  
+   StandardDeviation            float    default=1.0          range=(0.0,)  the standard deviation of the Gaussian in real space units (gauss)
+   RadiusFactor                 float    default=5.0          range=(0.0,)  the factor specifing the width of the discrete Gaussian kernel (gauss)
+   Dimensionality               int      default=3            range=(2,3)  the dimensionality of the Aconvolution (gauss)
+   Conductance                  float    default=1.0          range=(0.0,)  anisotropic diffustion coefficients (anisotropic)
+   NumberOfIterations           int      default=5            range=(5,)  number of anisotropic diffusion iterationsl (anisotropic)
+   TimeStep                     float    default=0.0625       range=(1.0E-16,1.0e16)  time step of anisotropic diffusion (anisotropic)
+   AutoCalculateTimeStep        bool     default=1             auto calculate minimum time step (anisotropic)
+   ImageOutputFileName          str      default=              filename for the default Image writer
+
+== vmtkimagefeaturecorrection
+   correct a feature image (e.g. remove influence of bone and/or air from CT-based feature images)
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkim  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   ImageInputFileName           str      default=              filename for the default Image reader
+   LevelSets                    vtkImageData default=None          the input level sets
+   LevelSetsInputFileName       str      default=              filename for the default LevelSets reader
+   Sigma                        float    default=1.0          range=(0.0,)  
+   ScaleValue                   float    default=0.02         range=(0.0,)  
+   ComputeScaleValueFromInput   bool     default=True          
+   NegateLevelSets              bool     default=False         
+   ImageOutputFileName          str      default=              filename for the default Image writer
+
+== vmtkimagevesselenhancement
+   compute a feature image for use in segmentation
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkim  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   ImageInputFileName           str      default=              filename for the default Image reader
+   Method                       str      default=frangi       range=["frangi","sato","ved","vedm"]  
+   SigmaMin                     float    default=1.0          range=(0.0,)  
+   SigmaMax                     float    default=1.0          range=(0.0,)  
+   NumberOfSigmaSteps           int      default=1            range=(0,)  
+   SigmaStepMethod              str      default=equispaced   range=["equispaced","logarithmic"]  
+   ScaledVesselness             bool     default=0             (frangi)
+   BrightObject                 bool     default=True          (frangi)
+   Alpha1                       float    default=0.5          range=(0.0,)  (sato)
+   Alpha2                       float    default=2.0          range=(0.0,)  (sato)
+   Alpha                        float    default=0.5          range=(0.0,)  (frangi, ved, vedm)
+   Beta                         float    default=0.5          range=(0.0,)  (frangi, ved, vedm)
+   Gamma                        float    default=5.0          range=(0.0,)  (frangi, ved, vedm)
+   C                            float    default=1e-06        range=(0.0,)  (ved)
+   TimeStep                     float    default=0.01         range=(0.0,)  (ved, vedm)
+   Epsilon                      float    default=0.01         range=(0.0,)  (ved, vedm)
+   WStrength                    float    default=25.0         range=(0.0,)  (ved, vedm)
+   Sensitivity                  float    default=5.0          range=(0.0,)  (ved, vedm)
+   NumberOfIterations           int      default=0            range=(0,)  (ved, vedm)
+   NumberOfDiffusionSubIterations int      default=0            range=(1,)  (ved, vedm)
+   ImageOutputFileName          str      default=              filename for the default Image writer
+
+== vmtkimageinitialization
+   interactivly create an initial levelset which has not been evolved to image gradients
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkim  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   ImageInputFileName           str      default=              filename for the default Image reader
+   NegateImage                  bool     default=0             negate image values before initializing
+   Interactive                  bool     default=1             
+   Method                       str      default=collidingfro range=["isosurface","threshold","collidingfronts","fastmarching","seeds","multiplecollidingfronts"]  
+   SourcePoints                 int      default=[]            list of source point IJK coordinates
+   TargetPoints                 int      default=[]            list of target point IJK coordinates
+   UpperThreshold               float    default=None          the value of the upper threshold to use for threshold, collidingfronts and fastmarching
+   LowerThreshold               float    default=None          the value of the upper threshold to use for threshold, collidingfronts and fastmarching
+   IsoSurfaceValue              float    default=0.0           the isosurface value to adopt as the level set surface
+   vmtkRenderer                 vmtkRenderer default=None          
+   InitialLevelSetsOutputFileName str      default=              filename for the default InitialLevelSets writer
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtklevelsetsegmentation
+   interactivly initialize an initial level set and evolve it to image gradients
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkle  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   ImageInputFileName           str      default=              filename for the default Image reader
+   FeatureImage                 vtkImageData default=None          
+   FeatureImageInputFileName    str      default=              filename for the default FeatureImage reader
+   InitializationImage          vtkImageData default=None          
+   InitializationImageInputFileName str      default=              filename for the default InitializationImage reader
+   InitialLevelSets             vtkImageData default=None          
+   InitialLevelSetsInputFileName str      default=              filename for the default InitialLevelSets reader
+   LevelSets                    vtkImageData default=None          
+   LevelSetsInputFileName       str      default=              filename for the default LevelSets reader
+   LevelSetsType                str      default=geodesic     range=["geodesic","curves","threshold","laplacian"]  
+   FeatureImageType             str      default=gradient     range=["vtkgradient","gradient","upwind","fwhm"]  
+   NegateForInitialization      bool     default=0             
+   SigmoidRemapping             bool     default=0             
+   IsoSurfaceValue              float    default=0.0           
+   DerivativeSigma              float    default=0.0          range=(0.0,)  
+   FeatureDerivativeSigma       float    default=0.0          range=(0.0,)  
+   UpwindFactor                 float    default=1.0          range=(0.0,1.0)  
+   FWHMRadius                   float    default=[1.0, 1.0, 1 range=(0.0,)  
+   FWHMBackgroundValue          float    default=0.0           
+   NumberOfIterations           int      default=0            range=(0,)  
+   PropagationScaling           float    default=0.0          range=(0.0,)  
+   CurvatureScaling             float    default=0.0          range=(0.0,)  
+   AdvectionScaling             float    default=1.0          range=(0.0,)  
+   EdgeWeight                   float    default=0.0          range=(0.0,)  
+   SmoothingIterations          int      default=5            range=(0,)  
+   SmoothingTimeStep            float    default=0.1          range=(0,)  
+   SmoothingConductance         float    default=0.8          range=(0,)  
+   vmtkRenderer                 vmtkRenderer default=None          
+   LevelSetsOutputFileName      str      default=              filename for the default LevelSets writer
+   FeatureImageOutputFileName   str      default=              filename for the default FeatureImage writer
+
+== vmtkmarchingcubes
+   generate an isosurface of given level from a 3D image
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkma  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   ImageInputFileName           str      default=              filename for the default Image reader
+   ArrayName                    str      default=              name of the array to work with
+   Level                        float    default=0.0           graylevel to generate the isosurface at
+   Connectivity                 bool     default=0             only output the largest connected region of the isosurface
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtksurfacesmoothing
+   smooth a surface using Taubin's algorithm
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   NumberOfIterations           int      default=1            range=(0,)  number of iterations (e.g. 25)
+   Method                       str      default=taubin       range=["taubin","laplace"]  smoothing method
+   PassBand                     float    default=1.0           pass band (e.g. 0.1) - taubin only
+   RelaxationFactor             float    default=0.01         range=(0.0,)  relaxation factor (e.g. 0.01) - laplace only
+   BoundarySmoothing            bool     default=1             toggle allow change of position of boundary points
+   NormalizeCoordinates         bool     default=1             toggle normalization of coordinates prior to filtering to minimize spurious translation effects - taubin only
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtksurfaceremeshing
+   remesh a surface using quality triangles
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   ElementSizeMode              str      default=area         range=["area","edgelength","areaarray","edgelengtharray"]  
+   TargetArea                   float    default=1.0          range=(0.0,)  
+   TargetAreaArrayName          str      default=TargetArea    
+   TargetEdgeLength             float    default=1.0          range=(0.0,)  
+   TargetEdgeLengthArrayName    str      default=              
+   TargetAreaFactor             float    default=1.0          range=(0.0,)  
+   TargetEdgeLengthFactor       float    default=1.0          range=(0.0,)  
+   TriangleSplitFactor          float    default=5.0          range=(0.0,)  
+   MaxArea                      float    default=1e+16        range=(0.0,)  
+   MinArea                      float    default=0.0          range=(0.0,)  
+   NumberOfIterations           int      default=10           range=(0,)  
+   NumberOfConnectivityOptimizationIterations int      default=20           range=(0,)  
+   CellEntityIdsArrayName       str      default=None          
+   AspectRatioThreshold         float    default=1.2          range=(0.0,)  
+   MinAreaFactor                float    default=0.5          range=(0.0,)  
+   InternalAngleTolerance       float    default=0.0          range=(0.0,)  
+   NormalAngleTolerance         float    default=0.2          range=(0.0,)  
+   CollapseAngleThreshold       float    default=0.2          range=(0.0,)  
+   Relaxation                   float    default=0.5          range=(0.5,)  
+   ExcludeEntityIds             int      default=[]            
+   PreserveBoundaryEdges        bool     default=0             
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtksurfacedecimation
+   reduce the number of triangles in a surface
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   TargetReduction              float    default=0.5          range=(0.0,1.0)  desired number of triangles relative to input number of triangles
+   BoundaryVertexDeletion       bool     default=0             toggle allow boundary point deletion
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtksurfacesubdivision
+   subdivide a triangulated surface
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   NumberOfSubdivisions         int      default=1            range=(0,)  number of triangle subdivisions
+   Method                       str      default=linear       range=["linear","butterfly","loop"]  subdivision method
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtksurfacecapper
+   add caps to the holes of a surface, assigning an id to each cap for easy specification of boundary conditions.
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   Method                       str      default=simple       range=["simple","centerpoint","smooth","annular","concaveannular"]  capping method
+   TriangleOutput               bool     default=1             toggle triangulation of the output
+   CellEntityIdsArrayName       str      default=CellEntityId  name of the array where the id of the caps have to be stored
+   CellEntityIdOffset           int      default=1            range=(0,)  offset for entity ids
+   ConstraintFactor             float    default=1.0           amount of influence of the shape of the surface near the boundary on the shape of the cap ("smooth" method only)
+   NumberOfRings                int      default=8            range=(0,)  number of rings composing the cap ("smooth" method only)
+   Interactive                  bool     default=1             
+   vmtkRenderer                 vmtkRenderer default=None          external renderer
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtksurfaceconnectivity
+   extract the largest connected region, the closest point-connected region, the scalar-connected region from a surface, or all connected regions of a surface tagged with an id
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   Method                       str      default=largest      range=["largest","closest", "all"]  connectivity method
+   ClosestPoint                 float    default=None          coordinates of the closest point
+   ReferenceSurface             vtkPolyData default=None          the reference surface, whose barycenter will be used as closest point for the connectivity filter
+   ReferenceSurfaceInputFileName str      default=              filename for the default ReferenceSurface reader
+   CleanOutput                  bool     default=0             clean the unused points in the output
+   GroupIdsArrayName            str      default=GroupIds      name of the array containing the connectivity scalar
+   GroupId                      int      default=-1            value of the connectivity scalar
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtksurfaceclipper
+   interactively clip a surface with a box
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   WidgetType                   str      default=box          range=["box","sphere"]  type of widget used for clipping
+   Transform                    vtkTransform default=None          the widget transform, useful in case of piping of multiple clipping scripts
+   CleanOutput                  bool     default=1             toggle cleaning the unused points
+   InsideOut                    bool     default=0             toggle switching output and clipped surfaces
+   Interactive                  bool     default=1             toggle clipping with a widget or with a pre-defined scalar field
+   ClipArrayName                str      default=None          name of the array with which to clip in case of non-interactive clipping
+   ClipValue                    float    default=0.0           scalar value at which to perform clipping in case of non-interactive clipping
+   vmtkRenderer                 vmtkRenderer default=None          external renderer
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+   ClippedSurfaceOutputFileName str      default=              filename for the default ClippedSurface writer
+   CutLinesOutputFileName       str      default=              filename for the default CutLines writer
+
+== vmtksurfaceendclipper
+   interactively clip a tubular surface with normals estimated at seed locations. It is                            recomended that the option to clip based on centerlines normals is enabled to increase                            the accuracy of the clipping. If desired, a centerline containing the Frenet Tangent Array                            must be fed in along with the surface. This is generated by passing a centerline through the                            vmtkcenterlinegeometry script.
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   CenterlineNormals            bool     default=0             toggle using centerline tangent for normal estimation
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   FrenetTangentArrayName       str      default=FrenetTangen  name of the array where centerline tangent vectors of the Frenet reference system are stored
+   vmtkRenderer                 vmtkRenderer default=None          external renderer
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtkflowextensions
+   interactivly add flow extensions to a surface for CFD processing
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkfl  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   ExtensionMode                str      default=centerlinedi range=["centerlinedirection","boundarynormal"]  method for computing the normal for extension
+   InterpolationMode            str      default=thinplatespl range=["linear","thinplatespline"]  method for computing interpolation from the model section to a circular section
+   Sigma                        float    default=1.0          range=(0.0,)  thin plate spline stiffness
+   AdaptiveExtensionLength      bool     default=0             
+   AdaptiveExtensionRadius      bool     default=1             
+   AdaptiveNumberOfBoundaryPoints bool     default=0             
+   ExtensionLength              float    default=1.0          range=(0.0,)  
+   ExtensionRatio               float    default=10.0         range=(0.0,)  
+   ExtensionRadius              float    default=1.0          range=(0.0,)  
+   TransitionRatio              float    default=0.25         range=(0.0,)  
+   TargetNumberOfBoundaryPoints int      default=50           range=(0,)  
+   Interactive                  bool     default=1             
+   Exclude                      bool     default=0             create extensions for all boundaries except those selected
+   vmtkRenderer                 vmtkRenderer default=None          external renderer
+   CenterlineNormalEstimationDistanceRatio float    default=1.0          range=(0.0,)  
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtksurfacebooleanoperation
+   perform a boolean operation between two surfaces
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   Surface2InputFileName        str      default=              filename for the default Surface2 reader
+   Tolerance                    float    default=1e-06        range=(0.0,)  tolerance for considering two points coincident
+   Operation                    str      default=union        range=["union","intersection","difference"]  the boolean operation to be performed
+   Method                       str      default=default      range=["default","loop"]  method used for boolean operation
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtkcenterlines
+   compute centerlines from a branching tubular surface (see papers for details); seed points can be interactively selected on the surface, or specified as the barycenters of the open boundaries of the surface; if vmtk is compiled with support for TetGen, TetGen can be employed to compute the Delaunay tessellation of the input points
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   SeedSelectorName             str      default=pickpoint    range=["pickpoint","openprofiles","carotidprofiles","profileidlist","idlist","pointlist"]  seed point selection method (pickpoint: interactive; openprofiles: choose among barycenters of open profiles of the surface; carotidprofiles: open profiles are automatically selected based on their z-axis coordinate (lower to higher: CCA, ECA, ICA)); profileidlist: list of open profile ids (specified as argument to -sourceids and -targetids); idlist: list of surface point ids (specified as argument to -sourceids and -targetids); pointlist: list of surface points (specified as argument to -sourcepoints and -targetpoints)
+   SourceIds                    int      default=[]            list of source point ids
+   TargetIds                    int      default=[]            list of target point ids
+   SourcePoints                 float    default=[]            list of source point coordinates
+   TargetPoints                 float    default=[]            list of target point coordinates
+   AppendEndPoints              bool     default=0             toggle append open profile barycenters to centerlines
+   CheckNonManifold             bool     default=0             toggle checking the surface for non-manifold edges
+   FlipNormals                  bool     default=0             flip normals after outward normal computation; outward oriented normals must be computed for the removal of outer tetrahedra; the algorithm might fail so for weird geometries, so changing this might solve the problem
+   CapDisplacement              float    default=0.0           displacement of the center points of caps at open profiles along their normals (avoids the creation of degenerate tetrahedra)
+   DelaunayTolerance            float    default=0.001         tolerance for evaluating coincident points during Delaunay tessellation, evaluated as a fraction of the bounding box
+   RadiusArrayName              str      default=MaximumInscr  name of the array where radius values of maximal inscribed spheres have to be stored
+   AppendEndPoints              bool     default=0             toggle append open profile barycenters to centerlines
+   Resampling                   bool     default=0             toggle centerlines resampling
+   ResamplingStepLength         float    default=1.0          range=(0.0,)  distance between points in the resampled line
+   DelaunayTessellation         vtkUnstructuredGrid default=None          optional input Delaunay tessellation
+   SimplifyVoronoi              bool     default=0             toggle simplification of Voronoi diagram
+   UseTetGen                    bool     default=0             toggle use TetGen to compute Delaunay tessellation
+   TetGenDetectInter            bool     default=1             TetGen option
+   CostFunction                 str      default=1/R           specify cost function to be minimized during centerline computation
+   vmtkRenderer                 vmtkRenderer default=None          external renderer
+   PoleIds                      vtkIdList default=None          
+   VoronoiDiagram               vtkPolyData default=None          
+   VoronoiDiagramInputFileName  str      default=              filename for the default VoronoiDiagram reader
+   StopFastMarchingOnReachingTarget bool     default=0             terminate fast marching front propagation when the front reaches the target seed point. This can greatly speed up execution, but it only works when one target seed id is set.
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+   DelaunayTessellationOutputFileName str      default=              filename for the default DelaunayTessellation writer
+   VoronoiDiagramOutputFileName str      default=              filename for the default VoronoiDiagram writer
+
+== vmtkendpointextractor
+   find the endpoints of a split and grouped centerline
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtken  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   GroupIdsArrayName            str      default=GroupIds      
+   TractIdsArrayName            str      default=TractIds      
+   CenterlineIdsArrayName       str      default=CenterlineId  
+   RadiusArrayName              str      default=MaximumInscr  
+   BlankingArrayName            str      default=Blanking      
+   NumberOfEndpointSpheres      int      default=2            range=(0.0,)  
+   NumberOfGapSpheres           int      default=1            range=(0.0,)  
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+
+== vmtknetworkextraction
+   extract a network of approximated centerlines from a surface, the surface must have at least an opening
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkne  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   AdvancementRatio             float    default=1.05         range=(1.0,)  the ratio between the sphere step and the local maximum radius
+   RadiusArrayName              str      default=Radius        
+   TopologyArrayName            str      default=Topology      
+   MarksArrayName               str      default=Marks         
+   NetworkOutputFileName        str      default=              filename for the default Network writer
+   GraphLayoutOutputFileName    str      default=              filename for the default GraphLayout writer
+
+== vmtkcenterlinesnetwork
+   compute centerlines from a branching tubular surface automatically.
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   vmtkRenderer                 vmtkRenderer default=None          external renderer
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+   DelaunayTessellationOutputFileName str      default=              filename for the default DelaunayTessellation writer
+   VoronoiDiagramOutputFileName str      default=              filename for the default VoronoiDiagram writer
+
+== vmtkcenterlineresampling
+   resample input centerlines with a spline filter
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   Length                       float    default=0.0          range=(0.0,)  length of the resampling interval
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+
+== vmtkcenterlinesmoothing
+   smooth centerlines with a moving average filter
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   NumberOfSmoothingIterations  int      default=100          range=(0,)  
+   SmoothingFactor              float    default=0.1          range=(0.0,)  
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+
+== vmtkcenterlineattributes
+   compute centerline attributes like abscissa and parallel transport normals; this is a requried step for mapping
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   AbscissasArrayName           str      default=Abscissas     name of the array where centerline abscissas have to be stored
+   NormalsArrayName             str      default=ParallelTran  name of the array where parallel transport normals to the centerlines have to be stored
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+
+== vmtkcenterlinegeometry
+   compute the local geometry of centerlines in terms of curvature and torsion
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   LengthArrayName              str      default=Length        name of the array where length values have to be stored
+   CurvatureArrayName           str      default=Curvature     name of the array where curvature values have to be stored
+   TorsionArrayName             str      default=Torsion       name of the array where torsion values have to be stored
+   TortuosityArrayName          str      default=Tortuosity    name of the array where tortuosity values have to be stored
+   FrenetTangentArrayName       str      default=FrenetTangen  name of the array where tangent vectors of the Frenet reference system have to be stored
+   FrenetNormalArrayName        str      default=FrenetNormal  name of the array where normal vectors of the Frenet reference system have to be stored
+   FrenetBinormalArrayName      str      default=FrenetBinorm  name of the array where binormal vectors of the Frenet reference system have to be stored
+   LineSmoothing                bool     default=0             
+   OutputSmoothedLines          bool     default=0             
+   NumberOfSmoothingIterations  int      default=100          range=(0,)  
+   SmoothingFactor              float    default=0.1          range=(0.0,)  
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+
+== vmtkbranchextractor
+   split and group centerlines along branches
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkbr  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   RadiusArrayName              str      default=MaximumInscr  
+   GroupIdsArrayName            str      default=GroupIds      
+   CenterlineIdsArrayName       str      default=CenterlineId  
+   TractIdsArrayName            str      default=TractIds      
+   BlankingArrayName            str      default=Blanking      
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+
+== vmtkbifurcationreferencesystems
+   compute reference systems for each bifurcation of a tree. The script takes in input the centerlines already split into branches.
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkbi  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   RadiusArrayName              str      default=MaximumInscr  the name of the array where centerline radius values are stored
+   BlankingArrayName            str      default=Blanking      the name of the array where centerline blanking information about branches is stored
+   GroupIdsArrayName            str      default=GroupIds      the name of the array where centerline group ids are stored
+   ReferenceSystemsNormalArrayName str      default=Normal        the name of the array where reference system plane normals have to be stored
+   ReferenceSystemsUpNormalArrayName str      default=UpNormal      the name of the array where reference system upnormals have to be stored
+   ReferenceSystemsOutputFileName str      default=              filename for the default ReferenceSystems writer
+
+== vmtkcenterlinesections
+   compute geometric properties of sections located along centerlines. The script takes in input the surface and the relative centerlines.
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   CenterlineSectionAreaArrayName str      default=CenterlineSe  name of the array where the area of bifurcation sections have to be stored
+   CenterlineSectionMinSizeArrayName str      default=CenterlineSe  name of the array where the minimum diameter of each section has to be stored
+   CenterlineSectionMaxSizeArrayName str      default=CenterlineSe  name of the array where the maximum diameter of each bifurcation sections has to be stored
+   CenterlineSectionShapeArrayName str      default=CenterlineSe  name of the array where the shape index, i.e. the ratio between minimum and maximum diameter, of each bifurcation section has to be stored
+   CenterlineSectionClosedArrayName str      default=CenterlineSe  name of the array containing 1 if a section is closed and 0 otherwise
+   CenterlineSectionsOutputFileName str      default=              filename for the default CenterlineSections writer
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+
+== vmtkcenterlineoffsetattributes
+   offset centerline attributes relative to a bifurcation reference system, in such a way that the abscissa of the closest point the the origin is zero, and the centerline normal at that point coincides with the bifurcation reference system normal
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   ReferenceSystemsInputFileName str      default=              filename for the default ReferenceSystems reader
+   ReferenceGroupId             int      default=-1            group id of the reference system to which attributes have to be offset
+   ReplaceAttributes            bool     default=1             overwrite the existing attributes
+   AbscissasArrayName           str      default=Abscissas     name of the array where centerline abscissas are stored
+   NormalsArrayName             str      default=ParallelTran  name of the array where centerline normals are stored
+   GroupIdsArrayName            str      default=GroupIds      name of the array where centerline group ids are stored
+   CenterlineIdsArrayName       str      default=CenterlineId  name of the array where centerline ids are stored
+   ReferenceSystemsNormalArrayName str      default=Normal        name of the array where reference system normals are stored
+   OffsetAbscissasArrayName     str      default=OffsetAbscis  name of the array where offset centerline abscissas have to be stored if ReplaceAttributes is off
+   OffsetNormalsArrayName       str      default=OffsetNormal  name of the array where offset centerline normals have to be stored if ReplaceAttributes is off
+   Interactive                  bool     default=0             
+   vmtkRenderer                 vmtkRenderer default=None          external renderer
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+
+== vmtkpolyballmodeller
+   converts a polyball to an image containing the tube function
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkpo  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   RadiusArrayName              str      default=None          name of the array where radius values are stored
+   ImageInputFileName           str      default=              filename for the default Image reader
+   SampleDimensions             int      default=[64, 64, 64] range=(0,)  dimensions of the output image
+   ModelBounds                  float    default=None         range=(0.0,)  model bounds in physical coordinates (if None, they are computed automatically)
+   NegateFunction               bool     default=0             produce a function that is negative inside the polyball
+   ImageOutputFileName          str      default=              filename for the default Image writer
+
+== vmtkcenterlinemodeller
+   converts a centerline to an image containing the tube function
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   RadiusArrayName              str      default=None          name of the array where radius values are stored
+   ImageInputFileName           str      default=              filename for the default Image reader
+   SampleDimensions             int      default=[64, 64, 64] range=(0,)  dimensions of the output image
+   ModelBounds                  float    default=None         range=(0.0,)  model bounds in physical coordinates (if None, they are computed automatically)
+   NegateFunction               bool     default=0             produce a function that is negative inside the tube
+   ImageOutputFileName          str      default=              filename for the default Image writer
+
+== vmtkcenterlineimage
+   Automatically extract a binary skeleton centerline image from a surface using a flux-driven medial curve extraction algorithm. Note: results will be slightly different on different operating systems.
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   Sigma                        float    default=0.5          range=(0.0,)  the kernal width of the gaussian used for image smoothing
+   Threshold                    float    default=0.0          range=(0.0,1.0)  the threshold to filter the output skeleton image at
+   PolyDataToImageDataSpacing   float    default=[0.3, 0.3, 0 range=(0.0,)  the sample spacing for the polydata to image data conversion
+   ImageOutputFileName          str      default=              filename for the default Image writer
+
+== vmtksurfacedistance
+   compute the pointwise minimum distance of the input surface from a reference surface
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   ReferenceSurface             vtkPolyData default=None          the reference surface
+   ReferenceSurfaceInputFileName str      default=              filename for the default ReferenceSurface reader
+   DistanceArrayName            str      default=              name of the array where the distance of the input surface to the reference surface has to be stored
+   DistanceVectorsArrayName     str      default=              name of the array where the distance vectors of the input surface to the reference surface has to be stored
+   SignedDistanceArrayName      str      default=              name of the array where the signed distance of the input surface to the reference surface is stored; distance is positive if distance vector and normal to the reference surface have negative dot product, i.e. if the input surface is outer with respect to the reference surface
+   FlipNormals                  bool     default=0             flip normals to the reference surface after computing them
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtkdistancetocenterlines
+   calculate the minimum euclidian from surface points to a centerline
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkdi  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   UseRadiusInformation         bool     default=0             
+   EvaluateTubeFunction         bool     default=0             
+   EvaluateCenterlineRadius     bool     default=0             
+   UseCombinedDistance          bool     default=0             combines local radius with maximum inscribed sphere radius
+   ProjectPointArrays           bool     default=0             
+   DistanceToCenterlinesArrayName str      default=DistanceToCe  
+   RadiusArrayName              str      default=MaximumInscr  
+   UseRadiusThreshold           bool     default=0             
+   RadiusThreshold              float    default=0.0          range=(0.0,)  set radius threshold
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtkmeshgenerator
+   generate a mesh suitable for CFD from a surface
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkme  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   TargetEdgeLength             float    default=1.0          range=(0.0,)  
+   TargetEdgeLengthArrayName    str      default=              
+   TargetEdgeLengthFactor       float    default=1.0          range=(0.0,)  
+   TriangleSplitFactor          float    default=5.0          range=(0.0,)  
+   EndcapsEdgeLengthFactor      float    default=1.0          range=(0.0,)  
+   MaxEdgeLength                float    default=1e+16        range=(0.0,)  
+   MinEdgeLength                float    default=0.0          range=(0.0,)  
+   CellEntityIdsArrayName       str      default=CellEntityId  
+   ElementSizeMode              str      default=edgelength   range=["edgelength","edgelengtharray"]  
+   CappingMethod                str      default=simple       range=["simple","annular","concaveannular"]  
+   SkipCapping                  bool     default=0             
+   SkipRemeshing                bool     default=0             
+   VolumeElementScaleFactor     float    default=0.8          range=(0.0,)  
+   BoundaryLayer                bool     default=0             
+   NumberOfSubLayers            int      default=2            range=(0,)  
+   NumberOfSubsteps             int      default=2000         range=(0,)  
+   Relaxation                   float    default=0.01         range=(0.0,)  
+   LocalCorrectionFactor        float    default=0.45         range=(0.0,)  
+   SubLayerRatio                float    default=0.5          range=(0.0,)  
+   BoundaryLayerThicknessFactor float    default=0.25         range=(0.0,)  
+   RemeshCapsOnly               bool     default=0             
+   BoundaryLayerOnCaps          bool     default=1             
+   Tetrahedralize               bool     default=0             
+   MeshOutputFileName           str      default=              filename for the default Mesh writer
+   RemeshedSurfaceOutputFileName str      default=              filename for the default RemeshedSurface writer
+
+== vmtksurfacecurvature
+   compute curvature of an input surface, optionally reporting results back to a reference surface (by point id)
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   ReferenceSurface             vtkPolyData default=None          the reference surface
+   ReferenceSurfaceInputFileName str      default=              filename for the default ReferenceSurface reader
+   CurvatureType                str      default=mean         range=["mean","gaussian","maximum","minimum"]  the type of surface curvature to compute
+   AbsoluteCurvature            bool     default=0             output the absolute value of curvature
+   MedianFiltering              bool     default=0             output curvature after median filtering to suppress numerical noise speckles
+   CurvatureOnBoundaries        bool     default=0             compute curvature on boundaries
+   BoundedReciprocal            bool     default=0             output bounded reciprocal of curvature
+   Epsilon                      float    default=1.0           bounded reciprocal epsilon at the denominator
+   Offset                       float    default=0.0           offset curvature by the specified value
+   SurfaceOutputFileName        str      default=              filename for the default Surface writer
+
+== vmtkcenterlinemerge
+   merge centerline tracts belonging to the same groups
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtkce  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   CenterlinesInputFileName     str      default=              filename for the default Centerlines reader
+   RadiusArrayName              str      default=MaximumInscr  name of the array where centerline radius is stored
+   GroupIdsArrayName            str      default=GroupIds      name of the array where centerline group ids are stored
+   CenterlineIdsArrayName       str      default=CenterlineId  name of the array where centerline ids are stored
+   TractIdsArrayName            str      default=TractIds      name of the array where centerline tract ids are stored
+   BlankingArrayName            str      default=Blanking      name of the array where centerline blanking information about branches is stored
+   Length                       float    default=0.0          range=(0.0,)  length of the resampling interval
+   MergeBlanked                 bool     default=1             toggle generation of segments for blanked groups
+   CenterlinesOutputFileName    str      default=              filename for the default Centerlines writer
+
+== vmtksurfacetobinaryimage
+   Convert a surface to a binary image mask where voxels are labeled if they lie inside the surface or not.
+   Id                           str      default=0             script id
+   Self                         self     default=<vmtk.vmtksu  handle to self
+   Disabled                     bool     default=0             disable execution and piping
+   SurfaceInputFileName         str      default=              filename for the default Surface reader
+   InsideValue                  int      default=1            range=(0,255)  the value to label voxels which contain points inside the surface
+   OutsideValue                 int      default=0            range=(0,255)  the value to label voxels which contain points inside the surface
+   PolyDataToImageDataSpacing   float    default=[0.3, 0.3, 0 range=(0.0,)  the sample spacing for the polydata to image data conversion
+   ImageOutputFileName          str      default=              filename for the default Image writer
+
