@@ -1,0 +1,25 @@
+{
+ "built": "2026-09-03",
+ "set": "B (three-source: host arch -> Zenodo carotid bifurcation -> TopBrain siphon)",
+ "grafter": "carotid_tools/graft_three.py",
+ "pairing": "carotid_data/pairing.json (237 pairs over 48 lowers; same as v1)",
+ "flags": {
+  "--route-min-r": 1.0,
+  "--eca-mesh-r": 1.0,
+  "--distal-trim": 0.0,
+  "--fuse-band": 0.35,
+  "--siphon-min-r": 1.0
+ },
+ "outcome": "223 built, 14 rejected for fusing below the band (v1: 215 built, 22 rejected); 22 pairs regrafted with the siphon floor",
+ "mesher": "topbrain_tools/bake_meshes_v2.py (sdf_mesher: SDF at 0.45 mm isotropic, iso 0, quadric volume-preserving to 20000 tris; collision_full.vtp kept at 60000)",
+ "differs_from_v1": [
+  "route floor 1.60 -> 1.0 mm (stenosis grades up to ~60 % restored; per-anatomy detail in provenance.json)",
+  "ECA floor 1.6 -> 1.0 mm",
+  "no distal trim",
+  "collision mesh: SDF, not Gaussian; 20k tris not 3.7k"
+ ],
+ "sofa_cost_note": "+55% per simulator step vs v1 3.7k meshes; recut_obj.py --tris 9000 for +25% at 0.23 mm deficit",
+ "plan": "V2_BUILD_PLAN.md",
+ "analysis": "MESHING_PIPELINE_ANALYSIS.md",
+ "siphon_floor_note": "First bake flagged 13 anatomies non-navigable (0.30-0.63 mm lumen), all on necked siphons (topcow_mr_001, _007_L, _010_L): ROUTE_MIN_R is donor-section only. Added --siphon-min-r and regrafted + re-baked the 22 pairs whose siphon carries a label neck."
+}
