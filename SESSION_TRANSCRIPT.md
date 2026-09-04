@@ -11478,3 +11478,121 @@ Findings recorded this segment:
 Fifteen checkpoints are now in git (seven historical, eight from the current run), so the
 second machine can run host TEST evals after a `git pull`. The queue and what each outcome
 would mean is HANDOFF 13.
+
+---
+
+# SESSION SEGMENT 4 — the three-source set, a refuted defect, and the missing three months (2026-08-30 → 09-03)
+
+Condensed record, written at the end of the segment. Continues segment 3 above.
+
+## The run, left alone
+
+`2026-08-29_235446_rcca_topbrain_v1` was left running throughout. It passed 4.0 M explore
+steps; nine further checkpoints were force-added (`b54a30f`, then `4004786` and `best`),
+so the committed set is now `0`, every ~250k from `253934` to `4004786`, plus `best`.
+Validation stayed in the same 95.9-100% band it entered at 254k. **No host TEST has been
+run on any of them yet** — the other machine is doing the evals, and HANDOFF 13 is the
+queue (lead with `4004786` and `3755042`). Nothing in this segment changes the reading of
+segment 3: the validation instrument is saturated and only the host can rank checkpoints.
+`best_checkpoint.everl` is still selected by that saturated metric; ignore it.
+
+## The three-source carotid set
+
+Branch 16 published a 216-anatomy set: host arch + CarotidAnalyzer lower carotid (CCA with
+the real ICA/ECA fork, 47 patients) + TopBrain siphon (44), with a new `RECA` branch and
+`FUSE_BAND_MM = 0.35`. Downloaded on request; then, per the standing rule from HANDOFF 11
+and 12, the frame check first, on every anatomy, before any other number.
+
+**Frame: 0 of 216 mismatched** on both `RCCA` and `RECA` (`monitoring/check_carotid_frames.py`,
+sign controlled against the validated right-ICA set). The RECA is a tight branch — minimum
+clearance 0.573 mm — which is a property of the donor data, not a defect. The rest of the
+intake checklist was split across fourteen agents; twelve finished. Their findings were
+then read against upstream's own `CAROTID_VERIFICATION_HISTORY.md` (375 lines, a 64-agent
+verification of the same set), which had already covered nearly everything. Consolidated
+rather than duplicated; only what upstream had not measured was kept.
+
+Two operational mistakes on the way, both mine:
+
+- **Stopped the agent workflow because "all 216 meshes changed" after a re-pull.** Only 20
+  had substantive changes; 196 were timestamp-only rewrites. Diff the content, not the
+  mtime, before halting anything.
+- **Read 200 of 328 lines of the verification doc** and reported on it. Asked whether I
+  had read the whole thing. Read the whole thing.
+
+## The handedness claim, and the control that killed it
+
+One intake agent reported **109 of 216 carotid forks "unmirrored"** — left-side donors
+whose bifurcation chirality had not been flipped the way the left siphons were — and I
+carried it forward as a defect. The observation was correct. The inference was not.
+
+The other machine ran the control the claim needed: for patients with both carotids
+available, does the left fork mirror the right? **3 of 8 — below chance.** The carotid
+bifurcation has no consistent handedness to preserve, so there is nothing to mirror; the
+mirror rule (`sp * [-1,1,1]` in RAS) rests on the siphon's measured torsion (19 of 25
+same-patient pairs opposite-signed) and applies to siphons only. The ECA is a distractor
+branch, not part of the route, so its chirality could not affect the task even if it were
+consistent. Recorded as HANDOFF 12.6 and intake row 13b, so the next reader does not
+re-derive the wrong rule from row 13.
+
+The general lesson is the one from 11.2 again, one level up: a measurement that looks like
+a defect gets a control before it gets a name. The chirality control took minutes; the
+re-mirroring it would have triggered would have invalidated 109 anatomies.
+
+## Git hygiene, learned the hard way
+
+- `saved/.../mesh_ben/` **is** gitignored (trailing-slash directory rule), which is why
+  every checkpoint commit needs `git add -f`. I had said it was not.
+- `git checkout <ref> -- <path>` **stages into the index**. That is how `ceadf86` silently
+  carried the whole `carotid_data/` tree into what was meant to be a one-doc commit.
+  Inspect `git status` before every commit that follows a checkout.
+- Adopted upstream's `.gitattributes` (`topbrain_data/anatomies/** -text`,
+  `carotid_data/** -text`): without it Windows rewrites the anatomy files' line endings and
+  every mesh and centerline reads as modified.
+- Set synced to 215 (`9b420ef`) after upstream dropped one.
+
+## HANDOFF 14 — the three months that were not written down
+
+Asked to scan the last ~3 months for operations that matter going forward and are absent
+from the handoff: recovery-metric families for train/test runs, planned-path classifier
+evaluations and their accuracy, observation values used as proxies for the SOFA force
+field, and the like. Two agents swept the 11,480-line transcript and ~30 documents plus
+the `monitoring/` tree; I read HANDOFF 0-8 for overlap and wrote what was missing.
+
+Result: `9bf918f`, section 14, ten subsections, ~85 items, each tagged VALIDATED /
+RULED OUT / OPEN / BUILT-NEVER-RUN with its number and source. The items the request
+named directly:
+
+- **Recovery metrics (14.1).** Four families that are not interchangeable; the three
+  detector configs verbatim; retraction depth is a continuum (no bimodality — soft/hard/
+  grind is a cut, not a mode); the T1-T7 ledger showing siphon is a stall-DENSITY problem
+  (5-7% CCA vs 90-97% siphon); the buckle-clearing definition and its 18,541-window null;
+  functional-success reclassification.
+- **Planned-path classifiers (14.2).** Uniform tolerance ruled out by measurement; the
+  radius-aware state machine; five defects that each silently disabled off-path detection;
+  the crunch classifier at AUC 0.92-0.95 (five features) / 0.65-0.77 (deployable), and the
+  fact that the SHIPPED v1c rule is a 3-dim box, not that classifier.
+- **Force proxies (14.3).** The SOFA force channel is DEAD — dims 2/3/4 identically zero
+  across 568,874 states, in every buffer ever collected; `gw_slack` is a numerical duplicate
+  of privileged dim 23, so the "correspondence" claim is an identity; the teacher can feel
+  contact (r 0.75) but its retract probability is flat across contact quintiles; the
+  saliency probes; obs47 clamp degeneracy.
+- Plus 14.4-14.10: snapshot/restore and why stuck-restore fails as designed; reward-term
+  audits including the catheter-shove exploit; the eval ORBIT bug as a second, independent
+  mechanism behind H0's run-to-run variance (still unfixed); diagnostic tools that had their
+  own defects; algorithm-arm detail; seven designs specified and never built; and the
+  inventory gap (~350 scripts in `monitoring/` against seven listed).
+
+Two in-place corrections to sections readers hit first, each pointing at 14:
+
+- **2.1 was wrong about `--relax_failure_truncations`.** It disables fold-stall and
+  off-path truncation, not vessel-end. MaxSteps / VesselEnd / SimError still end episodes.
+- **1 described the privileged tail as carrying nodal forces** without saying those dims
+  are zero (`f7ae8d2`).
+
+## State at the end of the segment
+
+Tree clean, everything pushed on `rl_improv_18_p2`. Open, in order: host TEST on the
+current run (HANDOFF 13); decide whether to stop it; the next design — real TopBrain
+anatomies plus procedurally-varied harder synthetic variants per anatomy, patient-level
+split, depth-stratified eval, and the 215-anatomy set as a candidate training pool; the
+eval orbit fix; the mesher's -0.31 mm offset, still not applied to a new directory.
