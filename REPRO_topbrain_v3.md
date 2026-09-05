@@ -51,8 +51,8 @@ silently drops 3 right-side anatomies while keeping their _L twins.
 ## Resulting split (patient-level, no L/R leakage)
 
 - TRAIN - 41 anatomies, 21 patients: both `_L` and right of
-  topcow_mr_009 010 011 012 013 014 015 016 018 019 020 021 023 024 025 026 027
-  028 029 030 (20 patients x 2), plus `topcow_mr_006` (right only - no `_L` twin
+  topcow_mr_001 002 003 004 005 010 011 012 013 014 015 016 018 020 021 023 024
+  025 026 027 (20 patients x 2), plus `topcow_mr_006` (right only - no `_L` twin
   exists for 006, so it is unpaired and cannot leak).
 - HELD-OUT (validation eval, never trained) - 8 anatomies, 4 patients:
   007, 007_L, 008, 008_L, 017, 017_L, 022, 022_L.
