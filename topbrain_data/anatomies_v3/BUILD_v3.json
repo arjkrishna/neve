@@ -1,0 +1,10 @@
+{
+ "built": "2026-09-03",
+ "set": "A (TopBrain siphons on the shipped host)",
+ "centerlines": "identical to the v2 set (same grafter flags); only the collision mesh differs",
+ "mesher": "topbrain_tools/bake_meshes_v3.py: v2 SDF tubes (0.45 mm) unioned with the patients' real surfaces via sdf_union.py: f = max(f_tube, min(f_real, f_capsule)); capsule 1.8 r + 1 mm tapered to r over 8 mm at each seam; quadric volume-preserving to 20000 tris; collision_full.vtp kept at 60000",
+ "report": "mesh_v3.json per anatomy: deficit split tube/real, cross-section shape by ray casting (max/MISR, area-r/MISR, max/min)",
+ "plan": "V2_BUILD_PLAN.md",
+ "analysis": "MESHING_PIPELINE_ANALYSIS.md",
+ "real_surfaces": "TopBrain label surface of the siphon (topbrain_data/surfaces*/), transform in graft_xform.json"
+}

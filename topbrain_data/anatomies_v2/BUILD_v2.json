@@ -1,0 +1,20 @@
+{
+ "built": "2026-09-03",
+ "set": "A (TopBrain siphons on the shipped host)",
+ "grafter": "topbrain_tools/graft_siphon.py",
+ "flags": {
+  "--distal-trim": 0.0,
+  "--route-min-r": 1.0,
+  "left": "--mirror --name-suffix _L"
+ },
+ "mesher": "topbrain_tools/bake_meshes_v2.py (sdf_mesher: SDF at 0.45 mm isotropic, iso 0, quadric volume-preserving to 20000 tris; collision_full.vtp kept at 60000)",
+ "screen": "topbrain_tools/label_necks.py -> topbrain_data/label_necks.json (1 reject: topcow_mr_006_lICA)",
+ "differs_from_v1": [
+  "no distal trim (route +4 mm)",
+  "siphon radius floor 1.0 mm (label necks)",
+  "collision mesh: SDF, not Gaussian; 20k tris not 3.7k"
+ ],
+ "sofa_cost_note": "+55% per simulator step vs v1 3.7k meshes; recut_obj.py --tris 9000 for +25% at 0.23 mm deficit",
+ "plan": "V2_BUILD_PLAN.md",
+ "analysis": "MESHING_PIPELINE_ANALYSIS.md"
+}
