@@ -1635,3 +1635,29 @@ Done here, per that recipe:
 
 Not done: the launch itself. The `[v3c]` echo lines go to `docker logs`, not `main.log`;
 check them there after launch together with the roster echo.
+
+## 15.5 Launched: `2026-09-05_205053_rcca_topbrain_v3`
+
+Go-ahead given 2026-09-05; launched with `launch_rcca_topbrain_v3.sh`, container
+`rcca_topbrain_v3`. Launch checks, all read from `docker logs`:
+
+- roster echo **TRAIN 41 / HELD-OUT (eval only, never trained) 8 / EXCLUDED-unusable 1
+  `['__none__']`**, `dir=.../anatomies_v3`, no 007/008/017/022 in TRAIN, per-worker seeds
+  12345..12360 (16 workers) -- exactly the recipe's required echo;
+- both `[v3c]` lines present and identical to v1/v2 (catheter-slack coef 0.5, dead-band
+  15 mm, cap 150 mm; tip-average progress mode=avg gw_weight=0.5).
+
+First 10 minutes: 16 explore workers stepping (last-STEP age <= 2 s; the 17th worker log
+is the idle eval worker), 13 env-steps/s aggregate during the 20,000-step heatup,
+container CPU ~11.8 cores, RSS 12.2 GiB of the 23.47 GiB Docker VM, GPU 1%, 0 Python
+tracebacks. The ~190 `[ERROR] [InterventionalRadiologyController] Case N should never
+happen` lines in the container log are SOFA controller noise, not failures.
+
+Monitoring armed for this session (session-scoped -- re-arm after a restart):
+container-exit watch; container-log watch for Traceback / WATCHDOG / CUDA error / OOM /
+Killed / run-end; eval-row watch on the run csv; new-checkpoint watch (force-add as they
+appear, models only, never `replay_incremental`); and a 2-hourly READ-ONLY health pass,
+`monitoring/monitor_pass_topbrain_v3.sh` (container state, RSS, host RAM/disk/GPU, per-worker
+last-STEP age, 10-min throughput, latest eval row, untracked checkpoints, failure
+signatures). Host TEST per the repro doc: after >= 6 checkpoints exist, on the other
+machine, using 13.3's command against `anatomies_v3`-trained checkpoints.
