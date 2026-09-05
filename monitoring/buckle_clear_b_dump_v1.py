@@ -26,7 +26,7 @@ def step(st,proj,cmd0,gw,i):
 def emit(st,outs):
     if st["pl"] is None or not st["proj"]: return 0
     if st["stuck"]: st["events"].append(dict(k="unrec",r=round(st["retract"],3),close=-1,onset=st["onset"],first=st["first"],p0=st["p0"]))
-    outs[st["tag"]].write(json.dumps(dict(seed=st["seed"],tag=st["tag"],succ=st["succ"],reason=st["reason"],pl=st["pl"],
+    outs[st["tag"]].write(json.dumps(dict(seed=st["seed"],tag=st["tag"],wt=st["wt"],succ=st["succ"],reason=st["reason"],pl=st["pl"],
         proj=[round(x,2) for x in st["proj"]],gw=[round(x,2) for x in st["gw"]],
         fold=st["fold"],cmd=[round(x,2) for x in st["cmd"]],cs=[round(x,1) for x in st["cs"]],events=st["events"]))+"\n")
     return 1

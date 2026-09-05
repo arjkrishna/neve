@@ -1550,3 +1550,88 @@ identically in `vmr_processing_tools/create_dualdevicenav_format.py`,
 `eve_bench/dualdevicenav.py`, the human-play scripts and the training scripts. The
 anti-pattern is per-model rotations. `COORDINATE_SYSTEM_CONSISTENCY.md` — the intake step
 upstream of §11/§12.
+
+
+---
+
+# 15. 2026-09-05 — recovery-metric inputs into git, run 2 closed, the v3 mirror prepared
+
+## 15.1 The recovery-metric record is now reproducible from a `git pull`
+
+Every analysis script in 14.1 was tracked; none of its inputs were. The extracted
+stall files behind the cross-matrix lived in a session temp directory, and the
+committed adjudication script hard-coded that directory. Fixed:
+
+- **`saved/stuck/`** holds every extracted stall/recovery file for the TopBrain era,
+  each matched back to its source eval by seed -> (success, steps) at 100% agreement.
+  `saved/stuck/README.md` maps every file to policy, dataset, source log directory,
+  record format and the number it backs. `buckle_clear_adjudicate_v4.py` resolves its
+  input directory to that folder.
+- **35 eval per-episode outputs** (`episodes_official_*.jsonl`, `episodes.csv`,
+  `anatomy_success.csv`) force-added from under the gitignored `mesh_ben` tree — the
+  per-episode record behind every number in 10.4.
+- Worker logs stay out of git (run 2: 670 files, 4.5 GB). The extracts are the durable
+  record; regenerate commands are in the README.
+
+**Three record formats, not two.** `extract_stuck.py` = one record per EXPLORE episode
+with the three detector configs. `buckle_clear_dump_v1.py` / `buckle_clear_b_dump_v1.py`
+= one record per episode with full per-step series (`proj gw cmd cs fold`) plus the
+canon events — this is what `tr_*.jsonl` and `trB_*.jsonl` are. `buckle_clear_extract_v1.py`
+= one record per SOFT/HARD stall EVENT with a before/during/after window. Row counts are
+not comparable across formats; the README says which is which.
+
+## 15.2 Correction to 14.1: how the extractor tells eval from explore
+
+`extract_stuck.py` flags an episode as eval by the `seed=` token on its `EPISODE_START`
+line — exact, verified 20 x 98 = 1,960 on run 2. The main.log time-window machinery in
+the same file is **vestigial**: `eval_windows()` is computed and `in_eval()` is defined
+but never called. Its regex also required exactly one space after `evaluation :`, so it
+matched only evals over 1000 s (the H0 block); fixed to `\s*` so the function is at least
+correct if anyone wires it in. The "~2 h clock offset" noted in
+`task4_report_topbrain_v1.py` is not a property of the logs (measured 0.2 h); it was
+this regex. **No eval episodes leaked into any explore extract** — `tb_stuck.jsonl` and
+`tb_run2_stuck.jsonl` are clean. A first pass here claimed 4-7% leakage from the
+mis-placed windows before the flag was read; retracted.
+
+## 15.3 Run 2 closed
+
+`2026-08-29_235446_rcca_topbrain_v1` hit its 48,000-episode limit on 2026-09-02 at
+~4.98 M explore steps. All 21 checkpoints (`0` … `4750091`, `best`) are committed. Host
+TEST is still not done on any of them; 13.2 remains the queue, now led by `4750091` /
+`4506906` / `4252508` rather than `4004786`.
+
+Run-2 explore stream, canon detector, whole run (`saved/stuck/tb_run2_stuck.jsonl` and
+`trB2_own_*.jsonl`): 48,412 explore episodes; per-event totals grind 2,158 / soft 2,329 /
+hard 1,246 / unrecovered 1,849 across 50,372 parsed episodes at 96.7% success. Not yet
+bucketed by wall time; the files are there for it.
+
+## 15.4 The v3 mirror run — prepared on this machine, NOT launched
+
+Branch 16/18 rebuilt both anatomy sets twice (`MESHING_PIPELINE_ANALYSIS.md`,
+`V2_BUILD_PLAN.md`): the v1 tube mesher eroded a median 0.65 mm of radius along the route
+and left only 22/49 TopBrain and 71/215 carotid anatomies physically navigable by the
+catheter; v2 (SDF mesher, 0.45 mm isotropic, 20 k tris, floors to 1.0 mm) makes 49/49 and
+223/223 navigable at 0.12 mm deficit; v3 unions each patient's REAL lumen surface into the
+v2 field so the siphon cross-sections are the segmentation's own (longest ray / MISR 1.25
+vs a tube's 1.02). This supersedes 9's and 11.5's mesher numbers in magnitude — the
+direction was right, the minimum lumen was far worse than the medians implied. The
+branch-18 machine is training `rcca_topbrain_v2` on `anatomies_v2`; `REPRO_topbrain_v3.md`
+asks this machine to run the identical config on `anatomies_v3`.
+
+Done here, per that recipe:
+
+- `launch_rcca_topbrain_v3.sh` built from `launch_rcca_topbrain_v2.sh` with exactly the
+  three permitted edit kinds (7 name spots, 1 anatomy dir, 72 mount prefixes); byte-level
+  diff shows nothing else. All 72 host mount paths resolve on this machine. LF endings.
+- Roster verified against the train script's own rule (training exclusion = unusable
+  UNION holdout; eval env = holdout only): **TRAIN 41 / HELD-OUT 8 / EXCLUDED-unusable 1
+  `['__none__']`**, no 007/008/017/022 in TRAIN, `topcow_mr_006` the only unpaired
+  train anatomy, 21 train patients. `anatomies_v3` has all 49, roster byte-identical to
+  v2, every anatomy complete, ~20 k tris each (so SOFA cost should match v2, not v1).
+- Argparse default for `--topbrain_exclude` confirmed to be the v1 trio — the
+  `__none__` sentinel is required, exactly as the doc says.
+- Docker daemon is up, `eve-training-fixed` image present, no container named
+  `rcca_topbrain_v3`, 12 CPUs / 25.2 GB in the Docker VM, GPU idle, 186 GB free.
+
+Not done: the launch itself. The `[v3c]` echo lines go to `docker logs`, not `main.log`;
+check them there after launch together with the roster echo.

@@ -1,4 +1,3 @@
-import os
 """HOME-vs-FOREIGN, buckle-load-normalised. TopBrain column: A(foreign) vs B(home) vs heuristic."""
 import json,sys,os
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))

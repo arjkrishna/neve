@@ -49,7 +49,7 @@ INS  = re.compile(r"inserted=\[([-0-9.]+),([-0-9.]+)\]")
 DTG  = re.compile(r"d_tgt=([0-9.]+)")
 LOCR = re.compile(r"local_r=([0-9.]+)")
 TS   = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)")
-EVDUR= re.compile(r"evaluation : ([0-9.]+)s")
+EVDUR= re.compile(r"evaluation :\s*([0-9.]+)s")   # \s*: the trainer pads durations <1000 s with two spaces; the old single-space form matched only the ~1356 s H0 eval
 
 
 def eval_windows(run_dir, margin=90.0):
