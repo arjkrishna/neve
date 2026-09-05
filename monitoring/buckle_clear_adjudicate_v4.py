@@ -1,9 +1,10 @@
+import os
 """HOME-vs-FOREIGN, buckle-load-normalised. TopBrain column: A(foreign) vs B(home) vs heuristic."""
 import json,sys,os
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
 from buckle_clear_classify_v1 import features,q
 from buckle_clear_final_v1 import lab
-SP=r"C:\Users\akrish41\AppData\Local\Temp\claude\d--Arjun-workspace-neve\81b186b6-3a3f-4f63-8491-2172316ef81f\scratchpad"
+SP=os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","saved","stuck")  # stall extracts live in-repo (see saved/stuck/README.md)
 CELLS=[("HOST  A ckpt2002292","tr_A.jsonl",None),("HOST  A ckpt514264","tr_A514.jsonl",None),
        ("HOST  B ck505230","trB_505230_host.jsonl",None),("HOST  B ck256370","trB_256370_host.jsonl",None),
        ("HOST  heuristic ck0","tr_H0.jsonl",None),
