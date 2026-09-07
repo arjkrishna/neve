@@ -1661,3 +1661,24 @@ appear, models only, never `replay_incremental`); and a 2-hourly READ-ONLY healt
 last-STEP age, 10-min throughput, latest eval row, untracked checkpoints, failure
 signatures). Host TEST per the repro doc: after >= 6 checkpoints exist, on the other
 machine, using 13.3's command against `anatomies_v3`-trained checkpoints.
+
+## 15.6 Host TEST queue for the v3 run (six trained checkpoints reached 2026-09-06)
+
+Validation on the 8 held-out v3 anatomies: 78.6 (H0) -> 91.8 -> 99.0 -> 100 -> 96.9 -> 96.9
+-> 98.0 at 0 / 257k / 505k / 757k / 1.0M / 1.26M / 1.5M explore steps. Saturated from 505k,
+as on the v1 set; it cannot rank these checkpoints (10.2). All are committed. Queue, same
+command and flags as 13.3, on the other machine:
+
+| priority | checkpoint | why |
+|---|---|---|
+| 1 | `checkpoint1502006` | deepest |
+| 2 | `checkpoint756872` | mid-point; with 1 and 3 gives the curve's shape |
+| 3 | `checkpoint256854` | first post-heatup; pairs with run 1's `ck256370` (44.9%) and run 2's `ck253934` |
+| 4 | `checkpoint0` | this run's H0 on the host; expected ~25%, validates the comparison |
+| 5 | `1002606` / `1256323` / `504695` | fill in if 1-3 show a trend worth resolving |
+
+Container path prefix: `/opt/eve_training/results/eve_paper/neurovascular/full/mesh_ben/2026-09-05_205053_rcca_topbrain_v3/checkpoints/`.
+Baselines to read against: v1bp `ckpt2002292` 75.5%; run 1 `ck505230` 64.3%; heuristic 25.5%.
+Two confounds specific to this run when comparing to those: the training meshes are v3 (real
+siphon surfaces, 0.12 mm deficit) while the host test mesh is the unchanged shipped surface,
+and the holdout is 8 patient-paired anatomies rather than 4.
