@@ -1664,6 +1664,10 @@ machine, using 13.3's command against `anatomies_v3`-trained checkpoints.
 
 ## 15.6 Host TEST queue for the v3 run (six trained checkpoints reached 2026-09-06)
 
+**SUPERSEDED BY 15.7** -- all eight checkpoints have since been host-tested. This queue's
+priority order (deepest first) is exactly backwards: the peak is `checkpoint256854` at 257k
+and the deepest checkpoints are the worst. Kept for the record only.
+
 Validation on the 8 held-out v3 anatomies: 78.6 (H0) -> 91.8 -> 99.0 -> 100 -> 96.9 -> 96.9
 -> 98.0 at 0 / 257k / 505k / 757k / 1.0M / 1.26M / 1.5M explore steps. Saturated from 505k,
 as on the v1 set; it cannot rank these checkpoints (10.2). All are committed. Queue, same
@@ -1682,3 +1686,87 @@ Baselines to read against: v1bp `ckpt2002292` 75.5%; run 1 `ck505230` 64.3%; heu
 Two confounds specific to this run when comparing to those: the training meshes are v3 (real
 siphon surfaces, 0.12 mm deficit) while the host test mesh is the unchanged shipped surface,
 and the holdout is 8 patient-paired anatomies rather than 4.
+
+## 15.7 HOST TEST of the v3 run — the mesher was the ceiling, and the peak is early
+
+Run stopped 2026-09-07 at 2.07 M steps on request. All eight trained checkpoints were then
+host-tested here, ascending, 98 episodes each on the shipped real-patient surface
+(`--real_patient_anatomy`, the 13.3 command). **This supersedes the queue in 15.6**, which
+was written before any host number existed and led with the deepest checkpoint — the worst
+of the eight.
+
+**Validity, checked before believing any of it.** All 98 seeds are shared with the July
+v1bp host eval; every path length is identical seed-by-seed, so the targets are the same;
+`anatomy=` (the branch hash) is constant at `867c5770632a` across all 98 episodes in every
+run and equals the July host's. Same flags, same `MAX_STEPS=600`, same
+`infos[-1]['success']`. These are matched pairs, so McNemar applies.
+(`mesh_fp=` varies per episode and is NOT a geometry identity — it is a per-instantiation
+tag. `anatomy=` is the one to read, per 14.6.)
+
+| checkpoint | CCA (27) | ICA-mid (41) | siphon (30) | **HOST** | validation |
+|---|---|---|---|---|---|
+| **256854** | 93% | 100% | **90%** | **94.9%** | 91.8% |
+| 504695 | 100% | 100% | 80% | 93.9% | 99.0% |
+| 756872 | 100% | 98% | 83% | 93.9% | 100.0% |
+| 1002606 | 93% | 93% | 60% | 82.7% | 96.9% |
+| 1256323 | 100% | 88% | 73% | 86.7% | 96.9% |
+| 1502006 | 81% | 85% | 67% | 78.6% | 98.0% |
+| 1752049 | 89% | 71% | 60% | 72.4% | 98.0% |
+| 2002268 | 70% | 66% | 87% | 73.5% | 98.0% |
+
+Baselines on the same 98 seeds: heuristic `ck0` 25.5%; v1bp `ck514264` 72.4%; v1bp
+`ck2002292` **75.5%**; v1-mesh TopBrain run 1 `ck256370` 44.9%, `ck505230` 64.3%.
+
+### 15.7.1 The result
+
+**`checkpoint256854` at 257k steps reaches 94.9%, against 75.5% for the best model this
+program had.** Paired: 21 episodes won, 2 lost, McNemar exact **p = 6.6e-05**. The siphon —
+the standing ceiling of the whole project, 0% for the heuristic and 33.3% for v1bp — goes to
+**90% (27/30)**.
+
+**The mesher is the variable.** Run 1 trained the same recipe on the same TopBrain donors
+with the v1 tube mesher and scored **44.9%** at the matched ~256k step count; v3 scores
+94.9% (**p = 3.2e-13**). At ~505k it is 64.3% vs 93.9% (p = 2.3e-07). This is what
+`MESHING_PIPELINE_ANALYSIS.md` predicted: the v1 meshes eroded a median 0.65 mm of radius
+and left only 22 of 49 anatomies navigable by the catheter at all, so a policy trained on
+them learned to fight walls that do not exist in a real segmentation. Train on geometry
+that matches reality and it transfers to a real surface.
+CAVEAT: run 1 was 22 anatomies (17/4) and v3 is 49 (41/8), so anatomy count and split
+changed alongside the mesher. The mesher is the dominant hypothesis, not a proven sole
+cause; the clean test is a v1-mesh run at the 49-anatomy roster, which does not exist.
+
+### 15.7.2 The peak is EARLY and training past it destroys the gain
+
+Host falls 22 points from 257k to 1.75M. **At equal steps the advantage is gone**: v3
+`2002268` 73.5% vs v1bp `2002292` 75.5%, paired p = 0.87 — indistinguishable. So the v3
+meshes do not buy a better model at 2 M steps; they buy a much higher peak, ~8x earlier,
+which is then trained away. Failures at the trough are 600-step timeouts arrested at the
+RVA take-off, not wrong-branch errors.
+
+The deepest checkpoint inverts by section (CCA 70 / ICA-mid 66 / siphon 87): it keeps
+driving deep and loses the shallow targets it used to get for free. Worth a look if anyone
+wants the mechanism of the decay.
+
+### 15.7.3 Validation is anti-correlated with host — the strongest case yet for 10.2
+
+Validation sits in 96.9-100% for every checkpoint after the peak while host falls 22 points.
+**The single best host checkpoint has the LOWEST validation score of the eight (91.8%), and
+the one validation rates 100% is already past the peak.** Selecting on validation — which is
+what `best_checkpoint.everl` does — picks a model ~20 points worse than the right one. Never
+select on it; the ONLY use of the in-run eval is to confirm learning started.
+
+### 15.7.4 What to do
+
+1. **`checkpoint256854` is the model this run produced.** Use it as the reference, not
+   `best_checkpoint.everl` and not the deepest.
+2. **The v2 run on the branch-18 machine is at risk of the same trap** — it is past 2 M
+   steps with healthy-looking validation. Host-test its EARLY checkpoints (~250k-750k)
+   before its late ones.
+3. **Future runs on v2/v3 meshes: checkpoint densely before 1 M and stop by ~750k**, or at
+   minimum host-test early. The 2 M-step budget carried over from the v1 era is wrong for
+   these meshes.
+4. Open: is the peak even earlier than 257k? Nothing exists between `checkpoint0` and
+   `256854`. A short re-run checkpointing every ~50k would settle it, and is cheap.
+5. Everything here is a **privileged-actor teacher** reading the privileged tail at test
+   time (§1). It is not deployable, and the same is true of the 75.5% baseline, so the
+   comparison is fair but the number is not a deployable result.
