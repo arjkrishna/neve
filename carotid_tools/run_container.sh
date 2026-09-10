@@ -81,4 +81,5 @@ docker run --rm --cpus="${CPUS:-4}" \
   -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve/eve/intervention/vesseltree/topbrainanatomyset.py:/usr/local/lib/python3.8/dist-packages/eve/intervention/vesseltree/topbrainanatomyset.py" \
   -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/dualdevicenavtopbrain.py:/usr/local/lib/python3.8/dist-packages/eve_bench/dualdevicenavtopbrain.py" \
   -v "D:/neve/.claude/worktrees/rl_improv_16_resume/eve_bench/eve_bench/dualdevicenavtopbrain.py:/opt/eve_training/eve_bench/eve_bench/dualdevicenavtopbrain.py" \
+  -v "D:/neve/.claude/worktrees/rl_improv_16_resume/presentation:/opt/eve_training/presentation" \
   -w /opt/eve_training eve-training-fixed "$@"
