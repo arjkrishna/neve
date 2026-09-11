@@ -1,0 +1,262 @@
+_class: eve_rl.runner.runner.Runner
+_id: 131507010966480
+agent:
+    _class: eve_rl.agent.synchron.Synchron
+    _id: 131507010966432
+    algo:
+        _class: eve_rl.algo.sac.SAC
+        _id: 131506851909984
+        model:
+            _class: eve_rl.model.sacmodel.SACModel
+            _id: 131506851909696
+            lr_alpha: 0.0003
+            q1:
+                _class: eve_rl.network.qnetwork.QNetwork
+                _id: 131507010967728
+                body:
+                    _class: eve_rl.network.component.mlp.MLP
+                    _id: 131507010966576
+                    hidden_layers:
+                    - 256
+                    - 256
+                    n_inputs: 129
+                    output_layer_size: 1
+                    init_w: 0.003
+                    use_layernorm: true
+                n_observations: 125
+                n_actions: 4
+                head:
+                    _class: eve_rl.network.component.dummy.Dummy
+                    _id: 131507010967824
+                    n_inputs: 125
+            q2:
+                _class: eve_rl.network.qnetwork.QNetwork
+                _id: 131507768678384
+                body:
+                    _class: eve_rl.network.component.mlp.MLP
+                    _id: 131507010966624
+                    hidden_layers:
+                    - 256
+                    - 256
+                    n_inputs: 129
+                    output_layer_size: 1
+                    init_w: 0.003
+                    use_layernorm: true
+                n_observations: 125
+                n_actions: 4
+                head:
+                    _class: eve_rl.network.component.dummy.Dummy
+                    _id: 131507010967824
+            policy:
+                _class: eve_rl.network.gaussianpolicy.GaussianPolicy
+                _id: 131506852253760
+                body:
+                    _class: eve_rl.network.component.mlp.MLP
+                    _id: 131507010966528
+                    hidden_layers:
+                    - 256
+                    - 256
+                    n_inputs: 125
+                    output_layer_size:
+                    - 4
+                    - 4
+                    init_w: 0.003
+                    use_layernorm: false
+                n_observations: 125
+                n_actions: 4
+                head:
+                    _class: eve_rl.network.component.dummy.Dummy
+                    _id: 131507010967344
+                    n_inputs: 125
+                log_std_min: -2.0
+                log_std_max: 0.0
+                n_aux: 0
+            q1_optimizer:
+                _class: eve_rl.optim.optim.Adam
+                _id: 131507010967392
+                networks:
+                    _class: eve_rl.network.qnetwork.QNetwork
+                    _id: 131507010967728
+                lr: 0.0003
+                betas: !!python/tuple
+                - 0.9
+                - 0.999
+                eps: 1.0e-08
+                weight_decay: 0
+                amsgrad: false
+            q2_optimizer:
+                _class: eve_rl.optim.optim.Adam
+                _id: 131507768678480
+                networks:
+                    _class: eve_rl.network.component.mlp.MLP
+                    _id: 131507010966624
+                lr: 0.0003
+                betas: !!python/tuple
+                - 0.9
+                - 0.999
+                eps: 1.0e-08
+                weight_decay: 0
+                amsgrad: false
+            policy_optimizer:
+                _class: eve_rl.optim.optim.Adam
+                _id: 131506851844000
+                networks:
+                    _class: eve_rl.network.component.mlp.MLP
+                    _id: 131507010966528
+                lr: 0.0003
+                betas: !!python/tuple
+                - 0.9
+                - 0.999
+                eps: 1.0e-08
+                weight_decay: 0
+                amsgrad: false
+            q1_scheduler:
+                _class: torch.optim.lr_scheduler.LinearLR
+                _id: 131506699688832
+                optimizer:
+                    _class: eve_rl.optim.optim.Adam
+                    _id: 131507010967392
+                start_factor: 1.0
+                end_factor: 0.15
+                total_iters: 6000000.0
+                last_epoch: -1
+                verbose: false
+            q2_scheduler:
+                _class: torch.optim.lr_scheduler.LinearLR
+                _id: 131506699686144
+                optimizer:
+                    _class: eve_rl.optim.optim.Adam
+                    _id: 131507768678480
+                start_factor: 1.0
+                end_factor: 0.15
+                total_iters: 6000000.0
+                last_epoch: -1
+                verbose: false
+            policy_scheduler:
+                _class: torch.optim.lr_scheduler.LinearLR
+                _id: 131506699687488
+                optimizer:
+                    _class: eve_rl.optim.optim.Adam
+                    _id: 131506851844000
+                start_factor: 1.0
+                end_factor: 0.15
+                total_iters: 6000000.0
+                last_epoch: -1
+                verbose: false
+        n_actions: 4
+        gamma: 0.99
+        tau: 0.005
+        reward_scaling: 1
+        action_scaling: 1
+        exploration_action_noise: 0.25
+        stochastic_eval: false
+        grad_clip: 1.0
+        algo: sac
+        awac_lambda: 3.0
+        awac_adv_norm_tau: 0.0
+        entropy_beta_per_dim: null
+        action_mean_penalty: 0.0
+        offline_mode: false
+        target_entropy: 1.0
+        log_alpha_min: -5.0
+        log_alpha_max: 0.0
+        aux_coef: 0.0
+        aux_label_indices: null
+        backup_entropy: false
+        aux_label_znorm: false
+    env_train:
+        _class: util.env5.BenchEnv5
+        _id: 131507769597328
+    env_eval:
+        _class: util.env5.BenchEnv5
+        _id: 131507022230096
+    replay_buffer:
+        _class: eve_rl.replaybuffer.pervanillashared.PERVanillaStepShared
+        _id: 131506851910656
+        capacity: 2000000
+        batch_size: 256
+        sample_device: cuda:0
+        alpha: 0.6
+        beta_start: 0.4
+        beta_steps: 20000000.0
+        epsilon: 1.0e-06
+        demo_priority_bonus: 0.0
+        priority_mode: td
+        balanced_fraction: 0.3
+        stuck_fraction: 0.0
+        stuck_slack_index: -1
+        stuck_slack_thresh: 0.174
+        stuck_contact_index: -1
+        stuck_contact_thresh: 0.0026
+        offline_fraction: 0.0
+        crunchpass_fraction: 0.0
+        crunchpass_la0_index: -1
+        crunchpass_la2_index: -1
+        crunchpass_radius_index: -1
+        crunchpass_engage_thresh: 0.25
+        crunchpass_radius_thresh: 0.175
+    n_worker: 16
+    worker_device: cpu
+    trainer_device: cuda:0
+    consecutive_action_steps: 1
+    normalize_actions: true
+    timeout_worker_after_reaching_limit: 180
+    diagnostics_config:
+        enabled: true
+        diagnostics_folder: /opt/eve_training/results/eve_paper/neurovascular/full/mesh_ben/2026-09-05_195236_rcca_topbrain_v2/diagnostics
+        log_losses_every_n_steps: 1
+        log_probe_values_every_n_steps: 100
+        log_batch_samples_every_n_steps: 100
+        n_batch_samples: 3
+        tensorboard_enabled: true
+        probe_plot_every_n_steps: 10000
+        policy_snapshot_every_n_steps: 10000
+        flush_every_n_rows: 100
+    env_train_factory: null
+    env_eval_factory: null
+heatup_action_low:
+-   - -9.0
+    - -0.44999999999999996
+-   - -9.0
+    - -0.44999999999999996
+heatup_action_high:
+-   - 9.0
+    - 0.44999999999999996
+-   - 9.0
+    - 0.44999999999999996
+agent_parameter_for_result_file:
+    lr: 0.0003
+    hidden_layers:
+    - 256
+    - 256
+    embedder_nodes: 500
+    embedder_layers: 0
+    env_version: 5
+    HEATUP_STEPS: 20000.0
+    EXPLORE_STEPS_BTW_EVAL: 250000.0
+    CONSECUTIVE_EXPLORE_EPISODES: 100
+    BATCH_SIZE: 256
+    UPDATE_PER_EXPLORE_STEP: 1.0
+    replay_mode: step
+    per: true
+    per_alpha: 0.6
+    per_beta_start: 0.4
+    grad_clip: 1.0
+    algo: sac
+    awac_lambda: 3.0
+    demo_priority_bonus: 0.0
+    priority_mode: td
+    balanced_fraction: 0.3
+checkpoint_folder: /opt/eve_training/results/eve_paper/neurovascular/full/mesh_ben/2026-09-05_195236_rcca_topbrain_v2/checkpoints
+results_file: /opt/eve_training/results/eve_paper/neurovascular/full/mesh_ben/2026-09-05_195236_rcca_topbrain_v2.csv
+quality_info: success
+info_results:
+- success
+- path_ratio
+- steps
+- average translation speed
+- trajectory length
+diagnostics_folder: /opt/eve_training/results/eve_paper/neurovascular/full/mesh_ben/2026-09-05_195236_rcca_topbrain_v2/diagnostics
+policy_snapshot_every_steps: 10000
+n_probe_episodes: 3
+n_probe_near_start_steps: 10
