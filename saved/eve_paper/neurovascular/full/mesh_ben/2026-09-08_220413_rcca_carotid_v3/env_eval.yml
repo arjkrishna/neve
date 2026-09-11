@@ -1,0 +1,321 @@
+_class: eve.env.Env
+_id: 130585445341024
+intervention:
+    _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+    _id: 130585389931104
+    vessel_tree:
+        _class: eve.intervention.vesseltree.topbrainanatomyset.TopBrainAnatomySet
+        _id: 130585389930912
+        branch_lists: null
+        mesh_paths:
+        - /opt/eve_training/carotid_data/anatomies_v3/case_m_030_right__topcow_mr_003_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_m_030_right__topcow_mr_013_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_m_030_right__topcow_mr_016/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_m_030_right__topcow_mr_016_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_007_left__topcow_mr_013_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_007_left__topcow_mr_016_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_007_left__topcow_mr_017/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_007_left__topcow_mr_021_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_013_right__topcow_mr_011/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_013_right__topcow_mr_013_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_013_right__topcow_mr_021_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_017_right__topcow_mr_011/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_025_right__topcow_mr_016_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_025_right__topcow_mr_021_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_033_left__topcow_mr_011_L/vessel_architecture_collision.obj
+        - /opt/eve_training/carotid_data/anatomies_v3/case_w_033_left__topcow_mr_016/vessel_architecture_collision.obj
+        anatomy_names:
+        - case_m_030_right__topcow_mr_003_L
+        - case_m_030_right__topcow_mr_013_L
+        - case_m_030_right__topcow_mr_016
+        - case_m_030_right__topcow_mr_016_L
+        - case_w_007_left__topcow_mr_013_L
+        - case_w_007_left__topcow_mr_016_L
+        - case_w_007_left__topcow_mr_017
+        - case_w_007_left__topcow_mr_021_L
+        - case_w_013_right__topcow_mr_011
+        - case_w_013_right__topcow_mr_013_L
+        - case_w_013_right__topcow_mr_021_L
+        - case_w_017_right__topcow_mr_011
+        - case_w_025_right__topcow_mr_016_L
+        - case_w_025_right__topcow_mr_021_L
+        - case_w_033_left__topcow_mr_011_L
+        - case_w_033_left__topcow_mr_016
+        episodes_between_change: 1
+        seed: 12344
+        visu_mesh_paths:
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        - null
+        start_point_offset: 2
+        rcca_name: Centerline curve - RCCA.mrk
+    devices:
+    -   _class: eve.intervention.device.jshaped.JShaped
+        _id: 130585389931728
+        name: mic_guide
+        velocity_limit: !!python/tuple
+        - 30
+        - 1.5
+        length: 900
+        tip_radius: 12.1
+        tip_angle: 1.2566370614359172
+        tip_outer_diameter: 0.36
+        tip_inner_diameter: 0
+        straight_outer_diameter: 0.36
+        straight_inner_diameter: 0.36
+        poisson_ratio: 0.49
+        young_modulus_tip: 1000.0
+        young_modulus_straight: 1000.0
+        mass_density_tip: 5.0e-06
+        mass_density_straight: 5.0e-06
+        visu_edges_per_mm: 0.5
+        collis_edges_per_mm_tip: 2
+        collis_edges_per_mm_straight: 0.1
+        beams_per_mm_tip: 1.4
+        beams_per_mm_straight: 0.6
+        color: !!python/tuple
+        - 0.0
+        - 0.0
+        - 0.0
+    -   _class: eve.intervention.device.jshaped.JShaped
+        _id: 130585383768272
+        name: mic_cath
+        velocity_limit: !!python/tuple
+        - 30
+        - 1.5
+        length: 900
+        tip_radius: 12.1
+        tip_angle: 1.2566370614359172
+        tip_outer_diameter: 0.6
+        tip_inner_diameter: 0.57
+        straight_outer_diameter: 0.7
+        straight_inner_diameter: 0.57
+        poisson_ratio: 0.49
+        young_modulus_tip: 1000.0
+        young_modulus_straight: 1000.0
+        mass_density_tip: 5.0e-06
+        mass_density_straight: 5.0e-06
+        visu_edges_per_mm: 0.5
+        collis_edges_per_mm_tip: 2
+        collis_edges_per_mm_straight: 0.1
+        beams_per_mm_tip: 1.4
+        beams_per_mm_straight: 0.6
+        color: !!python/tuple
+        - 1.0
+        - 0.0
+        - 0.0
+    simulation:
+        _class: eve.intervention.simulation.sofabeamadapter.SofaBeamAdapter
+        _id: 130585383770240
+        friction: 0.001
+        dt_simulation: 0.006
+    fluoroscopy:
+        _class: eve.intervention.fluoroscopy.trackingonly.TrackingOnly
+        _id: 130585383768128
+        simulation:
+            _class: eve.intervention.simulation.sofabeamadapter.SofaBeamAdapter
+            _id: 130585383770240
+        vessel_tree:
+            _class: eve.intervention.vesseltree.topbrainanatomyset.TopBrainAnatomySet
+            _id: 130585389930912
+        image_frequency: 7.5
+        image_rot_zx:
+        - 20
+        - 5
+        image_center:
+        - 0
+        - 0
+        - 0
+        field_of_view: null
+    target:
+        _class: eve.intervention.target.centerlinerandom.CenterlineRandom
+        _id: 130585383769232
+        vessel_tree:
+            _class: eve.intervention.vesseltree.topbrainanatomyset.TopBrainAnatomySet
+            _id: 130585389930912
+        fluoroscopy:
+            _class: eve.intervention.fluoroscopy.trackingonly.TrackingOnly
+            _id: 130585383768128
+        threshold: 5
+        branches:
+        - Centerline curve - RCCA.mrk
+        min_distance_between_possible_targets: null
+        min_arclength_from_start: 133.0
+    stop_device_at_tree_end: true
+    normalize_action: false
+    velocity_limit_low:
+    -   - -30.0
+        - -1.5
+    -   - -30.0
+        - -1.5
+observation:
+    _class: eve.observation.obsdict.ObsDict
+    _id: 130585389799456
+    observations:
+        tracking:
+            _class: eve.observation.wrapper.memory.Memory
+            _id: 130585445235056
+            wrapped_obs:
+                _class: eve.observation.meshinvariant.TipRelativeTracking2D
+                _id: 130585445234960
+                wrapped_obs:
+                    _class: eve.observation.tracking2d.Tracking2D
+                    _id: 130585445235344
+                    intervention:
+                        _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+                        _id: 130585389931104
+                    n_points: 10
+                    resolution: 15
+                    name: tracking2d
+                delta_scale_mm: 4.0
+                offset_scale_mm: 135.0
+                name: tracking2d
+            n_steps: 2
+            reset_mode: 0
+            name: tracking2d
+        target:
+            _class: eve.observation.meshinvariant.TargetTipOffset2D
+            _id: 130585389798496
+            intervention:
+                _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+                _id: 130585389931104
+            clip_mm: 50.0
+            name: target_offset2d
+            target_coord3d: null
+        last_action:
+            _class: eve.observation.wrapper.normalize.Normalize
+            _id: 130585389798640
+            wrapped_obs:
+                _class: eve.observation.lastaction.LastAction
+                _id: 130585389798544
+                intervention:
+                    _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+                    _id: 130585389931104
+                name: last_action
+            name: last_action
+        guidance:
+            _class: eve.observation.localguidance.LocalGuidance
+            _id: 130585389800080
+            intervention:
+                _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+                _id: 130585389931104
+            pathfinder:
+                _class: eve.pathfinder.fixedpath.FixedPathfinder
+                _id: 130585445234144
+                intervention:
+                    _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+                    _id: 130585389931104
+            name: local_guidance
+            path_context: null
+        heur_action:
+            _class: eve.observation.wrapper.normalize.Normalize
+            _id: 130585389799072
+            wrapped_obs:
+                _class: eve.observation.observation.Observation
+                _id: 130585389798976
+            name: heur_action
+        privileged:
+            _class: eve.observation.meshinvariant.PrivilegedState
+            _id: 130585389798880
+            intervention:
+                _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+                _id: 130585389931104
+            name: privileged
+            path_context: null
+    name: observation_dict
+reward:
+    _class: eve.reward.combination.Combination
+    _id: 130585389799792
+    rewards:
+    -   _class: eve.reward.targetreached.TargetReached
+        _id: 130585389799552
+        intervention:
+            _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+            _id: 130585389931104
+        factor: 3.0
+        interim_target:
+            _class: eve.interimtarget.dummy.Dummy
+            _id: 130585389799648
+        final_only_after_all_interim: false
+    -   _class: eve.reward.arclengthprogress.ArcLengthProgress
+        _id: 130585389799744
+        intervention:
+            _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+            _id: 130585389931104
+        pathfinder:
+            _class: eve.pathfinder.fixedpath.FixedPathfinder
+            _id: 130585445234144
+        progress_factor: 0.01
+        lateral_penalty_factor: 0.001
+        path_context: null
+        tip_mode: avg
+        avg_gw_weight: 0.5
+terminal:
+    _class: eve.terminal.targetreached.TargetReached
+    _id: 130585389799888
+    intervention:
+        _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+        _id: 130585389931104
+truncation:
+    _class: eve.truncation.maxsteps.MaxSteps
+    _id: 130585389801040
+    max_steps: 600
+info:
+    _class: eve.info.combination.Combination
+    _id: 130585389932304
+    infos:
+    -   _class: eve.info.targetreached.TargetReached
+        _id: 130585389799408
+        intervention:
+            _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+            _id: 130585389931104
+        name: success
+    -   _class: eve.info.pathratio.PathRatio
+        _id: 130585389800752
+        pathfinder:
+            _class: eve.pathfinder.fixedpath.FixedPathfinder
+            _id: 130585445234144
+        name: path_ratio
+    -   _class: eve.info.steps.Steps
+        _id: 130585389800608
+        name: steps
+    -   _class: eve.info.avgtranslationspeed.AverageTranslationSpeed
+        _id: 130585389930096
+        intervention:
+            _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+            _id: 130585389931104
+        name: average translation speed
+    -   _class: eve.info.trajectorylength.TrajectoryLength
+        _id: 130585389932352
+        intervention:
+            _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+            _id: 130585389931104
+        name: trajectory length
+start:
+    _class: eve.start.insertionpoint.InsertionPoint
+    _id: 130585445236688
+    intervention:
+        _class: eve.intervention.monoplanestatic.MonoPlaneStatic
+        _id: 130585389931104
+pathfinder:
+    _class: eve.pathfinder.fixedpath.FixedPathfinder
+    _id: 130585445234144
+interim_target:
+    _class: eve.interimtarget.dummy.Dummy
+    _id: 130585389931344
+visualisation:
+    _class: eve.visualisation.dummy.Dummy
+    _id: 130585389931632

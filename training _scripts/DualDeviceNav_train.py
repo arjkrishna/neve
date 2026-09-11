@@ -76,7 +76,7 @@ TOPBRAIN_DIR = "/opt/eve_training/topbrain_data/anatomies"
 HEATUP_STEPS = 2e4  # 20k steps
 TRAINING_STEPS = 2e7
 CONSECUTIVE_EXPLORE_EPISODES = 100
-EXPLORE_STEPS_BTW_EVAL = 2.5e5
+EXPLORE_STEPS_BTW_EVAL = float(os.environ.get("EVE_RL_EVAL_EVERY", 2.5e5))
 
 
 GAMMA = 0.99

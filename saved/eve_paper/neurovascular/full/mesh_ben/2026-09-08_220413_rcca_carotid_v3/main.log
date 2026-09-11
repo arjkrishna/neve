@@ -1,0 +1,448 @@
+2026-09-08 22:04:54,287 - step_logger_train_130586192575552 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:04:59,433 - step_logger_eval_130585445341024 - INFO - === BenchEnv5 initialized (mode=eval, visualisation=False) ===
+2026-09-08 22:05:12,790 - step_logger_train_130589340204336 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:05:29,272 - step_logger_train_130585177178656 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:05:46,544 - step_logger_train_130585034498256 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:06:02,989 - step_logger_train_130585131054608 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:06:19,564 - step_logger_train_130585171515664 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:06:36,116 - step_logger_train_130584994168112 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:06:52,666 - step_logger_train_130585172305808 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:07:08,541 - step_logger_train_130589340270448 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:07:25,033 - step_logger_train_130585025645296 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:07:40,979 - step_logger_train_130589340204288 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:07:57,108 - step_logger_train_130585171240464 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:08:13,690 - step_logger_train_130584891582112 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:08:29,900 - step_logger_train_130585171240800 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:08:46,387 - step_logger_train_130585026641392 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:09:02,845 - step_logger_train_130585025711696 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:09:19,200 - step_logger_train_130584920452160 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:09:24,194 - util.agent - INFO - Synchron Agent initialized
+2026-09-08 22:09:24,325 - eve_rl.runner.runner - INFO - Episode summary will be logged to /opt/eve_training/results/eve_paper/neurovascular/full/mesh_ben/2026-09-08_220413_rcca_carotid_v3/diagnostics/csv/episode_summary.jsonl
+2026-09-08 22:09:24,410 - util.agent - DEBUG - heatup (amount/limit): steps 20000.0/None | episodes None/None | custom_action_low=[[-9.0, -0.44999999999999996], [-9.0, -0.44999999999999996]]/custom_action_high=[[9.0, 0.44999999999999996], [9.0, 0.44999999999999996]]
+2026-09-08 22:25:40,101 - util.agent - DEBUG - heatup: steps=20190 >= step_limit=20000 or episodes=53 >= episode_limit=inf. Setting time limit for workers to finish to 180s
+2026-09-08 22:28:40,244 - util.agent - WARNING - Restaring Agent worker_13 because of Timeout
+2026-09-08 22:28:40,245 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-08 22:29:28,792 - step_logger_train_130589295206608 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:29:33,429 - util.agent - WARNING - Restaring Agent worker_14 because of Timeout
+2026-09-08 22:29:33,430 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-08 22:29:50,413 - step_logger_train_130585178652384 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 22:29:55,101 - util.agent - INFO - heatup     : 1230.8s |  22.9 steps/s |   28210 steps /   53 episodes | Total:    28210 steps /    53 episodes
+2026-09-08 22:29:55,102 - eve_rl.runner.runner - INFO - Set 33 probe states for diagnostics
+2026-09-08 22:29:55,640 - eve_rl.runner.runner - INFO - Saved probe states to /opt/eve_training/results/eve_paper/neurovascular/full/mesh_ben/2026-09-08_220413_rcca_carotid_v3/diagnostics/probes/probe_states.npz
+2026-09-08 22:29:55,641 - eve_rl.runner.runner - INFO - Post-pretrain BASELINE eval (explore=0) — held-out quality of the pretrained policy before any online learning.
+2026-09-08 22:29:55,641 - util.agent - DEBUG - evaluate (amount/limit): steps None/None | episodes None/None | len(seeds)=98/options=None
+2026-09-08 23:13:29,705 - util.agent - INFO - evaluation : 2614.2s |  20.4 steps/s |   53331 steps /   97 episodes | Total:    53331 steps /    97 episodes
+2026-09-08 23:13:29,811 - eve_rl.runner.runner - INFO - Quality: 0.5, Reward: 1.491550977940614, Exploration steps: 0
+2026-09-08 23:13:30,456 - eve_rl.runner.runner - INFO - Saved replay buffer incrementally (+28210 new transitions) at eval #1
+2026-09-08 23:13:30,457 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 0.0/None
+2026-09-08 23:50:08,102 - util.agent - DEBUG - exploration: steps=42394 >= step_limit=inf or episodes=100 >= episode_limit=100. Setting time limit for workers to finish to 180s
+2026-09-08 23:53:08,221 - util.agent - WARNING - Restaring Agent worker_3 because of Timeout
+2026-09-08 23:53:08,222 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-08 23:53:57,566 - step_logger_train_130585038080992 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 23:54:03,153 - util.agent - WARNING - Restaring Agent worker_10 because of Timeout
+2026-09-08 23:54:03,154 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-08 23:54:17,110 - step_logger_train_130589335183072 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 23:54:22,120 - util.agent - WARNING - Restaring Agent worker_12 because of Timeout
+2026-09-08 23:54:22,122 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-08 23:54:39,216 - step_logger_train_130585171565872 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-08 23:54:43,950 - util.agent - INFO - update / exploration:   1.6/2473.6 s |   0.0/ 20.1 steps/s |     0/ 49603 steps, 100 episodes |      0/  49603 steps total,   100 episodes total
+2026-09-08 23:54:44,420 - util.agent - INFO - NET_SYNC ok #1 fp=ae5944b16d42 update=0
+2026-09-08 23:54:46,365 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 10000 (current=49603)
+2026-09-08 23:54:46,367 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 20000 (current=49603)
+2026-09-08 23:54:46,368 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 30000 (current=49603)
+2026-09-08 23:54:46,369 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 40000 (current=49603)
+2026-09-08 23:54:46,369 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 49603.0/None
+2026-09-09 00:38:02,804 - util.agent - DEBUG - exploration: steps=91427 >= step_limit=inf or episodes=200 >= episode_limit=200. Setting time limit for workers to finish to 180s
+2026-09-09 00:41:04,501 - util.agent - WARNING - Restaring Agent worker_0 because of Timeout
+2026-09-09 00:41:04,502 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:42:28,726 - step_logger_train_130584992925632 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:42:40,215 - util.agent - WARNING - Restaring Agent worker_1 because of Timeout
+2026-09-09 00:42:40,217 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:43:10,358 - step_logger_train_130585025336416 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:43:19,287 - util.agent - WARNING - Restaring Agent worker_2 because of Timeout
+2026-09-09 00:43:19,293 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:43:43,095 - step_logger_train_130585025711984 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:43:49,350 - util.agent - WARNING - Restaring Agent worker_3 because of Timeout
+2026-09-09 00:43:49,353 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:44:10,400 - step_logger_train_130584891457296 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:44:15,982 - util.agent - WARNING - Restaring Agent worker_7 because of Timeout
+2026-09-09 00:44:15,987 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:44:35,430 - step_logger_train_130585159262272 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:44:41,243 - util.agent - WARNING - Restaring Agent worker_8 because of Timeout
+2026-09-09 00:44:41,244 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:44:59,931 - step_logger_train_130583457543696 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:45:05,568 - util.agent - WARNING - Restaring Agent worker_9 because of Timeout
+2026-09-09 00:45:05,570 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:45:23,279 - step_logger_train_130585005556544 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:45:28,790 - util.agent - WARNING - Restaring Agent worker_10 because of Timeout
+2026-09-09 00:45:28,791 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:45:46,839 - step_logger_train_130585153835600 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:45:52,956 - util.agent - WARNING - Restaring Agent worker_11 because of Timeout
+2026-09-09 00:45:52,958 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:46:11,297 - step_logger_train_130585159826496 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:46:17,714 - util.agent - WARNING - Restaring Agent worker_12 because of Timeout
+2026-09-09 00:46:17,716 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:46:35,131 - step_logger_train_130585140406112 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:46:40,113 - util.agent - WARNING - Restaring Agent worker_14 because of Timeout
+2026-09-09 00:46:40,114 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:46:57,903 - step_logger_train_130589247461120 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:47:03,200 - util.agent - WARNING - Restaring Agent worker_15 because of Timeout
+2026-09-09 00:47:03,205 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 00:47:21,276 - step_logger_train_130585161751328 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 00:51:41,657 - util.agent - INFO - update / exploration: 3415.5/3160.7 s |  14.5/ 15.2 steps/s | 49603/ 48018 steps, 100 episodes |  49603/  97621 steps total,   200 episodes total
+2026-09-09 00:51:41,711 - util.agent - INFO - NET_SYNC ok #2 fp=adeec099f70e update=49603
+2026-09-09 00:51:44,082 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 50000 (current=97621)
+2026-09-09 00:51:44,085 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 60000 (current=97621)
+2026-09-09 00:51:44,086 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 70000 (current=97621)
+2026-09-09 00:51:44,088 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 80000 (current=97621)
+2026-09-09 00:51:44,089 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 90000 (current=97621)
+2026-09-09 00:51:44,090 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 48018.0/None
+2026-09-09 01:39:55,031 - util.agent - DEBUG - exploration: steps=143263 >= step_limit=inf or episodes=300 >= episode_limit=300. Setting time limit for workers to finish to 180s
+2026-09-09 01:42:55,795 - util.agent - WARNING - Restaring Agent worker_0 because of Timeout
+2026-09-09 01:42:55,798 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 01:44:10,031 - step_logger_train_130585025997936 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 01:44:20,801 - util.agent - WARNING - Restaring Agent worker_3 because of Timeout
+2026-09-09 01:44:20,803 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 01:44:45,405 - step_logger_train_130584891582304 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 01:44:51,884 - util.agent - WARNING - Restaring Agent worker_4 because of Timeout
+2026-09-09 01:44:51,886 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 01:45:12,197 - step_logger_train_130582902588656 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 01:45:17,938 - util.agent - WARNING - Restaring Agent worker_5 because of Timeout
+2026-09-09 01:45:17,939 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 01:45:39,311 - step_logger_train_130584991818032 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 01:45:45,621 - util.agent - WARNING - Restaring Agent worker_8 because of Timeout
+2026-09-09 01:45:45,623 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 01:46:03,542 - step_logger_train_130583479888240 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 01:46:08,460 - util.agent - WARNING - Restaring Agent worker_11 because of Timeout
+2026-09-09 01:46:08,465 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 01:46:26,791 - step_logger_train_130582897421184 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 01:46:32,230 - util.agent - WARNING - Restaring Agent worker_12 because of Timeout
+2026-09-09 01:46:32,237 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 01:46:49,632 - step_logger_train_130584993947808 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 01:46:55,145 - util.agent - WARNING - Restaring Agent worker_15 because of Timeout
+2026-09-09 01:46:55,149 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 01:47:13,733 - step_logger_train_130585026580592 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 01:50:58,887 - util.agent - INFO - update / exploration: 3555.2/3335.1 s |  13.5/ 15.9 steps/s | 48018/ 52953 steps, 100 episodes |  97621/ 150574 steps total,   300 episodes total
+2026-09-09 01:50:58,946 - util.agent - INFO - NET_SYNC ok #3 fp=3507cc803722 update=97621
+2026-09-09 01:51:00,886 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 100000 (current=150574)
+2026-09-09 01:51:00,888 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 110000 (current=150574)
+2026-09-09 01:51:00,889 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 120000 (current=150574)
+2026-09-09 01:51:00,890 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 130000 (current=150574)
+2026-09-09 01:51:00,891 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 140000 (current=150574)
+2026-09-09 01:51:00,893 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 150000 (current=150574)
+2026-09-09 01:51:00,894 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 52953.0/None
+2026-09-09 02:09:00,187 - util.agent - DEBUG - exploration: steps=164266 >= step_limit=inf or episodes=400 >= episode_limit=400. Setting time limit for workers to finish to 180s
+2026-09-09 02:12:00,276 - util.agent - WARNING - Restaring Agent worker_0 because of Timeout
+2026-09-09 02:12:00,287 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 02:13:11,488 - step_logger_train_130585177600304 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 02:13:18,136 - util.agent - WARNING - Restaring Agent worker_1 because of Timeout
+2026-09-09 02:13:18,140 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 02:13:38,347 - step_logger_train_130586143338752 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 02:13:45,178 - util.agent - WARNING - Restaring Agent worker_2 because of Timeout
+2026-09-09 02:13:45,181 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 02:14:08,512 - step_logger_train_130584732909680 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 02:14:14,660 - util.agent - WARNING - Restaring Agent worker_3 because of Timeout
+2026-09-09 02:14:14,665 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 02:14:36,564 - step_logger_train_130584857337568 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 02:14:41,218 - util.agent - WARNING - Restaring Agent worker_4 because of Timeout
+2026-09-09 02:14:41,220 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 02:14:58,019 - step_logger_train_130584857668768 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 02:15:02,998 - util.agent - WARNING - Restaring Agent worker_11 because of Timeout
+2026-09-09 02:15:03,003 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 02:15:19,920 - step_logger_train_130585001835056 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 02:15:25,253 - util.agent - WARNING - Restaring Agent worker_12 because of Timeout
+2026-09-09 02:15:25,254 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 02:15:41,411 - step_logger_train_130583447870432 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 02:15:46,579 - util.agent - WARNING - Restaring Agent worker_15 because of Timeout
+2026-09-09 02:15:46,584 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 02:16:03,407 - step_logger_train_130584858901328 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 02:37:54,072 - util.agent - INFO - update / exploration: 2813.4/1507.5 s |  18.8/ 13.0 steps/s | 52953/ 19560 steps, 100 episodes | 150574/ 170134 steps total,   400 episodes total
+2026-09-09 02:37:54,120 - util.agent - INFO - NET_SYNC ok #4 fp=315cc2b5f3d1 update=150574
+2026-09-09 02:37:55,884 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 160000 (current=170134)
+2026-09-09 02:37:55,886 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 170000 (current=170134)
+2026-09-09 02:37:55,887 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 19560.0/None
+2026-09-09 03:14:23,473 - util.agent - DEBUG - exploration: steps=197537 >= step_limit=inf or episodes=500 >= episode_limit=500. Setting time limit for workers to finish to 180s
+2026-09-09 03:17:23,646 - util.agent - WARNING - Restaring Agent worker_2 because of Timeout
+2026-09-09 03:17:23,648 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:18:30,938 - step_logger_train_130584859490048 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:18:38,982 - util.agent - WARNING - Restaring Agent worker_3 because of Timeout
+2026-09-09 03:18:38,984 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:19:00,784 - step_logger_train_130585036676592 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:19:07,274 - util.agent - WARNING - Restaring Agent worker_4 because of Timeout
+2026-09-09 03:19:07,279 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:19:25,201 - step_logger_train_130585036676352 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:19:30,892 - util.agent - WARNING - Restaring Agent worker_5 because of Timeout
+2026-09-09 03:19:30,895 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:19:44,953 - step_logger_train_130589250660432 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:19:50,625 - util.agent - WARNING - Restaring Agent worker_6 because of Timeout
+2026-09-09 03:19:50,626 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:20:04,984 - step_logger_train_130582904441968 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:20:10,171 - util.agent - WARNING - Restaring Agent worker_7 because of Timeout
+2026-09-09 03:20:10,172 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:20:23,614 - step_logger_train_130582909814720 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:20:28,553 - util.agent - WARNING - Restaring Agent worker_8 because of Timeout
+2026-09-09 03:20:28,556 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:20:41,055 - step_logger_train_130584857849760 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:20:45,756 - util.agent - WARNING - Restaring Agent worker_9 because of Timeout
+2026-09-09 03:20:45,760 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:21:03,948 - step_logger_train_130585153490848 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:21:08,887 - util.agent - WARNING - Restaring Agent worker_11 because of Timeout
+2026-09-09 03:21:08,889 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:21:46,504 - step_logger_train_130584906032176 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:21:51,022 - util.agent - WARNING - Restaring Agent worker_12 because of Timeout
+2026-09-09 03:21:51,025 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:22:03,892 - step_logger_train_130585162257648 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:22:08,616 - util.agent - WARNING - Restaring Agent worker_13 because of Timeout
+2026-09-09 03:22:08,619 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:22:22,445 - step_logger_train_130582852212384 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:22:27,669 - util.agent - WARNING - Restaring Agent worker_14 because of Timeout
+2026-09-09 03:22:27,672 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:22:41,398 - step_logger_train_130584859576256 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:22:46,855 - util.agent - INFO - update / exploration: 1503.5/2691.5 s |  13.0/ 12.7 steps/s | 19560/ 34176 steps, 100 episodes | 170134/ 204310 steps total,   500 episodes total
+2026-09-09 03:22:46,914 - util.agent - INFO - NET_SYNC ok #5 fp=d3a0b43547b3 update=170134
+2026-09-09 03:22:48,701 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 180000 (current=204310)
+2026-09-09 03:22:48,703 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 190000 (current=204310)
+2026-09-09 03:22:48,704 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 200000 (current=204310)
+2026-09-09 03:22:48,705 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 34176.0/None
+2026-09-09 03:42:30,496 - util.agent - DEBUG - exploration: steps=219057 >= step_limit=inf or episodes=600 >= episode_limit=600. Setting time limit for workers to finish to 180s
+2026-09-09 03:45:30,714 - util.agent - WARNING - Restaring Agent worker_0 because of Timeout
+2026-09-09 03:45:30,716 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:45:53,796 - step_logger_train_130584857575776 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:46:00,377 - util.agent - WARNING - Restaring Agent worker_2 because of Timeout
+2026-09-09 03:46:00,379 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:46:22,979 - step_logger_train_130584920336128 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:46:28,297 - util.agent - WARNING - Restaring Agent worker_5 because of Timeout
+2026-09-09 03:46:28,301 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:46:46,142 - step_logger_train_130584857569984 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:46:51,758 - util.agent - WARNING - Restaring Agent worker_9 because of Timeout
+2026-09-09 03:46:51,761 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 03:47:13,151 - step_logger_train_130584857579136 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 03:57:22,463 - util.agent - INFO - update / exploration: 2074.1/1469.4 s |  16.5/ 13.1 steps/s | 34176/ 19233 steps, 100 episodes | 204310/ 223543 steps total,   600 episodes total
+2026-09-09 03:57:22,511 - util.agent - INFO - NET_SYNC ok #6 fp=c810975d2d97 update=204310
+2026-09-09 03:57:24,238 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 210000 (current=223543)
+2026-09-09 03:57:24,240 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 220000 (current=223543)
+2026-09-09 03:57:24,241 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 19233.0/None
+2026-09-09 04:23:59,194 - util.agent - DEBUG - exploration: steps=244037 >= step_limit=inf or episodes=700 >= episode_limit=700. Setting time limit for workers to finish to 180s
+2026-09-09 04:26:59,482 - util.agent - WARNING - Restaring Agent worker_1 because of Timeout
+2026-09-09 04:26:59,483 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:27:48,764 - step_logger_train_130589249138640 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:27:54,736 - util.agent - WARNING - Restaring Agent worker_8 because of Timeout
+2026-09-09 04:27:54,739 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:28:12,152 - step_logger_train_130584900547680 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:28:16,609 - util.agent - WARNING - Restaring Agent worker_10 because of Timeout
+2026-09-09 04:28:16,611 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:28:30,137 - step_logger_train_130585152889088 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:28:34,994 - util.agent - WARNING - Restaring Agent worker_12 because of Timeout
+2026-09-09 04:28:34,997 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:28:47,426 - step_logger_train_130582895494288 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:28:52,236 - util.agent - INFO - update / exploration: 1562.7/1888.1 s |  12.3/ 13.9 steps/s | 19233/ 26310 steps, 100 episodes | 223543/ 249853 steps total,   700 episodes total
+2026-09-09 04:28:52,329 - util.agent - INFO - NET_SYNC ok #7 fp=219c35f27a47 update=223543
+2026-09-09 04:28:54,135 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 230000 (current=249853)
+2026-09-09 04:28:54,137 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 240000 (current=249853)
+2026-09-09 04:28:54,137 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 26310.0/None
+2026-09-09 04:52:45,643 - util.agent - DEBUG - exploration: steps=267658 >= step_limit=inf or episodes=800 >= episode_limit=800. Setting time limit for workers to finish to 180s
+2026-09-09 04:55:45,996 - util.agent - WARNING - Restaring Agent worker_0 because of Timeout
+2026-09-09 04:55:45,998 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:57:05,141 - step_logger_train_130585139827952 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:57:13,260 - util.agent - WARNING - Restaring Agent worker_3 because of Timeout
+2026-09-09 04:57:13,262 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:57:39,646 - step_logger_train_130584915232272 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:57:47,868 - util.agent - WARNING - Restaring Agent worker_4 because of Timeout
+2026-09-09 04:57:47,870 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:58:09,252 - step_logger_train_130585007722208 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:58:15,772 - util.agent - WARNING - Restaring Agent worker_5 because of Timeout
+2026-09-09 04:58:15,775 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:58:34,377 - step_logger_train_130584857335072 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:58:39,525 - util.agent - WARNING - Restaring Agent worker_6 because of Timeout
+2026-09-09 04:58:39,528 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:58:57,908 - step_logger_train_130585133134944 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:59:03,396 - util.agent - WARNING - Restaring Agent worker_8 because of Timeout
+2026-09-09 04:59:03,400 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:59:19,961 - step_logger_train_130584898215504 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:59:25,061 - util.agent - WARNING - Restaring Agent worker_9 because of Timeout
+2026-09-09 04:59:25,064 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 04:59:41,691 - step_logger_train_130585167810176 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 04:59:46,852 - util.agent - WARNING - Restaring Agent worker_10 because of Timeout
+2026-09-09 04:59:46,856 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:00:04,649 - step_logger_train_130582873270832 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:00:09,231 - util.agent - WARNING - Restaring Agent worker_12 because of Timeout
+2026-09-09 05:00:09,233 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:00:26,094 - step_logger_train_130584857641216 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:00:30,707 - util.agent - WARNING - Restaring Agent worker_13 because of Timeout
+2026-09-09 05:00:30,710 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:00:44,051 - step_logger_train_130583450409856 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:00:48,322 - util.agent - WARNING - Restaring Agent worker_14 because of Timeout
+2026-09-09 05:00:48,325 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:01:01,257 - step_logger_train_130584860006768 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:01:05,929 - util.agent - WARNING - Restaring Agent worker_15 because of Timeout
+2026-09-09 05:01:05,932 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:01:19,225 - step_logger_train_130584857644192 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:01:24,106 - util.agent - INFO - update / exploration: 1950.1/1950.0 s |  13.5/ 12.5 steps/s | 26310/ 24300 steps, 100 episodes | 249853/ 274153 steps total,   800 episodes total
+2026-09-09 05:01:24,157 - util.agent - INFO - NET_SYNC ok #8 fp=8a4c6c80014a update=249853
+2026-09-09 05:01:25,905 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 250000 (current=274153)
+2026-09-09 05:01:25,907 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 260000 (current=274153)
+2026-09-09 05:01:25,909 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 270000 (current=274153)
+2026-09-09 05:01:25,937 - util.agent - DEBUG - evaluate (amount/limit): steps None/None | episodes None/None | len(seeds)=98/options=None
+2026-09-09 05:25:52,694 - util.agent - INFO - evaluation : 1466.8s |  12.6 steps/s |   18409 steps /   98 episodes | Total:    71740 steps /   195 episodes
+2026-09-09 05:25:52,938 - eve_rl.runner.runner - INFO - Quality: 0.826530612244898, Reward: 4.368956698591549, Exploration steps: 274153
+2026-09-09 05:25:56,334 - eve_rl.runner.runner - INFO - Saved replay buffer incrementally (+274153 new transitions) at eval #2
+2026-09-09 05:25:56,335 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 24300.0/None
+2026-09-09 05:43:35,023 - util.agent - DEBUG - exploration: steps=288191 >= step_limit=inf or episodes=900 >= episode_limit=900. Setting time limit for workers to finish to 180s
+2026-09-09 05:46:35,330 - util.agent - WARNING - Restaring Agent worker_0 because of Timeout
+2026-09-09 05:46:35,331 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:47:51,106 - step_logger_train_130584859269008 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:47:59,320 - util.agent - WARNING - Restaring Agent worker_2 because of Timeout
+2026-09-09 05:47:59,327 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:48:26,946 - step_logger_train_130585165686096 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:48:34,568 - util.agent - WARNING - Restaring Agent worker_5 because of Timeout
+2026-09-09 05:48:34,573 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:48:57,062 - step_logger_train_130584858673056 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:49:04,766 - util.agent - WARNING - Restaring Agent worker_7 because of Timeout
+2026-09-09 05:49:04,772 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:49:24,550 - step_logger_train_130586150142544 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:49:30,844 - util.agent - WARNING - Restaring Agent worker_8 because of Timeout
+2026-09-09 05:49:30,850 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:49:49,537 - step_logger_train_130582850259648 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:49:54,471 - util.agent - WARNING - Restaring Agent worker_10 because of Timeout
+2026-09-09 05:49:54,473 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:50:11,748 - step_logger_train_130585145815392 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:50:16,384 - util.agent - WARNING - Restaring Agent worker_12 because of Timeout
+2026-09-09 05:50:16,387 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:50:33,291 - step_logger_train_130584857577168 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:50:38,013 - util.agent - WARNING - Restaring Agent worker_13 because of Timeout
+2026-09-09 05:50:38,014 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:50:54,704 - step_logger_train_130585139664256 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:50:59,573 - util.agent - WARNING - Restaring Agent worker_14 because of Timeout
+2026-09-09 05:50:59,579 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 05:51:16,692 - step_logger_train_130585139827472 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 05:53:25,280 - util.agent - INFO - update / exploration: 1649.0/1525.6 s |  14.7/ 13.5 steps/s | 24300/ 20625 steps, 100 episodes | 274153/ 294778 steps total,   900 episodes total
+2026-09-09 05:53:25,331 - util.agent - INFO - NET_SYNC ok #9 fp=d74703691361 update=274153
+2026-09-09 05:53:27,025 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 280000 (current=294778)
+2026-09-09 05:53:27,027 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 290000 (current=294778)
+2026-09-09 05:53:27,027 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 20625.0/None
+2026-09-09 06:09:53,841 - util.agent - DEBUG - exploration: steps=306541 >= step_limit=inf or episodes=1000 >= episode_limit=1000. Setting time limit for workers to finish to 180s
+2026-09-09 06:12:54,528 - util.agent - WARNING - Restaring Agent worker_0 because of Timeout
+2026-09-09 06:12:54,530 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 06:13:53,465 - step_logger_train_130585165693424 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 06:13:58,413 - util.agent - WARNING - Restaring Agent worker_2 because of Timeout
+2026-09-09 06:13:58,416 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 06:14:15,440 - step_logger_train_130583783353216 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 06:14:20,666 - util.agent - WARNING - Restaring Agent worker_3 because of Timeout
+2026-09-09 06:14:20,668 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 06:14:38,126 - step_logger_train_130584917625488 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 06:14:43,297 - util.agent - WARNING - Restaring Agent worker_11 because of Timeout
+2026-09-09 06:14:43,299 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 06:15:00,987 - step_logger_train_130585127700752 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 06:15:06,236 - util.agent - WARNING - Restaring Agent worker_15 because of Timeout
+2026-09-09 06:15:06,239 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 06:15:22,949 - step_logger_train_130584859476320 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 06:16:43,353 - util.agent - INFO - update / exploration: 1396.4/1321.7 s |  14.8/ 13.4 steps/s | 20625/ 17719 steps, 100 episodes | 294778/ 312497 steps total,  1000 episodes total
+2026-09-09 06:16:43,399 - util.agent - INFO - NET_SYNC ok #10 fp=948b62b0c128 update=294778
+2026-09-09 06:16:45,117 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 300000 (current=312497)
+2026-09-09 06:16:45,119 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 310000 (current=312497)
+2026-09-09 06:16:45,120 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 17719.0/None
+2026-09-09 06:57:03,866 - util.agent - DEBUG - exploration: steps=362897 >= step_limit=inf or episodes=1100 >= episode_limit=1100. Setting time limit for workers to finish to 180s
+2026-09-09 07:00:04,218 - util.agent - WARNING - Restaring Agent worker_0 because of Timeout
+2026-09-09 07:00:04,219 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:01:17,152 - step_logger_train_130584858883984 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:01:25,410 - util.agent - WARNING - Restaring Agent worker_1 because of Timeout
+2026-09-09 07:01:25,419 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:01:47,330 - step_logger_train_130585137701888 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:01:54,908 - util.agent - WARNING - Restaring Agent worker_2 because of Timeout
+2026-09-09 07:01:54,911 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:02:10,180 - step_logger_train_130583791120832 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:02:15,081 - util.agent - WARNING - Restaring Agent worker_3 because of Timeout
+2026-09-09 07:02:15,084 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:02:27,723 - step_logger_train_130586149358464 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:02:32,431 - util.agent - WARNING - Restaring Agent worker_4 because of Timeout
+2026-09-09 07:02:32,434 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:02:44,886 - step_logger_train_130582885700368 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:02:49,343 - util.agent - WARNING - Restaring Agent worker_5 because of Timeout
+2026-09-09 07:02:49,347 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:03:02,692 - step_logger_train_130582884368144 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:03:07,231 - util.agent - WARNING - Restaring Agent worker_6 because of Timeout
+2026-09-09 07:03:07,234 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:03:19,532 - step_logger_train_130584857604256 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:03:24,096 - util.agent - WARNING - Restaring Agent worker_7 because of Timeout
+2026-09-09 07:03:24,100 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:03:36,796 - step_logger_train_130584901104496 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:03:41,459 - util.agent - WARNING - Restaring Agent worker_8 because of Timeout
+2026-09-09 07:03:41,462 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:03:53,913 - step_logger_train_130585025614224 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:03:58,182 - util.agent - WARNING - Restaring Agent worker_9 because of Timeout
+2026-09-09 07:03:58,184 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:04:12,071 - step_logger_train_130585161337968 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:04:16,476 - util.agent - WARNING - Restaring Agent worker_11 because of Timeout
+2026-09-09 07:04:16,476 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:04:29,356 - step_logger_train_130584857334496 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:04:33,813 - util.agent - WARNING - Restaring Agent worker_12 because of Timeout
+2026-09-09 07:04:33,814 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:04:46,193 - step_logger_train_130584859576976 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:04:50,908 - util.agent - WARNING - Restaring Agent worker_13 because of Timeout
+2026-09-09 07:04:50,910 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:05:04,031 - step_logger_train_130586149347968 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:05:08,349 - util.agent - WARNING - Restaring Agent worker_14 because of Timeout
+2026-09-09 07:05:08,352 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:05:21,192 - step_logger_train_130582906096992 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:05:25,555 - util.agent - WARNING - Restaring Agent worker_15 because of Timeout
+2026-09-09 07:05:25,558 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:05:38,405 - step_logger_train_130589200709136 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 07:05:43,119 - util.agent - INFO - update / exploration: 1373.6/2938.3 s |  12.9/ 20.0 steps/s | 17719/ 58800 steps, 100 episodes | 312497/ 371297 steps total,  1100 episodes total
+2026-09-09 07:05:43,178 - util.agent - INFO - NET_SYNC ok #11 fp=f9643ca37b66 update=312497
+2026-09-09 07:05:44,909 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 320000 (current=371297)
+2026-09-09 07:05:44,911 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 330000 (current=371297)
+2026-09-09 07:05:44,912 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 340000 (current=371297)
+2026-09-09 07:05:44,913 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 350000 (current=371297)
+2026-09-09 07:05:44,915 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 360000 (current=371297)
+2026-09-09 07:05:44,916 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 370000 (current=371297)
+2026-09-09 07:05:44,917 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 58800.0/None
+2026-09-09 07:49:40,303 - util.agent - DEBUG - exploration: steps=422297 >= step_limit=inf or episodes=1200 >= episode_limit=1200. Setting time limit for workers to finish to 180s
+2026-09-09 07:52:40,743 - util.agent - WARNING - Restaring Agent worker_1 because of Timeout
+2026-09-09 07:52:40,744 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 07:53:34,888 - step_logger_train_130585041044000 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 08:08:15,003 - util.agent - INFO - update / exploration: 3750.9/2875.3 s |  15.7/ 20.9 steps/s | 58800/ 60000 steps, 100 episodes | 371297/ 431297 steps total,  1200 episodes total
+2026-09-09 08:08:15,057 - util.agent - INFO - NET_SYNC ok #12 fp=5528668e1a10 update=371297
+2026-09-09 08:08:16,771 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 380000 (current=431297)
+2026-09-09 08:08:16,773 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 390000 (current=431297)
+2026-09-09 08:08:16,774 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 400000 (current=431297)
+2026-09-09 08:08:16,775 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 410000 (current=431297)
+2026-09-09 08:08:16,776 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 420000 (current=431297)
+2026-09-09 08:08:16,777 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 430000 (current=431297)
+2026-09-09 08:08:16,778 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 60000.0/None
+2026-09-09 08:52:05,358 - util.agent - DEBUG - exploration: steps=480839 >= step_limit=inf or episodes=1300 >= episode_limit=1300. Setting time limit for workers to finish to 180s
+2026-09-09 08:55:05,817 - util.agent - WARNING - Restaring Agent worker_3 because of Timeout
+2026-09-09 08:55:05,819 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 08:56:01,821 - step_logger_train_130586149356592 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 08:56:07,132 - util.agent - WARNING - Restaring Agent worker_8 because of Timeout
+2026-09-09 08:56:07,133 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 08:56:23,352 - step_logger_train_130584857038800 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 09:11:29,030 - util.agent - INFO - update / exploration: 3793.2/2892.5 s |  15.8/ 20.2 steps/s | 60000/ 58542 steps, 100 episodes | 431297/ 489839 steps total,  1300 episodes total
+2026-09-09 09:11:29,073 - util.agent - INFO - NET_SYNC ok #13 fp=4fbb017932ab update=431297
+2026-09-09 09:11:30,940 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 440000 (current=489839)
+2026-09-09 09:11:30,943 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 450000 (current=489839)
+2026-09-09 09:11:30,944 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 460000 (current=489839)
+2026-09-09 09:11:30,945 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 470000 (current=489839)
+2026-09-09 09:11:30,946 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 480000 (current=489839)
+2026-09-09 09:11:30,947 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 58542.0/None
+2026-09-09 09:55:19,095 - util.agent - DEBUG - exploration: steps=530266 >= step_limit=inf or episodes=1400 >= episode_limit=1400. Setting time limit for workers to finish to 180s
+2026-09-09 09:58:19,797 - util.agent - WARNING - Restaring Agent worker_7 because of Timeout
+2026-09-09 09:58:19,798 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 09:59:17,380 - step_logger_train_130583783353168 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 09:59:23,356 - util.agent - WARNING - Restaring Agent worker_8 because of Timeout
+2026-09-09 09:59:23,360 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 09:59:43,988 - step_logger_train_130583783353360 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 09:59:49,068 - util.agent - WARNING - Restaring Agent worker_14 because of Timeout
+2026-09-09 09:59:49,073 - util.agent - DEBUG - Restarting Agent with task=None, step_limit=None and episode_limit=None.
+2026-09-09 10:00:06,182 - step_logger_train_130584858608208 - INFO - === BenchEnv5 initialized (mode=train, visualisation=False) ===
+2026-09-09 10:13:57,370 - util.agent - INFO - update / exploration: 3746.7/2921.0 s |  15.6/ 16.5 steps/s | 58542/ 48246 steps, 100 episodes | 489839/ 538085 steps total,  1400 episodes total
+2026-09-09 10:13:57,418 - util.agent - INFO - NET_SYNC ok #14 fp=c84ed313579a update=489839
+2026-09-09 10:13:59,280 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 490000 (current=538085)
+2026-09-09 10:13:59,283 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 500000 (current=538085)
+2026-09-09 10:13:59,286 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 510000 (current=538085)
+2026-09-09 10:13:59,287 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 520000 (current=538085)
+2026-09-09 10:13:59,289 - eve_rl.runner.runner - INFO - Saved policy snapshot at scheduled step 530000 (current=538085)
+2026-09-09 10:13:59,470 - util.agent - DEBUG - evaluate (amount/limit): steps None/None | episodes None/None | len(seeds)=98/options=None
+2026-09-09 10:49:16,382 - util.agent - INFO - evaluation : 2117.0s |  16.5 steps/s |   34839 steps /   98 episodes | Total:   106579 steps /   293 episodes
+2026-09-09 10:49:16,494 - eve_rl.runner.runner - INFO - Quality: 0.673469387755102, Reward: 2.1562349166551944, Exploration steps: 538085
+2026-09-09 10:49:20,662 - eve_rl.runner.runner - INFO - Saved replay buffer incrementally (+263932 new transitions) at eval #3
+2026-09-09 10:49:20,664 - util.agent - DEBUG - explore (amount/limit): steps None/None | episodes 100/None || update (amount/limit): steps 48246.0/None
