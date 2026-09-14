@@ -184,7 +184,30 @@ CFG = dict(
                                     #           seating takes 8 or 20 steps, which is how the teleport (not the step
                                     #           size) was identified as the cause.
                                     # "off"   : ovoid collision disabled (visual only)
-    ovoid_seat_mm=30.0,             # only used by ovoid_mode="seat"
+    ovoid_seat_mm=30.0,             # only used by ovoid_mode="travel" (see build_schedule: for "seat" the ramp
+                                    # continues from the lag the caps actually have, a full travel behind the flange)
+    tandem_rotation="off",          # "off" = DEFAULT and the CORRECT setting.  Do not use "canal": REFUTED, run G5.
+                                    # The idea was that the 24 deg intrauterine tube sweeps sideways through the
+                                    # vaginal wall under a fixed orientation, so the device should be pushed up the
+                                    # vagina and then angulated onto the canal.  Both halves turned out wrong:
+                                    #  (1) THE DEFECT IS NOT REAL at the seated pose.  The "tube outside the lumen"
+                                    #      count is dominated by EARLY steps when the tandem has not been inserted
+                                    #      yet.  MEASURED on G2, the crossing stations retreat monotonically as the
+                                    #      device advances -- 1-25 at u = 0, 16-27 at u = 0.28, 23-27 at u = 0.56,
+                                    #      station 27 alone at u = 0.70, and NONE from u = 0.85 on.  That is what
+                                    #      insertion looks like, not piercing.
+                                    #  (2) The applicator's 24 deg bend is already built into its GEOMETRY (shaft
+                                    #      down -z, tube up +z), so with the device frame's z on the tube axis the
+                                    #      shaft already lies along the vaginal axis.  Rotating the rigid body to
+                                    #      put the TUBE on the vaginal axis therefore drags the SHAFT 24 deg out of
+                                    #      alignment and levers its tail against the sprung introitus ring
+                                    #      (k 5 mN/mm, the mesh boundary): G5 crushes the vagina at station 0,
+                                    #      min vol ratio -0.740 by step 24 (u = 0.275), where G2 sits at 0.994.
+                                    #      Proximity is not the cause -- G2's shaft comes CLOSER there (0.23 mm vs
+                                    #      0.32) and is fine; the difference is bearing sideways instead of sliding.
+    tandem_rotation_onset=-1.0,     # (only meaningful for the refuted "canal" mode) u at which the angulation
+                                    # starts; < 0 means u_ios (0.406 here), where the tube tip reaches the internal
+                                    # os.  The slerp completes at u = 1, so the final pose is unchanged.
     ovoid_vagina_contact=False,     # The ovoids seat in the vaginal FORNICES, i.e. inside the vaginal lumen, which
                                     # the collapsed-lumen vagina body does not represent (there is no configuration
                                     # in which a 39 mm ovoid sits in the fornix without overlapping that mesh).
@@ -480,6 +503,34 @@ def build_schedule(cfg, tgt):
     for row in sched:
         row["F"] = F_of(row["u"])
         row["T_corpus"] = screw_at(tgt["screw"], row["s"])
+
+    # ---- per-step device ORIENTATION (Stage 2b).  The intrauterine tube sits `angle_deg` = 24 deg off the vaginal
+    # axis, so a FIXED orientation sweeps it sideways through the vaginal wall for the whole travel: MEASURED, the
+    # tube is inside the lumen at only 26 % of (step, station) pairs and outside by up to 24.9 mm.  Clinically the
+    # tandem is pushed up the VAGINA and then angulated onto the cervical canal as the tip enters the os, so the
+    # device axis slerps from the shaft (vaginal) axis onto the tube axis starting at `onset`.  MEASURED on the rest
+    # lumen: onset >= 0.4 gives 100 % containment, and the natural onset is u_ios (0.406), the step at which the tip
+    # reaches the internal os.  The slerp completes at u = 1, so the FINAL pose is bit-identical
+    # (tip = F1 + L_iu * a_tube) and the BT-validated placement is untouched.
+    #   "off"   (default) -> a(u) = a_tube for every row, i.e. exactly the previous constant orientation
+    #   "canal"           -> a(u) = slerp(shaft axis, tube axis, smoothstep((u - onset) / (1 - onset)))
+    rot = cfg.get("tandem_rotation", "off")
+    a_tube = geom.unit(tgt["tube_axis"])
+    a_entry = geom.unit(tgt["axis"]) if rot == "canal" else a_tube
+    onset = float(cfg.get("tandem_rotation_onset", -1.0))
+    if onset < 0.0:
+        onset = float(u_ios)
+    x_ref = np.asarray(tgt["R_rows"], float)[0]
+    a_prev = x_prev = None
+    for row in sched:
+        t = 0.0 if row["u"] <= onset else (row["u"] - onset) / max(1e-9, 1.0 - onset)
+        a_u = geom.unit(geom.slerp(a_entry, a_tube, geom.smoothstep(t)))
+        # parallel transport of the applicator x axis, as geom.pose_path does, so the device does not spin about its
+        # own axis while it angulates
+        x_u = geom.ortho(x_ref, a_u) if a_prev is None else geom.ortho(geom.rot_between(a_prev, a_u) @ x_prev, a_u)
+        row["R_rows"] = np.array([x_u, np.cross(a_u, x_u), a_u])
+        row["tube_axis"] = a_u
+        a_prev, x_prev = a_u, x_u
     return sched
 
 
@@ -645,11 +696,12 @@ def build_scene(root, cfg=None, inp=None):
     def _pobj(p):
         return "%s/%s.obj" % (P["applicator"], pf.get(p, p))
 
+    R0 = np.asarray(sched[0]["R_rows"], float).T        # step-0 orientation; == Rdev when tandem_rotation="off"
     tandem = add_rigid_parts(root, "tandem", [(p, _pobj(p)) for p in TANDEM_PARTS],
-                             dgrp, dcol, rigid_pose(Rdev, F0))
+                             dgrp, dcol, rigid_pose(R0, F0))
     ov_pose = F0 - sched[0]["ov_lag"] * tgt["axis"]
     ovoids = add_rigid_parts(root, "ovoids", [(p, _pobj(p)) for p in OVOID_PARTS],
-                             dgrp, dcol, rigid_pose(Rdev, ov_pose))
+                             dgrp, dcol, rigid_pose(R0, ov_pose))
 
     # ---- couplings and supports
     ctx = dict(root=root, cfg=cfg, inp=inp, tgt=tgt, sched=sched, X0=X0, nodes=nodes, corpus=corp,
@@ -964,8 +1016,9 @@ class HybridController(Sofa.Core.Controller):
         # (1) kinematic bodies
         Tc = np.asarray(r["T_corpus"], float)
         self._set_rigid(c["corpus"], Tc[:3, :3], Tc[:3, 3])
-        self._set_rigid(c["tandem"], c["Rdev"], r["F"])
-        self._set_rigid(c["ovoids"], c["Rdev"], r["F"] - float(r["ov_lag"]) * a)
+        Rr = np.asarray(r["R_rows"], float)             # PER-STEP orientation (constant when rotation is "off")
+        self._set_rigid(c["tandem"], Rr.T, r["F"])      # rigid_pose wants columns = applicator axes, hence .T
+        self._set_rigid(c["ovoids"], Rr.T, r["F"] - float(r["ov_lag"]) * a)
         # (2) velocity scaling (quasi-static relaxation during the settle phase)
         sc = float(cfg["settle_vel_scale"] if r["phase"] == "H" else cfg["motion_vel_scale"])
         if sc != 1.0:
@@ -1048,7 +1101,15 @@ class HybridController(Sofa.Core.Controller):
         if c.get("wall") is not None and finite and Xv is not None:
             a_path = np.asarray(self.tgt["axis"], float)
             Fo = np.asarray(r["F"], float) - float(r["ov_lag"]) * a_path
-            off, rad, st, tt, gap, cont = wall_metrics(c, Xv, r["F"], a_path, Fo, c["Rdev"])
+            # R_rows (ROWS = applicator x, y, z), NOT Rdev.  wall_metrics places device vertices as
+            # `Pw = org + Vp @ R`, the same row convention as animate_hybrid.device_world and run_hybrid.write_frame,
+            # but it was called with Rdev = R_rows.T.  MEASURED on Z7S: the two differ by 17.1 deg and put shaft
+            # vertices 4.52 mm (mean) to 8.94 mm (max) from their true positions, so every device_gap_mm,
+            # ovoid_gap_mm (and its in_contact flag) and containment.r_dev_mm logged before this fix was taken
+            # against a mis-rotated device.  Ground truth for the convention: device_final.json's recorded
+            # ovoid_centres_mm reproduce exactly with R_rows and are 2.897 mm out with R_rows.T.
+            # The SOFA posing was never affected: rigid_pose wants COLUMNS = applicator axes, which Rdev correctly is.
+            off, rad, st, tt, gap, cont = wall_metrics(c, Xv, r["F"], a_path, Fo, np.asarray(r["R_rows"], float))
             j = int(np.argmin(np.abs(tt)))              # the station at the flange level = where shaft/ovoids are
             wallm = dict(lumen_axis_off_mm=dict(max=round(float(off.max()), 3), mean=round(float(off.mean()), 3),
                                                 at_flange=round(float(off[j]), 3), station_at_flange=j),

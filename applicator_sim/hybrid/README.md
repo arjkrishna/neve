@@ -1257,5 +1257,40 @@ The fix is a rotating tandem (`geom.pose_at` already slerps the axis; `build_sch
 three `Rdev` call sites plus the renderers — and `write_frame` already exports `tandem_quat_xyzw` per frame, so the
 data needed is there and only the renderers' use of the static `R_rows` needs changing.
 
+### RETRACTION — the tube-piercing defect is largely NOT REAL, and the fix for it was harmful
+
+Both halves of the paragraph above are wrong, and this section corrects them.
+
+**The defect.** The "tube outside the lumen" statistic is dominated by EARLY steps, when the tandem has simply not
+been inserted yet. MEASURED on `G2`, the stations at which the tube crosses the wall retreat monotonically as the
+device advances:
+
+| step | u | crossing stations |
+|---|---|---|
+| 0 | 0.00 | 1–25 (device still outside the patient) |
+| 24 | 0.28 | 16–27 |
+| 48 | 0.56 | 23–27 |
+| 60 | 0.70 | 27 only |
+| **72+** | **>0.85** | **none** |
+
+**At the seated pose there are zero crossings.** The 26 % / 33.6 % "inside" figures were measuring insertion
+progress, not piercing. The earlier `F1` observation that the tube sat inside NEITHER vagina nor cervix is explained
+the same way — mid-insertion, outside both is exactly where a partly-inserted tandem belongs — and `F1` aborted at
+u = 0.679, so it never reached the state where `G2` shows none.
+
+| # | hypothesis | the test | result |
+|---|---|---|---|
+| 14 | The device keeps one orientation, so the 24 deg tube sweeps through the vaginal wall; rotate the tandem from the vaginal axis onto the tube axis (`tandem_rotation="canal"`) | `G5` = `G2` + rotation, single variable | **FALSE, twice over, and harmful.** The premise fails (see the table above: no crossings at the seated pose). And the mechanism is backwards: the applicator's 24 deg bend is already in its GEOMETRY (shaft down −z, tube up +z), so with the device frame's z on the tube axis the shaft ALREADY lies along the vaginal axis. Rotating the body to put the tube on the vaginal axis drags the SHAFT out of alignment and levers its tail against the sprung introitus ring. `G5` crushes the vagina at **station 0** (the introitus, s = −26.06), min vol ratio **−0.740 by step 24** (u = 0.275), against `G2`'s 0.994. Proximity is not the cause: `G2`'s shaft comes *closer* there (0.23 mm vs 0.32 mm) and is fine — the difference is bearing sideways rather than sliding through axially. The caps are innocent (gaps 4.55/4.68 mm vs 4.62/4.74 mm). `tandem_rotation` stays in the code, documented, defaulting to **"off"**; do not enable it |
+
+**What IS real and is kept: the `wall_metrics` transpose bug.** That function places device vertices as
+`Pw = org + Vp @ R` — the row convention used by `animate_hybrid.device_world` and `run_hybrid.write_frame` — but was
+called with `Rdev = R_rows.T`. Ground truth settles the convention: `device_final.json`'s recorded `ovoid_centres_mm`
+reproduce **exactly** with `R_rows` and are **2.897 mm** out with `R_rows.T`. For this case the two differ by
+**17.1 deg**, putting shaft vertices **4.52 mm (mean) to 8.94 mm (max)** from their true positions. So every
+`device_gap_mm`, `ovoid_gap_mm` (and its `in_contact` flag) and `containment.r_dev_mm` logged before this fix was
+measured against a mis-rotated device — a second, independent reason the logged containment disagreed with the
+polygon test. **The SOFA posing was never affected**: `rigid_pose` wants COLUMNS = applicator axes, which `Rdev`
+correctly is. The simulation was right; only the measurement was wrong.
+
 Note for parallel batches: `F1S` and `F1N` share `vagina_wall_fx40`, so they are run **sequentially**; sibling
 containers sharing a shadow root `meshes/_scene_<dir>/` is the concurrency bug that once truncated `bodies.json`.
