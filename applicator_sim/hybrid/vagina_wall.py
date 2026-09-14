@@ -87,6 +87,14 @@ CFG = dict(
     fornix_smooth_axial=0.8,         # stations  ... and along the axis
     fornix_smooth_iters=4,           # -   passes of max(smooth(r_in), required); only pushes OUTWARD, so it
                                      #     converges and the lumen provably never re-enters the cervix
+    fornix_extend_stations=0,        # -   stations added ABOVE the label's superior end.  Every Stage-2b failure is
+                                     #     the TERMINAL ring, which is at once the thinnest, the most flared, and the
+                                     #     free end with nothing above it to brace against; extending removes the
+                                     #     "terminal" property from the ring that actually carries the ovoid load.
+                                     #     The added tissue is EXTRAPOLATED, not measured: A(s) tapers by
+                                     #     `fornix_extend_taper` toward the apex.  Recorded in meta as
+                                     #     wall.apex_extension, and it costs label fidelity (volumes_cc).
+    fornix_extend_taper=0.25,        # -   A(s) at the topmost added station, as a fraction of the last measured A
     fornix_min_thickness_mm=1.2,     # mm  minimum wall thickness at the FORNIX rays only.  Conserving area exactly
                                      #     while the circumference triples thins the vault onto the 0.8 mm global
                                      #     floor, which slivers (MEASURED: 0.57 deg interior dihedral, 98 of 108
@@ -272,6 +280,25 @@ def build_wall(sec, a, c, e1, e2, cfg, sdf_cervix=None):
     the wall a recess ENCIRCLING the cervix instead of a straight tube driven through it.  Wall tissue area is still
     conserved exactly per station, because r_out = sqrt(r_in^2 + A/pi) gives 1/2 * closed-integral (r_out^2 - r_in^2)
     dtheta = A for ANY r_in(theta)."""
+    # ---- optional APEX EXTENSION above the label (Stage 2b).  The label stops at the fornix, so the topmost ring
+    # is a free edge; adding stations gives the load-carrying ring material above it.  The cervix SDF is defined
+    # above the label, so the extended LUMEN is still measured -- only the wall AREA is extrapolated.
+    n_ext = int(cfg.get("fornix_extend_stations", 0) or 0)
+    ext = dict(stations=0)
+    if n_ext > 0:
+        ds = float(np.mean(np.diff(sec["s"])))
+        taper = np.linspace(1.0, float(cfg["fornix_extend_taper"]), n_ext + 1)[1:]
+        sec = dict(sec)                                  # never mutate the caller's station table
+        sec["s"] = np.r_[sec["s"], sec["s"][-1] + ds * np.arange(1, n_ext + 1)]
+        sec["A_raw"] = np.r_[sec["A_raw"], float(sec["A_raw"][-1]) * taper]
+        sec["c_raw"] = np.vstack([sec["c_raw"], np.tile(sec["c_raw"][-1], (n_ext, 1))])
+        sec["n_vox"] = np.r_[sec["n_vox"], np.zeros(n_ext, int)]
+        ext = dict(stations=n_ext, axial_step_mm=round(ds, 4), taper=float(cfg["fornix_extend_taper"]),
+                   s_added_mm=[round(float(v), 2) for v in sec["s"][-n_ext:]],
+                   note="EXTRAPOLATED, not measured: these stations lie above the vagina label's superior end. "
+                        "Their lumen still follows the cervix SDF, but their wall area is the last measured A(s) "
+                        "tapered by `fornix_extend_taper`. They exist so the ovoid-bearing ring is not a free edge.")
+
     step = float(np.mean(np.diff(sec["s"])))
     A = gsmooth(sec["A_raw"], float(cfg["area_smooth_mm"]) / step)
     cxy = np.stack([gsmooth(sec["c_raw"][:, 0], float(cfg["centre_smooth_mm"]) / step),
@@ -389,6 +416,7 @@ def build_wall(sec, a, c, e1, e2, cfg, sdf_cervix=None):
     flipped = int((v < 0).sum())
     T4[v < 0] = T4[v < 0][:, [0, 2, 1, 3]]
     return dict(P=P, T=T4, C=C, U=U, V=V, Tg=T, grid=gidx, s=sec["s"], A=A, r_in=r_in, r_out=r_out, r0=r0, fornix=fx,
+                apex_extension=ext, sec=sec,
                 n_ax=n_ax, n_th=n_th, n_rd=n_rd, flipped=flipped, cxy=cxy,
                 centre_dev=dict(raw_max_mm=round(dev_raw, 3), smoothed_max_mm=round(dev_sm, 3),
                                 clamp_mm=lim, n_stations_clamped=n_clamped,
@@ -452,6 +480,7 @@ def build_one(r0, args, shared):
     t0 = time.time()
     sec, e1, e2 = label_sections(X, a, c, cfg)
     W = build_wall(sec, a, c, e1, e2, cfg, (shared.get("sdf") or {}).get("cervix"))
+    sec = W["sec"]                               # the apex extension adds stations, so take the table the grid uses
     sets, defs, extra, BF, S = node_sets(W, sec, cfg, shared.get("sdf"))
     P, T = W["P"], W["T"]
 
@@ -557,7 +586,7 @@ def build_one(r0, args, shared):
             r_in_note="r_out_mm / thickness_mm are per-station MEANS over theta (1-D, unchanged schema); the full "
                       "per-ray radii are r_in_theta_mm / r_out_theta_mm.  Wall AREA is conserved exactly per "
                       "station for any r_in(theta) because r_out = sqrt(r_in^2 + A/pi).",
-            fornix=W["fornix"],
+            fornix=W["fornix"], apex_extension=W["apex_extension"],
             frame_u=np.round(W["U"], 6).tolist(), frame_v=np.round(W["V"], 6).tolist(),
             tangent=np.round(W["Tg"], 6).tolist(),
             grid_index=W["grid"].tolist(),
