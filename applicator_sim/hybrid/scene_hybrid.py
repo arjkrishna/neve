@@ -458,16 +458,25 @@ def build_schedule(cfg, tgt):
     for k in range(1, nT + 1):
         u = u_ios + (1.0 - u_ios) * k / nT
         sched.append(dict(phase="T", u=u, s=s_of(u), ov_lag=None))
-    nD = max(0, int(cfg["n_seat"]))
-    seat = float(cfg["ovoid_seat_mm"])
-    for k in range(1, nD + 1):
-        sched.append(dict(phase="D", u=1.0, s=1.0, ov_lag=seat * (1.0 - k / float(nD))))
-    for row in sched:                                  # ovoid lag during P/A/T depends on the mode
-        if row["ov_lag"] is None:
+    for row in sched:                                  # ovoid lag during P/A/T depends on the mode -- resolve it
+        if row["ov_lag"] is None:                      # BEFORE the seating ramp, which must continue from it
             if cfg["ovoid_mode"] == "travel":
                 row["ov_lag"] = 0.0
             else:                                      # "seat"/"off": parked at the u = 0 flange, below the introitus
                 row["ov_lag"] = float((F_of(row["u"]) - F_of(0.0)) @ a)
+    # The seating ramp starts from the lag the caps ACTUALLY have at the end of T, not from `ovoid_seat_mm`.
+    # Parked at F(0) the caps sit a full travel (D mm) behind the flange, so the old ramp -- which started at
+    # ovoid_seat_mm = 30 -- made the lag jump D -> 30 in ONE step and teleported them ~53 mm into the middle of the
+    # vagina.  That is the H4/H5 trapped-vertex failure, and it explains why the interpenetration there was
+    # "identical to 3 decimals whether the seating takes 8 or 20 steps": it was never the step count, it was the
+    # first step.  `ovoid_seat_mm` now only applies to "travel", where the caps ride with the flange and a genuine
+    # trailing offset is what is wanted.
+    nD = max(0, int(cfg["n_seat"]))
+    lag0 = float(sched[-1]["ov_lag"]) if sched else 0.0
+    if cfg["ovoid_mode"] == "travel":
+        lag0 = float(cfg["ovoid_seat_mm"])
+    for k in range(1, nD + 1):
+        sched.append(dict(phase="D", u=1.0, s=1.0, ov_lag=lag0 * (1.0 - k / float(nD))))
     for row in sched:
         row["F"] = F_of(row["u"])
         row["T_corpus"] = screw_at(tgt["screw"], row["s"])

@@ -1198,9 +1198,64 @@ That leaves one route, and it is an architectural decision rather than a tweak:
   reworking — and the wall-vs-lumen distinction that makes containment measurable would have to be recovered some
   other way (nearest-surface classification rather than ring radii).
 
-Until that is decided, **`Z7S` remains the run to quote** for Stage-2a results: it is the only configuration that
-both reaches u = 1.0 and keeps the device loading the tissue. The fornix's own contribution stands on its geometry —
-0 cervix penetration and tube containment once seated — not on a completed run.
+### Two-stage (clinical) insertion — the seating TELEPORT, found and fixed
+
+Clinically the procedure is two-stage: sound, dilate, **tandem through the os into the uterus first**, then the
+vaginal caps into the fornices, then lock, then pack. The tandem and the caps are separate pieces until the lock, so
+translating one welded assembly along a single line is not a simplification of the procedure but a different one.
+
+`build_schedule` had a real bug in the seating ramp. Through P/A/T the caps are parked at `F(0)` — a full travel
+(83 mm) behind the flange, genuinely below the introitus, which was always correct. But the D-phase ramp started
+from `ovoid_seat_mm` = 30, so the lag jumped **82.96 -> 30 in one step and teleported the caps ~53 mm into the middle
+of the vagina**. That is the H4/H5 trapped-vertex failure, and it explains the recorded observation that the
+interpenetration was "identical to 3 decimals whether the seating takes 8 or 20 steps": it was never the step count,
+it was the first step. The ramp now continues from the lag the caps actually have.
+
+| run | seating | steps | u | minV | lumen r mean |
+|---|---|---|---|---|---|
+| `Z7S` | travel (caps embedded throughout) | 111 | 1.000 | 0.216 | 7.00 -> 6.20 |
+| `G2` | **two-stage, 60 steps at 1.38 mm/step** | **171** | **1.000** | **0.507** | 7.00 -> 6.20 |
+| `G1` | two-stage, fornix mesh + tube contact | 59 | 0.679 | −0.048 | 7.84 -> 7.58 |
+
+`G2` is the healthiest run the project has produced (minV 0.507 against `Z7S`'s 0.216) and the lag ramps smoothly
+78.8 -> 67.8 -> 56.7 -> 45.6 -> 34.6 -> 23.5 -> 12.4 -> 1.4 mm. `G1` still aborts in the **T phase, before seating
+begins**, so the fornix failure is the tube/wall interaction and is untouched by how the caps arrive.
+
+### But seating correctly does NOT open the lumen — and why
+
+`G2` widens the lumen by **nothing**: 6.24 -> 6.21 mm across the whole 60-step seating phase, circumferential stretch
+1.000. Delivering the caps cleanly from outside the anatomy changes nothing, because **the caps never enter the
+lumen**. They are 19.7 mm in radius against a 6.2 mm lumen, and 98.6–98.9 % of their vertices sit OUTSIDE the wall:
+they wrap the tube and compress it from outside. The only thing inside the lumen is the 2.18 mm shaft, so nothing
+pushes outward. This is Stage-2a mechanism 2, now confirmed with a clean two-stage arrival rather than a teleport.
+
+The lumen can therefore only open if the stress-free reference is built near the **post-insertion calibre**, so the
+caps are inside it by construction (VAGINA_WALL.md Option 2). A naive uniform inflation does not work:
+
+| # | hypothesis | the test | result |
+|---|---|---|---|
+| 13 | Build the reference lumen at the distended calibre by raising `lumen_r0_mm` | `r18` build (r0 = 18 mm, single variable vs `z7s`) | **FALSE as stated.** Degenerate: interior dihedral **0.09 deg** (z7s 18.46), volume **+39.4 %** vs label, **125 bladder and 124 rectum nodes inside**. Conserving area while inflating r_in drives `r_out = sqrt(r0^2 + A/pi)` so the wall thins onto the 1.20 mm floor at EVERY ray, and a 1.2 mm shell at 18–23 mm radius is degenerate by construction. A uniform r0 also makes the introitus 36 mm wide, which is unphysical and is what engulfs the OARs. Option 2 needs the TAPERED, elliptical profile measured from the seated device (~5.4 mm at stations 17–18 rising to ~25 mm only at the vault), not a uniform inflation |
+
+And even done properly it needs ~21 mm of radial room against the **~11 mm** the per-ray feasibility test found
+available before bladder and rectum — room that exists only if the OARs can move. They are currently frozen
+(`static_bodies`), a Stage-2a decision taken when the bladder was the body that inverted under travel-mode ovoids.
+Run `G3` (same as `G2`, OARs deformable, single variable) tests exactly that, and gates whether Option 2 is reachable.
+
+Until that is settled, **`G2` is the run to quote**: it is the only configuration that reaches u = 1.0, keeps the
+device loading the tissue, and seats the caps the way the procedure does. The fornix's contribution stands on its
+rest-state geometry alone — 0 cervix penetration, the wall no longer buried 5.9 mm in the portio.
+
+**Correction to an earlier claim in this section:** "the tube is contained once seated" was measured with the run
+log's containment rule, which compares the device radius against the ring's MEAN radius. That is meaningless for a
+fornix lumen whose radius spans 7.6–23.0 mm within one station. The polygon test (device section against the lumen
+ring, `animate_lumen.classify`) says the tube **crosses the wall in 26 of 30 frames of `F1`**, clean only in the last
+four, and at the crossing stations it is inside NEITHER the vagina nor the cervix (control-validated ray parity:
+0 of 10, 0 of 6, 0 of 7 at steps 0/20/40). The tube crossing is NOT fixed. Its cause is upstream of the mesh: the
+whole rigid device translates along one straight line at fixed orientation (`F(u) = F1 − (1−u)·D·a`, `Rdev`
+constant), so the tube — 24 deg off the vaginal axis — sweeps laterally across the lumen for the entire travel.
+The fix is a rotating tandem (`geom.pose_at` already slerps the axis; `build_schedule` ignores it), which touches
+three `Rdev` call sites plus the renderers — and `write_frame` already exports `tandem_quat_xyzw` per frame, so the
+data needed is there and only the renderers' use of the static `R_rows` needs changing.
 
 Note for parallel batches: `F1S` and `F1N` share `vagina_wall_fx40`, so they are run **sequentially**; sibling
 containers sharing a shadow root `meshes/_scene_<dir>/` is the concurrency bug that once truncated `bodies.json`.
