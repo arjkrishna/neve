@@ -1390,6 +1390,51 @@ It was previously invisible because the bladder failed first, at u = 0.525. Run 
 variable) tests the apex follow springs, which are what drag the vault after the cervix; `F1N` already showed that
 switching them off *entirely* decouples the vault, so an intermediate value is the untested point.
 
+### GROUND TRUTH: the room for a distended vault exists, and the model is 3x short of finding it
+
+Before spending further on the distended-reference lumen, the right question is not "how much room does the model
+have" but "how much room did the real patient make". The BT scan answers it directly — the applicator is in place,
+so wherever the OARs sit in that scan is where they genuinely ended up around a 39.4 mm assembly.
+
+MEASURED on `BT_MRI_label_*`, radial distance from the BT tandem axis over the cap band (axial 59.8–91.5 mm):
+
+| label | r_min | r_median | r_max |
+|---|---|---|---|
+| ovoid / applicator | 0.2 | 13.8 | **27.3** |
+| vagina | 0.2 | 13.6 | **30.1** |
+| bladder | **25.0** | 54.2 | 78.4 |
+| rectum | **20.5** | 33.6 | 47.3 |
+
+**The real vault opens to ~27–30 mm radius**, with bladder and rectum pushed up against the device at 25.0 and
+20.5 mm but clear of it. So the earlier "radial budget of 6.6 mm" measured in the model is a **model artefact, not an
+anatomical limit**, and a reference lumen of 20–25 mm is what this anatomy actually adopts.
+
+And the displacement required is within reach. Measuring each scan against its own tandem axis over the cap band:
+
+| | preBT r_min | BT r_min | movement required |
+|---|---|---|---|
+| bladder | 11.3 mm | 25.0 mm | **+13.7 mm** |
+| rectum | 5.0 mm | 20.5 mm | **+15.5 mm** |
+| vagina (median) | 7.4 mm | 13.6 mm | the vault nearly doubles |
+
+`G3` already showed the model's bladder displacing **14.66 mm** before it inverted. So the 13.7–15.5 mm the anatomy
+demands is essentially exactly what the solver has been shown capable of — marginal, but not fantasy.
+
+### Apex follow springs: softening helps monotonically, and is not yet enough
+
+With the bladder fixed (`tandem_oar_contact=false`) the vagina became the limiter, failing by the Stage-2a necking
+mechanism at the neck/vault transition. The apex springs are what drag the vault after the cervix:
+
+| run | `k_apex` | u reached | min vol ratio | failing station |
+|---|---|---|---|---|
+| `G7` | 20 mN/mm | 0.881 | **−0.048** (true inversion) | 26, layer 0.75 |
+| `G8` | **5 mN/mm** | **0.929** | **+0.155** (guard trip only) | 27, layer 0.5 |
+
+Softening turns a genuine inversion into a mere `min_vol_ratio_abort` (0.2) trip — nothing inverted at all — and the
+wall does more work: vagina umax 17.50 → 19.13 mm, peak circumferential stretch 1.044 → **1.061**, lumen max
+7.12 → 7.18 mm. Neither run reaches the seating phase. `G9` continues the trend to `k_apex` = 2, with the floor
+established by `F1N`: springs OFF decouples the vault entirely (lumen never opens, shaft ends outside the wall 7/7).
+
 ### Three latent traps for anyone who revisits device rotation
 
 The audit surfaced three things that are harmless only because the device orientation is constant today. Any future
