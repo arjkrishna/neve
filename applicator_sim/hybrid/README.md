@@ -1099,3 +1099,80 @@ The travelling-ovoid route is closed by arithmetic, not by numerics. Two honest 
 Either way the axial necking is physical and will remain; it should be reported normalised, as here. A third, cheaper
 step is to raise `max_settle_steps` and relax `settle_vel_scale` to chase CONTRACT 5 convergence on `Z7S`, which is
 the only gate the winner still misses.
+
+## STAGE 2b — THE FORNIX VAULT (`vagina_wall.py` cfg `fornix`, 2026-09-14)
+
+Why: the Stage-2a wall is a straight round tube whose top stations are driven **through** the cervix. MEASURED: the
+cervix label starts at s = +18.9 mm while the wall ends at s = +27.7 mm, so its top ~9 mm is buried in the portio —
+which is why `wall_outer_exclude` had to drop cervix (−5.9 mm, 107 of 1120 nodes inside), and why the intrauterine
+tube, angled 24 deg off the vaginal axis and excluded from wall contact, had no route out and simply passed through
+the wall. That is the "shaft breaking out of the vagina" in `insertion_Z7S_lumen.mp4`; it is the **tube**, not the
+shaft (the shaft is inside the lumen at every station it reaches).
+
+`fornix=True` replaces the scalar lumen radius by a per-(station, theta) field: every ray is pushed out to the cervix
+surface plus `fornix_clearance_mm`, so the vault becomes a recess **encircling** the portio. Wall area is still
+conserved exactly per station, because `r_out = sqrt(r_in^2 + A/pi)` gives `1/2 * closed-integral (r_out^2 - r_in^2)
+dtheta = A` for any `r_in(theta)`.
+
+### What the fornix achieved
+
+| | Stage 2a (`z7s`) | fornix (`fx40`) |
+|---|---|---|
+| outer nodes inside the cervix | 107 (−5.9 mm) | **0** (+0.19 mm) |
+| apex-to-cervix distance | buried | resting on it, mean 1.37 mm |
+| **tube containment at abort** | passes through the wall | **inside the lumen 6 of 6 stations** |
+| shaft containment | 15/15 | 15/15 |
+| lumen radius reached | 6.0–6.7 mm | **13.6 mm** (reference 7.0) |
+| ovoids in contact | yes, 0.10–0.50 mm | yes, 0.19 mm |
+
+**The tube is contained once seated — but not throughout the approach.** State it with the qualification, because the
+frames do not support the flat claim. `figs/anim/insertion_F1_lumen.mp4` (30 frames, 4.8 s; `animate_lumen.py` through
+a shadow `APPSIM_OUT` whose `meshes` is a junction to `meshes/_scene_vagina_wall_fx40` and `applicator` to
+`applicator_straight` — verified per render: vagina **2240** verts with `fornix: enabled`, shaft **386** verts, i.e.
+the fornix wall and the straight rod, not the Stage-1 solid and the arc). Frames 40 and 58 viewed directly:
+
+- **step 58 (u = 0.68, the abort step):** at S4 (station 25, s = +24 mm) the section verdict is `tube: INSIDE the
+  lumen, r 0.2-4.9 | lumen 11.5 / wall 12.7`, and the logged containment is tube 6/6, shaft 15/15, 0 grazing,
+  0 outside. The S4 cross-section is visibly **not a circle** — an oval with a notch wrapping the portio. That is a
+  vault, and its lumen has opened to **11.5 mm against a 7.0 mm reference**.
+- **step 40 (u = 0.47, mid-approach):** the same station reads `tube: crossing the wall, r 7.1-11.9 | lumen 11.6 /
+  wall 12.8`, with the shaft log at 14 of 17 inside and **3 grazing**. So the tube still crosses the vault wall on
+  the way in and is only fully contained once the cervix has lifted and it has seated.
+
+So the first step of Stage 2b is **met at the seated pose and not before**: the −5.9 mm burial of the wall in the
+portio is gone (0 nodes inside), and the tube ends inside the lumen rather than through the wall, but containment
+during the approach is partial.
+
+### But no fornix run completes: all invert at the terminal apex ring
+
+| run | mesh | vault thickness | tube contact | steps | u | minV | inverted at |
+|---|---|---|---|---|---|---|---|
+| `Z7S` | straight tube | — | no | 111 | **1.000** | 0.216 | — |
+| `F1` | `fx40` | 1.2 mm | **yes** | 59 | 0.679 | −0.049 | station 27, layer 0.5 |
+| `F1B` | `fx40` | 1.2 mm | no | 58 | 0.667 | −0.227 | station 27, layer 0.5 |
+| `F1T` | `fxT18` | 1.8 mm | yes | 55 | 0.632 | −0.688 | station 27, layer 0.25 |
+
+`F1T`'s trace shows the shape of it: vagina `min_vol_ratio` is flat at 0.974 to step 36 (u = 0.418), then
+0.898 → 0.523 → −0.688 over steps 42–54. The vault is healthy for two thirds of the insertion and collapses when the
+**ovoids arrive**. Only 2–4 tets go bad (`n_tets_lt_0p5`), all on the terminal ring.
+
+### Refuted by experiment — do NOT retry these (Stage 2b)
+
+| # | hypothesis | the test | result |
+|---|---|---|---|
+| 6 | Tube contact overloads the vault and causes the abort | `F1B`, tube removed from `wall_contact_parts`, single variable | **FALSE.** `F1B` fails at the SAME element one step earlier and four times deeper (−0.227 vs −0.049). Tube contact slightly *braces* the vault. It is exonerated, and it is what delivers containment |
+| 7 | The azimuthal step in `r_in` slivers the mesh; smooth it / add rays | 7 builds: n_theta 20/32/40, sigma_theta 1.2/2.0/2.5/3.0, sigma_axial 0.8/2.0/3.5, thickness 1.2/1.5 | **PARTLY.** The sub-10-deg count halves (76 → 49) but the MINIMUM interior dihedral is pinned at **3.41–3.85 deg** in all seven. Not the binding defect |
+| 8 | The vault is too thin; thicken it | `fxT18`, fornix thickness 1.2 → 1.8 mm, run `F1T` | **FALSE, and it is worse** — fails 4 steps earlier at minV −0.688, and costs volume (+5.2 % → +12.3 % vs label). Same shape as Stage-2a hypothesis #1: adding material to a flared annulus degrades the elements where they are already distorted |
+| 9 | Cap the flare so the terminal ring is not the widest (`fornix_scan_max_mm` 28 → 16) | `fxT18c` build | **FALSE on geometry, no run needed.** Reintroduces 13 nodes inside the cervix at −3.95 mm — most of the way back to the −5.9 mm defect the fornix exists to fix — for no quality gain (4.57 vs 4.71 deg) |
+
+### Diagnosis and what is open
+
+Every fornix failure is the **terminal apex ring at s = +27.75 mm**, which is simultaneously the thinnest ring, the
+most flared (`r_in` reaching 23.0 mm, the widest in the mesh), the *free end* with no cell above it to brace against,
+and the ring the apex springs pull on (`apex_attach="follow"`, `k_apex` 20 mN/mm, 240 nodes at n_theta = 40). Geometry
+fixes are exhausted; the untested variable is the **boundary condition** — the same shape of answer as Stage 2a, where
+the failing body turned out to be the bladder driven by its own supports rather than the wall itself. Runs `F1S`
+(`k_apex` 2 mN/mm) and `F1N` (`apex_attach="off"`) test exactly that.
+
+Note for parallel batches: `F1S` and `F1N` share `vagina_wall_fx40`, so they are run **sequentially**; sibling
+containers sharing a shadow root `meshes/_scene_<dir>/` is the concurrency bug that once truncated `bodies.json`.

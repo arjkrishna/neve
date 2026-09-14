@@ -79,6 +79,16 @@ CFG = dict(
                                     # tube is excluded by default: it leaves the lumen through the apex into the
                                     # cervical canal, and during the approach it leans up to 19 mm off the vaginal
                                     # axis (24 deg to it), i.e. outside the wall rather than inside the lumen.
+                                    # THAT REASONING HOLDS ONLY FOR A STRAIGHT-TUBE WALL (vagina_wall.py fornix=
+                                    # False).  There the vault has no recess around the portio, so the tube has no
+                                    # route out and, excluded from contact, simply passes THROUGH the wall -- the
+                                    # "shaft breaking out of the vagina" seen in insertion_Z7S_lumen.mp4 (it is the
+                                    # tube above the 24 deg junction, not the shaft: MEASURED, the shaft is inside
+                                    # the lumen at every station it reaches).  With a FORNIX build the vault is an
+                                    # annulus around the cervix and the tube enters the portio where it should, so
+                                    # add "tube" here: contact then makes it DISPLACE the vault wall it touches
+                                    # instead of ghosting through it.  Kept out of the default so every Stage-2a
+                                    # run reproduces byte-identically; set it in the run cfg.
     wall_outer_exclude=["cervix", "rectum"],
                                     # organs the wall's OUTER surface does NOT collide with.  MEASURED at rest
                                     # (vagina_wall.py build, r0 = 5 mm): the volume-conserving ROUND annulus has an

@@ -72,6 +72,26 @@ CFG = dict(
                                      #     VAGINA_WALL.md says "bottom ring(s)", NOT the Stage-1 lowest 15 mm: the
                                      #     device passes through the introitus, so a 15 mm pinned skirt would forbid
                                      #     the lumen from opening exactly where it must.
+    # --- the FORNIX (Stage 2b): wrap the top of the wall AROUND the cervix instead of through it
+    fornix=True,                     # -   True: above the portio the lumen is an ANNULUS around the cervix, so the
+                                     #     vault is a recess encircling the protruding portio and the ovoids have a
+                                     #     real pocket to seat in.  False: the Stage-2a straight round tube, whose
+                                     #     top stations sit INSIDE the cervix (MEASURED: the cervix label starts at
+                                     #     s = +18.9 mm while the wall ends at s = +27.7 mm, so the top ~9 mm of the
+                                     #     tube is buried in the portio -- which is why `wall_outer_exclude` had to
+                                     #     drop cervix, and why the angled intrauterine tube has no route out.
+    fornix_clearance_mm=0.5,         # mm  gap left between the lumen surface and the cervix surface
+    fornix_scan_max_mm=28.0,         # mm  how far out along each ray to look for the cervix
+    fornix_scan_step_mm=0.5,         # mm  ray-march sampling step (cost = n_axial * n_theta * range/step SDF calls)
+    fornix_smooth_theta=1.2,         # rays      Gaussian sigma, circumferential smoothing of the lumen radius
+    fornix_smooth_axial=0.8,         # stations  ... and along the axis
+    fornix_smooth_iters=4,           # -   passes of max(smooth(r_in), required); only pushes OUTWARD, so it
+                                     #     converges and the lumen provably never re-enters the cervix
+    fornix_min_thickness_mm=1.2,     # mm  minimum wall thickness at the FORNIX rays only.  Conserving area exactly
+                                     #     while the circumference triples thins the vault onto the 0.8 mm global
+                                     #     floor, which slivers (MEASURED: 0.57 deg interior dihedral, 98 of 108
+                                     #     sub-10-deg tets at stations 24-27).  Costs a little volume, reported in
+                                     #     volumes_cc; still inside the Stage-2a thickness range 1.05-2.35 mm.
     # --- material (ASSUMED; VAGINA_WALL.md)
     E_vagina_kPa=10.0,               # kPa VAGINA_WALL.md default 10 (Stage 1 used 15 for the solid body)
     nu_vagina=0.45,                  # -
@@ -243,9 +263,15 @@ def label_sections(X, a, c, cfg):
     return dict(s=sk, A_raw=A, c_raw=cxy, n_vox=nv, s_lo=s_lo, s_hi=s_hi), e1, e2
 
 
-def build_wall(sec, a, c, e1, e2, cfg):
+def build_wall(sec, a, c, e1, e2, cfg, sdf_cervix=None):
     """Structured annular mesh: n_theta x (n_radial+1) x n_axial nodes on parallel-transported frames,
-    each hexahedral cell split into 6 tets by the Kuhn rule (conforming, including across the theta seam)."""
+    each hexahedral cell split into 6 tets by the Kuhn rule (conforming, including across the theta seam).
+
+    The lumen radius is per (station, theta), not a single number, so the vault can be a FORNIX: above the portio
+    every ray is pushed out to the cervix surface (`sdf_cervix`) plus `fornix_clearance_mm`, which makes the top of
+    the wall a recess ENCIRCLING the cervix instead of a straight tube driven through it.  Wall tissue area is still
+    conserved exactly per station, because r_out = sqrt(r_in^2 + A/pi) gives 1/2 * closed-integral (r_out^2 - r_in^2)
+    dtheta = A for ANY r_in(theta)."""
     step = float(np.mean(np.diff(sec["s"])))
     A = gsmooth(sec["A_raw"], float(cfg["area_smooth_mm"]) / step)
     cxy = np.stack([gsmooth(sec["c_raw"][:, 0], float(cfg["centre_smooth_mm"]) / step),
@@ -257,12 +283,6 @@ def build_wall(sec, a, c, e1, e2, cfg):
     scale = np.where(d > lim, lim / np.maximum(d, 1e-9), 1.0)
     cxy = cxy * scale[:, None]
     n_clamped = int((scale < 1.0).sum())
-
-    r_in = float(cfg["lumen_r0_mm"])
-    r_out = np.sqrt(r_in ** 2 + A / np.pi)
-    th_min = float(cfg["min_thickness_mm"])
-    thin = (r_out - r_in) < th_min
-    r_out = np.maximum(r_out, r_in + th_min)
 
     C = c[None, :] + sec["s"][:, None] * a[None, :] + cxy[:, 0:1] * e1[None, :] + cxy[:, 1:2] * e2[None, :]
     # rotation-minimising (parallel transport) frames along the centreline
@@ -279,6 +299,71 @@ def build_wall(sec, a, c, e1, e2, cfg):
 
     n_ax, n_th, n_rd = len(C), int(cfg["n_theta"]), int(cfg["n_radial"])
     th = 2.0 * np.pi * np.arange(n_th) / n_th
+    cs, sn = np.cos(th), np.sin(th)
+
+    # ---- the lumen radius, per (station, theta)
+    r0 = float(cfg["lumen_r0_mm"])
+    r_in = np.full((n_ax, n_th), r0)
+    fx = dict(enabled=False, n_rays_on_cervix=0, n_stations_on_cervix=0, first_station=None,
+              clearance_mm=float(cfg["fornix_clearance_mm"]), r_in_max_mm=r0)
+    if cfg.get("fornix", False) and sdf_cervix is not None:
+        # For every ray out of the centreline, the lumen starts where the CERVIX ends: march outward and take the
+        # OUTERMOST crossing of the cervix surface (the portio can be entered and left again on one ray).  Rays that
+        # never meet the cervix keep r0, so the tube below the vault is unchanged and the join is continuous -- the
+        # portio tapers to a point, so its exit radius grows through r0 rather than jumping past it.
+        rs = np.arange(0.0, float(cfg["fornix_scan_max_mm"]) + 1e-9, float(cfg["fornix_scan_step_mm"]))
+        clear = float(cfg["fornix_clearance_mm"])
+        req = np.full((n_ax, n_th), r0)            # the HARD constraint: the lumen may not lie inside the cervix
+        for k in range(n_ax):
+            D = cs[:, None] * U[k][None, :] + sn[:, None] * V[k][None, :]          # (n_th, 3) ray directions
+            pts = C[k][None, None, :] + rs[None, :, None] * D[:, None, :]          # (n_th, n_r, 3)
+            inside = sdf_cervix(pts.reshape(-1, 3)).reshape(n_th, len(rs)) < 0.0
+            hit = inside.any(1)
+            if not hit.any():
+                continue
+            r_exit = rs[np.where(inside, np.arange(len(rs))[None, :], -1).max(1)] + clear
+            upd = hit & (r_exit > req[k])
+            req[k][upd] = r_exit[upd]
+            if upd.any():
+                fx["n_rays_on_cervix"] += int(upd.sum())
+                fx["n_stations_on_cervix"] += 1
+                if fx["first_station"] is None:
+                    fx["first_station"] = int(k)
+
+        def ring_smooth(M, sig):                   # circumferential: tile x3 so the kernel wraps the seam
+            return np.array([gsmooth(np.r_[v, v, v], sig)[n_th:2 * n_th] for v in M])
+
+        # A radial ray-cast is DISCONTINUOUS at the cervix silhouette: MEASURED on this case, r_in stepped by up to
+        # 13 mm between adjacent rays only 3 mm apart, and that is what produced 0.57 deg slivers (108 tets below
+        # 10 deg, 98 of them at the fornix stations).  Smooth the field, but re-impose the constraint every pass:
+        # max(smoothed, required) moves nodes OUTWARD only, so the iteration converges and the lumen can never
+        # re-enter the cervix.  The step becomes a ramp; it does not vanish, because the constraint itself is steep.
+        step0 = float(np.abs(np.diff(np.c_[req, req[:, :1]], axis=1)).max())
+        r_in = req.copy()
+        s_th, s_ax = float(cfg["fornix_smooth_theta"]), float(cfg["fornix_smooth_axial"])
+        for _ in range(int(cfg["fornix_smooth_iters"])):
+            sm = ring_smooth(r_in, s_th) if s_th > 0 else r_in
+            if s_ax > 0:
+                sm = np.array([gsmooth(v, s_ax) for v in sm.T]).T
+            r_in = np.maximum(sm, req)
+        fx["enabled"] = True
+        fx["r_in_max_mm"] = round(float(r_in.max()), 3)
+        fx["max_adjacent_ray_step_mm"] = dict(before=round(step0, 3),
+                                              after=round(float(np.abs(np.diff(np.c_[r_in, r_in[:, :1]],
+                                                                              axis=1)).max()), 3))
+        fx["smoothing"] = dict(sigma_theta_rays=s_th, sigma_axial_stations=s_ax,
+                               iters=int(cfg["fornix_smooth_iters"]),
+                               note="r_in = max(smooth(r_in), required) per pass: outward-only, so the lumen stays "
+                                    "outside the cervix by construction (verified by outer/apex SDF below)")
+
+    r_out = np.sqrt(r_in ** 2 + (A / np.pi)[:, None])
+    th_min = np.full_like(r_in, float(cfg["min_thickness_mm"]))
+    if fx["enabled"]:                            # the vault is thinned by its own circumference: floor it harder
+        th_min[r_in > r0 + 1e-6] = float(cfg["fornix_min_thickness_mm"])
+    thin_th = (r_out - r_in) < th_min
+    thin = thin_th.any(1)                        # per-station flag, as before
+    fx["n_rays_at_thickness_floor"] = int(thin_th.sum())
+    r_out = np.maximum(r_out, r_in + th_min)
 
     def nid(k, m, j):
         return (k * (n_rd + 1) + m) * n_th + (j % n_th)
@@ -287,8 +372,8 @@ def build_wall(sec, a, c, e1, e2, cfg):
     gidx = np.zeros((len(P), 3), int)            # (axial, radial layer, theta) of every node
     for k in range(n_ax):
         for m in range(n_rd + 1):
-            r = r_in + (r_out[k] - r_in) * m / float(n_rd)
-            ring = C[k][None, :] + r * (np.cos(th)[:, None] * U[k][None, :] + np.sin(th)[:, None] * V[k][None, :])
+            r = r_in[k] + (r_out[k] - r_in[k]) * m / float(n_rd)                   # (n_th,)
+            ring = C[k][None, :] + r[:, None] * (cs[:, None] * U[k][None, :] + sn[:, None] * V[k][None, :])
             for j in range(n_th):
                 P[nid(k, m, j)] = ring[j]
                 gidx[nid(k, m, j)] = (k, m, j)
@@ -303,7 +388,7 @@ def build_wall(sec, a, c, e1, e2, cfg):
     v = tet_volumes(P, T4)
     flipped = int((v < 0).sum())
     T4[v < 0] = T4[v < 0][:, [0, 2, 1, 3]]
-    return dict(P=P, T=T4, C=C, U=U, V=V, Tg=T, grid=gidx, s=sec["s"], A=A, r_in=r_in, r_out=r_out,
+    return dict(P=P, T=T4, C=C, U=U, V=V, Tg=T, grid=gidx, s=sec["s"], A=A, r_in=r_in, r_out=r_out, r0=r0, fornix=fx,
                 n_ax=n_ax, n_th=n_th, n_rd=n_rd, flipped=flipped, cxy=cxy,
                 centre_dev=dict(raw_max_mm=round(dev_raw, 3), smoothed_max_mm=round(dev_sm, 3),
                                 clamp_mm=lim, n_stations_clamped=n_clamped,
@@ -366,7 +451,7 @@ def build_one(r0, args, shared):
     X, a, c = shared["X"], shared["a"], shared["c"]
     t0 = time.time()
     sec, e1, e2 = label_sections(X, a, c, cfg)
-    W = build_wall(sec, a, c, e1, e2, cfg)
+    W = build_wall(sec, a, c, e1, e2, cfg, (shared.get("sdf") or {}).get("cervix"))
     sets, defs, extra, BF, S = node_sets(W, sec, cfg, shared.get("sdf"))
     P, T = W["P"], W["T"]
 
@@ -401,7 +486,9 @@ def build_one(r0, args, shared):
               "meta.surface_obj_vertex_to_tet_node[k]\n%s\nunits mm; derived from labels (local only)" % FRAME)
     write_vtk_legacy(d + "/tets.vtk", P, T, "vagina wall tetrahedra, %s" % FRAME)
 
-    thick = W["r_out"] - W["r_in"]
+    thick = (W["r_out"] - W["r_in"]).ravel()     # r_in/r_out are (n_axial, n_theta) since the fornix landed
+    r_in_st, r_out_st = W["r_in"].mean(1), W["r_out"].mean(1)      # per-station means keep meta's 1-D schema
+    thick_st = r_out_st - r_in_st
     meta = dict(
         body=BODY, priority=3, source_label="vagina", frame=FRAME, units="mm; volumes cc; angles deg",
         role="deformable HOLLOW WALL around a lumen (Stage 2a): the device travels up the lumen and the wall "
@@ -463,8 +550,14 @@ def build_one(r0, args, shared):
             lumen_r0_mm=cfg["lumen_r0_mm"], E_vagina_kPa=cfg["E_vagina_kPa"], nu_vagina=cfg["nu_vagina"],
             s=np.round(sec["s"], 4).tolist(), area_mm2=np.round(W["A"], 4).tolist(),
             area_raw_mm2=np.round(sec["A_raw"], 4).tolist(), n_vox_per_station=sec["n_vox"].tolist(),
-            r_out_mm=np.round(W["r_out"], 4).tolist(), thickness_mm=np.round(thick, 4).tolist(),
+            r_out_mm=np.round(r_out_st, 4).tolist(), thickness_mm=np.round(thick_st, 4).tolist(),
             thickness_stats=stats(thick), centreline=np.round(W["C"], 4).tolist(),
+            r_in_theta_mm=np.round(W["r_in"], 4).tolist(),        # (n_axial, n_theta): the FORNIX lumen, per ray
+            r_out_theta_mm=np.round(W["r_out"], 4).tolist(),
+            r_in_note="r_out_mm / thickness_mm are per-station MEANS over theta (1-D, unchanged schema); the full "
+                      "per-ray radii are r_in_theta_mm / r_out_theta_mm.  Wall AREA is conserved exactly per "
+                      "station for any r_in(theta) because r_out = sqrt(r_in^2 + A/pi).",
+            fornix=W["fornix"],
             frame_u=np.round(W["U"], 6).tolist(), frame_v=np.round(W["V"], 6).tolist(),
             tangent=np.round(W["Tg"], 6).tolist(),
             grid_index=W["grid"].tolist(),
