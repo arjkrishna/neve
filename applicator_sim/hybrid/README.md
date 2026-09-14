@@ -1169,10 +1169,24 @@ during the approach is partial.
 
 Every fornix failure is the **terminal apex ring at s = +27.75 mm**, which is simultaneously the thinnest ring, the
 most flared (`r_in` reaching 23.0 mm, the widest in the mesh), the *free end* with no cell above it to brace against,
-and the ring the apex springs pull on (`apex_attach="follow"`, `k_apex` 20 mN/mm, 240 nodes at n_theta = 40). Geometry
-fixes are exhausted; the untested variable is the **boundary condition** — the same shape of answer as Stage 2a, where
-the failing body turned out to be the bladder driven by its own supports rather than the wall itself. Runs `F1S`
-(`k_apex` 2 mN/mm) and `F1N` (`apex_attach="off"`) test exactly that.
+and the ring the apex springs pull on (`apex_attach="follow"`, `k_apex` 20 mN/mm, 240 nodes at n_theta = 40).
+
+| # | hypothesis | the test | result |
+|---|---|---|---|
+| 10 | The apex springs drag the free flared edge and buckle it; soften or remove them | `F1S` (`k_apex` 2 mN/mm) and `F1N` (`apex_attach="off"`), single variable each vs `F1` | **FALSE, and `F1N` is a FALSE POSITIVE.** `F1S` collapses on the same trajectory (vagina min vol ratio 0.649 → 0.474 → 0.246 → 0.148 over four steps) and is merely caught by `min_vol_ratio_abort` = 0.2 at a still-positive value — the same failure one step sooner, not graceful degradation. `F1N` *does* reach u = 1.0, but only by DECOUPLING the vault: the cervix travels as far as ever (umean **20.25** mm vs `Z7S` 20.33) while the vagina barely moves (umean **3.25** vs 10.12), the lumen radius stays flat at 7.84 → 7.79 mm for all 111 steps (**it never opens**), and the shaft ends **outside the wall at 7 of 7 stations**. It completes because nothing ever loads it |
+
+**Stage 2b verdict so far: the fornix achieves its geometric goal and cannot survive the ovoids arriving.** Zero
+cervix penetration, tube contained once seated, lumen opening to 13.6 mm — but every configuration that actually
+loads the vault fails at the terminal ring around u = 0.62–0.68, and the only configuration that completes does so by
+decoupling the vault from the anatomy. Five fixes have been refuted by measurement (#6–#10); the remaining routes are
+structural rather than parametric, and are a decision rather than a tweak:
+
+1. **Unstructured (TetGen) vagina**, meshed from the label minus the cervix, abandoning the structured annulus. Costs
+   the ring/station parameterisation that `wall_metrics`, the containment logging and `animate_lumen.py` all depend on.
+2. **Hyperelastic material** for the vault (`TetrahedronHyperelasticityFEMForceField`, already named in
+   VAGINA_WALL.md as the intended law) instead of linear corotational tets, which are in the locking regime here.
+3. **Brace the terminal ring** by extending the mesh one or two stations above the label, so the apex is not a free
+   flared edge — the only remaining *geometric* idea not yet refuted.
 
 Note for parallel batches: `F1S` and `F1N` share `vagina_wall_fx40`, so they are run **sequentially**; sibling
 containers sharing a shadow root `meshes/_scene_<dir>/` is the concurrency bug that once truncated `bodies.json`.
