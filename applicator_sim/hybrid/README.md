@@ -1432,8 +1432,36 @@ mechanism at the neck/vault transition. The apex springs are what drag the vault
 
 Softening turns a genuine inversion into a mere `min_vol_ratio_abort` (0.2) trip — nothing inverted at all — and the
 wall does more work: vagina umax 17.50 → 19.13 mm, peak circumferential stretch 1.044 → **1.061**, lumen max
-7.12 → 7.18 mm. Neither run reaches the seating phase. `G9` continues the trend to `k_apex` = 2, with the floor
-established by `F1N`: springs OFF decouples the vault entirely (lumen never opens, shaft ends outside the wall 7/7).
+7.12 → 7.18 mm. Neither run reaches the seating phase.
+
+`G9` (`k_apex` = 2) is the **first deformable-OAR run to reach the seated pose**: 102 steps, u = **1.000**,
+`reached_final_pose: True`, and it enters the seating phase for **16 of 60 steps**. The full series:
+
+| run | `k_apex` | u | min vol ratio | seating | lumen max | peak circ stretch |
+|---|---|---|---|---|---|---|
+| `G2` (frozen OARs) | 20 | 1.000 | 0.507 | 60/60 | 6.98 | 1.005 |
+| `G7` | 20 | 0.881 | −0.048 | none | 7.12 | 1.044 |
+| `G8` | 5 | 0.929 | +0.155 | none | 7.18 | 1.061 |
+| **`G9`** | **2** | **1.000** | **+0.118** | **16/60** | **7.20** | **1.064** |
+
+**But the lever is exhausted and the seating phase collapses.** Over those 16 D steps the vagina's min volume ratio
+falls 0.754 → 0.118 with the per-step decline *steepening monotonically* — −0.018, −0.024, −0.044, −0.064, −0.093,
+**−0.117**. That rules out loosening the 0.2 guard: it would buy one or two steps before genuine inversion, not a
+completed run. And `F1N` fixes the floor at the other end (springs off ⇒ the vault decouples entirely).
+
+Two things the trace settles:
+
+1. **The caps are still 60.8 mm from seated when it dies** (`ov_lag` 81.6 → 60.8 of 83 mm), so the collapse is *not*
+   the caps loading the wall — they never reach it. It is the wall stretched between a lifted cervix and a sprung
+   introitus. Vaginal expansion therefore remains **untested**, not disproved: the lumen moves 6.32 → 6.33 mm
+   (+0.1 %) over a seating phase that stops a quarter of the way in.
+2. **Station 27, layer 0.5 is the failing tet at every step from 80 onward**, across both phases. That is the
+   **terminal ring** — the third independent context in this stage where whichever ring is terminal is the one that
+   fails (cf. #12 apex extension, #14 rotation crushing station 0). The pattern points at the structured annulus's
+   free ends, not at any parameter.
+
+**Caveat on method:** the `k_apex` sweep 20 → 5 → 2 mN/mm is uncalibrated tuning against an abort gate, not a fitted
+measurement. It should be reported as such, and none of these values is a claim about tissue.
 
 ### Three latent traps for anyone who revisits device rotation
 
