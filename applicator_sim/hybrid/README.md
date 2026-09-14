@@ -1285,12 +1285,42 @@ u = 0.679, so it never reached the state where `G2` shows none.
 **What IS real and is kept: the `wall_metrics` transpose bug.** That function places device vertices as
 `Pw = org + Vp @ R` — the row convention used by `animate_hybrid.device_world` and `run_hybrid.write_frame` — but was
 called with `Rdev = R_rows.T`. Ground truth settles the convention: `device_final.json`'s recorded `ovoid_centres_mm`
-reproduce **exactly** with `R_rows` and are **2.897 mm** out with `R_rows.T`. For this case the two differ by
-**17.1 deg**, putting shaft vertices **4.52 mm (mean) to 8.94 mm (max)** from their true positions. So every
-`device_gap_mm`, `ovoid_gap_mm` (and its `in_contact` flag) and `containment.r_dev_mm` logged before this fix was
-measured against a mis-rotated device — a second, independent reason the logged containment disagreed with the
-polygon test. **The SOFA posing was never affected**: `rigid_pose` wants COLUMNS = applicator axes, which `Rdev`
-correctly is. The simulation was right; only the measurement was wrong.
+reproduce **exactly** with `R_rows` and are **2.897 mm** out with `R_rows.T`. So every `device_gap_mm`,
+`ovoid_gap_mm` (and its `in_contact` flag) and `containment.r_dev_mm` logged before this fix was measured against a
+mis-rotated device — a second, independent reason the logged containment disagreed with the polygon test.
+**The SOFA posing was never affected**: `rigid_pose` wants COLUMNS = applicator axes, which `Rdev` correctly is.
+The simulation was right; only the measurement was wrong.
+
+A 7-agent audit (4 file audits + 3 adversarial passes) independently confirmed this and measured it **worse** than the
+first estimate: the two placements differ by 17.1 deg, displacing **tube vertices up to 18.37 mm (mean 11.21)**,
+shaft up to 9.01 mm and ovoid_L up to 8.54 mm — against a lumen radius of 4.2–5.0 mm. It verified the row convention
+against five independent call sites (`run_hybrid._dev_world`, `vagina_wall._dev_world`, `eval_hybrid.app_landmarks`,
+`animate_hybrid.device_world`, and `pose.json device_final.convention`). **The retraction above is unaffected**: it
+rests on `animate_lumen`'s polygon test, which places device geometry through `animate_hybrid.device_world` with
+`index.json`'s `R_rows` — verified against the same ground truth: it reproduces the recorded cap centres to
+**2.8e-5 mm**, which is the rounding floor of the stored values (`device_final.json` rounds to 4 decimals), against
+**2.897 mm** for the transposed placement. So the retraction was measured with the correct convention.
+
+### Three latent traps for anyone who revisits device rotation
+
+The audit surfaced three things that are harmless only because the device orientation is constant today. Any future
+attempt to vary it must handle all three:
+
+1. **The canal dilation tie latches.** `HybridController` builds the dilation cylinder from `self.tgt["tube_axis"]`
+   — the FINAL tube direction — against the CURRENT flange, and `self.eng_step[new] = self.k` records which cervix
+   canal nodes are engaged the first time they fall inside it. During A and early T a rotating tube is up to 24 deg
+   away from that axis (up to ~25 mm lateral at the tip over L_iu = 61.8 mm), so the wrong nodes latch and the error
+   is **irreversible**; the only log evidence is `n_canal_ties`.
+2. **`ov_lag` is a world-frame scalar.** The ovoid origin is `F − ov_lag · a` along the world-constant path axis.
+   That is equivalent to the true device-frame offset ONLY because the device never rotates.
+3. **Flange-pinned vs tip-pinned rotation is invisible to every end-state check.** Rotating about the flange swings
+   the tip through `L_iu · sin 24 deg` ≈ 25 mm; pinning the tip swings the flange and both ovoids. Both satisfy
+   `R(1) = R_rows` and `F(1) = F1`, so the final pose is identical either way and only the INTERMEDIATE stations
+   differ — which is precisely what such a change exists to alter. `geom.pose_at` (tip-pinned:
+   `F(u) = tip(u) − L_iu·a(u)`) is the repo's existing precedent. `G5` was **flange-pinned**, which swings the
+   shaft's tail laterally into the sprung introitus ring — the exact mechanism that crushed it. So refutation #14 is
+   refined rather than overturned: flange-pinned rotation is harmful, and tip-pinned was never tested. Since the
+   defect it targeted is itself retracted, there is no reason to test it.
 
 Note for parallel batches: `F1S` and `F1N` share `vagina_wall_fx40`, so they are run **sequentially**; sibling
 containers sharing a shadow root `meshes/_scene_<dir>/` is the concurrency bug that once truncated `bodies.json`.
