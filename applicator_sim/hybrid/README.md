@@ -1352,6 +1352,44 @@ room, and deformable OARs die on a rod that should never have touched them.
 The minimal fix follows the model's own logic: the tube is already excluded from vagina/cervix/corpus because it
 travels through unmeshed lumens. The same argument applies to the OARs.
 
+**CONFIRMED by run `G7`** (= `G3` with `tandem_oar_contact=false`, single variable). Excluding the tube from
+bladder/rectum/sigmoid fixes the bladder outright and moves the limiter one link down the chain:
+
+| run | OARs | steps | u | worst body | bladder umax | ms/step |
+|---|---|---|---|---|---|---|
+| `G3` | deformable | 46 | 0.525 | **bladder 0.155** | 14.66 mm | 10 301 |
+| `G4` | deformable, nu 0.45 | 35 | 0.394 | bladder 0.176 | 8.79 mm | 8 468 |
+| **`G7`** | **deformable, tube\|OAR off** | **76** | **0.881** | **vagina −0.048** (bladder **0.924**) | **3.94 mm** | **5 226** |
+
+The bladder goes from failing (0.155) to healthy (**0.924**), its displacement falls 14.66 → 3.94 mm because it is no
+longer dragged onto the rod, and the solve **halves in cost** (10.3 → 5.2 s/step) as the spurious contacts vanish.
+The run reaches u = 0.881 instead of 0.525. This is the first time deformable OARs have been viable, which is the
+precondition for the distended-reference-lumen route to expansion.
+
+The vagina is also worked harder than in any previous deformable run — umax 8.52 → **17.50 mm**, peak circumferential
+stretch 1.010 → **1.044**, lumen max 7.05 → 7.12 mm — but it still does not open (mean 7.00 → 6.43) and the run
+aborts before the seating phase, with the **vagina** now the failing body.
+
+**And the new failure is the OLD mechanism, not the device.** At `G7`'s abort nothing is pressing on the wall: the
+shaft is cleanly inside the lumen (14/14, 0 embedded, 0 outside), the parked caps are 3.14 mm away and *receding*
+(`ov_lag` 73.1 mm), the bladder is healthy at 0.924 and the rectum untouched at 1.000. What fails is stations
+**25–26, layer 0.75** (the outer layer at the neck/vault transition), degrading over ~13 steps
+0.952 → 0.921 → 0.808 → 0.618 → −0.048. The state at failure:
+
+| | |
+|---|---|
+| per-station circumferential stretch | **0.88–0.90** through the mid-vagina, 1.04 at station 26 |
+| lumen axis drift at the vault | **6.23 mm** off the device axis (`station_at_flange` 27) |
+| cardinal ligament stretch | **7.62 mm** |
+| mean circumferential stretch | 0.923 (i.e. net **compression**) |
+
+This is Stage-2a's **confirmed mechanism 1** reappearing: the cervix lifts the vault (vagina umax 17.50 mm) against a
+sprung introitus, the tube stretches axially and necks radially to 0.88, and the vault is simultaneously dragged
+6.2 mm off-axis — so the outer layer shears at the boundary between the necked mid-section and the displaced vault.
+It was previously invisible because the bladder failed first, at u = 0.525. Run `G8` (`k_apex` 20 → 5 mN/mm, single
+variable) tests the apex follow springs, which are what drag the vault after the cervix; `F1N` already showed that
+switching them off *entirely* decouples the vault, so an intermediate value is the untested point.
+
 ### Three latent traps for anyone who revisits device rotation
 
 The audit surfaced three things that are harmless only because the device orientation is constant today. Any future
