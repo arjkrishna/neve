@@ -1,0 +1,91 @@
+[
+ {
+  "tag": "D0_R1_legacy",
+  "cfg": {
+   "E_kPa": 30.0,
+   "nu": 0.45,
+   "cell_mm": 4.0,
+   "mapped_children": true,
+   "kappa_f_mN_per_mm3": 0.01,
+   "kappa_lig_mN_per_mm3": 0.1,
+   "lig_h_min_mm": 0.0,
+   "lig_h_max_mm": 20.0,
+   "lig_radial_min_mm": 8.0,
+   "k_tie_mN_per_mm": 500.0,
+   "tie_impl": "pyff",
+   "tie_ramp_steps": 3,
+   "lateral_cap_mm_per_step": 1.0,
+   "axial_cap_mm_per_step": 1.0,
+   "tip_push_n_pts": 3,
+   "tip_push_margin_mm": 0.5,
+   "tip_engage_tol_mm": 0.5,
+   "shaft_len_mm": 26.0,
+   "tie_al": "hold",
+   "tie_al_tip": true,
+   "tie_al_clip_mm": 6.0,
+   "tie_al_step_mm": 0.5,
+   "tie_al_relax": 1.0,
+   "tip_patch_radius_mm": 0.0,
+   "k_s_mN_per_mm": 300.0,
+   "contact_omega": 0.7,
+   "contact_candidate_radius_mm": 35.0,
+   "pose": "P2",
+   "d_F_mm": null,
+   "delta_fund_mm": 0.0,
+   "m2": false,
+   "step_mm": 1.0,
+   "max_rot_deg_per_step": 0.5,
+   "phaseA_steps": 5,
+   "phaseA_start_mm": 5.0,
+   "phaseD_steps": 10,
+   "hold_max_steps": 25,
+   "hold_dx_tol_mm": 0.05,
+   "tie_err_mean_tol_mm": 0.3,
+   "tie_err_max_tol_mm": 0.6,
+   "pen_tol_mm": 0.5,
+   "linear_solver": "CGLinearSolver",
+   "cg_iterations": 100,
+   "cg_tolerance": 1e-06,
+   "cg_threshold": 1e-12,
+   "newton_iterations": 1,
+   "hold_newton_iterations": 3,
+   "abs_corr_tol_mm": 0.001,
+   "rel_corr_tol": 0.0001,
+   "abs_res_tol_mN": 0.001,
+   "rel_res_tol": 1e-05,
+   "min_vol_ratio_abort": 0.2,
+   "residual_growth_abort_steps": 3,
+   "max_steps": 260,
+   "wall_limit_s": 540.0,
+   "export_every": 0,
+   "preset": "legacy_v1"
+  }
+ },
+ {
+  "tag": "D1_P2_hexa",
+  "cfg": {
+   "pose": "P2",
+   "fe_impl": "hexa"
+  }
+ },
+ {
+  "tag": "D2_P2_point",
+  "cfg": {
+   "pose": "P2",
+   "tie_group": "point"
+  }
+ },
+ {
+  "tag": "D3_P2_nofillet",
+  "cfg": {
+   "pose": "P2",
+   "canal_fillet_mm": 0.0
+  }
+ },
+ {
+  "tag": "D4_P2_ksum",
+  "cfg": {
+   "pose": "P2"
+  }
+ }
+]

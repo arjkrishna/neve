@@ -1,0 +1,71 @@
+{
+ "note": "stage 1-3 run definitions (parameters only). They were run with the FROZEN code (validation/freeze.json); to rerun them with the current code add \"preset\": \"legacy_v1\" to each cfg.",
+ "source": [
+  "batch_m1b.json",
+  "batch_m1c2.json"
+ ],
+ "jobs": [
+  {
+   "tag": "R1s_P2_S0_cg1e-6",
+   "cfg": {
+    "pose": "P2",
+    "cg_tolerance": 1e-06,
+    "cg_iterations": 100
+   }
+  },
+  {
+   "tag": "R9_P2_S0_step1p5",
+   "cfg": {
+    "pose": "P2",
+    "step_mm": 1.5
+   }
+  },
+  {
+   "tag": "R8_P2_S0_cell3",
+   "cfg": {
+    "pose": "P2",
+    "cell_mm": 3.0
+   }
+  },
+  {
+   "tag": "R1_P2_S0",
+   "cfg": {
+    "pose": "P2"
+   }
+  },
+  {
+   "tag": "R2_P1_S0",
+   "cfg": {
+    "pose": "P1"
+   }
+  },
+  {
+   "tag": "R4_SWEEP_dF07",
+   "cfg": {
+    "pose": "SWEEP",
+    "d_F_mm": 7.0
+   }
+  },
+  {
+   "tag": "R5_SWEEP_dF14",
+   "cfg": {
+    "pose": "SWEEP",
+    "d_F_mm": 14.0
+   }
+  },
+  {
+   "tag": "R6_SWEEP_dF21",
+   "cfg": {
+    "pose": "SWEEP",
+    "d_F_mm": 21.0
+   }
+  },
+  {
+   "tag": "R7_SWEEP_dF22p5",
+   "cfg": {
+    "pose": "SWEEP",
+    "d_F_mm": 22.5
+   }
+  }
+ ]
+}

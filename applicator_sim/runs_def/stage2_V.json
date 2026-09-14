@@ -1,0 +1,88 @@
+{
+ "note": "stage 1-3 run definitions (parameters only). They were run with the FROZEN code (validation/freeze.json); to rerun them with the current code add \"preset\": \"legacy_v1\" to each cfg. Only the last definition of each tag is kept (successive batches superseded earlier ones).",
+ "source": [
+  "batch_v1.json",
+  "batch_v1_status.json",
+  "batch_v2.json",
+  "batch_v3.json",
+  "batch_v3_status.json",
+  "batch_v4.json",
+  "batch_v4_status.json"
+ ],
+ "jobs": [
+  {
+   "tag": "V1_PB_M1_S0",
+   "cfg": {
+    "pose": "PB"
+   }
+  },
+  {
+   "tag": "V2_PB_M2_S0",
+   "cfg": {
+    "pose": "PB",
+    "m2": true,
+    "m2_mode": "travel",
+    "contact_impl": "pyff_surface",
+    "k_s_mN_per_mm": 600.0,
+    "hold_max_steps": 40
+   }
+  },
+  {
+   "tag": "V3_P2_M2_S0",
+   "cfg": {
+    "pose": "P2",
+    "m2": true,
+    "m2_mode": "travel",
+    "contact_impl": "pyff_surface",
+    "k_s_mN_per_mm": 600.0,
+    "hold_max_steps": 40
+   }
+  },
+  {
+   "tag": "V4_PB_M2_soft",
+   "cfg": {
+    "pose": "PB",
+    "m2": true,
+    "m2_mode": "travel",
+    "contact_impl": "pyff_surface",
+    "k_s_mN_per_mm": 600.0,
+    "hold_max_steps": 40,
+    "kappa_f_mN_per_mm3": 0.002,
+    "kappa_lig_mN_per_mm3": 0.02
+   }
+  },
+  {
+   "tag": "V5_P2_M2_soft",
+   "cfg": {
+    "pose": "P2",
+    "m2": true,
+    "m2_mode": "travel",
+    "contact_impl": "pyff_surface",
+    "k_s_mN_per_mm": 600.0,
+    "hold_max_steps": 40,
+    "kappa_f_mN_per_mm3": 0.002,
+    "kappa_lig_mN_per_mm3": 0.02
+   }
+  },
+  {
+   "tag": "V6_PB_M2b_S0",
+   "cfg": {
+    "pose": "PB",
+    "m2": true,
+    "m2_mode": "travel",
+    "contact_candidates": "all",
+    "body_mesh": "pre_bodyvag"
+   }
+  },
+  {
+   "tag": "V7_P2_M2b_S0",
+   "cfg": {
+    "pose": "P2",
+    "m2": true,
+    "m2_mode": "travel",
+    "contact_candidates": "all",
+    "body_mesh": "pre_bodyvag"
+   }
+  }
+ ]
+}
