@@ -208,6 +208,17 @@ CFG = dict(
     tandem_rotation_onset=-1.0,     # (only meaningful for the refuted "canal" mode) u at which the angulation
                                     # starts; < 0 means u_ios (0.406 here), where the tube tip reaches the internal
                                     # os.  The slerp completes at u = 1, so the final pose is unchanged.
+    tandem_oar_contact=True,        # True = DEFAULT and the behaviour of every run so far: the tube and shaft
+                                    # collide with bladder / rectum / sigmoid, because GROUPS makes them disjoint.
+                                    # For the TUBE that is an artefact, not a model: the back-translated start pose
+                                    # puts 47 % of its vertices up to 17.3 mm inside the bladder at u = 0.  Frozen
+                                    # OARs absorb this (0 % by u = 1.0); deformable ones are dragged onto the rod
+                                    # (47 -> 71 -> 83 %) until the bladder inverts, which is what kills G3 and G4 and
+                                    # therefore blocks vaginal expansion, since expansion needs the OARs to move.
+                                    # False -> the parts in `tandem_oar_exclude_parts` also carry the OARs' own ids.
+    tandem_oar_exclude_parts=["tube"],   # which tandem parts stop colliding with the OARs when the flag is off.
+                                    # The SHAFT is deliberately not in this list: it is the vaginal segment, stays
+                                    # low, and its contact with the OARs is physical.  Single variable.
     ovoid_vagina_contact=False,     # The ovoids seat in the vaginal FORNICES, i.e. inside the vaginal lumen, which
                                     # the collapsed-lumen vagina body does not represent (there is no configuration
                                     # in which a 39 mm ovoid sits in the fornix without overlapping that mesh).
@@ -302,6 +313,20 @@ def groups_for(cfg):
     carries 21 plus the private id of each organ in `wall_outer_exclude`.
     """
     g = {k: list(v) for k, v in cfg.get("collision_groups", GROUPS).items()}
+    # The intrauterine tube is excluded from vagina (10), cervix (11) and corpus (9) because it travels inside
+    # unmeshed lumens -- but it is DISJOINT from bladder [4] and rectum/sigmoid [3], so it collides with all three.
+    # That is the wrong way round, and it is not harmless.  MEASURED (ray-parity, control-validated): the
+    # back-translated start pose puts 47 % of the tube's vertices up to 17.3 mm INSIDE the bladder at u = 0, because
+    # tube_axis leans anteriorly and "anterior and low" 83 mm back along the path is the bladder, not the canal.
+    # With the OARs frozen this is transient and self-correcting (0 % by u = 1.0), which is why G2 survives; with
+    # them DEFORMABLE the bladder is dragged onto the rod instead -- 47 % -> 71 % -> 83 % -- until it inverts, which
+    # is why G3 and G4 both die on the bladder.  Since expansion needs deformable OARs to make radial room, this
+    # single pair blocks the whole route.  Sharing the OARs' own ids removes exactly those three pairs, nothing else
+    # (3 is shared by rectum and sigmoid, 4 is the bladder's alone, so no organ-organ pair is touched).
+    if not cfg.get("tandem_oar_contact", True):
+        for p in cfg.get("tandem_oar_exclude_parts", ["tube"]):
+            if p in g:
+                g[p] = sorted(set(g[p]) | {3, 4})
     if cfg.get("vagina_model", "solid") != "wall":
         return g
     own = dict(corpus=30, cervix=31, bladder=32, rectum=33, sigmoid=34)

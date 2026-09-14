@@ -1318,6 +1318,40 @@ Identical to reporting precision rather than bit-identical: the 2e-5 mm `dx_max_
 run-to-run solver noise flipping borderline proximity pairs at `alarm_mm`, not an effect of the change. Every
 pre-fix wall-run gap and containment number should be treated as superseded; the physics of those runs stands.
 
+### THE TUBE STARTS 17 mm INSIDE THE BLADDER — and that is what blocks expansion
+
+The retraction above is correct that there are no crossings *at the seated pose*, but it wrongly waved away the
+earlier finding that the tube sat inside NEITHER vagina nor cervix during the approach. That finding is real, and
+chasing it found the mechanism that blocks the whole expansion route.
+
+At u = 0 the tube's tip is ~4 mm below the external os and the 61.8 mm rod runs DOWNWARD from there, so it spans the
+whole vagina while lying 24 deg off the vaginal axis — displacing its lower end by 61.8 · sin 24 deg ≈ **25 mm
+laterally**. It is not "not yet inserted"; it is present at mid-vaginal levels and out in the parametrium. And
+`tube_axis` leans anteriorly (y = +0.1486), correct for an anteverted canal, but back-translated 83 mm along the path
+"anterior and low" is not the uterine canal — it is the **bladder**.
+
+**The contact matrix excludes the tube from exactly the wrong organs.** `tube [9,10,11,21,22]` shares an id with
+`vagina` (22), `cervix` (11) and `corpus` (9), so those are excluded — but `bladder [4,32]`, `rectum [3,33]` and
+`sigmoid [3,34]` are all **disjoint from it, so they collide**. The rod is inert against the organs it was
+deliberately excluded from and fully interacting with the ones nobody considered.
+
+MEASURED (ray-parity point-in-mesh, positive control on each mesh: centroid inside, centroid + 3 mm inside, far
+point outside):
+
+| | u = 0 | mid | end |
+|---|---|---|---|
+| `G2`, bladder **frozen** | 273/578 verts inside (47 %), depth 17.28 mm | — | **0/578 (0 %)** at u = 1.0 |
+| `G3`, bladder **deformable** | 272/578 (47 %), depth 17.27 mm | 409/578 (71 %) | **479/578 (83 %)** at the abort |
+
+With the bladder frozen the bad pose is **transient and self-correcting**: the tube climbs out as the device advances
+and is fully clear by u = 1.0, which is why `G2` survives. With the bladder deformable it **worsens monotonically**:
+free to move, the bladder is dragged onto the rod rather than the rod leaving it, and it inverts. That is precisely
+why `G3` and `G4` both died on the bladder, and why expansion is blocked — expansion needs deformable OARs to make
+room, and deformable OARs die on a rod that should never have touched them.
+
+The minimal fix follows the model's own logic: the tube is already excluded from vagina/cervix/corpus because it
+travels through unmeshed lumens. The same argument applies to the OARs.
+
 ### Three latent traps for anyone who revisits device rotation
 
 The audit surfaced three things that are harmless only because the device orientation is constant today. Any future
