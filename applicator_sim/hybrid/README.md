@@ -1301,6 +1301,23 @@ rests on `animate_lumen`'s polygon test, which places device geometry through `a
 **2.8e-5 mm**, which is the rounding floor of the stored values (`device_final.json` rounds to 4 decimals), against
 **2.897 mm** for the transposed placement. So the retraction was measured with the correct convention.
 
+**Verified that the fix changes the MEASUREMENT and not the SIMULATION** — run `G6`, which is `G2`'s config file
+verbatim on the corrected code, as a two-sided test (identical containment would have meant the fix never took
+effect):
+
+| | `G2` | `G6` | |
+|---|---|---|---|
+| steps / u / min vol ratio | 171 / 1.0000 / 0.5067 | 171 / 1.0000 / 0.5067 | unchanged |
+| per-body displacement, all six | — | — | **diff 0.00e+00** |
+| `min_vol_ratio`, all 171 steps | — | — | **diff 0.00e+00** |
+| `dx_max_mm`, `n_contacts` | — | — | 2e-5 mm, 2 contacts |
+| device_gap_mm shaft / ovoid_L / ovoid_R | 0.302 / 1.333 / 1.234 | **0.579 / 0.672 / 0.841** | **corrected** |
+| shaft containment | in 10/10 | in 11/11 | **corrected** |
+
+Identical to reporting precision rather than bit-identical: the 2e-5 mm `dx_max_mm` and 2-contact differences are
+run-to-run solver noise flipping borderline proximity pairs at `alarm_mm`, not an effect of the change. Every
+pre-fix wall-run gap and containment number should be treated as superseded; the physics of those runs stands.
+
 ### Three latent traps for anyone who revisits device rotation
 
 The audit surfaced three things that are harmless only because the device orientation is constant today. Any future
