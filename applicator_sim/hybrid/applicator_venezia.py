@@ -1279,6 +1279,64 @@ def write_readme(prm, mesh, fit, rule, valid, cmds, v2=None, score=None, label="
     print("[readme] wrote section '%s' into %s" % (README_MARK, fn), flush=True)
 
 
+# ============================================================================ realistic cap size
+def scaled_ovoids(diams):
+    """Write the lunar caps at a REALISTIC assembly diameter, as extra files next to the fitted ones.
+
+    The fitted `ovoid_diam_mm` (39.4 mm) is not a device size.  It was fitted to the BT ovoid label, which is the MRI
+    dark region = device + vaginal packing + susceptibility bloom, and the fit was BOUNDED BELOW AT 30 mm
+    (fit_ovoids bounds), so it could never return a clinical size; only 4.1 of the 23.4 cc label was attributed to
+    packing.  A 39 mm body cannot travel up a vagina whose lumen is ~12-14 mm across, and the resulting simulations
+    had the caps closing around the OUTSIDE of the vaginal tube instead of entering it.
+
+    Each variant multiplies diameter, height, dome height and lateral offset by k = D / D_fit about the cap apex
+    (`ovoid_dz_mm` is kept, so the tube still exits the caps at the flange), and keeps the tilt and the 0.5 mm
+    mid-sagittal slot: the fitted SHAPE is preserved and only its size changes.  Output, in <out>/hybrid/applicator/:
+        ovoid_L_d<D>.obj, ovoid_R_d<D>.obj, ovoids_d<D>.json
+    Select them in a run with cfg device_part_files {"ovoid_L": "ovoid_L_d26", "ovoid_R": "ovoid_R_d26"}.
+    The fitted ovoid_L.obj / ovoid_R.obj are never overwritten, so every earlier run stays reproducible."""
+    stored = json.load(open(APP + "/applicator.json"))
+    rows = []
+    for D in diams:
+        prm = json.loads(json.dumps(stored["params"]))
+        D0 = float(val(prm, "ovoid_diam_mm"))
+        k = float(D) / D0
+        prm["ovoid_diam_mm"]["value"] = float(D)
+        for key in ("ovoid_height_mm", "ovoid_dome_mm", "ovoid_offset_x_mm"):
+            prm[key]["value"] = float(val(prm, key)) * k
+        tag = ("d%g" % D).replace(".", "p")
+        rec = dict(tag=tag, units="mm; " + FRAME_APP, assembly_diam_mm=float(D), fitted_diam_mm=D0, scale=round(k, 5),
+                   params={key: round(float(val(prm, key)), 4) for key in
+                           ("ovoid_diam_mm", "ovoid_height_mm", "ovoid_dome_mm", "ovoid_offset_x_mm", "ovoid_dz_mm",
+                            "ovoid_tilt_deg", "ovoid_gap_mm")},
+                   source="ASSUMED clinical assembly diameter (not measured on this patient: device identity and size "
+                          "are unconfirmed until the RTPLAN / vendor geometry is available); shape = the BT fit, "
+                          "scaled by k = D / D_fit about the cap apex",
+                   select_with='device_part_files {"ovoid_L": "ovoid_L_%s", "ovoid_R": "ovoid_R_%s"}' % (tag, tag))
+        allV = []
+        for side, name in ((-1, "ovoid_L"), (+1, "ovoid_R")):
+            V, F, st = ovoid_mesh(prm, side)
+            fn = "%s/%s_%s.obj" % (APP, name, tag)
+            geom.write_obj(fn, V, F, header="%s of the Venezia-type applicator model, SCALED to a %g mm assembly "
+                                            "(fitted %.2f mm); %s" % (name, D, D0, FRAME_APP))
+            st["file"] = os.path.basename(fn)
+            st["vertex_mean_mm"] = np.round(V.mean(0), 3).tolist()
+            rec[name] = st
+            allV.append(V)
+        A = np.vstack(allV)
+        rec["assembly_extent_mm"] = dict(LR=round(float(np.ptp(A[:, 0])), 2), AP=round(float(np.ptp(A[:, 1])), 2),
+                                         z=round(float(np.ptp(A[:, 2])), 2),
+                                         z_range=[round(float(A[:, 2].min()), 2), round(float(A[:, 2].max()), 2)])
+        rec["volume_cc"] = round(sum(rec[n]["signed_volume_mm3"] for n in ("ovoid_L", "ovoid_R")) / 1000.0, 3)
+        json.dump(rec, open("%s/ovoids_%s.json" % (APP, tag), "w"), indent=1, default=float)
+        rows.append(rec)
+        e = rec["assembly_extent_mm"]
+        print("[ovoids] %-5s  assembly LR %5.1f x AP %5.1f x z %5.1f mm  volume %6.2f cc  (fitted %.1f mm, k %.3f)  "
+              "closed %s/%s" % (tag, e["LR"], e["AP"], e["z"], rec["volume_cc"], D0, k,
+                                rec["ovoid_L"]["closed_oriented"], rec["ovoid_R"]["closed_oriented"]), flush=True)
+    return rows
+
+
 # ============================================================================ main
 def main():
     ap = argparse.ArgumentParser()
@@ -1291,9 +1349,14 @@ def main():
     ap.add_argument("--shaft-line-through", choices=["O_pre", "vagina_axis"], default=None, help="rule v2 line placement (default: best variant)")
     ap.add_argument("--shift-axis", choices=["shaft", "tube"], default=None, help="rule v2 direction of Delta (default: best variant)")
     ap.add_argument("--render3d", action="store_true", help="pyvista render of the meshes (py -3.11)")
+    ap.add_argument("--scaled-ovoids", type=float, nargs="+", default=None, metavar="D",
+                    help="write lunar caps at realistic assembly diameters D mm (e.g. 22 26 30) as ovoid_{L,R}_d<D>.obj; "
+                         "the fitted caps are left untouched")
     a = ap.parse_args()
     if a.render3d:
         render3d(); return
+    if a.scaled_ovoids:
+        scaled_ovoids(a.scaled_ovoids); return
     t0 = time.time()
     for d in (APP, FIGS, LOGS):
         os.makedirs(d, exist_ok=True)
