@@ -271,7 +271,18 @@ CFG = dict(
     attach_impl="attach",           # cervix.interface_corpus <-> rigid-mapped corpus copies:
                                     # "attach" = AttachConstraint | "springs" = stiff RestShapeSprings to the copies
     k_attach_mN_per_mm=2000.0,      # only for attach_impl="springs"
-    canal_tie=True,                 # cervix.canal nodes dilated onto the tube (sliding along the axis)
+    canal_tie=True,
+    canal_tie_mode="dilate",        # "dilate" (unchanged): a canal node inside the tube's axial span is pushed
+                                    #   radially OUT to the tube surface if it lies within the tube radius, and
+                                    #   never pulled in -- the tie only dilates.  "centre": the same nodes are
+                                    #   driven ONTO the tube surface in both directions (bounded per step by
+                                    #   canal_max_offset_mm), so the canal -- and with it the portio and the vault
+                                    #   that follows it -- stays centred on the tube.  MEASURED (G14, seated
+                                    #   pose): with "dilate" the canal nodes near the flange sit 2.5-6.2 mm off
+                                    #   the tube line and the portio ends 6-7 mm anterior of it, which drags the
+                                    #   vault 9-12 mm off the rod line, and the ring crosses the posterior vault
+                                    #   wall.  The tube passes through the external os by definition; "centre"
+                                    #   is that fact as a boundary condition.                 # cervix.canal nodes dilated onto the tube (sliding along the axis)
     k_canal_mN_per_mm=200.0,
     canal_slack_mm=0.0,             # tie radius = r_tandem + slack
     canal_max_offset_mm=0.5,        # the tie target is at most this far from the node's CURRENT position, so the tie
@@ -1224,12 +1235,15 @@ class HybridController(Sofa.Core.Controller):
             inside = (s >= 0.0) & (s <= self.L_iu)              # the tube currently occupies this axial level
             new = inside & (self.eng_step < 0)
             self.eng_step[new] = self.k
-            act = inside & (d < rad)                            # dilate only: never pull tissue inwards
+            centre = cfg.get("canal_tie_mode", "dilate") == "centre"
+            act = inside if centre else (inside & (d < rad))       # dilate only: never pull tissue inwards
             u = np.where(d[:, None] > 1e-9, lat / np.maximum(d, 1e-9)[:, None], _perp(at)[None, :])
-            # target = the node pushed radially out to the tube surface, but at most canal_max_offset_mm away from
-            # where it is now (bounded tie force; the full dilation is reached over several steps)
-            off = np.minimum(rad - d, float(cfg["canal_max_offset_mm"]))
-            tgt = np.where(act[:, None], X + np.maximum(off, 0.0)[:, None] * u, X)
+            # target = the node moved radially to the tube surface, but at most canal_max_offset_mm away from
+            # where it is now (bounded tie force; the full move is reached over several steps).  "dilate" moves
+            # outward only; "centre" also pulls a node that sits beyond the tube radius back onto it.
+            cap = float(cfg["canal_max_offset_mm"])
+            off = np.clip(rad - d, -cap, cap) if centre else np.maximum(np.minimum(rad - d, cap), 0.0)
+            tgt = np.where(act[:, None], X + off[:, None] * u, X)
             ramp = np.clip((self.k - self.eng_step + 1) / float(cfg["tie_ramp_steps"]), 0.0, 1.0)
             kk = np.where(act, float(cfg["k_canal_mN_per_mm"]) * ramp, 0.0)
             c["canal_tgt"].position.value = tgt.tolist()
