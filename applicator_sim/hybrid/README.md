@@ -1737,6 +1737,52 @@ to `applicator_d26s` (default part names → the straight rod and the d26s caps)
   having been 8.7 mm away at step 39.  The packing (the balloon following the wall) lifts away from it with the
   vault; the real packing stays below the ovoids.  Ground truth wants +15.5 mm at the cap band.
 
+### The ring went THROUGH the lower wall in G14 — and stays INSIDE it in G15 (full-length ring-sized lumen)
+
+Asked why the ring "floats outside through the walls", the G14 log was checked station by station during seating:
+a 13 mm ring travelling through a 5–6 mm lumen inside a 7 mm wall has vertices at r = 10–12 mm — outside the
+wall the whole way up — and the wall's circumference never grew (hoop stretch 0.84–0.90, Poisson necking from the
+cervix pull).  The ring only read "inside" at the vault because the vault was pre-built to its size.  Contact
+cannot change that: the device is kinematic, so contact can only ask the wall to yield, and a continuum wall
+cannot yield 2.2× in hoop (it inverts at 1.4× axial).  Real tissue unfolds rugae; it does not stretch.  So the
+opening is *prescribed* — the reference lumen — and what the FEM computes is tissue stress and the organ response.
+The BT scan supports a full-length distension (vagina label 99.9 cc, not just the vault).  The user agreed the
+space has to be fixed whichever way the applicator is driven.
+
+**`vagina_wall_tet26u`**: the ring-sized lumen (14.14 mm = ring 13.14 + 1 mm clearance) from the introitus up,
+fornix kept.  First attempt FOLDED (3.97 deg, 15 inverted prisms, ring counts 37–80 for a nominally uniform
+tube): the label centreline wiggles up to 2.5 mm between 2 mm stations, its curvature radius drops to 15–16 mm
+at stations 23–24, and a 14 mm tube self-intersects on the inside of such a bend (harmless for a 6 mm lumen).
+`centre_dev_max_mm 0` (a straight axis — which is also the device line) gives **21.6 deg, 0 tets < 10 deg,
+0 folds**, 48 nodes per ring, 2756 nodes / 7947 tets, wall 1.2–1.6 mm, volume +21 % vs label.  Rest overlap
+along the whole length: rectum 212 nodes (−8.7 mm), bladder 133 (−7.2 mm).  Balloon start still clear of every
+organ (rectum +0.6 mm), mean travel 11.9 mm, ≤ 0.72 mm per step.
+
+**G15 = G14 + `vagina_wall_tet26u`** (single variable): balloon completes over the full length (mean lumen radius
+3.4 → 14.3 mm; **rectum 10.4 mm at vol ratio 0.47, bladder 8.0 mm at 0.82**), approach and insertion clean
+(shaft inside 12/12), u = 1.0, all 60 seating steps; `abort_inverted_tets` at settle step 3.  ~11 s/step.
+
+| seating step | ring at stations | cap vertices reach | lumen r_in | wall r_out | outside |
+|---|---|---|---|---|---|
+| 136 | 0–4 | 12.6 mm | 12.9–14.1 | 13.9–15.2 | **0** |
+| 146 | 3–9 | 11.8 | 12.8–13.8 | 13.7–14.7 | **0** |
+| 156 | 8–14 | 10.1 | 12.6–13.3 | 13.6–14.2 | **0** |
+| 176 | 17–25 | 7.8 | 12.2–14.8 | 13.3–15.8 | 1 (trailing edge at the station it is leaving) |
+| 185 (seated) | 21–27 | 5.0 at 23–27 | 13.7–15.8 | 15.0–16.9 | 1 (station 21, bottom edge) |
+
+**The ring is inside the vagina from the introitus to the vault** — the first run in which that is true.  The
+wall around the travelling ring is necked, not stretched (hoop 0.84–0.97), because the reference already fits
+the ring; the ring centres itself by contact.  And **the bladder reaches 14.9 mm — the ground-truth
+displacement (+13.7)** — because the full-length lumen pushes it along the whole vagina, not just at the vault.
+
+What still fails is what G14 diagnosed: during T the vault drifts off the rod line with the cervix lift (station
+24: 0.4 → 12.1 mm by the end of T, cervix umax 25.1), the caps then press on the off-centre vault (ovoid gap
+0.42–0.49, in contact), station 26 goes 0.65 → 0.38 → 0.14 through seating and settle, and the run aborts.  The
+rectum is again lost after B (10.4 → 3.5 mm).  **G16 = G15 + `canal_tie_mode "centre"`** (single variable):
+the canal-dilation tie becomes a centring tie — canal nodes within the tube's span are driven ONTO the tube surface
+in both directions (0.5 mm/step, k 200 mN/mm) instead of outward only — so the portio, and the vault that follows
+it, stay on the tube.
+
 ### Commands
 
 ```bash
