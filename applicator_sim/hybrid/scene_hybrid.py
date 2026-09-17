@@ -1257,6 +1257,12 @@ class HybridController(Sofa.Core.Controller):
             c["canal_tgt"].position.value = tgt.tolist()
             c["canal_ff"].stiffness.value = kk.tolist()
             self.n_canal_active = int(act.sum())
+            # canal-to-tube distance of the nodes inside the tube's span: the number that says whether the tube is
+            # IN the canal or beside it (MEASURED G17: the centring tie engaged 0 nodes until u = 0.81 because
+            # every canal node was > tube radius + 3 mm from the tube axis until then)
+            self.canal_d = (dict(n_in_span=int(inside.sum()), min=round(float(d[inside].min()), 3),
+                                 median=round(float(np.median(d[inside])), 3), max=round(float(d[inside].max()), 3))
+                            if inside.any() else dict(n_in_span=0))
         # (3b) cardinal ligaments: cable of natural length cardinal_len_mm to the static lateral anchors
         if c.get("lig_ff") is not None:
             Xl = self.X("cervix")[c["lig_idx"]]
@@ -1425,7 +1431,8 @@ class HybridController(Sofa.Core.Controller):
                    constraint_it=it,
                    constraint_converged=bool(it < int(cfg["gcs_max_it"]) and np.isfinite(err)),
                    lambda_abs_sum=round(lam_sum, 4), lambda_max=round(lam_max, 4),
-                   n_canal_ties=int(self.n_canal_active), cardinal_max_stretch_mm=round(self.lig_ext_max, 4),
+                   n_canal_ties=int(self.n_canal_active), canal_d_mm=getattr(self, "canal_d", None),
+                   cardinal_max_stretch_mm=round(self.lig_ext_max, 4),
                    min_vol_ratio=round(minvol, 4), finite=bool(finite))
         if c.get("balloon") is not None:
             b = c["balloon"]
