@@ -118,6 +118,15 @@ CFG = dict(
     balloon_start_b_mm=2.5,         # mm  AP semi-axis (the preBT slit is ~16 x 8 mm mid-vagina; the start must lie
                                     #     inside the label so it begins clear of the OARs)
     balloon_ease="smoothstep",      # "smoothstep" | "linear" ramp of the balloon from start to rest over n_balloon
+    balloon_drive_wall=False,       # True: during B the WALL's own nodes are driven kinematically along with the
+                                    # balloon, from the same collapsed section (every node's lateral radius scaled
+                                    # by the balloon's start/rest ratio at its station and angle) to the rest shape,
+                                    # velocities zeroed each step; at w = 1 the wall is exactly at rest with zero
+                                    # velocity, so the mechanics from P on are identical to balloon_drive_wall=False.
+                                    # PRESENTATION only: the wall's REST state is the distended reference, so without
+                                    # this the frames show a vagina open from frame 0 and organs pushed by an
+                                    # invisible surface; with it they show the vagina opening from the preBT slit
+                                    # and displacing the organs.  The wall's vol ratio is not checked during B.
     balloon_mode="release",         # what happens to the balloon AFTER phase B:
                                     # "release": it is switched off and the wall's own outer sheet takes the OAR
                                     #   contact over (two-way coupling).  MEASURED (G12): the OARs then RECOIL --
@@ -964,9 +973,35 @@ def _add_balloon(ctx):
     wall_models = [side.tri, side.lin, side.pnt]
     wall_on = list(grp["vagina_outer"] if cfg["wall_collision"] == "split" else grp["vagina"])
     wall_off = sorted(set(wall_on) | {3, 4})
+    W_start = None
+    if cfg.get("balloon_drive_wall", False):
+        # every wall node: lateral radius scaled by (balloon start radius / rest outer radius) at its station and
+        # angle, the outer rest radius interpolated round that station's outer ring; axial coordinate kept
+        Xw = X0["vagina"]
+        kw = g[:, 0]
+        qw = Xw - C[kw]
+        axw = np.einsum("ij,ij->i", qw, Tg[kw])
+        latw = qw - axw[:, None] * Tg[kw]
+        rhow = np.linalg.norm(latw, axis=1)
+        ew = latw / np.maximum(rhow, 1e-9)[:, None]
+        thw = np.arctan2(np.einsum("ij,ij->i", latw, V[kw]), np.einsum("ij,ij->i", latw, U[kw]))
+        scale = np.ones(len(Xw))
+        for kk in range(len(C)):
+            ring = np.nonzero(k == kk)[0]                 # outer nodes of this station (indices into `outer`)
+            if len(ring) < 3:
+                continue
+            o = np.argsort(th[ring])
+            t_r, rho_r, r0_r = th[ring][o], rho[ring][o], r0[ring][o]
+            t_p = np.r_[t_r[-1] - 2 * np.pi, t_r, t_r[0] + 2 * np.pi]      # periodic
+            sel = np.nonzero(kw == kk)[0]
+            rho_o = np.interp(thw[sel], t_p, np.r_[rho_r[-1], rho_r, rho_r[0]])
+            r0_o = np.interp(thw[sel], t_p, np.r_[r0_r[-1], r0_r, r0_r[0]])
+            scale[sel] = np.clip(r0_o / np.maximum(rho_o, 1e-9), 0.0, 1.0)
+        W_start = C[kw] + axw[:, None] * Tg[kw] + (rhow * scale)[:, None] * ew
     ctx["balloon"] = dict(node=nd, models=models, X_start=X_start, X_end=Xo.copy(), idx=outer, g_on=g_on,
                           g_off=g_off, wall_models=wall_models, wall_on=wall_on, wall_off=wall_off,
-                          active=False, released=False, w=0.0, n=nB)
+                          active=False, released=False, w=0.0, n=nB, W_start=W_start, W_cur=None,
+                          drive=bool(W_start is not None))
     ctx["extra"]["balloon"] = dict(n_steps=nB, nodes=int(len(outer)), triangles=int(len(tri)),
                                    start_semi_axes_mm=[A, B],
                                    start_radius_mm=dict(min=round(float(r0.min()), 3), max=round(float(r0.max()), 3)),
@@ -1227,6 +1262,14 @@ class HybridController(Sofa.Core.Controller):
             w = float(geom.smoothstep(t)) if cfg.get("balloon_ease", "smoothstep") == "smoothstep" else t
             b["w"] = w
             b["node"].mo.position.value = (b["X_start"] + w * (b["X_end"] - b["X_start"])).tolist()
+            if b["drive"]:
+                X0w = self.ctx["X0"]["vagina"]
+                b["W_cur"] = b["W_start"] + w * (X0w - b["W_start"])
+                if w >= 1.0:
+                    b["W_cur"] = X0w.copy()             # bit-exact rest at the end of B
+                mo = self.ctx["nodes"]["vagina"].dofs
+                mo.position.value = b["W_cur"].tolist()
+                mo.velocity.value = np.zeros_like(b["W_cur"]).tolist()
         elif b["active"] and cfg.get("balloon_mode", "release") == "follow":
             # the packing: the balloon keeps carrying the OAR contact and copies the wall's outer sheet (end of
             # the previous step); the wall's own outer models stay excluded from the OARs for the whole run
@@ -1246,6 +1289,11 @@ class HybridController(Sofa.Core.Controller):
         r = self.cur
         if not c["tets"]:                               # live-viewer path: cache the topology on the first step
             post_init(c)
+        driven = bool(c.get("balloon") and c["balloon"]["drive"] and r["phase"] == "B" and c["balloon"]["W_cur"] is not None)
+        if driven:                                      # re-impose after the solve, so the frame shows the driven shape
+            mo = c["nodes"]["vagina"].dofs
+            mo.position.value = c["balloon"]["W_cur"].tolist()
+            mo.velocity.value = np.zeros_like(c["balloon"]["W_cur"]).tolist()
         wall = 1000.0 * (time.perf_counter() - self.t_step)
         disp, dx, finite, minvol = {}, 0.0, True, 1.0
         Xv, vrv = None, None
@@ -1265,6 +1313,8 @@ class HybridController(Sofa.Core.Controller):
             dx = max(dx, d if np.isfinite(d) else 1e9)
             if finite and c["tets"].get(b) is not None:
                 vr = _tet_vol(X, c["tets"][b]) / c["vol0"][b]
+                if b == "vagina" and driven:            # a kinematically collapsed wall is not a mechanical state
+                    vr = np.ones_like(vr)
                 disp[b]["min_vol_ratio"] = round(float(vr.min()), 4)
                 minvol = min(minvol, float(vr.min()))
                 if b == "vagina":
