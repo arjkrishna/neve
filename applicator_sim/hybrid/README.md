@@ -1682,6 +1682,20 @@ the welded rectum end; G12 completed the balloon and showed the two-way-coupled 
 G13 replaced the coupling by the packing and completed the route.  G14 = G13 + `balloon_drive_wall` (the wall's
 own nodes driven from the slit during B, for the frames; identical mechanics from P on) is the run to render.
 
+### Run G14 — G13 with the wall driven open on screen (`balloon_drive_wall`)
+
+`G14 = G13 + balloon_drive_wall`.  211 steps, u = 1.0, `settle_not_converged`; **every per-phase number from P
+onward is identical to G13's** (bladder 8.99 mm / 0.898, rectum 1.20, sigmoid 14.42, cervix 25.38, vagina 22.71 /
+0.837, ovoid gap 0.16 at station 25, caps inside 6/7 and 6/7, shaft 11/11), as the design requires: the driven
+wall ends bit-exactly at rest with zero velocity.  During B the wall's own nodes go from the preBT slit (mean
+lumen radius 3.0 mm, umax 18.3 mm from rest) to the distended reference (8.05 mm), so the frames show the vagina
+opening and displacing the organs.  29 min at 7.1 s/step.  Videos: `figs/anim/insertion_G14_full.mp4` (six
+bodies) and `insertion_G14_lumen.mp4` (see-through wall, straightened silhouette, four cross-sections), rendered
+through a shadow `APPSIM_OUT` whose `meshes` is a junction to `meshes/_scene_vagina_wall_tet26` and `applicator`
+to `applicator_d26s` (default part names → the straight rod and the d26s caps).  NOTE: on this machine Git Bash's
+`ln -s` COPIES a directory instead of linking it; build shadow trees with `New-Item -ItemType Junction` (or
+`mklink /J`), and check `LinkType` before trusting one.
+
 ### Commands
 
 ```bash
