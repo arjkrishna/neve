@@ -118,6 +118,20 @@ CFG = dict(
     balloon_start_b_mm=2.5,         # mm  AP semi-axis (the preBT slit is ~16 x 8 mm mid-vagina; the start must lie
                                     #     inside the label so it begins clear of the OARs)
     balloon_ease="smoothstep",      # "smoothstep" | "linear" ramp of the balloon from start to rest over n_balloon
+    balloon_mode="release",         # what happens to the balloon AFTER phase B:
+                                    # "release": it is switched off and the wall's own outer sheet takes the OAR
+                                    #   contact over (two-way coupling).  MEASURED (G12): the OARs then RECOIL --
+                                    #   bladder 5.3 -> 2.4 mm, rectum 8.7 -> 3.3 mm within four steps -- and crush
+                                    #   the 10 kPa wall (vol ratio 1.00 -> 0.50).  Nothing in that model holds the
+                                    #   distended vagina open against the OARs' elastic push-back; clinically that
+                                    #   is the PACKING and the applicator, and the real wall is folded (rugae), not
+                                    #   a stretched continuum, so re-collapsing it costs no tissue stress either.
+                                    # "follow": the balloon STAYS the OARs' contact surface for the whole run and
+                                    #   tracks the wall's outer sheet (positions copied from the wall each step,
+                                    #   one step behind): the OARs feel the wall's shape, the wall does not feel
+                                    #   the OARs = the packing holds it open.  One-way coupling, stated as such.
+                                    #   The wall is then loaded by the cervix (apex springs), the introitus springs
+                                    #   and the device on its lumen only.
     insertion_axis="auto",          # direction the device TRANSLATES along.  "tube" = Stage 1 (pose.json
                                     # insertion_path) | "shaft" = CONTRACT 3.4 wording (pose.json
                                     # insertion_path_alt, the vagina's own principal axis) | "auto" = "tube" for
@@ -1213,6 +1227,12 @@ class HybridController(Sofa.Core.Controller):
             w = float(geom.smoothstep(t)) if cfg.get("balloon_ease", "smoothstep") == "smoothstep" else t
             b["w"] = w
             b["node"].mo.position.value = (b["X_start"] + w * (b["X_end"] - b["X_start"])).tolist()
+        elif b["active"] and cfg.get("balloon_mode", "release") == "follow":
+            # the packing: the balloon keeps carrying the OAR contact and copies the wall's outer sheet (end of
+            # the previous step); the wall's own outer models stay excluded from the OARs for the whole run
+            b["w"] = 1.0
+            b["released"] = False
+            b["node"].mo.position.value = self.X("vagina")[b["idx"]].tolist()
         elif b["active"] and not b["released"]:
             b["released"] = True
             b["w"] = 1.0
@@ -1337,7 +1357,8 @@ class HybridController(Sofa.Core.Controller):
                    min_vol_ratio=round(minvol, 4), finite=bool(finite))
         if c.get("balloon") is not None:
             b = c["balloon"]
-            row["balloon"] = dict(w=round(float(b["w"]), 4), active=bool(b["active"]), released=bool(b["released"]))
+            row["balloon"] = dict(w=round(float(b["w"]), 4), active=bool(b["active"]), released=bool(b["released"]),
+                                  mode=cfg.get("balloon_mode", "release"))
             if r["phase"] == "B" or (b["released"] and self.k < len(self.sched) and self.sched[self.k].get("bal") is None
                                      and self.k > 0 and self.sched[self.k - 1]["phase"] == "B"):
                 row["balloon"]["groups"] = dict(wall_outer=b.get("wall_group_seen"), balloon=b.get("balloon_group_seen"))
