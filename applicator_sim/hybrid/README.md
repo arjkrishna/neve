@@ -1593,6 +1593,28 @@ A wall built distended inside the collapsed preBT anatomy starts 5–8 mm inside
   `log.jsonl` (`balloon.groups`) at the switch steps.  Had the list form been used, the wall-outer restore would
   silently have kept the OARs excluded for the whole run.
 
+### Run G11 — the balloon works; the rectum's welded cut end does not (2026-09-17)
+
+`runs/_cfg/G11.json`: wall `tet26`, caps `d26s`, `n_balloon` 40, OARs deformable, `tandem_oar_contact` false,
+`wall_outer_exclude ["cervix"]`, two-stage seating as G2/G10.  ~9.8 s/step (the balloon adds 1751 collision
+triangles and ~170 contacts; the tet26 wall is 5253 tets against z7s's 3240).
+
+- The hand-off machinery behaves: the wall-outer groups read back `3 4 21 22 31` at every B step (replace
+  semantics, the OARs excluded), contacts 92 → 173, constraint error per contact ≤ 0.003.
+- The OARs move as designed: at balloon w = 0.92 (step 32) **bladder umax 4.30 mm at vol ratio 0.876, rectum umax
+  7.83 mm** — the first time in the project that the rectum has been displaced by anything; the contact patch
+  25 mm above the rectum's lower end, pushed 6–8 mm, sits at vol ratio 0.64–0.71 (healthy).
+- **`abort_inverted_tets` at step 32**, rectum vol ratio 0.769 → 0.42 (steps 25–30) → −0.082.  Located with
+  `final/rectum_u.npy`: the five worst tets (−0.08 … 0.44) are at **s = −49.5 … −50.9 mm along the rectum axis**,
+  i.e. inside the 4 mm `fixed_ends` slab at the LOWER cut end (1–2 of 4 nodes pinned; 28 pinned nodes within
+  10 mm), one node pushed 4.2 mm while its pinned neighbours moved 0.  That cut end lies at the level of the
+  mid-lower vagina, 3.2–4.3 mm from the wall's rest outer sheet, so the balloon reaches it.  This is the pinned-
+  skirt trap of run V1B and of refutation #14 (station 0) a third time, now on the rectum: an element with pinned
+  nodes on one side and a 4 mm push on the other has no way out but inversion.
+- Fix (cfg `k_rectum_ends_mN_per_mm`, default None = unchanged): hold the cut-end slab with springs of a given
+  stiffness instead of the 1e4 mN/mm "fixed" springs.  The anorectal junction is anchored to the pelvic floor
+  compliantly, not welded in space.  **G12 = G11 + `k_rectum_ends_mN_per_mm` 20**, single variable.
+
 ### Commands
 
 ```bash

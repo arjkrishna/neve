@@ -278,6 +278,15 @@ CFG = dict(
                                     # wall is anchored to the pelvic floor on its outside), leaving the lumen free to
                                     # open.  Default False = unchanged.
     fix_rectum_ends=True, fix_sigmoid_ends=True,
+    k_rectum_ends_mN_per_mm=None,   # None = the cut ends are "fixed" (fixed_impl: 1e4 mN/mm springs or a hard
+    k_sigmoid_ends_mN_per_mm=None,  # constraint); a number = those end slabs are held by springs of THIS
+                                    # stiffness instead.  MEASURED (run G11, the first OAR pre-relaxation): the
+                                    # rectum's LOWER cut end sits at the level of the mid-lower vagina, ~4 mm from
+                                    # the wall's rest outer sheet, and the balloon pushing that region 4 mm sheared
+                                    # the 4 mm pinned end slab to inversion (worst tets at s = -49..-51 mm along the
+                                    # rectum axis with 1-2 of 4 nodes pinned; vol ratio -0.08) while the actual
+                                    # contact patch 25 mm higher, pushed 6-8 mm, was healthy at 0.64.  The anorectal
+                                    # junction is anchored to the pelvic floor compliantly, not welded in space.
     fixed_impl="spring",            # how a "fixed" node set is imposed:
                                     # "spring"     = RestShapeSpringsForceField at k_fixed_mN_per_mm (stiff but
                                     #                COMPLIANT).  MEASURED: with hard FixedConstraint the rest-state
@@ -863,10 +872,11 @@ def _add_supports(ctx):
                                          stiffness=[float(cfg["k_rectum_support_mN_per_mm"])] * len(rs))
     # cut ends fixed
     if cfg["fix_rectum_ends"] and "rectum" not in stat:
-        _pin(ctx["nodes"]["rectum"], "fix_ends", ns["rectum"]["fixed_ends"])
+        _pin(ctx["nodes"]["rectum"], "fix_ends", ns["rectum"]["fixed_ends"], cfg.get("k_rectum_ends_mN_per_mm"))
     if cfg["fix_sigmoid_ends"] and "sigmoid" not in stat:
-        _pin(ctx["nodes"]["sigmoid"], "fix_ends", ns["sigmoid"]["fixed_ends"])
+        _pin(ctx["nodes"]["sigmoid"], "fix_ends", ns["sigmoid"]["fixed_ends"], cfg.get("k_sigmoid_ends_mN_per_mm"))
     ctx["extra"].update(n_vagina_fixed=int(len(vfix)), n_bladder_support=int(len(bs)), n_rectum_support=int(len(rs)),
+                        k_rectum_ends=cfg.get("k_rectum_ends_mN_per_mm"), k_sigmoid_ends=cfg.get("k_sigmoid_ends_mN_per_mm"),
                         n_rectum_ends=int(len(ns["rectum"]["fixed_ends"])),
                         n_sigmoid_ends=int(len(ns["sigmoid"]["fixed_ends"])), fixed_impl=cfg["fixed_impl"])
 
