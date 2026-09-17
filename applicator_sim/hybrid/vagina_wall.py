@@ -87,6 +87,24 @@ CFG = dict(
     fornix_smooth_axial=0.8,         # stations  ... and along the axis
     fornix_smooth_iters=4,           # -   passes of max(smooth(r_in), required); only pushes OUTWARD, so it
                                      #     converges and the lumen provably never re-enters the cervix
+    # --- the TAPERED ELLIPTICAL reference lumen (Stage 2b): a stress-free lumen the seated ring actually fits inside
+    lumen_profile="uniform",         # "uniform": r_in = lumen_r0_mm everywhere (Stage 2a/2b default, unchanged).
+                                     # "device":  r_in is an ELLIPSE per station whose semi-axes taper from a slit at
+                                     #   the introitus to a near-circular vault sized to the RING ITSELF (read from
+                                     #   `lumen_ovoid_files`, so it auto-fits d22/d26/d30).  Why: MEASURED, a 13 mm
+                                     #   ring cannot enter a 6-7 mm lumen, so it slides around the OUTSIDE of the
+                                     #   tube (run G10: "wall INSIDE the ovoid solid") and nothing ever opens the
+                                     #   lumen.  Elliptical rather than round because the real section is a
+                                     #   transverse slit; a round lumen of the same area bulges into rectum/bladder
+                                     #   (the r18 build put 125 bladder + 124 rectum nodes inside the wall).
+                                     #   Area is still conserved EXACTLY: r_out = sqrt(r_in^2 + A/pi) integrates to
+                                     #   A for any r_in(theta).
+    lumen_ovoid_files=["ovoid_L_d26", "ovoid_R_d26"],   # caps the vault is sized to (applicator/<name>.obj)
+    lumen_vault_clear_mm=1.0,        # mm  clearance added to the ring's own radius at the vault
+    lumen_low_a_mm=8.0,              # mm  LR semi-axis at the introitus (the slit's long axis)
+    lumen_low_b_mm=4.5,              # mm  AP semi-axis at the introitus (the slit's short axis)
+    lumen_taper_frac=0.45,           # -   fraction of the vaginal length, measured from the APEX, over which the
+                                     #     section widens from the slit to the vault (smoothstep)
     fornix_extend_stations=0,        # -   stations added ABOVE the label's superior end.  Every Stage-2b failure is
                                      #     the TERMINAL ring, which is at once the thinnest, the most flared, and the
                                      #     free end with nothing above it to brace against; extending removes the
@@ -331,8 +349,40 @@ def build_wall(sec, a, c, e1, e2, cfg, sdf_cervix=None):
     # ---- the lumen radius, per (station, theta)
     r0 = float(cfg["lumen_r0_mm"])
     r_in = np.full((n_ax, n_th), r0)
+    prof = dict(enabled=False)
+    if cfg.get("lumen_profile", "uniform") == "device":
+        # ellipse per station: semi-axis A_lr along the patient LR direction projected into this station's frame,
+        # B_ap perpendicular to it, tapering from the introitus slit to a vault that holds the ring.
+        R = float(cfg.get("_ring_r_mm") or 0.0) + float(cfg["lumen_vault_clear_mm"])
+        a_lo, b_lo = float(cfg["lumen_low_a_mm"]), float(cfg["lumen_low_b_mm"])
+        frac = float(np.clip(cfg["lumen_taper_frac"], 1e-3, 1.0))
+        t = (sec["s"] - sec["s"][0]) / max(1e-9, sec["s"][-1] - sec["s"][0])      # 0 = introitus, 1 = apex
+        wgt = np.clip((t - (1.0 - frac)) / frac, 0.0, 1.0)
+        wgt = wgt * wgt * (3.0 - 2.0 * wgt)                                       # smoothstep
+        A_lr = a_lo + (R - a_lo) * wgt
+        B_ap = b_lo + (R - b_lo) * wgt
+        xhat = np.array([1.0, 0.0, 0.0])                                          # patient RIGHT
+        phis = np.zeros(n_ax)
+        for k in range(n_ax):
+            e = xhat - (xhat @ T[k]) * T[k]
+            nrm = np.linalg.norm(e)
+            phis[k] = 0.0 if nrm < 1e-9 else np.arctan2((e / nrm) @ V[k], (e / nrm) @ U[k])
+            d = th - phis[k]
+            r_in[k] = (A_lr[k] * B_ap[k]) / np.sqrt((B_ap[k] * np.cos(d)) ** 2 + (A_lr[k] * np.sin(d)) ** 2)
+        prof = dict(enabled=True, ring_radius_mm=round(float(cfg.get("_ring_r_mm") or 0.0), 3),
+                    ovoid_files=list(cfg["lumen_ovoid_files"]), vault_semi_axis_mm=round(R, 3),
+                    clearance_mm=float(cfg["lumen_vault_clear_mm"]), taper_frac=frac,
+                    low_semi_axes_mm=[a_lo, b_lo],
+                    a_lr_mm=[round(float(v), 3) for v in A_lr], b_ap_mm=[round(float(v), 3) for v in B_ap],
+                    lr_angle_in_frame_deg=[round(float(np.degrees(v)), 2) for v in phis],
+                    note="stress-free lumen = an ellipse per station, semi-axes tapering (smoothstep over the top "
+                         "`lumen_taper_frac` of the length) from the introitus slit to a vault sized to the ring's "
+                         "own radius + clearance.  A MODELLING CHOICE, like lumen_r0_mm: the real wall opens by "
+                         "unfolding its rugae, which a continuum mesh cannot do, so the stress-free state is the "
+                         "opened section.  Supported by the BT scan, where the vault reaches r 27-30 mm.")
+    base_in = r_in.copy()                        # the profile is the floor the fornix may only push further out
     fx = dict(enabled=False, n_rays_on_cervix=0, n_stations_on_cervix=0, first_station=None,
-              clearance_mm=float(cfg["fornix_clearance_mm"]), r_in_max_mm=r0)
+              clearance_mm=float(cfg["fornix_clearance_mm"]), r_in_max_mm=float(r_in.max()))
     if cfg.get("fornix", False) and sdf_cervix is not None:
         # For every ray out of the centreline, the lumen starts where the CERVIX ends: march outward and take the
         # OUTERMOST crossing of the cervix surface (the portio can be entered and left again on one ray).  Rays that
@@ -340,7 +390,7 @@ def build_wall(sec, a, c, e1, e2, cfg, sdf_cervix=None):
         # portio tapers to a point, so its exit radius grows through r0 rather than jumping past it.
         rs = np.arange(0.0, float(cfg["fornix_scan_max_mm"]) + 1e-9, float(cfg["fornix_scan_step_mm"]))
         clear = float(cfg["fornix_clearance_mm"])
-        req = np.full((n_ax, n_th), r0)            # the HARD constraint: the lumen may not lie inside the cervix
+        req = base_in.copy()                       # the HARD constraint: the lumen may not lie inside the cervix
         for k in range(n_ax):
             D = cs[:, None] * U[k][None, :] + sn[:, None] * V[k][None, :]          # (n_th, 3) ray directions
             pts = C[k][None, None, :] + rs[None, :, None] * D[:, None, :]          # (n_th, n_r, 3)
@@ -386,7 +436,7 @@ def build_wall(sec, a, c, e1, e2, cfg, sdf_cervix=None):
     r_out = np.sqrt(r_in ** 2 + (A / np.pi)[:, None])
     th_min = np.full_like(r_in, float(cfg["min_thickness_mm"]))
     if fx["enabled"]:                            # the vault is thinned by its own circumference: floor it harder
-        th_min[r_in > r0 + 1e-6] = float(cfg["fornix_min_thickness_mm"])
+        th_min[r_in > base_in + 1e-6] = float(cfg["fornix_min_thickness_mm"])
     thin_th = (r_out - r_in) < th_min
     thin = thin_th.any(1)                        # per-station flag, as before
     fx["n_rays_at_thickness_floor"] = int(thin_th.sum())
@@ -416,7 +466,7 @@ def build_wall(sec, a, c, e1, e2, cfg, sdf_cervix=None):
     flipped = int((v < 0).sum())
     T4[v < 0] = T4[v < 0][:, [0, 2, 1, 3]]
     return dict(P=P, T=T4, C=C, U=U, V=V, Tg=T, grid=gidx, s=sec["s"], A=A, r_in=r_in, r_out=r_out, r0=r0, fornix=fx,
-                apex_extension=ext, sec=sec,
+                apex_extension=ext, sec=sec, lumen_profile=prof,
                 n_ax=n_ax, n_th=n_th, n_rd=n_rd, flipped=flipped, cxy=cxy,
                 centre_dev=dict(raw_max_mm=round(dev_raw, 3), smoothed_max_mm=round(dev_sm, 3),
                                 clamp_mm=lim, n_stations_clamped=n_clamped,
@@ -476,6 +526,14 @@ def build_one(r0, args, shared):
         cfg[k] = json.loads(v)
     cfg["_voxel_mm3"] = shared["vox"]
     PT = shared["PT"]
+    if cfg.get("lumen_profile", "uniform") == "device":
+        # the vault is sized to the RING's own radius about the applicator axis, so the lumen auto-fits whichever
+        # cap variant the run will load (d22 / d26 / d30 ...)
+        rr = 0.0
+        for nm in cfg["lumen_ovoid_files"]:
+            Vo, _ = geom.read_obj("%s/%s.obj" % (PT["applicator"], nm))
+            rr = max(rr, float(np.hypot(np.asarray(Vo)[:, 0], np.asarray(Vo)[:, 1]).max()))
+        cfg["_ring_r_mm"] = rr
     X, a, c = shared["X"], shared["a"], shared["c"]
     t0 = time.time()
     sec, e1, e2 = label_sections(X, a, c, cfg)
@@ -586,7 +644,7 @@ def build_one(r0, args, shared):
             r_in_note="r_out_mm / thickness_mm are per-station MEANS over theta (1-D, unchanged schema); the full "
                       "per-ray radii are r_in_theta_mm / r_out_theta_mm.  Wall AREA is conserved exactly per "
                       "station for any r_in(theta) because r_out = sqrt(r_in^2 + A/pi).",
-            fornix=W["fornix"], apex_extension=W["apex_extension"],
+            fornix=W["fornix"], apex_extension=W["apex_extension"], lumen_profile=W["lumen_profile"],
             frame_u=np.round(W["U"], 6).tolist(), frame_v=np.round(W["V"], 6).tolist(),
             tangent=np.round(W["Tg"], 6).tolist(),
             grid_index=W["grid"].tolist(),
