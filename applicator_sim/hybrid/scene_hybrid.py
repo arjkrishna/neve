@@ -272,6 +272,15 @@ CFG = dict(
                                     # "attach" = AttachConstraint | "springs" = stiff RestShapeSprings to the copies
     k_attach_mN_per_mm=2000.0,      # only for attach_impl="springs"
     canal_tie=True,
+    canal_tie_below_mm=0.0,         # "centre" only: canal nodes up to this far BELOW the flange (s < 0, the os
+                                    #   region, where there is no tube but the vaginal rod) are tied laterally to
+                                    #   the ROD line through the flange instead of being left free.  MEASURED
+                                    #   (G18, canal_d_mm): with the canal drawn onto the tube (median 2.4 mm at
+                                    #   seating) the vault STILL sat 13 mm off the rod line, because the vault
+                                    #   wraps the portio below the flange (h = -12..-5 mm), which the tie never
+                                    #   touches and which swings anteriorly with the corpus's 13 deg anteversion.
+                                    #   Clinically the external os sits on the applicator axis at the flange,
+                                    #   between the caps.  0 = unchanged.
     canal_engage_mm=3.0,            # "centre" only: a canal node ENGAGES (and stays engaged) once it lies within
                                     #   tube radius + this of the tube axis, i.e. once the tube has actually reached
                                     #   it.  MEASURED (G16): engaging by axial span alone, as "dilate" may, pulled
@@ -1239,6 +1248,18 @@ class HybridController(Sofa.Core.Controller):
             d = np.linalg.norm(lat, axis=1)
             inside = (s >= 0.0) & (s <= self.L_iu)              # the tube currently occupies this axial level
             centre = cfg.get("canal_tie_mode", "dilate") == "centre"
+            below = float(cfg.get("canal_tie_below_mm", 0.0) or 0.0)
+            if centre and below > 0.0:
+                # the os region below the flange: lateral offset from the ROD line (the caps' axis), not the tube
+                ar = np.asarray(self.tgt["axis"], float)
+                sr = q @ ar
+                latr = q - np.outer(sr, ar)
+                dr = np.linalg.norm(latr, axis=1)
+                low = (sr < 0.0) & (sr >= -below)
+                inside = inside | low
+                lat = np.where(low[:, None], latr, lat)
+                d = np.where(low, dr, d)
+                s = np.where(low, sr, s)
             if centre:                                          # engage only once the tube has REACHED the node
                 new = inside & (d < rad + float(cfg.get("canal_engage_mm", 3.0))) & (self.eng_step < 0)
             else:
@@ -1246,6 +1267,7 @@ class HybridController(Sofa.Core.Controller):
             self.eng_step[new] = self.k
             act = (inside & (self.eng_step >= 0)) if centre else (inside & (d < rad))   # dilate: never pull inwards
             u = np.where(d[:, None] > 1e-9, lat / np.maximum(d, 1e-9)[:, None], _perp(at)[None, :])
+            # (below the flange `u` is radial about the rod line; above it about the tube line -- both lateral)
             # target = the node moved radially to the tube surface, but at most canal_max_offset_mm away from
             # where it is now (bounded tie force; the full move is reached over several steps).  "dilate" moves
             # outward only; "centre" also pulls a node that sits beyond the tube radius back onto it.
