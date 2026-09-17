@@ -1486,3 +1486,119 @@ attempt to vary it must handle all three:
 
 Note for parallel batches: `F1S` and `F1N` share `vagina_wall_fx40`, so they are run **sequentially**; sibling
 containers sharing a shadow root `meshes/_scene_<dir>/` is the concurrency bug that once truncated `bodies.json`.
+
+## STAGE 2b — UNSTRUCTURED WALL, SHAFT-ALIGNED CAPS, OAR PRE-RELAXATION (`vagina_wall_tet.py`, 2026-09-17)
+
+Three things had to change at once for the distended-reference route to be testable at all, and each is a single
+new module or cfg switch so it can be turned off again: the wall mesh (structured annulus → prism-split
+unstructured mesh), the caps' orientation (tube-aligned → straight-rod-aligned) and the start of the run (the OARs
+are relaxed outward BEFORE the wall carries contact).  User instructions taken literally: "relax the organs outward
+first before introducing the wall", "assume 26 mm", "applicator ring aligned with the bottom rod rather than the
+upper rod (bent one)".
+
+### Why the structured annulus had to go
+
+`vagina_wall.py` carries every wall as `n_theta` rays per station, one hexahedral cell per (station, theta, layer),
+split into 6 tets by the Kuhn rule.  MEASURED over ten builds (README above, refutations #6–#14): a UNIFORM lumen
+gives 18.46 deg interior dihedral, and every VARYING section — fornix, tapered ellipse, any smoothing, thickness
+floor, ray count or station spacing — collapses to ≤ 0.89 deg, always at stations 23–25.  The cell there is
+~1.2 mm thick and 4–5 mm wide (the rectangular grid cannot add rays at the vault without adding them at the
+introitus), it is sheared by the vault flare, and a Kuhn split of a sheared thin cell is a sliver by construction.
+Seven hypotheses were refuted before the mesh topology itself was blamed; that was the correct order (the
+hypotheses were cheap), and the topology was the cause.
+
+### The caps ride on the straight rod (`applicator_venezia.py --scaled-ovoids 26 --align-shaft` → `d26s`)
+
+The lunar caps are built about the applicator z axis = the intrauterine tube, i.e. the BENT upper rod, so the
+fitted tilt (−4.13 deg) put the ring's axis 24 deg off the vaginal rod it actually sits on.  `shaft_tilt_deg()`
+measures the straight rod instead of assuming it: principal axis of `shaft_straight.obj`, up-pointing,
+`[8e-05, −0.40674, 0.91354]` = **24.00 deg** to the tube (the junction angle, as it must be), so
+`ovoid_tilt_deg = −24.00` (positive = apex anterior).  `ovoids_d26s.json`:
+
+| | d26 (tube-aligned) | **d26s (rod-aligned)** |
+|---|---|---|
+| assembly LR × AP × z (mm) | 25.9 × 26.5 × 15.6 | 25.9 × 27.0 × 20.5 |
+| volume | 6.31 cc | 6.31 cc |
+| radius about the tube axis | 14.08 mm | 17.3 mm (the 24 deg lever arm) |
+| radius about the **rod** axis | — | **13.141 mm** |
+| extent along the rod (from the flange) | — | −13.4 … +1.4 mm |
+
+The lumen is now sized from `aligned_to.radius_about_shaft_axis_mm` (`vagina_wall.ring_radius_mm`, falls back to
+max hypot(x, y) for tube-aligned caps): about z the aligned caps read 17.3 mm, which would have oversized the vault
+by 4 mm.  Vault semi-axis = 13.141 + 1.0 clearance = 14.14 mm.  Default `lumen_ovoid_files` is now `d26s`.
+
+### `vagina_wall_tet.py` — the mesh, and the route to 11.0 deg
+
+Same analytic profile as `vagina_wall.py` (`build_wall`: centreline, parallel-transported frames, r_in(s, θ) =
+slit → vault ellipse + fornix, area-conserving r_out), sampled at **72 rays**; then:
+
+1. **one ring per station on the lumen sheet, with as many nodes as ITS OWN perimeter needs** at `edge_mm` 2.0
+   (25 at the introitus … 70 at the fornix shelf; floor 16), alternate stations staggered half a step;
+2. adjacent rings zipped into a strip by angle (`zipper`: greedy, |A| + |B| triangles whatever the two counts);
+3. the **outer sheet node-matched to the lumen sheet** (`match_sheets`) and placed along the lumen sheet's **node
+   normal** at the profile's own thickness (`offset="normal"`), not radially;
+4. the two end annuli close the surface (manifold, outward-oriented, checked);
+5. every lumen strip triangle and its matched outer triangle bound a **prism**, split into 3 tets by the
+   Dompierre rule (quad diagonals through the quad's smallest node id → conforming) — `method="prism"`; TetGen
+   (`method="tetgen"`, surface preserved) is kept as the alternative;
+6. `mesh_bodies.fix_slivers` (node moves ≤ 0.5 mm), node sets, and the `grid_index` SHIM (nearest station, sheet
+   0/1/2, rank in angle) so `wall_metrics` / `animate_lumen` keep working; ring counts are in
+   `wall.n_theta_per_station` and `animate_lumen.wall_rings` now returns ragged lists.
+
+Each step above was forced by a measurement (all on the d26s tapered profile, thickness floors 1.2 / 1.5 mm):
+
+| build | tets < 10 deg | min interior dihedral | what it showed |
+|---|---|---|---|
+| TetGen, sheets sampled independently | 15 | 5.85 deg | all "crossed" tets: two nodes on each sheet, sheet edges offset and near-parallel — a Delaunay sliver between parallel surfaces, not a thickness limit (12 of 15 where the wall is 1.8–2.6 mm) |
+| TetGen, matched sheets (+ 20 knob settings: edge 1.5–2.5, mindihedral 15, node moves to 0.8 mm, 40 optimiser passes, floors 0.8–1.5, boundary Steiner points) | 5–11 | best 8.20 deg | flat tets with all four nodes on ONE sheet at the vault (stations 25–27, 1.1–1.3 mm thick) and slivers on TetGen's own interior points: a thin curved shell defeats Delaunay |
+| prism split, RADIAL offset | 30 | 4.61 deg | **28 of 30 at station 25** — the fornix SHELF, where the lumen widens ~12 mm within one 2 mm station (ring counts 32 → 69): the sheet is nearly perpendicular to the axis there, a radial offset lays the outer sheet almost in the inner one and every prism is sheared flat.  Same root cause as the structured failure, now isolated |
+| **prism split, NORMAL offset** | **0** | **11.04 deg** | the shelf becomes a roof of thickness t, the prisms stay upright.  `tet26`: **1834 nodes, 5253 tets**, raw 21.2 deg before the sliver fix, no inverted prism (checked BEFORE orientation), edge 1.7 → 10.90, 2.5 → 11.47 |
+
+One trap on the way: rescaling `fornix_smooth_theta` to keep the structured build's 21.6 deg angular width on the
+72-ray profile FOLDS the normal-offset sheet (7 inverted prisms at stations 23–24, θ 340–360 deg, min dihedral
+2.6 deg); at the profile's native 6 deg there is no inversion.  The wide smoothing only ever existed to save the
+structured grid from its ray-cast steps, which this mesh does not suffer (`fornix_smooth_in_rays_of`).
+
+`meshes/vagina_wall_tet26/`: volume 6.39 cc (+16.4 % vs the 5.49 cc label — the thickness floors and the unfolded
+lumen, as before), thickness 1.20 / 2.08 / 3.12 mm (min / median / max), apex 258 and fixed_inferior 102 nodes,
+lumen r_in 5.9 mm at stations 0–14 rising to 12.5 (st 23), 13.4 (25), 15.7 mm (apex) against the 13.14 mm ring —
+the ring fits the top three stations plus the fornix.  Rest-state proximity (why the balloon exists): outer sheet
+**186 nodes inside the rectum (−8.2 mm), 71 inside the bladder (−4.6 mm)**, 0 inside the cervix (+1.4 mm),
+apex 0.0–8.1 mm from the cervix.
+
+### The balloon — relax the OARs outward before the wall is introduced (cfg `n_balloon`)
+
+A wall built distended inside the collapsed preBT anatomy starts 5–8 mm inside its neighbours, deeper than
+`alarm_mm`: that is the trapped-vertex regime, where contact holds tissue IN rather than pushing it out.  Phase
+**B** (new, ahead of P; `run_hybrid.PHASE_NAMES` "OAR pre-relaxation (balloon)"):
+
+- `_add_balloon`: a KINEMATIC copy of the wall's outer sheet (its `outer_surface` nodes and `outer_triangles`,
+  `moving=True, simulated=False` like the device), driven from `X_start` — the same nodes squeezed onto a
+  `balloon_start_a/b_mm` = 6 × 2.5 mm ellipse about the lumen centreline (LR along the profile's own
+  `lr_angle_in_frame_deg`), never beyond their rest radius — to `X_end` = the rest outer sheet, with a smoothstep
+  over `n_balloon` steps.  Group `9 10 11 12 21 22`: shares an id with the device, both wall sheets, cervix and
+  corpus, so it touches **bladder, rectum, sigmoid only**.  It ghosts through the cervix at the vault by design
+  (149 start nodes inside the cervix at stations 23–27; the fornix lumen is an annulus around the portio).
+- Checked on the host before the run (`diag_balloon`): start nodes inside bladder / rectum / sigmoid **0 / 0 / 0**
+  (rectum min +1.3 mm, bladder +7.9), travel to rest max 18.4 mm mean 7.3 mm, **≤ 0.69 mm per step**.
+- During B the wall's OWN outer models carry their groups ∪ {3, 4} (they ignore the OARs; the wall is inert and
+  stress-free); at the first non-B step the balloon's group is set to share with everything (no contacts) and the
+  wall outer groups are restored, so the tissue is at contact distance from the sheet that will now load it.
+  `wall_outer_exclude` must therefore drop `rectum` for such a run (G11: `["cervix"]`), or the relaxation is
+  thrown away.
+- **Runtime group switching, MEASURED in the container (`probe_groups.py`, kept):** the broad phase honours a
+  changed `group` on the next step (contacts 2 → 0 → 2), but assigning a python LIST to this
+  `Data<std::set<int>>` APPENDS ({1} → [2] → {1, 2} → [3, 4] → {1, 2, 3, 4}); only the space-separated STRING
+  form replaces ("5 6" → {5, 6}, "" → {}).  `_set_group` uses the string form and logs `getValueString()` into
+  `log.jsonl` (`balloon.groups`) at the switch steps.  Had the list form been used, the wall-outer restore would
+  silently have kept the OARs excluded for the whole run.
+
+### Commands
+
+```bash
+python hybrid/applicator_venezia.py --scaled-ovoids 26 --align-shaft        # -> applicator/ovoid_{L,R}_d26s.obj, ovoids_d26s.json
+python hybrid/vagina_wall_tet.py build --variant tet26                      # host py3.13 (nibabel/scipy/vtk); no tetgen needed for method=prism
+python hybrid/vagina_wall_tet.py build --variant x --set edge_mm=1.7 --set 'method="tetgen"' --pk <dir with tetgen>
+APPSIM_TIMEOUT=180 bash run_docker_par.sh PROBEG hybrid/probe_groups.py    # the group-semantics probe
+APPSIM_TIMEOUT=3400 bash run_docker_par.sh G11 hybrid/run_hybrid.py --tag G11 --cfg /out/hybrid/runs/_cfg/G11.json
+```

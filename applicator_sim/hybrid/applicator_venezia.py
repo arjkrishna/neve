@@ -1280,8 +1280,28 @@ def write_readme(prm, mesh, fit, rule, valid, cmds, v2=None, score=None, label="
 
 
 # ============================================================================ realistic cap size
-def scaled_ovoids(diams):
+def shaft_tilt_deg():
+    """Tilt about x (deg) that makes the cap assembly's axis parallel to the STRAIGHT vaginal rod.
+
+    The caps are built about the applicator z axis = the intrauterine tube, i.e. the bent UPPER rod.  Clinically the
+    ring sits on the vaginal (lower) rod, which leaves the flange at the junction angle.  Measured from
+    shaft_straight.obj rather than assumed: its principal axis is 24.00 deg from +z, leaning posteriorly going up,
+    so the tilt is negative in the `ovoid_tilt_deg` convention (positive = apex anterior)."""
+    V, _ = geom.read_obj(APP + "/shaft_straight.obj")
+    V = np.asarray(V, float)
+    c = V.mean(0)
+    _, _, vt = np.linalg.svd(V - c, full_matrices=False)
+    d = geom.unit(vt[0])
+    if d[2] < 0:
+        d = -d                                        # up-pointing, toward the flange
+    return float(np.degrees(np.arctan2(d[1], d[2]))), d
+
+
+def scaled_ovoids(diams, align_shaft=False):
     """Write the lunar caps at a REALISTIC assembly diameter, as extra files next to the fitted ones.
+
+    align_shaft=True additionally tilts the assembly so its axis is parallel to the straight vaginal rod (tag suffix
+    "s"), which is where the ring sits clinically; the fitted -4 deg tilt was to the TUBE axis.
 
     The fitted `ovoid_diam_mm` (39.4 mm) is not a device size.  It was fitted to the BT ovoid label, which is the MRI
     dark region = device + vaginal packing + susceptibility bloom, and the fit was BOUNDED BELOW AT 30 mm
@@ -1296,6 +1316,7 @@ def scaled_ovoids(diams):
     Select them in a run with cfg device_part_files {"ovoid_L": "ovoid_L_d26", "ovoid_R": "ovoid_R_d26"}.
     The fitted ovoid_L.obj / ovoid_R.obj are never overwritten, so every earlier run stays reproducible."""
     stored = json.load(open(APP + "/applicator.json"))
+    tilt, d_shaft = (shaft_tilt_deg() if align_shaft else (None, None))
     rows = []
     for D in diams:
         prm = json.loads(json.dumps(stored["params"]))
@@ -1304,7 +1325,9 @@ def scaled_ovoids(diams):
         prm["ovoid_diam_mm"]["value"] = float(D)
         for key in ("ovoid_height_mm", "ovoid_dome_mm", "ovoid_offset_x_mm"):
             prm[key]["value"] = float(val(prm, key)) * k
-        tag = ("d%g" % D).replace(".", "p")
+        if align_shaft:
+            prm["ovoid_tilt_deg"]["value"] = tilt
+        tag = ("d%g" % D).replace(".", "p") + ("s" if align_shaft else "")
         rec = dict(tag=tag, units="mm; " + FRAME_APP, assembly_diam_mm=float(D), fitted_diam_mm=D0, scale=round(k, 5),
                    params={key: round(float(val(prm, key)), 4) for key in
                            ("ovoid_diam_mm", "ovoid_height_mm", "ovoid_dome_mm", "ovoid_offset_x_mm", "ovoid_dz_mm",
@@ -1327,6 +1350,13 @@ def scaled_ovoids(diams):
         rec["assembly_extent_mm"] = dict(LR=round(float(np.ptp(A[:, 0])), 2), AP=round(float(np.ptp(A[:, 1])), 2),
                                          z=round(float(np.ptp(A[:, 2])), 2),
                                          z_range=[round(float(A[:, 2].min()), 2), round(float(A[:, 2].max()), 2)])
+        if align_shaft:
+            ax = (A @ d_shaft)
+            rad = np.linalg.norm(A - np.outer(ax, d_shaft), axis=1)
+            rec["aligned_to"] = dict(axis="straight vaginal rod (shaft_straight.obj principal axis)",
+                                     tilt_deg=round(tilt, 3), axis_app=np.round(d_shaft, 5).tolist(),
+                                     radius_about_shaft_axis_mm=round(float(rad.max()), 3),
+                                     extent_along_shaft_mm=[round(float(ax.min()), 2), round(float(ax.max()), 2)])
         rec["volume_cc"] = round(sum(rec[n]["signed_volume_mm3"] for n in ("ovoid_L", "ovoid_R")) / 1000.0, 3)
         json.dump(rec, open("%s/ovoids_%s.json" % (APP, tag), "w"), indent=1, default=float)
         rows.append(rec)
@@ -1352,11 +1382,14 @@ def main():
     ap.add_argument("--scaled-ovoids", type=float, nargs="+", default=None, metavar="D",
                     help="write lunar caps at realistic assembly diameters D mm (e.g. 22 26 30) as ovoid_{L,R}_d<D>.obj; "
                          "the fitted caps are left untouched")
+    ap.add_argument("--align-shaft", action="store_true",
+                    help="with --scaled-ovoids: tilt the caps so their axis follows the STRAIGHT vaginal rod instead of "
+                         "the intrauterine tube (tag suffix 's', e.g. ovoid_L_d26s.obj)")
     a = ap.parse_args()
     if a.render3d:
         render3d(); return
     if a.scaled_ovoids:
-        scaled_ovoids(a.scaled_ovoids); return
+        scaled_ovoids(a.scaled_ovoids, align_shaft=a.align_shaft); return
     t0 = time.time()
     for d in (APP, FIGS, LOGS):
         os.makedirs(d, exist_ok=True)

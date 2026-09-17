@@ -99,6 +99,25 @@ CFG = dict(
                                     # Stage-1 ovoids showed), so contact could not push them out -- it would only
                                     # hold them.  Excluded exactly as Stage 1 excludes its own rest overlaps
                                     # (cervix|vagina -0.87, rectum|sigmoid -0.57).  [] enables every organ.
+    # --- Stage 2b: relax the OARs OUTWARD before the wall is introduced (the "balloon" phase, B)
+    n_balloon=0,                    # steps of phase "B" ahead of the pre-settle.  WHY: the distended reference
+                                    # wall is built in the collapsed preBT anatomy, so at rest its OUTER sheet
+                                    # starts INSIDE the neighbours (MEASURED, tet26: 186 nodes up to 8.5 mm into
+                                    # the rectum, 83 up to 5.2 mm into the bladder) -- deeper than alarm_mm, i.e.
+                                    # the trapped-vertex regime where contact holds tissue in rather than pushing
+                                    # it out.  During B a KINEMATIC copy of the wall's outer sheet (the balloon)
+                                    # is driven from a collapsed slit (balloon_start_*) to the wall's rest shape
+                                    # and pushes bladder / rectum / sigmoid outward by contact; the wall itself
+                                    # is inert meanwhile (its outer sheet ignores the OARs, its rest shape is
+                                    # untouched), and at the first non-B step the balloon is switched off and the
+                                    # wall's outer contact with the OARs switched on: the tissue is then exactly
+                                    # at contact distance from the wall it will be loaded by.  0 = off (byte-
+                                    # identical schedules).  Needs deformable OARs (static_bodies without them)
+                                    # and wall_outer_exclude WITHOUT rectum, or the relaxation is thrown away.
+    balloon_start_a_mm=6.0,         # mm  LR semi-axis of the balloon's start section about the lumen centreline
+    balloon_start_b_mm=2.5,         # mm  AP semi-axis (the preBT slit is ~16 x 8 mm mid-vagina; the start must lie
+                                    #     inside the label so it begins clear of the OARs)
+    balloon_ease="smoothstep",      # "smoothstep" | "linear" ramp of the balloon from start to rest over n_balloon
     insertion_axis="auto",          # direction the device TRANSLATES along.  "tube" = Stage 1 (pose.json
                                     # insertion_path) | "shaft" = CONTRACT 3.4 wording (pose.json
                                     # insertion_path_alt, the vagina's own principal axis) | "auto" = "tube" for
@@ -497,6 +516,9 @@ def build_schedule(cfg, tgt):
         return geom.smoothstep((u - u_ios) / max(1e-9, 1.0 - u_ios)) if u > u_ios else 0.0
 
     sched = []
+    nB = int(cfg.get("n_balloon", 0) or 0)
+    for k in range(1, nB + 1):                         # B: device parked at u = 0, corpus at rest, balloon k/nB
+        sched.append(dict(phase="B", u=0.0, s=0.0, ov_lag=None, bal=k / float(nB)))
     for k in range(int(cfg["n_presettle"])):
         sched.append(dict(phase="P", u=0.0, s=0.0, ov_lag=None))
     nA = max(1, int(cfg["n_approach"]))
@@ -735,6 +757,7 @@ def build_scene(root, cfg=None, inp=None):
     _add_couplings(ctx)
     _add_supports(ctx)
     _wall_diag_setup(ctx)                               # read-only per-step lumen diagnostics (wall runs only)
+    _add_balloon(ctx)                                   # Stage 2b OAR pre-relaxation (cfg n_balloon > 0, wall runs)
     # Constraint correction LAST in each body node, so the compliance it builds from the linear solver sees every
     # force field above it.  Without it the constraint solver has no compliance at all: W = 0, the Gauss-Seidel
     # residual and every multiplier come back NaN and contacts produce no force (MEASURED, probe 5).
@@ -852,6 +875,83 @@ def _ring_perim(R):
     return float(np.linalg.norm(np.diff(np.r_[R, R[:1]], axis=0), axis=1).sum())
 
 
+def _set_group(model, groups):
+    """REPLACE a collision model's `group` at runtime and return what it reads back as.
+
+    MEASURED (probe_groups.py, SOFA v22.12 / SofaPython3): assigning a python LIST to this Data<std::set<int>>
+    APPENDS ({1} -> [2] -> {1, 2} -> [3, 4] -> {1, 2, 3, 4}); only the space-separated STRING form replaces
+    ("5 6" -> {5, 6}, "" -> {}).  The broad phase honours the change on the next step (contacts 2 -> 0 -> 2)."""
+    model.group.value = " ".join(str(int(g)) for g in groups)
+    return model.findData("group").getValueString()
+
+
+def _add_balloon(ctx):
+    """The OAR pre-relaxation balloon (cfg n_balloon): a kinematic copy of the wall's OUTER sheet.
+
+    Nodes = the wall's outer_surface, triangles = outer_triangles, positions driven by the controller between
+    X_start (the same nodes squeezed onto a `balloon_start_a/b_mm` ellipse about the lumen centreline, never
+    beyond their rest radius) and X_end (their rest positions).  Collision group: shares an id with the device
+    (9), the wall's two sheets (21, 22) and the cervix (11) / corpus (9), so it touches bladder, rectum and
+    sigmoid ONLY.  Nothing here is integrated (moving=True, simulated=False, as the device parts)."""
+    cfg, inp, X0 = ctx["cfg"], ctx["inp"], ctx["X0"]
+    nB = int(cfg.get("n_balloon", 0) or 0)
+    if nB <= 0 or cfg.get("vagina_model", "solid") != "wall":
+        return
+    meta = inp["meta"]["vagina"]
+    w = meta["wall"]
+    outer = np.asarray(meta["node_sets"]["outer_surface"], int)
+    tri = np.asarray(meta["node_set_extra"]["outer_triangles"], int)
+    g = np.asarray(w["grid_index"], int)
+    C = np.asarray(w["centreline"], float)
+    Tg = np.asarray(w["tangent"], float)
+    U = np.asarray(w["frame_u"], float)
+    V = np.asarray(w["frame_v"], float)
+    phi = np.radians(np.asarray((w.get("lumen_profile") or {}).get("lr_angle_in_frame_deg") or np.zeros(len(C)), float))
+    Xo = X0["vagina"][outer]
+    k = g[outer, 0]
+    q = Xo - C[k]
+    ax = np.einsum("ij,ij->i", q, Tg[k])
+    lat = q - ax[:, None] * Tg[k]
+    rho = np.linalg.norm(lat, axis=1)
+    e = lat / np.maximum(rho, 1e-9)[:, None]
+    th = np.arctan2(np.einsum("ij,ij->i", lat, V[k]), np.einsum("ij,ij->i", lat, U[k]))
+    d = th - phi[k]
+    A, B = float(cfg["balloon_start_a_mm"]), float(cfg["balloon_start_b_mm"])
+    r0 = (A * B) / np.sqrt((B * np.cos(d)) ** 2 + (A * np.sin(d)) ** 2)
+    r0 = np.minimum(r0, rho)                            # never start OUTSIDE the rest outer sheet
+    X_start = C[k] + ax[:, None] * Tg[k] + r0[:, None] * e
+    rem = -np.ones(len(X0["vagina"]), np.int64)
+    rem[outer] = np.arange(len(outer))
+    grp = groups_for(cfg)
+    g_on = sorted({9, 10, 11, 12, 21, 22})              # disjoint from bladder [4,32], rectum [3,33], sigmoid [3,34]
+    g_off = sorted(set(g_on) | {1, 2, 3, 4})            # shares an id with everything: no contact at all
+    nd = ctx["root"].addChild("balloon")
+    nd.addObject("MechanicalObject", name="mo", template="Vec3d", position=X_start.tolist())
+    nd.addObject("MeshTopology", name="mt", position=X_start.tolist(), triangles=rem[tri].tolist())
+    models = [nd.addObject("TriangleCollisionModel", name="tri", group=g_on, moving=True, simulated=False),
+              nd.addObject("LineCollisionModel", name="lin", group=g_on, moving=True, simulated=False),
+              nd.addObject("PointCollisionModel", name="pnt", group=g_on, moving=True, simulated=False)]
+    vis = nd.addChild("vis")
+    vis.addObject("OglModel", name="ogl", color=[0.95, 0.75, 0.35, 0.35])
+    vis.addObject("IdentityMapping", name="vm", input="@../mo", output="@ogl")
+    # the wall's own outer models: they ignore the OARs while the balloon works, and take over afterwards
+    vn = ctx["nodes"]["vagina"]
+    side = vn.outer if cfg["wall_collision"] == "split" else vn.surf
+    wall_models = [side.tri, side.lin, side.pnt]
+    wall_on = list(grp["vagina_outer"] if cfg["wall_collision"] == "split" else grp["vagina"])
+    wall_off = sorted(set(wall_on) | {3, 4})
+    ctx["balloon"] = dict(node=nd, models=models, X_start=X_start, X_end=Xo.copy(), idx=outer, g_on=g_on,
+                          g_off=g_off, wall_models=wall_models, wall_on=wall_on, wall_off=wall_off,
+                          active=False, released=False, w=0.0, n=nB)
+    ctx["extra"]["balloon"] = dict(n_steps=nB, nodes=int(len(outer)), triangles=int(len(tri)),
+                                   start_semi_axes_mm=[A, B],
+                                   start_radius_mm=dict(min=round(float(r0.min()), 3), max=round(float(r0.max()), 3)),
+                                   travel_mm=dict(max=round(float(np.linalg.norm(Xo - X_start, axis=1).max()), 3),
+                                                  mean=round(float(np.linalg.norm(Xo - X_start, axis=1).mean()), 3)),
+                                   groups=dict(balloon_on=g_on, balloon_off=g_off, wall_outer_on=wall_on,
+                                               wall_outer_off=wall_off))
+
+
 def _wall_diag_setup(ctx):
     """Per-step lumen diagnostics for a WALL run (VAGINA_WALL.md).  Nothing here touches the mechanics.
 
@@ -949,7 +1049,7 @@ def scene_summary(ctx):
              corpus_centroid_shift_mm=round(float(np.linalg.norm(
                  np.array(inp["pose"]["corpus"]["corpus_centroid_target"]) -
                  np.array(inp["pose"]["corpus"]["corpus_centroid_pre"]))), 3) if tgt["is_default"] else None,
-             n_sched=len(ctx["sched"]), phases={p: sum(1 for r in ctx["sched"] if r["phase"] == p) for p in "PATD"},
+             n_sched=len(ctx["sched"]), phases={p: sum(1 for r in ctx["sched"] if r["phase"] == p) for p in "BPATD"},
              material=cfg["material"], groups=groups_for(cfg), insertion_axis=tgt["insertion_axis"],
              vagina_model=cfg.get("vagina_model", "solid"),
              wall=(dict(dir=cfg["vagina_wall_dir"], collision=cfg["wall_collision"],
@@ -1044,6 +1144,8 @@ class HybridController(Sofa.Core.Controller):
         Rr = np.asarray(r["R_rows"], float)             # PER-STEP orientation (constant when rotation is "off")
         self._set_rigid(c["tandem"], Rr.T, r["F"])      # rigid_pose wants columns = applicator axes, hence .T
         self._set_rigid(c["ovoids"], Rr.T, r["F"] - float(r["ov_lag"]) * a)
+        if c.get("balloon") is not None:
+            self._balloon(r)
         # (2) velocity scaling (quasi-static relaxation during the settle phase)
         sc = float(cfg["settle_vel_scale"] if r["phase"] == "H" else cfg["motion_vel_scale"])
         if sc != 1.0:
@@ -1088,6 +1190,25 @@ class HybridController(Sofa.Core.Controller):
         if c.get("apex_tgt") is not None:
             Xc = self.X("cervix")[c["apex_pair"]] + c["apex_off"]
             c["apex_tgt"].position.value = Xc.tolist()
+
+    def _balloon(self, r):
+        """Phase B: drive the balloon from its start section to the wall's rest outer sheet; on the first step
+        after B switch it off and let the wall's own outer sheet take the OAR contact over."""
+        b, cfg = self.ctx["balloon"], self.cfg
+        if r["phase"] == "B":
+            if not b["active"]:
+                b["active"] = True
+                b["wall_group_seen"] = [_set_group(m, b["wall_off"]) for m in b["wall_models"]]
+            t = float(r["bal"])
+            w = float(geom.smoothstep(t)) if cfg.get("balloon_ease", "smoothstep") == "smoothstep" else t
+            b["w"] = w
+            b["node"].mo.position.value = (b["X_start"] + w * (b["X_end"] - b["X_start"])).tolist()
+        elif b["active"] and not b["released"]:
+            b["released"] = True
+            b["w"] = 1.0
+            b["node"].mo.position.value = b["X_end"].tolist()
+            b["balloon_group_seen"] = [_set_group(m, b["g_off"]) for m in b["models"]]
+            b["wall_group_seen"] = [_set_group(m, b["wall_on"]) for m in b["wall_models"]]
 
     # ---------------------------------------------------------------- step end
     def _end(self):
@@ -1204,6 +1325,12 @@ class HybridController(Sofa.Core.Controller):
                    lambda_abs_sum=round(lam_sum, 4), lambda_max=round(lam_max, 4),
                    n_canal_ties=int(self.n_canal_active), cardinal_max_stretch_mm=round(self.lig_ext_max, 4),
                    min_vol_ratio=round(minvol, 4), finite=bool(finite))
+        if c.get("balloon") is not None:
+            b = c["balloon"]
+            row["balloon"] = dict(w=round(float(b["w"]), 4), active=bool(b["active"]), released=bool(b["released"]))
+            if r["phase"] == "B" or (b["released"] and self.k < len(self.sched) and self.sched[self.k].get("bal") is None
+                                     and self.k > 0 and self.sched[self.k - 1]["phase"] == "B"):
+                row["balloon"]["groups"] = dict(wall_outer=b.get("wall_group_seen"), balloon=b.get("balloon_group_seen"))
         # ---- convergence (CONTRACT 5) during the settle phase
         if r["phase"] == "H":
             self.settle += 1

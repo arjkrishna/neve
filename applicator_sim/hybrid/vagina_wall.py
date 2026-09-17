@@ -99,7 +99,8 @@ CFG = dict(
                                      #   (the r18 build put 125 bladder + 124 rectum nodes inside the wall).
                                      #   Area is still conserved EXACTLY: r_out = sqrt(r_in^2 + A/pi) integrates to
                                      #   A for any r_in(theta).
-    lumen_ovoid_files=["ovoid_L_d26", "ovoid_R_d26"],   # caps the vault is sized to (applicator/<name>.obj)
+    lumen_ovoid_files=["ovoid_L_d26s", "ovoid_R_d26s"],  # caps the vault is sized to (applicator/<name>.obj);
+                                     #     d26s = 26 mm caps aligned to the STRAIGHT vaginal rod (ring_radius_mm)
     lumen_vault_clear_mm=1.0,        # mm  clearance added to the ring's own radius at the vault
     lumen_low_a_mm=8.0,              # mm  LR semi-axis at the introitus (the slit's long axis)
     lumen_low_b_mm=4.5,              # mm  AP semi-axis at the introitus (the slit's short axis)
@@ -518,6 +519,26 @@ def node_sets(W, sec, cfg, sdf=None):
 
 
 # --------------------------------------------------------------------------- build (py3.13 host)
+def ring_radius_mm(PT, files):
+    """Radius of the cap assembly about the axis it TRAVELS along, so the vault auto-fits whichever caps the run
+    loads (d22 / d26 / d26s ...).  Caps built about the tube axis (d26): max hypot(x, y) about the applicator z.
+    Caps aligned to the straight vaginal rod (d26s, applicator_venezia.py --align-shaft): the record's
+    radius_about_shaft_axis_mm -- about z those caps read 17.3 mm because of the 24 deg lever arm, which would
+    oversize the vault by 4 mm."""
+    rr = 0.0
+    for nm in files:
+        tag = nm.split("_")[-1] if nm.startswith("ovoid_") else None
+        rec = "%s/ovoids_%s.json" % (PT["applicator"], tag) if tag else None
+        if rec and os.path.exists(rec):
+            j = json.load(open(rec))
+            if j.get("aligned_to", {}).get("radius_about_shaft_axis_mm") is not None:
+                rr = max(rr, float(j["aligned_to"]["radius_about_shaft_axis_mm"]))
+                continue
+        Vo, _ = geom.read_obj("%s/%s.obj" % (PT["applicator"], nm))
+        rr = max(rr, float(np.hypot(np.asarray(Vo)[:, 0], np.asarray(Vo)[:, 1]).max()))
+    return rr
+
+
 def build_one(r0, args, shared):
     cfg = json.loads(json.dumps(CFG))
     cfg["lumen_r0_mm"] = float(r0)
@@ -527,13 +548,7 @@ def build_one(r0, args, shared):
     cfg["_voxel_mm3"] = shared["vox"]
     PT = shared["PT"]
     if cfg.get("lumen_profile", "uniform") == "device":
-        # the vault is sized to the RING's own radius about the applicator axis, so the lumen auto-fits whichever
-        # cap variant the run will load (d22 / d26 / d30 ...)
-        rr = 0.0
-        for nm in cfg["lumen_ovoid_files"]:
-            Vo, _ = geom.read_obj("%s/%s.obj" % (PT["applicator"], nm))
-            rr = max(rr, float(np.hypot(np.asarray(Vo)[:, 0], np.asarray(Vo)[:, 1]).max()))
-        cfg["_ring_r_mm"] = rr
+        cfg["_ring_r_mm"] = ring_radius_mm(PT, cfg["lumen_ovoid_files"])
     X, a, c = shared["X"], shared["a"], shared["c"]
     t0 = time.time()
     sec, e1, e2 = label_sections(X, a, c, cfg)

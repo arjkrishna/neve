@@ -122,7 +122,8 @@ def write_outputs(ctx, ctrl, out, summary):
 
 
 # ----------------------------------------------------------------------------- per-step frames (animate_hybrid.py)
-PHASE_NAMES = dict(P="pre-settle", A="approach", T="insertion", D="ovoid seating", H="settle")
+PHASE_NAMES = dict(B="OAR pre-relaxation (balloon)", P="pre-settle", A="approach", T="insertion",
+                   D="ovoid seating", H="settle")
 
 
 def _sched_at(ctx, k):
@@ -306,7 +307,7 @@ def run_one(cfg, tag):
         n_settle_steps=int(sum(1 for r in rows if r["phase"] == "H")),
         ms_per_step_median=round(float(np.median(wall)), 1), ms_per_step_mean=round(float(wall.mean()), 1),
         ms_per_step_by_phase={p: round(float(np.median([r["wall_ms"] for r in rows if r["phase"] == p])), 1)
-                              for p in "PATDH" if any(r["phase"] == p for r in rows)},
+                              for p in "BPATDH" if any(r["phase"] == p for r in rows)},
         total_s=round(time.perf_counter() - t0, 1), t_init_s=round(t_init, 2),
         convergence=dict(rule="CONTRACT 5: %d consecutive settle steps with max nodal change < %g mm AND constraint "
                               "residual per contact < %g AND the constraint solver within its iteration cap"

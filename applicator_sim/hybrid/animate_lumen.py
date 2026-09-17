@@ -47,21 +47,26 @@ SIDE_W, FULL_W, H = 704, 1920, 800                           # multiples of 16 k
 
 # ================================================================================= geometry helpers
 def wall_rings(meta):
-    """surface.obj vertex index of every (station, theta) node on the lumen (inner) and outer surface."""
+    """Per station, the surface.obj vertex indices of the lumen (inner) and outer ring nodes in angular order.
+
+    Two LISTS of index arrays, not a rectangular (station, theta) table: the unstructured wall
+    (vagina_wall_tet.py) gives every ring as many nodes as its own perimeter needs, so the counts differ per
+    station.  The structured wall is the special case where every array has n_theta entries."""
     w = meta["wall"]
     gi = np.asarray(w["grid_index"], int)
     v2n = np.asarray(meta["surface_obj_vertex_to_tet_node"], int)
-    n_ax, n_th, n_rad = int(w["n_axial"]), int(w["n_theta"]), int(w["n_radial"])
-    inner = np.full((n_ax, n_th), -1, int)
-    outer = inner.copy()
-    for vi, node in enumerate(v2n):
-        st, lay, th = gi[node]
-        if lay == 0:
-            inner[st, th] = vi
-        elif lay == n_rad:
-            outer[st, th] = vi
-    if (inner < 0).any() or (outer < 0).any():
-        raise RuntimeError("the vagina surface does not carry every inner/outer ring node")
+    n_ax, n_rad = int(w["n_axial"]), int(w["n_radial"])
+    n2v = np.full(len(gi), -1, int)
+    n2v[v2n] = np.arange(len(v2n))
+    inner, outer = [], []
+    for k in range(n_ax):
+        for lay, out in ((0, inner), (n_rad, outer)):
+            idx = np.nonzero((gi[:, 0] == k) & (gi[:, 1] == lay))[0]
+            idx = idx[np.argsort(gi[idx, 2])]
+            vi = n2v[idx]
+            if len(vi) < 3 or (vi < 0).any():
+                raise RuntimeError("the vagina surface does not carry every inner/outer ring node (station %d)" % k)
+            out.append(vi)
     return inner, outer, np.asarray(w["s"], float)
 
 
@@ -140,11 +145,10 @@ class Lumen:
     def wall_sections(self, Vv):
         """Per station: lumen centre, the two rings in 2-D about that centre, their mean radii, and their LR extents
         ext = [L_out, L_in, R_in, R_out] (the coronal SILHOUETTE of the wall at that level)."""
-        Pin, Pout = Vv[self.inner], Vv[self.outer]
-        C = Pin.mean(1)
+        C = np.array([Vv[r].mean(0) for r in self.inner])
         out = dict(C=C, rings=[], ext=np.zeros((len(C), 4)), r_in=np.zeros(len(C)), r_out=np.zeros(len(C)))
         for k in range(len(C)):
-            i2, o2 = self.to2d(Pin[k], C[k]), self.to2d(Pout[k], C[k])
+            i2, o2 = self.to2d(Vv[self.inner[k]], C[k]), self.to2d(Vv[self.outer[k]], C[k])
             out["rings"].append((i2, o2))
             out["ext"][k] = [o2[:, 0].min(), i2[:, 0].min(), i2[:, 0].max(), o2[:, 0].max()]
             out["r_in"][k] = np.linalg.norm(i2, axis=1).mean()
