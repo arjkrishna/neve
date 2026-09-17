@@ -1795,6 +1795,21 @@ in centre mode a canal node engages only once it lies within tube radius + 3 mm 
 tube has actually reached it, and is latched from then on.  **G17 = G16 with that fix**, single variable
 against G15.
 
+### G17 — the tie is right but engages far too late: the tube travels BESIDE the canal
+
+`G17 = G16 + canal_engage_mm 3` (engage on proximity).  Balloon and approach identical to G15 (bladder 8.0,
+rectum 10.4, wall 1.000).  Then the vault drifts exactly as before — stations 22–27 off the rod line 0.1 → 1.6
+(u 0.57) → 4.9 (0.69) → 7.9 (0.81) → 11.5 (0.93) → 12.9 mm (u 1) — with **`n_canal_ties` = 0 until u = 0.81**,
+26 at u = 0.93, 31 at seating.  No canal node was within tube radius + 3 mm of the tube axis until the insertion
+was 80 % done: the corpus is lifted and anteverted rigidly by the pose rule, the cervix hangs from it, and the
+canal only meets the tube axis when the screw motion is nearly complete — for most of T the tube is beside the
+cervix, not in it.  The centring tie then has ~20 steps at 0.5 mm/step to pull a 7 mm offset: it cannot.  Two
+consequences: (i) the vault offset is a T-phase cervix-kinematics effect, so it must be caught during T;
+(ii) `canal_d_mm` (min / median / max distance of the in-span canal nodes to the tube axis) is now logged per step,
+so "is the tube in the canal" is a number, not an inference.  **G18 = G17 + `canal_engage_mm` 12**, single
+variable: the canal is caught as the tube enters the os region (u ≈ 0.5–0.6) and drawn onto the tube over the
+remaining ~50 steps.
+
 ### Commands
 
 ```bash
