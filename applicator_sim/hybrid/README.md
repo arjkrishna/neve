@@ -1783,6 +1783,18 @@ the canal-dilation tie becomes a centring tie — canal nodes within the tube's 
 in both directions (0.5 mm/step, k 200 mN/mm) instead of outward only — so the portio, and the vault that follows
 it, stay on the tube.
 
+### G16 — the centring tie grabbed the parked tube (fixed: engage on proximity)
+
+`G16 = G15 + canal_tie_mode "centre"` aborted at balloon step 23 with the RECTUM inverted (0.167) and the cervix
+displaced 7.2 mm during a phase in which nothing should touch it.  Cause: the canal tie engages nodes by the
+tube's AXIAL span, which at u = 0 already covers 12 canal nodes although the parked tube is 20+ mm away
+(anterior, in the bladder region — the same parked geometry that made tube|bladder contact harmful).  "dilate"
+never noticed because it only pushes nodes that are already within the tube radius; "centre" pulled all 12 toward
+the parked tube at 0.5 mm/step, dragged the cervix, and the wall/balloon with it.  Fix: `canal_engage_mm` (3 mm) —
+in centre mode a canal node engages only once it lies within tube radius + 3 mm of the tube axis, i.e. once the
+tube has actually reached it, and is latched from then on.  **G17 = G16 with that fix**, single variable
+against G15.
+
 ### Commands
 
 ```bash

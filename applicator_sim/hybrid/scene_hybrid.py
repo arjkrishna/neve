@@ -272,6 +272,11 @@ CFG = dict(
                                     # "attach" = AttachConstraint | "springs" = stiff RestShapeSprings to the copies
     k_attach_mN_per_mm=2000.0,      # only for attach_impl="springs"
     canal_tie=True,
+    canal_engage_mm=3.0,            # "centre" only: a canal node ENGAGES (and stays engaged) once it lies within
+                                    #   tube radius + this of the tube axis, i.e. once the tube has actually reached
+                                    #   it.  MEASURED (G16): engaging by axial span alone, as "dilate" may, pulled
+                                    #   12 canal nodes toward the PARKED tube at u = 0 (20+ mm away, anterior),
+                                    #   dragged the cervix 7.2 mm during the balloon phase and inverted the rectum.
     canal_tie_mode="dilate",        # "dilate" (unchanged): a canal node inside the tube's axial span is pushed
                                     #   radially OUT to the tube surface if it lies within the tube radius, and
                                     #   never pulled in -- the tie only dilates.  "centre": the same nodes are
@@ -1233,10 +1238,13 @@ class HybridController(Sofa.Core.Controller):
             lat = q - np.outer(s, at)
             d = np.linalg.norm(lat, axis=1)
             inside = (s >= 0.0) & (s <= self.L_iu)              # the tube currently occupies this axial level
-            new = inside & (self.eng_step < 0)
-            self.eng_step[new] = self.k
             centre = cfg.get("canal_tie_mode", "dilate") == "centre"
-            act = inside if centre else (inside & (d < rad))       # dilate only: never pull tissue inwards
+            if centre:                                          # engage only once the tube has REACHED the node
+                new = inside & (d < rad + float(cfg.get("canal_engage_mm", 3.0))) & (self.eng_step < 0)
+            else:
+                new = inside & (self.eng_step < 0)
+            self.eng_step[new] = self.k
+            act = (inside & (self.eng_step >= 0)) if centre else (inside & (d < rad))   # dilate: never pull inwards
             u = np.where(d[:, None] > 1e-9, lat / np.maximum(d, 1e-9)[:, None], _perp(at)[None, :])
             # target = the node moved radially to the tube surface, but at most canal_max_offset_mm away from
             # where it is now (bounded tie force; the full move is reached over several steps).  "dilate" moves
