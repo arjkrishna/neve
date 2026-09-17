@@ -1640,6 +1640,48 @@ copies the wall's outer sheet every step (one step behind), so the OARs feel the
 feel the OARs.  A one-way coupling, stated as such: it is the packing.  **G13 = G12 + `balloon_mode` follow**,
 single variable.
 
+### Run G13 — the first complete run of the route: seated caps INSIDE the lumen, deformable OARs, healthy wall
+
+`G13 = G12 + balloon_mode follow`.  **211 steps, u = 1.0, all 60 seating steps, 25 settle steps
+(`settle_not_converged`, as every run in the project), no abort; 31.5 min at 8.7 s/step.**
+
+| | rest → end of B | end of A (u 0.41) | end of T (u 1, caps parked) | end of D (seated) | settle |
+|---|---|---|---|---|---|
+| bladder umax / min vol ratio | 5.30 / 0.874 | 5.51 / 0.871 | 6.61 / 0.507 | 8.66 / 0.901 | **8.99** / 0.898 |
+| rectum umax | 8.69 / 0.617 | 7.13 / 0.461 | 0.00 / 0.347 | 1.28 / 0.862 | 1.20 / 0.946 |
+| sigmoid umax | 0.58 | 0.58 | 14.32 | 14.42 | 14.42 / 0.938 |
+| cervix umax | 0 | 0 | 25.21 | 25.38 | 25.38 / 0.638 |
+| vagina umax / min vol ratio | 0 / 1.000 | 0 / 1.000 | 21.53 / 0.870 | 22.60 / 0.849 | 22.71 / **0.837** |
+| contacts | 153 | 156 | 193 | 407 | 443 |
+| ovoid gap to the lumen (min) | 4.26 (parked) | 4.26 | 4.72 | **0.21 at station 25, in contact** | 0.16 |
+
+- **The caps are inside the lumen.**  Nearest-vertex containment at the seated pose: ovoid_L inside the lumen at
+  6 of the 7 stations it spans, ovoid_R 6 of 7 (r_dev 3.3–7.0 mm against r_in 11.6–15.4 at stations 23–27; the
+  one "outside" is the parked tail below station 21), shaft inside at 11 of 11.  In G2/G10 98.6 % of the cap
+  vertices were OUTSIDE the wall; the reference lumen now fits the ring (13.14 + 1.0 mm), so seating is a
+  traversal up an open vault, not a collision with a closed one.
+- **Wall health**: min vol ratio 0.837 at the end, the worst tet at station 17 (mid-vagina) between the sheets —
+  axial stretch, not the vault.  The apex follows the cervix 25 mm; the wall is stretched 1.2–1.4× axially over
+  stations 0–23 (Poisson necking r 5.9 → 5.0 mm mid-vagina, r_norm 5.9–6.2), the vault 1.0–1.1×.  The lumen at
+  stations 25–27 stays 12.9 / 14.8 / 15.4 mm through the whole seating (the caps touch it, gap 0.16, and do not
+  need to expand it further).  No terminal-ring failure at any step — the mechanism that killed F1/G7/G9 on the
+  structured mesh is absent.
+- **What the packing does and does not do.**  With `follow` the OARs never recoil (bladder 5.30 → 5.51 through
+  the approach, wall at 1.000).  Then the balloon follows the wall: as the cervix lifts the vault 25 mm and swings
+  it anteriorly (lumen axis 9–12 mm off the device axis at stations 24–27, 4–6 mm mid-vagina), the balloon lifts
+  with it — it pushes the BLADDER further (10.0 mm at step 100, 9.0 at the end; ground truth +13.7) and LEAVES
+  the rectum, which relaxes back to rest (8.7 → 0.0 mm by step 120; ground truth +15.5).  The real packing stays in
+  the lower vagina below the ovoids and the real vault distends posteriorly too; the model's packing is the wall's
+  outer sheet, wherever the wall goes.  The rectum displacement is the open item of this run, not the wall.
+- The seated caps sit off-centre in the vault (ovoid_R r_dev 0.25–0.35 mm at stations 24–25 = its nearest vertex
+  on the lumen axis, ovoid_L 5–7 mm): the vault is dragged anteriorly by the anteverting corpus while the device
+  is a straight line, the same 12 mm axis offset as above.
+
+Runs G11–G13 are one experiment in three single-variable steps: G11 proved the balloon moves the OARs and found
+the welded rectum end; G12 completed the balloon and showed the two-way-coupled wall cannot survive the recoil;
+G13 replaced the coupling by the packing and completed the route.  G14 = G13 + `balloon_drive_wall` (the wall's
+own nodes driven from the slit during B, for the frames; identical mechanics from P on) is the run to render.
+
 ### Commands
 
 ```bash
