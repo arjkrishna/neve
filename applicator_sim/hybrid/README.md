@@ -1810,6 +1810,16 @@ so "is the tube in the canal" is a number, not an inference.  **G18 = G17 + `can
 variable: the canal is caught as the tube enters the os region (u ≈ 0.5–0.6) and drawn onto the tube over the
 remaining ~50 steps.
 
+G17 then aborted at seating step 32 (step 157) on the **rectum** (0.165), not the wall (0.76): as the ring
+passed stations 3–14 it pushed the lower wall → packing → rectum a further 3.5 → 7.8 mm.  Worst tets at
+s = −37 … −46 mm along the rectum axis, interior (0/4 surface, 0/4 pinned, 5 pinned nodes within 10 mm), 4–6 mm
+from the wall's sheet, pushed 5–8 mm posteriorly (−y).  The rectum leaves the balloon phase INDENTED rather than
+translated — umax 10.4 mm but umean 2.0, vol ratio 0.47 — because its lower end (20 mN/mm × 103 nodes) and
+posterior support hold the far side while the packing pushes the near side, and a solid, ν 0.45 rod cannot flatten
+the way a hollow rectum does.  G15 survived the same passage only because its ring rode 4 mm the other way
+(anteriorly).  Fix direction for a later run ("rectum mobility": softer lower end pin, weaker posterior support,
+lower ν so the rod translates instead of crushing) — held until G18 answers the vault question.
+
 ### Commands
 
 ```bash
