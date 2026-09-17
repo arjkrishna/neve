@@ -1820,6 +1820,24 @@ the way a hollow rectum does.  G15 survived the same passage only because its ri
 (anteriorly).  Fix direction for a later run ("rectum mobility": softer lower end pin, weaker posterior support,
 lower ν so the rod translates instead of crushing) — held until G18 answers the vault question.
 
+### G18 — the tube is beside the canal until u ≈ 0.8 (now a number), the canal can be drawn onto it, and the vault STILL sits 13 mm off
+
+`G18 = G17 + canal_engage_mm 12`.  `canal_d_mm` (min / median distance of the in-span canal nodes to the tube
+axis) through the insertion: **20.7 / 23.7 mm at u 0.41, 18.3 / 21.3 at 0.48, 15.7 / 18.7 at 0.55, 12.7 / 15.9 at
+0.62, 8.9 / 12.1 at 0.69, 5.3 / 8.2 at 0.76, 2.0 / 5.2 at 0.83, 1.0 / 3.2 at 0.90, 0.4 / 2.4 at 0.98**.  The tube
+travels beside the cervix for the first two thirds of the insertion; the canal only reaches it as the corpus's
+screw motion completes.  With 12 mm engagement the tie catches 5 nodes at u 0.62 and 34 by 0.69, and does its job
+(median 2.5 mm at seating).  And the vault drift is unchanged: stations 22–27 at 12.2–13.4 mm off the rod line by
+u = 0.98, as in G15/G17.  The reason is where the tie acts: above the flange (s ≥ 0), on the canal that surrounds
+the tube — while the vault wraps the PORTIO, which hangs 5–12 mm BELOW the flange, is not tied to anything, and
+swings anteriorly with the corpus's 13 deg anteversion.  Clinically the external os sits on the applicator axis
+at the flange, between the caps.  Side effect noted: pulling the canal 12 → 2 mm over ~30 steps distorts the
+cervix's lower end and the apex-sprung vault with it (vagina vol ratio 0.70 → 0.33 at station 27 in the last T
+steps, before any cap arrives).  Ring inside 7/7 for both caps through seating; `abort_inverted_tets` at seating
+step 28 on the RECTUM (0.156), the G17 mechanism.  **G19 = G18 + `canal_tie_below_mm` 10**: canal nodes up to
+10 mm below the flange are tied laterally to the ROD line (the caps' axis).  **G20 = G19 + rectum mobility**
+(`k_rectum_ends` 20 → 2, `k_rectum_support` 2 → 0.5; two supports, one purpose), queued behind it.
+
 ### Commands
 
 ```bash
