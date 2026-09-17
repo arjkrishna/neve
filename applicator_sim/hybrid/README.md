@@ -1696,6 +1696,47 @@ to `applicator_d26s` (default part names → the straight rod and the d26s caps)
 `ln -s` COPIES a directory instead of linking it; build shadow trees with `New-Item -ItemType Junction` (or
 `mklink /J`), and check `LinkType` before trusting one.
 
+### What the G14 frames actually show (viewed: lumen frames at steps 0, 21, 39, 123, 210; full frames at 0, 39, 210)
+
+- **The vagina opens on screen and displaces the organs.**  Step 0: the wall is the preBT slit (lumen 2.6–3.0 mm at
+  the four sections, drawn thick because every node is squeezed onto the same collapsed ellipse); step 21: half
+  open (4.5–8.9 mm), the bladder and rectum already moving; step 39: the distended reference (5.9 / 5.9 / 7.5 /
+  13.4 mm at S1–S4), bladder 5.3 mm and rectum 8.7 mm away from their rest wireframes in the six-body view.  The
+  straightened silhouette shows the flare from the mid-vagina to the vault.  This is the first video in the project
+  in which the vagina expands.
+- **Seated pose (step 210): the shaft is inside the lumen at S3 and S4** (r 2.4–6.7 in a 7.3 mm lumen; 9.5–13.8 in
+  12.9), the tube is above the sections in the cervix, the caps sit at the vault level and the whole vault is
+  lifted to the flange with the cervix (six-body view: caps under the cervix, bladder pushed anteriorly, sigmoid
+  carried by the corpus).
+- **Defect 1 — the caps cross the POSTERIOR vault wall.**  S4 (station 25) at step 210: "ovoids: crossing the
+  wall, r 1.4–24.7 | lumen 12.9 / wall 14.9" — the two cap circles are centred ~10 mm posterior of the lumen
+  centre, so their posterior halves lie outside the wall.  The log's nearest-vertex rule reports the caps "inside
+  6 of 7 stations" and is misleading here for the reason recorded in the ANIMATION section (a solid that engulfs the
+  ring reads as inside); the section verdict is the one to quote.  MEASURED (`final/*_u.npy`, rod line through the
+  final flange): the caps span h = −13.4 … +1.4 mm below the flange at ±6.1 mm LR, 0 AP; vault stations 24–27 are
+  at h = −12.2 … −5.3 mm — the right height — but their ring centres are **9.0–12.4 mm off the rod line, +7 to
+  +10 mm ANTERIOR** (applicator y) and +5 mm to the right.  The offset is built during T, not D: station 24 goes
+  1.6 → 10.6 mm as the cervix lifts 25 mm, and seating adds 1.4 mm.  Its source is the cervix: at the seated pose
+  the portio (216 cervix surface nodes below h = +5) is centred 7.3 mm off the rod line (y +6.2), its canal nodes
+  near the flange 2.5–6.2 mm off the TUBE line (0.9–3.3 mm higher up, where the ties are engaged).  The cervix FEM
+  hangs from the rigid corpus and is tied to the tube only laterally at engaged canal nodes with a bounded offset,
+  so its lower end swings anteriorly with the 13 deg anteversion instead of staying on the tube; the vault, which
+  follows the portio, goes with it, and the caps — centred on the rod — meet its posterior wall.  In the real
+  seated state the portio is on the tube by definition (the tube passes through the external os), so this is a
+  cervix boundary-condition error of ~6–7 mm, not a wall failure.  Fix direction: hold the external os on the tube
+  (a canal tie at the os, or stronger/complete canal ties), then re-run — the wall and the packing need no change.
+- **Defect 2 — the tube still ghosts through the anterior lower wall during the approach.**  At steps 0–39 the
+  section verdict at S1 (station 4) is "tube: crossing the wall, r 4.5–9.2 | lumen 5.9 / wall 8.5": with the
+  device orientation fixed at its FINAL orientation for the whole travel (`tandem_rotation` "off", the flange-pinned
+  "canal" variant being refuted), the tube leans 24 deg anterior of the vaginal axis from u = 0, and since tube |
+  wall contact is off (`wall_contact_parts`) it passes through the anterior wall of the lower vagina until it has
+  risen above it (u ≈ 0.4; at step 123 it is "not at this level" at all four sections).  This is the appearance
+  the user first reported on Z7S; it is now confined to the approach and is a device-kinematics question (a
+  tip-pinned rotation, `geom.pose_at`, is the untested precedent), not a wall one.
+- **Defect 3 — the rectum.**  Six-body view at step 210: the rectum is back on its rest wireframe (umax 1.2 mm) after
+  having been 8.7 mm away at step 39.  The packing (the balloon following the wall) lifts away from it with the
+  vault; the real packing stays below the ovoids.  Ground truth wants +15.5 mm at the cap band.
+
 ### Commands
 
 ```bash
