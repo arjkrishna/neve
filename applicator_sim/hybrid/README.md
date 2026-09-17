@@ -1615,6 +1615,31 @@ triangles and ~170 contacts; the tet26 wall is 5253 tets against z7s's 3240).
   stiffness instead of the 1e4 mN/mm "fixed" springs.  The anorectal junction is anchored to the pelvic floor
   compliantly, not welded in space.  **G12 = G11 + `k_rectum_ends_mN_per_mm` 20**, single variable.
 
+### Run G12 — the balloon completes; then the OARs recoil and crush the wall (two-way coupling)
+
+`G12 = G11 + k_rectum_ends_mN_per_mm 20`.  The balloon phase now COMPLETES: at w = 1 (step 39) **bladder umax
+5.30 mm (vol ratio 0.874), rectum 8.69 mm (0.617; its transient minimum 0.396 at step 32, recovering)**,
+sigmoid 0.58 mm, wall untouched (1.000).  The rectum's lower cut end translates with the tissue instead of
+shearing — the compliant pin was the whole difference.
+
+Then the hand-off (step 40, groups read back `21 22 31` on the wall, the balloon sharing every id) turns the
+coupling two-way, and the OARs **recoil** against the wall: bladder 5.30 → 4.51 → 3.18 → 1.18 mm by the end of
+A (it gives back 78 % of its displacement), rectum 8.69 → 6.26 → 3.54 → 3.32 mm (keeps 38 %), while the wall —
+10 kPa, 1.2–3 mm thick, with only the apex / introitus springs to hold it — is squashed from 1.000 to 0.559 in the
+first two steps (umax 4.8 mm) and sits at 0.50–0.70 through the approach.  Insertion adds the cervix lift (cervix
+umax 6.5 mm by u = 0.62) and the vault fails: **`abort_inverted_tets` at step 93, u = 0.620, vagina vol ratio
+0.200 at station 26 (between the sheets)**, with the shaft inside the lumen at 18 of 18 stations and the caps still
+parked.  Not a mesh-quality failure this time: the wall is compressed by ~4–5 mm of OAR recoil that nothing
+opposes.
+
+Reading: in the model the distended reference wall is stress-free, but the displaced OARs are not — they store
+elastic energy and push back, and a continuum wall cannot re-fold the way the real rugal wall does.  Clinically the
+vagina is held open by the PACKING and the applicator, not by its own stiffness.  Hence cfg `balloon_mode`:
+"release" (G12, two-way) or **"follow"** — the balloon stays the OARs' contact surface for the whole run and
+copies the wall's outer sheet every step (one step behind), so the OARs feel the wall's shape and the wall does not
+feel the OARs.  A one-way coupling, stated as such: it is the packing.  **G13 = G12 + `balloon_mode` follow**,
+single variable.
+
 ### Commands
 
 ```bash
