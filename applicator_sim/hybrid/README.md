@@ -1866,6 +1866,16 @@ attached to the wrong thing: the fornices belong around the canal, which the app
 `apex_attach "canal"` pairs the apex with the nearest CANAL node instead.  **G21 = G19 + `apex_attach canal`**,
 single variable, queued behind G20 (= G19 + rectum mobility, already running).
 
+### G20 — rectum mobility: the rectum translates instead of being crushed
+
+`G20 = G19 + k_rectum_ends 20 → 2 mN/mm, k_rectum_support 2 → 0.5` (two supports, one purpose).  After the
+balloon the rectum is now **umax 12.9 mm, umean 3.6, vol ratio 0.77** against G15–G19's 10.4 / 2.0 / 0.47: the
+same packing displaces the rod as a whole instead of indenting it against its welded lower end.  Through the
+ring's passage at stations 3–12 — the steps that killed G17 (0.165) and G18 (0.156) — it dips to 0.61 and
+recovers to 0.88.  Vault offset unchanged at 13.9–14.1 mm (G21's question).  Both rectum supports are now
+"assumed, tuned to survive the load" rather than measured, and are recorded as such; the physical statement
+behind them is that a hollow rectum flattens where a solid rod cannot, and translation is the substitute.
+
 ### Commands
 
 ```bash
