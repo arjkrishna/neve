@@ -1838,6 +1838,34 @@ step 28 on the RECTUM (0.156), the G17 mechanism.  **G19 = G18 + `canal_tie_belo
 10 mm below the flange are tied laterally to the ROD line (the caps' axis).  **G20 = G19 + rectum mobility**
 (`k_rectum_ends` 20 → 2, `k_rectum_support` 2 → 0.5; two supports, one purpose), queued behind it.
 
+### G19 — completes; and the vault question is answered: the vault follows the tumour bulk, not the canal
+
+`G19 = G18 + canal_tie_below_mm 10`.  **211 steps, u = 1.0, all 60 seating steps, 25 settle steps, no abort**
+(`settle_not_converged` as always).  Bladder **15.8 mm** (ground truth +13.7), sigmoid 14.4, cervix 25.4, wall
+umax 25.3 at vol ratio **0.76**, ring inside the lumen the whole way (caps 6/7 at seating, shaft 12/12), ovoid gap
+0.48 in contact; rectum 10.4 mm after the balloon, 1.0 at the end (lost as before) — and it did not crush this
+time: the passing ring happened to ride on the anterior side.  48 min at 12.4 s/step.  Videos
+`insertion_G19_{lumen,full}.mp4`.
+
+The below-flange tie held the os region on the rod line (38 ties, canal median 2.4 mm from the axis) and the
+vault STILL sat 13–14 mm off.  Measured on the final state (`diag_vault`):
+
+- apex springs: extension mean 0.16 mm, p95 0.36, max 0.50 — **the vault is exactly at its targets**;
+- the targets' centroid: 14.9 mm off the rod line (x +7.3, y +11.8); the PAIRED cervix surface nodes' centroid:
+  13.1 mm off (x +6.5, y +10.4); at rest they were 1.9 mm off;
+- the cervix at the seated pose, by height: canal 1.5–3.5 mm off the axis at h −10 … +5 (tied), its OUTER surface
+  centroid 8.6–13.3 mm off (anterior), and the surface radius about the canal 15–24 mm on average, up to 27–43 mm.
+
+This is a tumour-bearing cervix — bulky, asymmetric, its mass anterior and lateral of the canal.  The apex
+springs pair each vault node with its nearest cervix SURFACE node at rest and keep a fixed offset; when the
+corpus anteverts 13 deg and lifts 25 mm, the tied canal stays on the axis but the bulk swings anteriorly, the
+paired surface nodes go with it, and the vault — obediently, springs relaxed — is carried 13 mm off the axis
+during T.  Its posterior wall then sits ~1 mm from the axis, so the rising caps are already OUTSIDE it before any
+contact could act; "the caps cross the posterior vault" was never a contact or wall failure.  The vault was
+attached to the wrong thing: the fornices belong around the canal, which the applicator defines.  cfg
+`apex_attach "canal"` pairs the apex with the nearest CANAL node instead.  **G21 = G19 + `apex_attach canal`**,
+single variable, queued behind G20 (= G19 + rectum mobility, already running).
+
 ### Commands
 
 ```bash
