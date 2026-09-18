@@ -305,7 +305,18 @@ CFG = dict(
                                     # tube radius and the force reaches k * 2.18 mm, which collapsed the cervix
                                     # elements around the canal (MEASURED, run H1: min volume ratio 0.92 -> 0.06).
     tie_ramp_steps=3,
-    apex_attach="follow",           # vagina.apex follows the nearest cervix SURFACE node ("follow") | "canal":
+    apex_attach="follow",           # "recentre": as "canal", plus the targets shift by w(s) * e, where e is the
+                                    #   REST vector from the vault ring's centre to the paired canal nodes' centre
+                                    #   and w = the corpus screw parameter s (0 through P/A, smoothstep to 1 over
+                                    #   T): zero force at rest, and at the seated pose the vault ring is centred ON
+                                    #   the canal.  MEASURED (G21, springs relaxed 0.62 mm): with "canal" the vault
+                                    #   is at its targets and those are 10.7 mm off the axis, because at REST the
+                                    #   canal sits 13.2 mm off the vaginal axis (x -9.8, y -8.2) inside the vault,
+                                    #   so the fixed canal->apex offsets are 18.8 mm vectors; when the tie draws
+                                    #   the canal onto the axis the vault is carried rigidly by the same -13 mm and
+                                    #   lands 13 mm off on the OPPOSITE side (x +5.8, y +8.2).  The fornices
+                                    #   re-centre on the cervix as the tandem straightens it; this is that.
+                                    # vagina.apex follows the nearest cervix SURFACE node ("follow") | "canal":
                                     #   the nearest cervix CANAL node | "off".  MEASURED (G19, seated, springs
                                     #   relaxed to 0.16 mm): with "follow" the vault sits exactly at its targets,
                                     #   and the targets ride the cervix's outer surface, which in this tumour-
@@ -859,13 +870,16 @@ def _add_couplings(ctx):
     #     solvers stay decoupled and the thin vagina cannot destabilise the cervix)
     apex = np.asarray(inp["meta"]["vagina"]["node_sets"]["apex"], int)
     ctx["apex"] = apex
-    if cfg["apex_attach"] in ("follow", "canal") and len(apex):
-        csurf = np.asarray(inp["meta"]["cervix"]["node_sets"]["canal" if cfg["apex_attach"] == "canal"
+    if cfg["apex_attach"] in ("follow", "canal", "recentre") and len(apex):
+        csurf = np.asarray(inp["meta"]["cervix"]["node_sets"]["canal" if cfg["apex_attach"] in ("canal", "recentre")
                                                              else "surface_nodes"], int)
         d = np.linalg.norm(X0["vagina"][apex][:, None, :] - X0["cervix"][csurf][None, :, :], axis=2)
         pair = csurf[d.argmin(1)]
         ctx["apex_pair"] = pair
         ctx["apex_off"] = X0["vagina"][apex] - X0["cervix"][pair]        # zero force at rest
+        ctx["apex_e"] = (X0["cervix"][pair].mean(0) - X0["vagina"][apex].mean(0)
+                         if cfg["apex_attach"] == "recentre" else np.zeros(3))
+        ctx["extra"]["apex_recentre_mm"] = np.round(ctx["apex_e"], 3).tolist()
         ctx["apex_tgt"] = ctx["targets"].addObject("MechanicalObject", name="apex_tgt", template="Vec3d",
                                                    position=X0["vagina"][apex].tolist())
         ctx["nodes"]["vagina"].addObject("RestShapeSpringsForceField", name="apex_follow",
@@ -1307,6 +1321,8 @@ class HybridController(Sofa.Core.Controller):
         # (4) vagina apex follows the cervix
         if c.get("apex_tgt") is not None:
             Xc = self.X("cervix")[c["apex_pair"]] + c["apex_off"]
+            if cfg["apex_attach"] == "recentre":                 # vault ring -> centred on the canal as s -> 1
+                Xc = Xc + float(r["s"]) * c["apex_e"][None, :]
             c["apex_tgt"].position.value = Xc.tolist()
 
     def _balloon(self, r):
