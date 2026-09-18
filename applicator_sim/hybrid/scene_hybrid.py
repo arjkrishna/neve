@@ -305,7 +305,15 @@ CFG = dict(
                                     # tube radius and the force reaches k * 2.18 mm, which collapsed the cervix
                                     # elements around the canal (MEASURED, run H1: min volume ratio 0.92 -> 0.06).
     tie_ramp_steps=3,
-    apex_attach="follow",           # vagina.apex follows the nearest cervix surface node ("follow") | "off"
+    apex_attach="follow",           # vagina.apex follows the nearest cervix SURFACE node ("follow") | "canal":
+                                    #   the nearest cervix CANAL node | "off".  MEASURED (G19, seated, springs
+                                    #   relaxed to 0.16 mm): with "follow" the vault sits exactly at its targets,
+                                    #   and the targets ride the cervix's outer surface, which in this tumour-
+                                    #   bearing cervix is 15-24 mm from the canal (up to 43 mm) and swings 13 mm
+                                    #   anteriorly with the anteversion while the tied canal stays on the axis --
+                                    #   so the vault leaves the applicator axis before the caps arrive and its
+                                    #   posterior wall ends up ~1 mm from the axis.  The fornices belong around the
+                                    #   canal, which the caps define; "canal" keeps the vault centred on it.
     k_apex_mN_per_mm=20.0,
     # --- supports (CONTRACT 4)
     k_cardinal_mN_per_mm=20.0, cardinal_len_mm=25.0,
@@ -851,8 +859,9 @@ def _add_couplings(ctx):
     #     solvers stay decoupled and the thin vagina cannot destabilise the cervix)
     apex = np.asarray(inp["meta"]["vagina"]["node_sets"]["apex"], int)
     ctx["apex"] = apex
-    if cfg["apex_attach"] == "follow" and len(apex):
-        csurf = np.asarray(inp["meta"]["cervix"]["node_sets"]["surface_nodes"], int)
+    if cfg["apex_attach"] in ("follow", "canal") and len(apex):
+        csurf = np.asarray(inp["meta"]["cervix"]["node_sets"]["canal" if cfg["apex_attach"] == "canal"
+                                                             else "surface_nodes"], int)
         d = np.linalg.norm(X0["vagina"][apex][:, None, :] - X0["cervix"][csurf][None, :, :], axis=2)
         pair = csurf[d.argmin(1)]
         ctx["apex_pair"] = pair
