@@ -1897,6 +1897,33 @@ s the corpus screw parameter (0 through P/A, smoothstep to 1 over T) — zero fo
 the canal (= the caps' axis) at the seated pose.  **G22 = G20 + `apex_attach recentre`**, single variable
 against the completing config.
 
+### G22 — the vault stays on the axis and the ring seats INSIDE it: the first correct seated pose
+
+`G22 = G20 + apex_attach recentre`.  210 of 211 steps (`abort_wall_time` at 3330 s during the settle's 24th step
+— the 3300 s cap, not a mechanical failure; ~12.8 s/step, 25 s/step in the settle).
+
+- **Vault offset through the insertion: 0.4 → 0.9 → 1.4 → 1.8 → 2.8 mm at stations 22–27** (u 0.48 → 0.98), where
+  every run since G14 climbed to 12–14 mm; at the end 0.8–2.5 mm.  The re-centring rides the corpus screw
+  parameter s (0.04 at u 0.48, 1.00 at u 0.98), so it happens exactly while the cervix is being straightened.
+- **Both caps inside the lumen at all 7 stations they span** (inside 7 / embedded 0 / outside 0, L and R; cap
+  vertices at r 0.2–11.8 mm about the lumen axis inside r_in 13.6–15.4, r_out 14.6–16.6), ovoid gap 0.40 mm in
+  contact at station 24 during seating, shaft inside 13/13.  In G14–G21 one cap half was through the posterior
+  vault wall at the seated pose.
+- Wall: min vol ratio 0.61–0.65 through D and H (station 27, the top ring, stretched by the 14 mm re-centring
+  shift), stable — no terminal-ring collapse.  Lumen at stations 20–27: 12.5–15.4 mm (necked 1–2 mm by the
+  cervix pull, the caps re-open stations 20–23 by 0.5–1.0 mm as they seat: 12.5 → 13.2, 12.7 → 13.7).
+- Organs: **rectum 7.1 mm at the end** — kept for the first time (every earlier run lost it to ~1 mm once the
+  vault swung away and the packing with it); bladder 7.3 (the 15–16 mm of G15–G20 was the vault being carried
+  anteriorly into it — an artefact, not agreement with the +13.7 ground truth); sigmoid 14.4; cervix 25.4.
+- Rest recentring vector `apex_recentre_mm` = [−9.35, −10.72, +4.91] world (14.4 mm): the preBT cervix sits that
+  far from the centre of its own vault in this patient.
+
+Chain of single-variable runs that got here: G15 (full-length lumen: ring inside the lower vagina) → G16/G17/G18
+(os tie: engage on proximity, then early enough; `canal_d_mm`) → G19 (below-flange tie; completes; springs
+relaxed → the vault is at its targets) → G20 (rectum mobility; completes with the rectum intact) → G21 (canal
+pairing: still carried, opposite side → the fixed offsets) → G22 (recentre).  Videos `insertion_G22_{lumen,full}.mp4`.
+`wall_limit_s` / `APPSIM_TIMEOUT` should be raised to ~4000 for this mesh (2756 nodes) so the settle completes.
+
 ### Commands
 
 ```bash
