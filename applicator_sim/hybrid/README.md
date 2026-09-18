@@ -1872,7 +1872,10 @@ single variable, queued behind G20 (= G19 + rectum mobility, already running).
 balloon the rectum is now **umax 12.9 mm, umean 3.6, vol ratio 0.77** against G15–G19's 10.4 / 2.0 / 0.47: the
 same packing displaces the rod as a whole instead of indenting it against its welded lower end.  Through the
 ring's passage at stations 3–12 — the steps that killed G17 (0.165) and G18 (0.156) — it dips to 0.61 and
-recovers to 0.88.  Vault offset unchanged at 13.9–14.1 mm (G21's question).  Both rectum supports are now
+recovers to 0.88.  **G20 completed: 211 steps, u = 1.0, 60/60 seating, 25 settle steps; rectum min vol ratio
+0.735 at the end (umax 1.1 mm — still lost after the balloon lifts away), bladder 15.9, sigmoid 14.5, cervix
+25.4, wall 25.3 mm at 0.76, ring inside (caps 6/7, shaft 12/12), ovoid gap 0.47 in contact; 49 min.**  Vault
+offset unchanged at 13.9–14.1 mm (G21's question).  Both rectum supports are now
 "assumed, tuned to survive the load" rather than measured, and are recorded as such; the physical statement
 behind them is that a hollow rectum flattens where a solid rod cannot, and translation is the substitute.
 
