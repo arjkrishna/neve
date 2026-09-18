@@ -1918,6 +1918,14 @@ against the completing config.
 - Rest recentring vector `apex_recentre_mm` = [−9.35, −10.72, +4.91] world (14.4 mm): the preBT cervix sits that
   far from the centre of its own vault in this patient.
 
+- **Frames viewed (step 209, `insertion_G22_lumen.mp4`)**: the section verdict at S4 (station 25) reads
+  "ovoids: INSIDE the lumen, r 8.8–13.3 | lumen 14.8 / wall 15.8" — both cap circles centred on the lumen centre
+  and wholly inside the wall; shaft "INSIDE the lumen" at S3 (r 1.8–2.6) and S4 (0.2–4.3); the straightened
+  silhouette shows the caps within the tube's width at the vault.  Six-body view: vagina distended along its
+  length, caps in the vault under the cervix, tube up the canal into the corpus, bladder anterior and rectum
+  posterior of their rest wireframes, sigmoid carried by the corpus.  This is the first frame in the project in
+  which the section rule — the one that exposed G14's "inside 6/7" — calls the seated ring inside.
+
 Chain of single-variable runs that got here: G15 (full-length lumen: ring inside the lower vagina) → G16/G17/G18
 (os tie: engage on proximity, then early enough; `canal_d_mm`) → G19 (below-flange tie; completes; springs
 relaxed → the vault is at its targets) → G20 (rectum mobility; completes with the rectum intact) → G21 (canal
