@@ -1879,6 +1879,24 @@ offset unchanged at 13.9–14.1 mm (G21's question).  Both rectum supports are n
 "assumed, tuned to survive the load" rather than measured, and are recorded as such; the physical statement
 behind them is that a hollow rectum flattens where a solid rod cannot, and translation is the substitute.
 
+### G21 — canal pairing carries the vault to the OPPOSITE side; the offsets were the bug, not the anatomy
+
+`G21 = G19 + apex_attach canal`: `abort_inverted_tets` at u = 0.82 on the BLADDER (0.188, pushed 17.4 mm where
+G19 had 14.0 at the same u), vault at 10.3 mm off the axis — the same trajectory as G19.  `diag_vault` on the
+abort state: springs relaxed again (0.62 mm), apex targets' centroid 10.7 mm off (x +5.8, y +8.2), while the
+paired CANAL nodes' centroid is only 3.5 mm off.  The offsets carry it: **at REST the canal sits 13.2 mm off the
+vaginal axis (x −9.8, y −8.2), inside the vault** — the preBT cervix is off-centre in its own fornix recess — so
+the canal→apex offsets are 18.8 mm world vectors; when the tie draws the canal onto the axis (Δ ≈ −13 mm
+lateral) the vault is carried rigidly by the same Δ and lands 13 mm off on the *opposite* side.  G19's surface
+pairing did the same through the bulk.  So the G19 conclusion ("the tumour bulk carries the vault") was only half
+right: the bulk is where the cervix goes, but what puts the vault 13 mm off the caps is the rigid carry of a
+vault that was built around the vaginal axis with the cervix off-centre inside it.  Clinically the fornices
+re-centre on the cervix as the tandem straightens it.  cfg `apex_attach "recentre"`: canal pairing plus a shift
+of the targets by s(u) · e, where e is the rest vector from the vault ring's centre to the paired canal nodes and
+s the corpus screw parameter (0 through P/A, smoothstep to 1 over T) — zero force at rest, vault ring centred on
+the canal (= the caps' axis) at the seated pose.  **G22 = G20 + `apex_attach recentre`**, single variable
+against the completing config.
+
 ### Commands
 
 ```bash
