@@ -1,0 +1,105 @@
+=== validation blocks: successes / failures by type (counts) ===
+success            False                                                                                         True                                                                 
+ct               cathled clean coil deep-rec light-rec mid-thrash near-fight prox-thrash shove-cap shove-fight cathled clean coil deep-rec light-rec mid-thrash near-fight shove-fight
+tag        block                                                                                                                                                                      
+car_nopriv 0           0     2    3        1         8         21          0          30         0           2       0    22    0        1         8          0          0           0
+           1           0     0    0        0         0          0          0           0        26          29      15    25    0        0         0          0          0           3
+           2           0     0    0        3         0         12          3           0         0          11       0    31    0        1        11          3          0          23
+           3           0     0    2        1         0          0          3           0         0           2       0    80    0        8         1          0          1           0
+           4           0     0    1        0         0          0          3           0         0           4       0    78    0        5         6          0          1           0
+car_v3     0           0     0   12        1         0          2          1           4         0           3       5    51    2        4         5          0          2           6
+           1           0     0    0        1         0          1          7           3         0           0       3    55    0        4        17          0          1           6
+           2           0     0    0        0         2         40          0          18         0           0       0     0    0        0         0         38          0           0
+           3           0     0    0        0         0          0          4           1         0           0       3    67    0        2        16          0          5           0
+           4           0     0    0        0         0          0          1           0         0           2       1    72    0        5        16          0          1           0
+           5           1     0    0        6         1          0          0           0         0           0      12    17    0        3        29         29          0           0
+           6           0     0    0        0         0          0          2           0         0           0       6    72    0        5        11          0          1           1
+car_v3a    0           0     3    1        1        20          5          0          18         0           1       0    25    0        0        24          0          0           0
+           1           0     0    3        1         0          2          6           0         0           5       6    48    0        2        25          0          0           0
+           2           0     0    3        6         0          8          8           5         0           2       0     6    0        8        38          2          2          10
+
+=== counterfactual: block success if recovery-type successes had failed ===
+car_nopriv  blk 0  succ  31.6%  recovery-type succ  9 ( 29% of succ) ->  22.4% without | any non-clean succ  9 ->  22.4%
+car_nopriv  blk 1  succ  43.9%  recovery-type succ  0 (  0% of succ) ->  43.9% without | any non-clean succ  3 ->  40.8%
+car_nopriv  blk 2  succ  70.4%  recovery-type succ 12 ( 17% of succ) ->  58.2% without | any non-clean succ 38 ->  31.6%
+car_nopriv  blk 3  succ  91.8%  recovery-type succ  9 ( 10% of succ) ->  82.7% without | any non-clean succ 10 ->  81.6%
+car_nopriv  blk 4  succ  91.8%  recovery-type succ 11 ( 12% of succ) ->  80.6% without | any non-clean succ 12 ->  79.6%
+car_v3      blk 0  succ  76.5%  recovery-type succ  9 ( 12% of succ) ->  67.3% without | any non-clean succ 19 ->  57.1%
+car_v3      blk 1  succ  87.8%  recovery-type succ 21 ( 24% of succ) ->  66.3% without | any non-clean succ 28 ->  59.2%
+car_v3      blk 2  succ  38.8%  recovery-type succ  0 (  0% of succ) ->  38.8% without | any non-clean succ 38 ->   0.0%
+car_v3      blk 3  succ  94.9%  recovery-type succ 18 ( 19% of succ) ->  76.5% without | any non-clean succ 23 ->  71.4%
+car_v3      blk 4  succ  96.9%  recovery-type succ 21 ( 22% of succ) ->  75.5% without | any non-clean succ 22 ->  74.5%
+car_v3      blk 5  succ  91.8%  recovery-type succ 32 ( 36% of succ) ->  59.2% without | any non-clean succ 61 ->  29.6%
+car_v3      blk 6  succ  98.0%  recovery-type succ 16 ( 17% of succ) ->  81.6% without | any non-clean succ 18 ->  79.6%
+car_v3a     blk 0  succ  50.0%  recovery-type succ 24 ( 49% of succ) ->  25.5% without | any non-clean succ 24 ->  25.5%
+car_v3a     blk 1  succ  82.7%  recovery-type succ 27 ( 33% of succ) ->  55.1% without | any non-clean succ 27 ->  55.1%
+car_v3a     blk 2  succ  67.3%  recovery-type succ 46 ( 70% of succ) ->  20.4% without | any non-clean succ 60 ->   6.1%
+
+=== seed-paired flips ===
+car_v3: block 1 (87.8%) -> block 3 (94.9%): paired 98 | both-succeed 84 | flip UP 9 | flip DOWN 2 | both-fail 3
+   flip-UP successes (higher block) by type: {'near-fight': 4, 'clean': 3, 'light-rec': 1, 'deep-rec': 1} | median steps 172
+   flip-UP seeds' failure type (lower block): {'near-fight': 6, 'prox-thrash': 3}
+   both-succeed seeds, type in lower block: {'clean': 54, 'light-rec': 17, 'shove-fight': 6, 'deep-rec': 3, 'cathled': 3, 'near-fight': 1}
+   both-succeed seeds, type in higher block: {'clean': 64, 'light-rec': 15, 'cathled': 3, 'deep-rec': 1, 'near-fight': 1}
+   flip-DOWN failures (higher block) by type: {'prox-thrash': 1, 'near-fight': 1}
+car_v3: block 1 (87.8%) -> block 6 (98.0%): paired 98 | both-succeed 85 | flip UP 11 | flip DOWN 1 | both-fail 1
+   flip-UP successes (higher block) by type: {'light-rec': 4, 'clean': 3, 'deep-rec': 3, 'shove-fight': 1} | median steps 117
+   flip-UP seeds' failure type (lower block): {'near-fight': 6, 'prox-thrash': 3, 'deep-rec': 1, 'mid-thrash': 1}
+   both-succeed seeds, type in lower block: {'clean': 54, 'light-rec': 17, 'shove-fight': 6, 'deep-rec': 4, 'cathled': 3, 'near-fight': 1}
+   both-succeed seeds, type in higher block: {'clean': 69, 'light-rec': 7, 'cathled': 6, 'deep-rec': 2, 'near-fight': 1}
+   flip-DOWN failures (higher block) by type: {'near-fight': 1}
+car_v3: block 3 (94.9%) -> block 6 (98.0%): paired 98 | both-succeed 92 | flip UP 4 | flip DOWN 1 | both-fail 1
+   flip-UP successes (higher block) by type: {'deep-rec': 2, 'shove-fight': 1, 'light-rec': 1} | median steps 167
+   flip-UP seeds' failure type (lower block): {'near-fight': 3, 'prox-thrash': 1}
+   both-succeed seeds, type in lower block: {'clean': 67, 'light-rec': 15, 'near-fight': 5, 'cathled': 3, 'deep-rec': 2}
+   both-succeed seeds, type in higher block: {'clean': 72, 'light-rec': 10, 'cathled': 6, 'deep-rec': 3, 'near-fight': 1}
+   flip-DOWN failures (higher block) by type: {'near-fight': 1}
+car_v3: block 2 (38.8%) -> block 4 (96.9%): paired 98 | both-succeed 38 | flip UP 57 | flip DOWN 0 | both-fail 3
+   flip-UP successes (higher block) by type: {'clean': 43, 'light-rec': 8, 'deep-rec': 5, 'near-fight': 1} | median steps 80
+   flip-UP seeds' failure type (lower block): {'mid-thrash': 39, 'prox-thrash': 16, 'light-rec': 2}
+   both-succeed seeds, type in lower block: {'mid-thrash': 38}
+   both-succeed seeds, type in higher block: {'clean': 29, 'light-rec': 8, 'cathled': 1}
+car_v3: block 3 (94.9%) -> block 4 (96.9%): paired 98 | both-succeed 92 | flip UP 3 | flip DOWN 1 | both-fail 2
+   flip-UP successes (higher block) by type: {'deep-rec': 2, 'clean': 1} | median steps 133
+   flip-UP seeds' failure type (lower block): {'near-fight': 2, 'prox-thrash': 1}
+   both-succeed seeds, type in lower block: {'clean': 67, 'light-rec': 16, 'near-fight': 4, 'cathled': 3, 'deep-rec': 2}
+   both-succeed seeds, type in higher block: {'clean': 71, 'light-rec': 16, 'deep-rec': 3, 'cathled': 1, 'near-fight': 1}
+   flip-DOWN failures (higher block) by type: {'near-fight': 1}
+car_nopriv: block 1 (43.9%) -> block 3 (91.8%): paired 98 | both-succeed 43 | flip UP 47 | flip DOWN 0 | both-fail 8
+   flip-UP successes (higher block) by type: {'clean': 41, 'deep-rec': 5, 'light-rec': 1} | median steps 69
+   flip-UP seeds' failure type (lower block): {'shove-cap': 25, 'shove-fight': 22}
+   both-succeed seeds, type in lower block: {'clean': 25, 'cathled': 15, 'shove-fight': 3}
+   both-succeed seeds, type in higher block: {'clean': 39, 'deep-rec': 3, 'near-fight': 1}
+car_nopriv: block 2 (70.4%) -> block 4 (91.8%): paired 98 | both-succeed 69 | flip UP 21 | flip DOWN 0 | both-fail 8
+   flip-UP successes (higher block) by type: {'clean': 15, 'deep-rec': 4, 'light-rec': 2} | median steps 81
+   flip-UP seeds' failure type (lower block): {'mid-thrash': 9, 'shove-fight': 9, 'deep-rec': 2, 'near-fight': 1}
+   both-succeed seeds, type in lower block: {'clean': 31, 'shove-fight': 23, 'light-rec': 11, 'mid-thrash': 3, 'deep-rec': 1}
+   both-succeed seeds, type in higher block: {'clean': 63, 'light-rec': 4, 'deep-rec': 1, 'near-fight': 1}
+car_nopriv: block 3 (91.8%) -> block 4 (91.8%): paired 98 | both-succeed 86 | flip UP 4 | flip DOWN 4 | both-fail 4
+   flip-UP successes (higher block) by type: {'clean': 2, 'deep-rec': 2} | median steps 138
+   flip-UP seeds' failure type (lower block): {'coil': 2, 'near-fight': 1, 'shove-fight': 1}
+   both-succeed seeds, type in lower block: {'clean': 77, 'deep-rec': 7, 'light-rec': 1, 'near-fight': 1}
+   both-succeed seeds, type in higher block: {'clean': 76, 'light-rec': 6, 'deep-rec': 3, 'near-fight': 1}
+   flip-DOWN failures (higher block) by type: {'shove-fight': 2, 'near-fight': 2}
+
+=== always-succeed vs marginal seeds across all >=90% blocks of each run (block>0) ===
+car_v3 blocks [3, 4, 5, 6]: seeds in all: 98 | always-succeed 87 | marginal 10 | never 1
+success          False                                                         True                                                            
+ct             cathled deep-rec light-rec near-fight prox-thrash shove-fight cathled clean deep-rec light-rec mid-thrash near-fight shove-fight
+row_0                                                                                                                                          
+always-succeed       0        0         0          0           0           0      22   224        7        64         29          2           0
+marginal/never       1        6         1          7           1           2       0     4        8         8          0          5           1
+car_nopriv blocks [3, 4]: seeds in all: 98 | always-succeed 86 | marginal 8 | never 4
+success        False                                 True                               
+ct              coil deep-rec near-fight shove-fight clean deep-rec light-rec near-fight
+row_0                                                                                   
+always-succeed     0        0          0           0   153       10         7          2
+marginal/never     3        1          6           6     5        3         0          0
+
+=== where the recovered stall is: recovery-type successes in >=90% blocks (block>0) ===
+n=107  median steps 142  >=200 steps 36%
+p0f
+proximal <33%     18
+mid 33-66%        43
+distal 66-90%      8
+at-target >90%    34

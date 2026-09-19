@@ -1,0 +1,250 @@
+<title>RCCA Trajectory Atlas</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f3f5f6; --panel:#ffffff; --ink:#1c2229; --muted:#5b6672; --rule:#d3dae0; --rule-soft:#e6ebef;
+  --accent:#1f8a5b; --wire:#1f8a5b; --cath:#c43d34; --path:#d9902a;
+  --c-clean:#5b6672; --c-rec:#3b6ea5; --c-near:#2f7d5b; --c-shove:#d98c3f; --c-coil:#7b4fa3; --c-thrash:#b23a48;
+  --plate:#ffffff;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141920; --panel:#1b222a; --ink:#e4e8ec; --muted:#9aa6b2; --rule:#2c353f; --rule-soft:#232c35;
+    --accent:#3fbc84; --wire:#3fbc84; --cath:#e0685f; --path:#e6a64a;
+    --c-clean:#9aa6b2; --c-rec:#6f9fd6; --c-near:#4fb08a; --c-shove:#e6a35c; --c-coil:#a685d4; --c-thrash:#d9636f;
+    --plate:#f4f6f7;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141920; --panel:#1b222a; --ink:#e4e8ec; --muted:#9aa6b2; --rule:#2c353f; --rule-soft:#232c35;
+  --accent:#3fbc84; --wire:#3fbc84; --cath:#e0685f; --path:#e6a64a;
+  --c-clean:#9aa6b2; --c-rec:#6f9fd6; --c-near:#4fb08a; --c-shove:#e6a35c; --c-coil:#a685d4; --c-thrash:#d9636f;
+  --plate:#f4f6f7;
+}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15.5px;line-height:1.55;}
+.wrap{max-width:1080px;margin:0 auto;padding:36px 22px 80px;}
+.prose{max-width:70ch;}
+h1,h2,h3{font-family:"Spectral",Georgia,"Times New Roman",serif;font-weight:600;line-height:1.15;text-wrap:balance;margin:0;}
+h1{font-size:2.5rem;letter-spacing:-0.01em;}
+h2{font-size:1.55rem;margin-top:3.2rem;padding-top:1.1rem;border-top:1px solid var(--rule);}
+h3{font-size:1.12rem;margin-top:1.6rem;}
+p{margin:0.8rem 0;}
+.eyebrow{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:0.6rem;}
+.lede{font-size:1.12rem;color:var(--muted);max-width:66ch;margin-top:0.9rem;}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:0.86em;}
+.num{font-variant-numeric:tabular-nums;text-align:right;}
+.meta{display:flex;flex-wrap:wrap;gap:1.4rem 2.4rem;margin:1.6rem 0 0;padding:1rem 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);}
+.meta div{min-width:120px;}
+.meta b{display:block;font-family:"Spectral",serif;font-size:1.5rem;font-weight:600;font-variant-numeric:tabular-nums;}
+.meta span{font-size:0.8rem;color:var(--muted);letter-spacing:0.04em;text-transform:uppercase;}
+.verdicts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:1.2rem;}
+.verdict{background:var(--panel);border:1px solid var(--rule);padding:16px 18px 14px;}
+.verdict .tag{font-family:"IBM Plex Mono",monospace;font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;}
+.verdict h3{margin:0.35rem 0 0.5rem;font-size:1.05rem;}
+.verdict p{margin:0;font-size:0.94rem;color:var(--muted);}
+.yes .tag{color:var(--c-near);} .part .tag{color:var(--path);} .no .tag{color:var(--c-thrash);}
+table{border-collapse:collapse;width:100%;font-size:0.9rem;margin:1rem 0;}
+th,td{padding:7px 10px;border-bottom:1px solid var(--rule-soft);vertical-align:top;text-align:left;}
+th{font-weight:500;color:var(--muted);font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;border-bottom:1px solid var(--rule);}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
+.tablewrap{overflow-x:auto;}
+.atlas{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:16px;margin-top:1.2rem;}
+.card{background:var(--panel);border:1px solid var(--rule);padding:14px 14px 12px;display:flex;flex-direction:column;gap:10px;border-top:3px solid var(--stripe,var(--rule));}
+.card header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+.card header .id{font-family:"IBM Plex Mono",monospace;font-size:0.78rem;color:var(--muted);}
+.card header b{font-family:"Spectral",serif;font-weight:600;font-size:1.05rem;}
+.card .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 10px;font-size:0.8rem;color:var(--muted);}
+.card .stats b{display:block;color:var(--ink);font-variant-numeric:tabular-nums;font-weight:500;font-size:0.95rem;}
+.card .sig{font-size:0.9rem;margin:0;}
+.card .thumbs{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.card figure{margin:0;}
+.card figure img{width:100%;display:block;background:var(--plate);border:1px solid var(--rule-soft);}
+.card figcaption{font-size:0.7rem;color:var(--muted);margin-top:3px;line-height:1.3;font-family:"IBM Plex Mono",monospace;}
+.clean{--stripe:var(--c-clean);} .rec{--stripe:var(--c-rec);} .near{--stripe:var(--c-near);} .shove{--stripe:var(--c-shove);} .coil{--stripe:var(--c-coil);} .thrash{--stripe:var(--c-thrash);}
+.fig{margin:1.4rem 0;}
+.fig img{width:100%;display:block;background:var(--plate);padding:6px;box-sizing:border-box;border:1px solid var(--rule);}
+.fig figcaption{font-size:0.85rem;color:var(--muted);margin-top:8px;max-width:80ch;}
+.note{font-size:0.9rem;color:var(--muted);}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;font-size:0.92rem;margin:0.8rem 0;}
+.kv dt{color:var(--muted);} .kv dd{margin:0;}
+ul{padding-left:1.2rem;} li{margin:0.35rem 0;}
+.swatch{display:inline-block;width:0.7em;height:0.7em;border-radius:2px;vertical-align:-0.05em;margin-right:0.35em;}
+code{font-family:"IBM Plex Mono",monospace;font-size:0.86em;background:var(--rule-soft);padding:1px 5px;}
+@media (max-width:520px){h1{font-size:1.9rem;} .card .thumbs{grid-template-columns:1fr;}}
+</style>
+
+<div class="wrap">
+<div class="eyebrow">Explore + validation + host-test episodes · 12 training runs · Sep 18, 2026</div>
+<h1>RCCA Trajectory Atlas</h1>
+<p class="lede">Every complete episode from every run with step logs on this machine, plus the other machine's TopBrain extracts, reduced to one 78-number description of <em>how</em> the episode went and clustered without reference to outcome. The question: what do high-success, stable runs do differently in the way they succeed and the way they fail?</p>
+
+<div class="meta">
+  <div><b>138,555</b><span>episodes clustered</span></div>
+  <div><b>12.9 GB</b><span>step logs parsed</span></div>
+  <div><b>11</b><span>trajectory types</span></div>
+  <div><b>83</b><span>validation blocks</span></div>
+  <div><b>39</b><span>host-test sessions</span></div>
+  <div><b>66</b><span>snapshots blind-checked</span></div>
+</div>
+
+<h2>Verdicts on the three hypotheses</h2>
+<div class="verdicts">
+  <div class="verdict yes"><div class="tag">Supported — with the visual cue inverted</div><h3>High-success runs fail differently</h3><p>Their failures reach the target region (median progress 0.94) and fight a buckle there; low-success runs fail by early wedging and thrashing. Thrash share of failures correlates −0.55 with block success; near-target-fight share +0.54, and it predicts the <em>next</em> eval from the explore window before it (+0.79 between runs, +0.27 within a run). But in the final frame it is the strong runs' failures that look convoluted — coiled at the last bend (5/5 blind-labelled coil) — while thrash and shove-to-cap failures look neat because they never got anywhere (0/19 convoluted).</p></div>
+  <div class="verdict part"><div class="tag">Partly — the count is 3× larger than the ≥200-step tail</div><h3>A handful of ≥200-step successes carry the recovery skill</h3><p>98% of long successes in ≥90% blocks contain a closed stall, and they are recovery episodes — but the 200-step line undercounts them. In carotid v3's ≥90% blocks, 16–21 of 98 successes (17–22%) are recovery-type, most of them light recoveries finishing in 100–200 steps; only 2–6 cross 200. In TopBrain runs recovery-type successes are 1–5%.</p></div>
+  <div class="verdict part"><div class="tag">Yes at the frontier, no as a share</div><h3>More recovery among successes ⇒ higher success</h3><p>Across runs the recovery share of successes correlates +0.37 with block success; within a run it is 0. Seed-pairing shows why both are true: the seeds a carotid run wins between 88% and 98% are won mostly by recovery (7 of 11), and the marginal seeds across its ≥90% checkpoints succeed by recovery 85% of the time — while the seeds it already had migrate from recovery to clean (17 → 7 light recoveries among 85 always-succeed seeds). Recovery holds the frontier; avoidance moves it.</p></div>
+</div>
+
+<h2>The eleven types</h2>
+<div class="prose">
+<p>Level 1 is the silhouette-optimal k-means split (k=4, silhouette 0.59): clean success · late buckle · catheter shove · far stall. Level 2 sub-clusters each of those (4/3/2/2). Colours group the sub-clusters by the behaviour they express; the stripe on each card is the group. Thumbnails are explore snapshots drawn at random from the cluster, captioned with what the blind labeller saw.</p>
+</div>
+<div class="atlas">
+  <div class="card clean"><header><span class="id">0</span><b>clean success</b></header>
+    <div class="stats"><div>episodes<b>53,341</b></div><div>success<b>100%</b></div><div>median steps<b>86</b></div><div>withdrawn<b>11 mm</b></div><div>stalls<b>0</b></div><div>≥200 steps<b>0%</b></div></div>
+    <p class="sig">Wire leads, steady advance, a few millimetres of easing. The default success of the TopBrain and carotid policies.</p>
+    <div class="thumbs">{{ATLAS:0:0}}{{ATLAS:0:1}}</div></div>
+  <div class="card clean"><header><span class="id">1</span><b>clean-fast success</b></header>
+    <div class="stats"><div>episodes<b>40,158</b></div><div>success<b>100%</b></div><div>median steps<b>71</b></div><div>withdrawn<b>3 mm</b></div><div>stalls<b>0</b></div><div>≥200 steps<b>1%</b></div></div>
+    <p class="sig">Same as type 0 with essentially no retraction at all. 77% of TopBrain v2's successes; 10–30% of carotid's.</p>
+    <div class="thumbs">{{ATLAS:1:0}}{{ATLAS:1:1}}</div></div>
+  <div class="card shove"><header><span class="id">2</span><b>catheter-led sprint</b></header>
+    <div class="stats"><div>episodes<b>12,071</b></div><div>success<b>99%</b></div><div>median steps<b>37</b></div><div>catheter ahead<b>64 mm</b></div><div>stalls<b>0</b></div><div>≥200 steps<b>0%</b></div></div>
+    <p class="sig">The catheter is shoved ahead of the wire and reaches the target first. 70–92% of the procedural runs' successes; 1–11% elsewhere. Fast, and the same strategy that fails as type 9.</p>
+    <div class="thumbs">{{ATLAS:2:0}}{{ATLAS:2:1}}</div></div>
+  <div class="card rec"><header><span class="id">3</span><b>light recovery</b></header>
+    <div class="stats"><div>episodes<b>7,318</b></div><div>success<b>98%</b></div><div>median steps<b>139</b></div><div>withdrawn<b>52 mm</b></div><div>stalls<b>1</b></div><div>≥200 steps<b>26%</b></div></div>
+    <p class="sig">One stall, closed in 97% of episodes, escaped with ~18 small retract bouts (max bout 9 mm). The most common recovery success: 26% of carotid v3's successes, 1–5% of TopBrain's.</p>
+    <div class="thumbs">{{ATLAS:3:0}}{{ATLAS:3:1}}</div></div>
+  <div class="card rec"><header><span class="id">4</span><b>deep recovery</b></header>
+    <div class="stats"><div>episodes<b>2,590</b></div><div>success<b>82%</b></div><div>median steps<b>209</b></div><div>withdrawn<b>100 mm</b></div><div>stalls<b>2</b></div><div>≥200 steps<b>36%</b></div></div>
+    <p class="sig">Two stalls, 38 mm of wire slack at the peak, the last stall closing at 94% of the episode. Success but late; 18% run out of steps.</p>
+    <div class="thumbs">{{ATLAS:4:0}}{{ATLAS:4:1}}</div></div>
+  <div class="card shove"><header><span class="id">5</span><b>shove fight</b></header>
+    <div class="stats"><div>episodes<b>2,758</b></div><div>success<b>32%</b></div><div>median steps<b>600</b></div><div>catheter ahead<b>129 mm</b></div><div>withdrawn<b>420 mm</b></div><div>retract bouts<b>110</b></div></div>
+    <p class="sig">Catheter runs ahead, wire stalls at 88% progress, policy fights with 110 retract bouts. The ablation run's signature failure (38% of its failures vs 12% for the baseline).</p>
+    <div class="thumbs">{{ATLAS:5:0}}{{ATLAS:5:1}}</div></div>
+  <div class="card near"><header><span class="id">6</span><b>near-target buckle fight</b></header>
+    <div class="stats"><div>episodes<b>1,873</b></div><div>success<b>27%</b></div><div>median steps<b>600</b></div><div>max progress<b>0.95</b></div><div>withdrawn<b>429 mm</b></div><div>coiled<b>48%</b></div></div>
+    <p class="sig">Reaches 95% of the path, buckles at the last bend, and fights there to the buzzer — every sampled snapshot shows a catheter loop with the tip at or beside the target. The characteristic failure of ≥90% runs: 72% of TopBrain run 2's failures, 38% of failures in ≥90% validation blocks.</p>
+    <div class="thumbs">{{ATLAS:6:0}}{{ATLAS:6:1}}</div></div>
+  <div class="card thrash"><header><span class="id">7</span><b>mid-path thrash</b></header>
+    <div class="stats"><div>episodes<b>4,268</b></div><div>success<b>15%</b></div><div>max progress<b>0.49</b></div><div>withdrawn<b>566 mm</b></div><div>stalls<b>5</b></div><div>given back<b>216 mm</b></div></div>
+    <p class="sig">Five stalls, 146 retract bouts, tip path 9× the net displacement. 27% spend ≥100 steps physically in the RVA. With type 10, the failure of carotid v3's critic-divergence window (84% of that window's failures) and of the declining v3c2.</p>
+    <div class="thumbs">{{ATLAS:7:0}}{{ATLAS:7:1}}</div></div>
+  <div class="card coil"><header><span class="id">8</span><b>mega-coil</b></header>
+    <div class="stats"><div>episodes<b>1,989</b></div><div>success<b>7%</b></div><div>wire slack<b>646 mm</b></div><div>catheter slack<b>720 mm</b></div><div>max progress<b>0.83</b></div><div>fold counter peak<b>41</b></div></div>
+    <p class="sig">Hundreds of millimetres fed with no tip advance: the wire and catheter loop inside the vessel (the fold counter, which kills at 20 when not relaxed, peaks at 41). 14% of TopBrain run 2's failures, and the dominant host failure of TopBrain v2.</p>
+    <div class="thumbs">{{ATLAS:8:0}}{{ATLAS:8:1}}</div></div>
+  <div class="card shove"><header><span class="id">9</span><b>shove to cap</b></header>
+    <div class="stats"><div>episodes<b>5,678</b></div><div>success<b>1%</b></div><div>catheter ahead<b>899 mm</b></div><div>max progress<b>0.71</b></div><div>withdrawn<b>86 mm</b></div><div>retract bouts<b>18</b></div></div>
+    <p class="sig">The catheter is driven to its 898 mm insertion cap while the wire never takes over; the policy barely retracts. 90% of procedural v3a's failures — the flat-50% run.</p>
+    <div class="thumbs">{{ATLAS:9:0}}{{ATLAS:9:1}}</div></div>
+  <div class="card thrash"><header><span class="id">10</span><b>proximal thrash</b></header>
+    <div class="stats"><div>episodes<b>4,276</b></div><div>success<b>1%</b></div><div>max progress<b>0.19</b></div><div>withdrawn<b>579 mm</b></div><div>retract bouts<b>146</b></div><div>tip tortuosity<b>27×</b></div></div>
+    <p class="sig">Never clears the first fifth of the path; 600 steps of push-pull churn near the entry. The final frame looks tidy — devices barely inserted — which is why these read as "stable failures" by eye. 46% of v3c2's failures (thrash of both kinds reaches 96% of its failures by the last window) and 33% of carotid v3's.</p>
+    <div class="thumbs">{{ATLAS:10:0}}{{ATLAS:10:1}}</div></div>
+</div>
+
+<h2>What separates the high-success runs</h2>
+<div class="prose">
+<p>Take each validation block (98 episodes, one per checkpoint) and ask what its failures look like. Across 83 blocks the strongest single correlate of block success is simply speed (median steps, ρ = −0.63), but after that it is the <em>kind</em> of failure: the thrash share of failures (ρ = −0.55) and the near-target-fight share (ρ = +0.54). Coil share does not discriminate (ρ = +0.14, n.s.).</p>
+</div>
+<figure class="fig"><img src="{{IMG:fig_valblocks.png}}" alt="block success vs failure composition"><figcaption>Validation blocks (n = 83, including the H0 block of each run). Every block whose failures are mostly near-target fights sits above 85%; every block whose failures are mostly thrash sits below 55%. The recovery share of successes (right) is not monotone: the 70% point is car_v3a's 67% block.</figcaption></figure>
+<div class="prose">
+<p>The same holds in the explore data that <em>precedes</em> each eval. Splitting explore episodes into the windows between consecutive validation evals (n = 71 windows with ≥100 episodes) and correlating the window's composition with the success of the eval that closes it:</p>
+</div>
+<div class="tablewrap"><table>
+<thead><tr><th>explore-window measure</th><th class="num">ρ with next eval, all windows</th><th class="num">ρ within run (demeaned)</th></tr></thead>
+<tbody>
+<tr><td>explore success rate</td><td class="num">+0.88</td><td class="num">+0.59</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-thrash)"></span>thrash share of episodes</td><td class="num">−0.70</td><td class="num">−0.39 (p=0.001)</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-near)"></span>near-target-fight share of <em>failures</em></td><td class="num">+0.79</td><td class="num">+0.27 (p=0.02)</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-thrash)"></span>thrash share of <em>failures</em></td><td class="num">−0.58</td><td class="num">−0.27 (p=0.02)</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-shove)"></span>shove share of episodes</td><td class="num">−0.61</td><td class="num">−0.23 (p=0.05)</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-coil)"></span>coil share of episodes</td><td class="num">−0.58</td><td class="num">+0.05 (n.s.)</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-rec)"></span>recovery share of <em>successes</em></td><td class="num">+0.22 (p=0.06)</td><td class="num">−0.09 (n.s.)</td></tr>
+</tbody></table></div>
+<figure class="fig"><img src="{{IMG:fig_timecourse.png}}" alt="failure composition over training"><figcaption>Failure composition of each explore window (bars) against the success of the validation eval that follows it (line). v3c2's failures slide from coil to thrash as it declines. Carotid v3's critic-divergence window (2) is 85% thrash; its best window (4) is dominated by near-target fights. The no-priv-actor ablation's failures are catheter shoves throughout. TopBrain run 2 fails almost only at the target.</figcaption></figure>
+<div class="prose">
+<p>Pooling validation failures by the block's tier makes the contrast concrete. Failures in ≥90% blocks reach the target (median max progress 0.94) and are <em>active</em> — 255 mm withdrawn over 42 retract bouts. Failures in &lt;60% blocks are passive early wedges: progress 0.6, 25 mm withdrawn over 8 bouts, the catheter far ahead of the wire.</p>
+<p>This is where the eye misleads. A snapshot shows the last frame, and the last frame of a thrash or shove-to-cap failure is tidy — a short, straight pair of devices near the entry — while the last frame of a near-target fight is a catheter loop wrapped around the final bend. "Stable-looking failure" is a property of weak policies that never engaged the hard part; the strong policies' failures are the messy ones, because they happen at the end of a full traverse. What the intuition gets right is the <em>timing</em>: strong runs' failures are late, at the target, and still being worked when the step budget ends.</p>
+</div>
+<div class="tablewrap"><table>
+<thead><tr><th>validation failures by block tier</th><th class="num">≥90% blocks</th><th class="num">60–90%</th><th class="num">&lt;60% blocks</th></tr></thead>
+<tbody>
+<tr><td><span class="swatch" style="background:var(--c-near)"></span>near-target buckle fight</td><td class="num">46%</td><td class="num">19%</td><td class="num">1%</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-coil)"></span>mega-coil</td><td class="num">19%</td><td class="num">24%</td><td class="num">5%</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-shove)"></span>shove fight</td><td class="num">16%</td><td class="num">14%</td><td class="num">6%</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-rec)"></span>light or deep recovery that ran out of steps</td><td class="num">13%</td><td class="num">9%</td><td class="num">0%</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-thrash)"></span>mid-path thrash</td><td class="num">1%</td><td class="num">19%</td><td class="num">5%</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-thrash)"></span>proximal thrash</td><td class="num">1%</td><td class="num">15%</td><td class="num">39%</td></tr>
+<tr><td><span class="swatch" style="background:var(--c-shove)"></span>shove to cap</td><td class="num">0%</td><td class="num">1%</td><td class="num">43%</td></tr>
+<tr><td>failures in tier · median max progress · mm withdrawn · retract bouts</td><td class="num">67 · 0.94 · 255 · 42</td><td class="num">127 · 0.80 · 131 · 39</td><td class="num">1,479 · 0.60 · 25 · 8</td></tr>
+</tbody></table></div>
+
+<h2>The long successes</h2>
+<div class="prose">
+<p>In validation blocks at ≥90% (excluding each run's H0 block), the median block has 94 of its ~98 episodes succeeding in under 120 steps; ≥200-step successes number median 1 per block (IQR 0–2) in the TopBrain runs and 4–6.5 in the carotid runs. Those 132 long successes are the recovery episodes: 98% contain a closed stall, 72% withdraw more than 5 mm, median 12 retract bouts. By type they are light recovery (33), mid-path thrash that made it (29), deep recovery (23), near-target fights that made it (19), clean (17).</p>
+<p>In explore, the recovery style is many small nudges rather than a few deep pulls: long successes withdraw 160–250 mm in total over 62–85 bouts, with a median largest bout of only 8–14 mm, and give back 33–76 mm of progress along the way. Fast successes withdraw 3–12 mm.</p>
+<p>The RVA excursion in your example is a recognisable subtype. Successes where the wire spends time physically in the right vertebral artery are 0.5–16% of successes by run, and they are disproportionately the long ones: in carotid v3, 46% of RVA-excursion successes take ≥200 steps against 19% of the rest; in topbrain_repl, 78% against 3%.</p>
+</div>
+<figure class="fig"><img src="{{IMG:fig_succ_len.png}}" alt="distribution of steps to success by block tier"><figcaption>Steps to success in validation blocks by tier (log density). The ≥90% blocks concentrate at 40–100 steps. The &lt;60% blocks have <em>more</em> mass at 40 steps — the procedural policies' catheter-led sprints — and a heavy tail at 500–600. A fast success is not a signature of a good policy; the sprint is a gamble.</figcaption></figure>
+
+<h2>The carotid regime: what the last ten points are made of</h2>
+<div class="prose">
+<p>If the procedural and TopBrain runs are set aside — the catheter-led sprint is a procedural artefact, and TopBrain composites barely require recovery — the carotid runs are the regime that matters, and there recovery is load-bearing. In every carotid validation block at or above 90%, recovery-type successes are a fifth of all successes; remove them and the block sits in the high 70s.</p>
+</div>
+<div class="tablewrap"><table>
+<thead><tr><th>carotid validation block</th><th class="num">success</th><th class="num">recovery-type successes</th><th class="num">share of successes</th><th class="num">≥200-step successes</th><th class="num">success without recovery-type</th></tr></thead>
+<tbody>
+<tr><td class="mono">car_v3 · block 3</td><td class="num">94.9%</td><td class="num">18</td><td class="num">19%</td><td class="num">6</td><td class="num">76.5%</td></tr>
+<tr><td class="mono">car_v3 · block 4</td><td class="num">96.9%</td><td class="num">21</td><td class="num">22%</td><td class="num">3</td><td class="num">75.5%</td></tr>
+<tr><td class="mono">car_v3 · block 5 (grinding)</td><td class="num">91.8%</td><td class="num">32</td><td class="num">36%</td><td class="num">83</td><td class="num">59.2%</td></tr>
+<tr><td class="mono">car_v3 · block 6</td><td class="num">98.0%</td><td class="num">16</td><td class="num">17%</td><td class="num">2</td><td class="num">81.6%</td></tr>
+<tr><td class="mono">car_nopriv · block 3</td><td class="num">91.8%</td><td class="num">9</td><td class="num">10%</td><td class="num">4</td><td class="num">82.7%</td></tr>
+<tr><td class="mono">car_nopriv · block 4</td><td class="num">91.8%</td><td class="num">11</td><td class="num">12%</td><td class="num">3</td><td class="num">80.6%</td></tr>
+</tbody></table></div>
+<div class="prose">
+<p>The validation evals reuse the same 98 seeds every block, so seeds can be paired across checkpoints of the same run. Two mechanisms show up side by side:</p>
+<ul>
+<li><b>The frontier is won by recovery.</b> Carotid v3 from block 1 (87.8%) to block 6 (98.0%): 11 seeds flip from fail to success, 7 of them as light or deep recoveries and one as a successful shove fight; in block 1 those same seeds failed as near-target fights (6) and proximal thrash (3). Block 3 → 6 (94.9 → 98.0): all 4 newly-won seeds are recoveries or fights. Across the four ≥90% checkpoints, 87 of 98 seeds always succeed and 10 are marginal; the marginal seeds' successes are recovery or fight types 22 times out of 26, and their failures are near-target fights (7) and recoveries that ran out of steps (7).</li>
+<li><b>The big moves are avoidance.</b> From the critic-divergence block (38.8%) to block 4 (96.9%), 57 seeds flip up — 43 of them cleanly, 13 by recovery. The ablation's 43.9 → 91.8% is 47 flips, 41 clean. And the seeds a run already holds stop needing recovery as it improves: among the 85 seeds carotid v3 wins in both block 1 and block 6, light recoveries fall from 17 to 7 and shove fights from 6 to 0 while clean successes rise from 54 to 69.</li>
+</ul>
+<p>Where the recovered stall sits, for the 107 recovery-type validation successes in ≥90% carotid blocks: proximal third of the path 18, middle third 43, distal 8, at the target 34. Two thirds of the recoveries that pay are before the siphon, in the CCA and proximal ICA; a third are at the last bend. Their median length is 142 steps; 36% cross 200.</p>
+</div>
+
+<h2>Same success rate, different character</h2>
+<div class="prose">
+<p>Success rate alone hides large behavioural differences, which is why the eval curve looks noisier than the policy is:</p>
+<ul>
+<li><b>Carotid v3, blocks 3 and 5</b>: 94.9% with median 68 steps and 6 long successes, then 91.8% with median 249 steps and 83 long successes (recovery share of successes 19% → 36%). The second is the grinding phase after the critic divergence; the eval score barely shows it, the step distribution does.</li>
+<li><b>H0 blocks</b>: the pure centreline follower scores 59–93% on TopBrain validation with median 430–500 steps and zero detected stalls — it crawls below the stall detector's 2 mm/s command threshold. Its "long successes" are slow, not recoveries, which is why H0 blocks are excluded from the long-success statistics above.</li>
+<li><b>Procedural v3a</b>: a flat 45–50% for 3.3 M steps whose successes are 92% catheter sprints (37 steps) and whose failures are 90% shove-to-cap. It is not an unstable run; it is a stable policy with one strategy that works on half the targets.</li>
+<li><b>No-priv-actor ablation vs baseline</b> at matched success: the ablation's failures are 38% shove fights (baseline 12%) and only 28% thrash (baseline 67%). Removing the ten privileged dims from the actor changed the failure mode toward catheter shove, at least on this seed.</li>
+</ul>
+</div>
+
+<h2>On the real patient</h2>
+<div class="prose">
+<p>The 39 host-test sessions (topbrain v1/v2/v3 checkpoints, v1bp, H0) add one thing the validation sets cannot: the same anatomy under every policy. Host success correlates with median steps (ρ = −0.82) and with nothing compositional at n = 39 — but the composition itself is telling. TopBrain v2, at 99–100% on its validation set, scores 37–75% on the host and fails by <span class="swatch" style="background:var(--c-coil)"></span><b>coiling</b>: in 9 of its 12 host sessions more than half of the failures are mega-coils (up to 93%), on an anatomy whose collision surface is ~1.7× dilated. v1 run 2's 88–91% checkpoints likewise fail 83–89% by coil. TopBrain v3, the best host performer (99% at ck256854, 95% at ck504695), has mixed failures with near-target fights back in the picture. On this patient the residual failure of a strong validation policy is a buckle, not a wrong turn.</p>
+</div>
+
+<h2>Blind verification against snapshots</h2>
+<div class="prose">
+<p>Six explore snapshots per cluster (66 total, spread across runs that keep snapshots) were labelled by a separate agent that saw only the image — no cluster id, no features — using a fixed vocabulary: clean / coil / catheter-ahead / wire-hook / stopped-short / near-target / wrong-branch, plus a convoluted-or-stable judgement and a progress estimate. The clusters hold up: the two clean types were called clean in 14 of 15 images; near-target buckle fight was called coil 5/5 and mega-coil 4/4; shove-to-cap was called catheter-ahead 4/4 at mid-path; the two thrash types were never called convoluted (0/15) and were placed short of the target 15/15, with mid-path thrash drawing the only wrong-branch labels — consistent with its RVA dwell time. Light recovery came back clean 4/6 with a residual catheter loop in the other two; deep recovery split clean 2 / coil 3 at the target, as its 82% success rate suggests.</p>
+</div>
+<div class="tablewrap">{{VERIFY}}</div>
+
+<h2>Method and caveats</h2>
+<div class="prose">
+<dl class="kv">
+<dt>Episodes</dt><dd>Worker <code>STEP |</code> lines from the 10 runs with logs on this machine (12.9 GB; procedural v3a/v3c/v3c2/v3c3/harvest, topbrain_repl, topbrain_v2, both carotid v3 segments, the no-priv-actor ablation) and 40 host-test sessions, parsed to one record per episode; plus the other machine's <code>saved/stuck</code> episode-format extracts (TopBrain v1 runs 1–2, v1bp host evals) converted to the same schema. Each episode's ending is taken from its own <code>EPISODE_OUTCOME</code> line when one exists and matches its episode number, otherwise from the env's <code>term</code>/<code>trunc</code> flags on its last logged step (success ⇔ <code>term=True, trunc=False</code>; verified against 217 outcome-bearing episodes). This matters at the end of every validation block: the last episode of each of the 16 workers ends without an outcome line — the worker resumes a suspended explore episode and writes <em>that</em> outcome, or is re-created for explore — and matching outcomes by pid alone, as an earlier version did, stamped 16 successes per block as 600-step failures. With the fix, every carotid validation block reproduces the trainer's own CSV: 98 episodes per block, identical success rate in 10 of 12 blocks and ±1 episode in the other two. Only episodes whose log is genuinely cut mid-episode are dropped.</dd>
+<dt>Features</dt><dd>78 per episode: progress profile (proj_s/path_len at 20 time points), slack profile (fed length − tip arclength, 20 points), timing to 25/50/75/90% progress, frontier-flat fraction, fold statistics, commanded and executed retraction (bouts, reversals, mm), and the canonical stall detector's events. Only fields present in every source were used for clustering; branch, off-path, catheter-lead and tip-tortuosity fields describe clusters after the fact.</dd>
+<dt>Clustering</dt><dd>z-score → PCA (15 components, 92% variance) → k-means (k-means++, best of 6 restarts). k=4 chosen by silhouette (0.59); level 2 sub-clusters with fixed k (4/3/2/2). Sub-cluster boundaries are cuts through continuous structure (level-2 silhouette ≈ 0.24): a type is a region, not a species.</dd>
+<dt>Stall detector</dt><dd>The repo's canonical detector is used unchanged (|cmd| &gt; 2 mm/s with the frontier flat for 12 steps; closes on +1 mm past the frontier). It over-counts closes and misses slow pushes, which is why "recovered" is reported alongside executed-retraction measures and why the recovery types were let emerge from the clustering instead.</dd>
+<dt>Keys</dt><dd>pid + episode number is not a unique episode key (eval workers are respawned per block and the container reuses pids; a resumed run restarts numbering). Episodes are keyed by worker file + episode + wall-clock start. Snapshot files are named by pid + episode and can collide the same way; the blind check used only unambiguous ones.</dd>
+<dt>Correlations</dt><dd>Spearman across blocks or windows; descriptive, not causal. Between-run correlations are confounded by anatomy set (carotid composites need recovery, TopBrain does not); the within-run column removes run means. Failure compositions of ≥90% blocks rest on ≤10 failures each and are pooled in the tier table for that reason.</dd>
+<dt>Reproduce</dt><dd><code>monitoring/traj/traj_extract.py</code> → <code>traj_from_stuck.py</code> → <code>traj_cluster.py --k 4 --hier 0:4,1:3,2:2,3:2</code> → <code>traj_report.py</code>. Compact outputs in <code>saved/traj/</code>; per-episode features (~590 MB) stay outside the repo unless wanted.</dd>
+</dl>
+</div>
+</div>
