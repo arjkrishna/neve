@@ -1770,3 +1770,200 @@ select on it; the ONLY use of the in-run eval is to confirm learning started.
 5. Everything here is a **privileged-actor teacher** reading the privileged tail at test
    time (§1). It is not deployable, and the same is true of the 75.5% baseline, so the
    comparison is fair but the number is not a deployable result.
+
+---
+
+# 16. PRIVILEGED-DIM ABLATIONS — the mechanism, the actor-only result, and how to run the FULL ablation elsewhere
+
+Everything in §1-§15 is a **privileged-actor teacher**: `--privileged_actor` sets
+`privileged_obs_dim=0`, so the policy is built the full flat-obs width and reads the
+24-dim privileged tail at test time as well as train time. None of those models is
+deployable. §16 is the line of work that removes privileged input instead of merely
+noting that it is there.
+
+## 16.1 Which dims, and why only ten
+
+An audit of 3,501,834 logged observations split the 24-dim `PrivilegedState` tail
+(flat indices 101-124, `eve/eve/observation/meshinvariant.py`) into four groups:
+
+| group | abs indices | why excluded from the ablation |
+|---|---|---|
+| dead | 103, 104, 105 | read `dofs.force`, a per-solve scratch buffer SOFA clears — identically zero in every logged step |
+| near-dead | 117 | `branch_trunk` one-hot, set in 0.022 % of steps |
+| exact duplicates of deployable prefix features | 112≡76, 114≡77, 120≡66, 121≡67, 122≡90, 124≡89 | the policy already has the same number in its deployable prefix; masking changes nothing |
+| odometry | 108-111 | device rotations / torsional windup, integrable from the action history the policy already sees |
+| **genuinely privileged** | **101, 102, 106, 107, 113, 115, 116, 118, 119, 123** | **the ablation target** |
+
+The ten, by meaning (relative index = absolute − 101):
+
+| abs | rel | quantity |
+|---|---|---|
+| 101, 102 | 0, 1 | mean / max DOF velocity over the tip nodes (÷50) |
+| 106, 107 | 5, 6 | mean / max abs(`position` − `free_position`) (÷2 mm, ÷10 mm) — the contact-impulse proxy |
+| 113 | 12 | the one component of the catheter-tip-minus-guidewire-tip offset that is not duplicated in the prefix |
+| 115, 116, 118, 119 | 14, 15, 17, 18 | ground-truth physical-branch one-hot from `classify_physical_branch` |
+| 123 | 22 | cross-track excess beyond the radius-aware tolerance (÷10 mm) |
+
+Masking exactly these ten keeps the network widths, the replay buffer layout and every
+checkpoint format identical to the baseline, so a masked run is step-for-step comparable
+with `2026-09-09_213120_rcca_carotid_v3`. **Do not try to express this with
+`privileged_obs_dim`** — that mechanism slices a contiguous *tail*, and these ten are
+scattered inside it.
+
+## 16.2 The mechanism — two env vars, two files, default-off
+
+| env var | file | effect |
+|---|---|---|
+| `EVE_RL_ACTOR_ZERO_OBS` | `eve_rl/eve_rl/network/gaussianpolicy.py` | zeroes the listed flat-obs columns at the ACTOR input (`forward` and `forward_play`) |
+| `EVE_RL_CRITIC_ZERO_OBS` | `eve_rl/eve_rl/network/qnetwork.py` | zeroes them at the CRITIC input — q1, q2 and both targets |
+
+Both are comma-separated absolute flat-obs indices, parsed once at module import, and
+both are **no-ops when unset** — an unset run is byte-identical to the pre-change code.
+Reading them at module level (not from a constructor argument) is deliberate: the
+trainer and every play-only worker process must agree regardless of how the policy was
+pickled, and the target critics are `deepcopy`s of `QNetwork`, so they inherit the mask
+for free.
+
+Two configurations:
+
+- **actor-only** (`EVE_RL_ACTOR_ZERO_OBS` alone) — a genuinely asymmetric actor-critic:
+  deployable actor, teacher critic. This is `2026-09-17_180209_rcca_carotid_v3_noprivactor`.
+- **full** (both vars, same ten indices) — no network anywhere sees those dims. This is
+  the run §16.4 describes.
+
+The duplication between the two files is deliberate and should stay: `gaussianpolicy.py`
+is bind-mounted into live containers, and refactoring the shared parse into a new module
+would break workers that respawn against an image that does not have it.
+
+**Verified in-image** (`eve-training-fixed`, three separate processes, identical seeds):
+
+| config | grad on masked cols | grad on other cols | ΔQ when those dims change by +100 | ΔQ_target | Δpolicy mean |
+|---|---|---|---|---|---|
+| both unset | 0.879 | 12.47 | 0.172 | 0.172 | 0.144 |
+| critic only | **0.000000** | 12.56 | **0.000000** | **0.000000** | 0.144 |
+| full | **0.000000** | 12.56 | **0.000000** | **0.000000** | **0.000000** |
+
+## 16.3 What the actor-only run showed (read this before launching the full one)
+
+`2026-09-17_180209_rcca_carotid_v3_noprivactor`, carotid v3, `change_every 3` from the
+start, everything else identical to the baseline. Validation, step-matched:
+
+| steps | baseline `2026-09-09_213120` | actor-only ablation |
+|---|---|---|
+| 0 (H0) | 50.0 % | 31.6 % |
+| ~263k | 82.7 % | 43.9 % |
+| ~525k | 67.3 % | 70.4 % |
+| ~760k | 76.5 % | **91.8 %** |
+| ~1005k | 87.8 % | **91.8 %** |
+| ~1254k | 38.8 % (critic divergence) | **87.8 %** |
+| ~1510k | 94.9 % | 84.7 % |
+| ~1760k | 96.9 % | 86.7 % |
+| ~2080k | 92.9 % | — |
+| ~2289k | 96.9 % | — |
+
+Three things to carry forward:
+
+1. **It peaked early and then decayed, and the decay is real.** Seed-paired across the
+   98 validation seeds, 9 seeds went succeed→fail and 1 fail→succeed between the peak
+   blocks (3-4) and the recent ones (5-7): McNemar **p = 0.021**. This is not the ORBIT
+   noise floor (§14.6).
+2. **It is a generalization gap, not a training failure.** Explore success on the 153
+   training anatomies is 91-96 % and rock-steady (against the baseline's swings of
+   62-97 %), while validation on the 16 held-out anatomies is ~10 points *below* the
+   baseline. The masked actor appears to lean harder on anatomy-specific geometry.
+3. **The failure character degrades with it.** Validation failures classified by the
+   trajectory atlas (`monitoring/traj/`, `saved/traj/`): mid-path thrash — the type that
+   correlates −0.55 with block success — goes 0 → 0 → 1 → 4 → 7 across blocks 3→7, while
+   recovery-type successes hold flat at 9-12 per block. Check this, not just the scalar.
+
+So **do not assume the full ablation will track the baseline for the first megastep and
+diverge later**; budget checkpoints densely before 1 M (§15.7.4 makes the same point for
+a different reason) and host-test early checkpoints rather than trusting validation.
+
+## 16.4 Running the FULL ablation on another machine
+
+Launcher: **`launch_rcca_carotid_v3_nopriv_full.sh`**. Its diff against the actor-only
+launcher is exactly six lines — the container/run name in four places, one env var, one
+mount — and nothing else, so the two runs stay comparable:
+
+```
+-e EVE_RL_CRITIC_ZERO_OBS=101,102,106,107,113,115,116,118,119,123 \
+-v "<REPO>\eve_rl\eve_rl\network\qnetwork.py:/usr/local/lib/python3.8/dist-packages/eve_rl/network/qnetwork.py" \
+```
+
+### Checklist
+
+1. **Rewrite every host path.** Both launchers hard-code
+   `D:\neve\.claude\worktrees\rl_improv_18_p2\...` in ~80 `-v` mounts. On this machine
+   those replaced an older `D:\Arjun\workspace\neve\...`; the same rewrite is needed
+   again and is the single most common reason a cloned launcher fails. One
+   search-and-replace over the file, then `bash -n` it.
+2. **`qnetwork.py` must be mounted.** It is the one file the actor-only run does *not*
+   mount. Without the mount the container silently uses the image's stock `QNetwork`,
+   `EVE_RL_CRITIC_ZERO_OBS` is read by nothing, and you get an actor-only run under a
+   full-ablation name — with no error anywhere. **Verify after launch** (§16.5).
+3. **Data.** `carotid_data/anatomies_v3` (223 three-source anatomies) must be present and
+   mounted read-only at `/opt/eve_training/carotid_data`. The roster flags in the
+   launcher — `--topbrain_holdout` (16 names) and `--topbrain_exclude` (54 names) — are
+   the v3 split; 153 anatomies train, 16 validate. Do not regenerate them; a stale
+   `--topbrain_exclude` default silently drops anatomies through a set-difference with no
+   warning (this bit the v2 launcher; the fix was a `__none__` sentinel).
+4. **Image** `eve-training-fixed`, `--gpus all --shm-size=30g --init`.
+5. **Workers:** 16. That is a RAM limit, not a core limit — 30 GB shm with ~1.2 GB per
+   SOFA worker. A 64 GB machine also runs 16.
+6. **Cadence:** `EVE_RL_EVAL_EVERY` defaults to `2.5e5`. Keep it — every comparison in
+   §16.3 is on that grid.
+7. **Same H0.** The run must start from the `CenterlineFollowerHeuristic` residual
+   (`checkpoint0` = pure heuristic + untrained residual), as the baseline and the
+   actor-only run did.
+
+### Expect at launch
+
+- `checkpoint0` eval is H0 and will *not* match the baseline's 50.0 %. Network init is
+  unseeded (there is no `torch.manual_seed` before network construction) and the ORBIT
+  device-twist RNG is unseeded too (`sofabeamadapter.py:50`), so H0 lands anywhere in
+  roughly 30-55 % on this anatomy set. The actor-only run drew 31.6 %. **This is not a
+  bug and not evidence about the ablation.**
+- First checkpoint at ~250k, roughly 6-7 h per checkpoint at 16 workers / ~12 steps s⁻¹.
+
+## 16.5 Verifying the run is actually the full ablation
+
+Do this in the first ten minutes; there is no error if the mount is missing.
+
+```bash
+docker inspect rcca_carotid_v3_nopriv_full \
+  --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' | grep -c qnetwork    # must be 1
+docker inspect rcca_carotid_v3_nopriv_full \
+  --format '{{range .Config.Env}}{{println .}}{{end}}' | grep ZERO_OBS         # must show BOTH
+docker exec rcca_carotid_v3_nopriv_full python3 -c \
+  "import eve_rl.network.qnetwork as q, eve_rl.network.gaussianpolicy as p; \
+   print('critic', q._CRITIC_ZERO_OBS); print('actor ', p._ACTOR_ZERO_OBS)"
+```
+
+The last line must print the same ten indices twice. If `critic ()` comes back, the
+mount is missing and the run is actor-only — stop it and relaunch.
+
+## 16.6 What the full ablation answers, and the control it still lacks
+
+With both masked there is no privileged information anywhere, so the result is the first
+**deployable** number in this project — subject to the frontal-projection caveat (the
+measured 0 % route self-overlap, §14) rather than to a privileged-tail caveat.
+
+Three readings, decided by the step-matched curve against §16.3:
+
+- **tracks the actor-only run** — the critic's access to those dims was never the point;
+  the asymmetry bought nothing, which also makes the teacher/student distillation line
+  much less attractive.
+- **worse than actor-only** — the privileged critic was doing real work stabilising the
+  value function, and the asymmetric design is justified; distillation becomes the route
+  to a deployable model.
+- **better than actor-only** — the asymmetry was actively harmful (a critic scoring
+  states by information the actor cannot act on). Unlikely, but it is the cheapest
+  available explanation for the actor-only run's generalization gap in §16.3, so it is a
+  live hypothesis, not a formality.
+
+**The control that does not exist yet:** an unmasked `change_every 3` run from the same
+H0. The baseline used `change_every 10` for its first megastep before being resumed at 3,
+so "ablation vs baseline" confounds the mask with the anatomy schedule. Anyone with spare
+capacity should run that control alongside the full ablation — it is the same launcher
+with both `ZERO_OBS` vars removed, and it is what makes either ablation interpretable.

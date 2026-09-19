@@ -1,10 +1,25 @@
 from typing import Optional, Tuple
 import logging
+import os
 import torch
 from torch.distributions import Normal
 
 from .component import Component, ComponentDummy
 from .network import Network
+
+
+def _parse_actor_zero_obs() -> Tuple[int, ...]:
+    raw = os.environ.get("EVE_RL_ACTOR_ZERO_OBS", "").strip()
+    if not raw:
+        return ()
+    return tuple(sorted({int(t) for t in raw.replace(" ", "").split(",") if t}))
+
+
+# Flat obs indices zeroed at the ACTOR's input only; the critics still see the
+# full vector. Read once per process from the environment so the trainer and
+# every play-only worker agree regardless of how the policy was pickled.
+# Unset -> empty -> the actor input is passed through untouched.
+_ACTOR_ZERO_OBS = _parse_actor_zero_obs()
 
 
 class GaussianPolicy(Network):
@@ -52,6 +67,19 @@ class GaussianPolicy(Network):
     def device(self) -> torch.device:
         return self.body.device
 
+    def _mask_actor_obs(self, obs_batch: torch.Tensor) -> torch.Tensor:
+        if not _ACTOR_ZERO_OBS:
+            return obs_batch
+        width = obs_batch.shape[-1]
+        idx = [i for i in _ACTOR_ZERO_OBS if i < width]
+        if not idx:
+            return obs_batch
+        keep = torch.ones(width, dtype=obs_batch.dtype, device=obs_batch.device)
+        keep[idx] = 0.0
+        # Multiply rather than assign in place: obs_batch may be a view into
+        # the replay batch the critics are about to consume unmasked.
+        return obs_batch * keep
+
     def forward(
         self, obs_batch: torch.Tensor, *args, **kwds
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -60,7 +88,7 @@ class GaussianPolicy(Network):
         # the critics consume. The policy sees the deployable prefix only;
         # slicing here covers every caller (log_prob, SAC updates,
         # exploration/eval, play-only workers) at one chokepoint.
-        obs_batch = obs_batch[..., : self.n_observations]
+        obs_batch = self._mask_actor_obs(obs_batch[..., : self.n_observations])
         head_out = self.head(obs_batch)
 
         body_out = self.body.forward(head_out)
@@ -84,7 +112,7 @@ class GaussianPolicy(Network):
         self, obs_batch: torch.Tensor, *args, **kwds
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Same privileged-tail slice as forward(); see comment there.
-        obs_batch = obs_batch[..., : self.n_observations]
+        obs_batch = self._mask_actor_obs(obs_batch[..., : self.n_observations])
         head_out = self.head.forward_play(obs_batch)
         body_out = self.body.forward_play(head_out)
         if self.n_aux > 0:
