@@ -2057,6 +2057,41 @@ cylinder about the rods from the flange 70 mm down, riding with the ring, `packi
 only) **and no apex springs at all** — the vault is held from inside by the caps and the packing and wraps the
 cervix by contact.
 
+### G26 — the packing rides the tube, and the tilted cylinder crushes the introitus
+
+`G26 = G25 + device_packing` (an 18.5 mm kinematic cylinder about the rods from the flange 70 mm down, riding with
+the ring, contacting the lumen sheet only) `+ apex_attach off`.  `abort_inverted_tets` at step 109 (u 0.58, early
+in the swing).  The balloon and the approach were clean (vagina vol ratio 0.998 at step 102; bladder 12.5 / rectum
+17.5 mm held); the wall then went 0.955 → 0.875 → 0.706 → 0.583 → **0.163 at station 0, layer 1.0 — the
+introitus** — while the packing's gap to the lumen fell to 0.3–0.45 mm.  The mechanism is geometric, not
+mechanical: in `ovoid_mode "travel"` the ovoids body (caps, rods, packing) rides the flange with the TUBE's frame,
+so during the swing the rods and the packing are tilted by 28.9° minus the tube's current tilt from the vaginal
+axis — 23° at step 109, when the packing's top had just entered the introitus 8.5 mm above station 0.  An 18.5 mm
+cylinder at 23° needs 18.5 / cos 23° + 8.5 · tan 23° ≈ 24 mm of lumen half-width on the tilt side, against 20.7:
+the 1.2 mm wall at the sprung introitus ring was crushed.  G24 (rods, no packing) survived the same sweep because
+its rods are 3 mm thick; its "worst st 0" rows at steps 104–109 were this.
+
+### `ovoid_mode "rods"` — the vaginal part goes up the rod line with its final orientation (G27)
+
+The real device's vaginal part (ring, two cap rods, the tandem rod, and the packing around them) lies along the
+vagina; only the intrauterine tube is at 28.9° to it.  Measured on `applicator_v3` + `vagina_wall_tet26v3`
+(`diag_rodline.py`): the final rod line (`d_rod` in the final frame) is 0.0° from the S1 line and 0.0 mm from the
+wall's rest axis — the rods ARE the wall's axis; the final flange is 79.9 mm above the introitus and 26.1 mm above
+the rest vault (station 27); the rest os (`base`) is 25.0 mm below the final flange along that line.  So in "rods"
+mode the ovoids body is its own kinematic body with the FINAL applicator frame throughout (ring ⊥ the final tube
+axis, rods and packing along the wall's axis) and it moves along the rod line only: from the park position (100 mm
+below the final flange, 20 mm below the introitus) up to `ovoid_lead_mm` (10) below the os's projected level during
+S1 — its packing top enters the introitus coaxially at schedule step 72 with the 2.2 mm clearance — and then it
+closes on the flange with the swing weight w (35 mm over the T phase), so the flange plane reaches the os as the
+tube seats.  Host replay of the G27 schedule (`check_sched.py`, SOFA stubbed): the body's lateral offset from the
+wall's axis ≤ 0.3 mm at every step, rod tilt 0.2°, and the tube's line passes at most 6.5 mm from the ring's centre
+mid-swing — the price of decoupling two rigid parts that the real device joins; a kinematic ghost the physics never
+sees.  The packing's top is now domed (elliptical shoulder r 12 → 18.5 over 10 mm, `pack_top_round_mm`), so the
+caps' apex zone emerges from it and no rim leads through the wall.  Frames and animators carry the body's own frame
+(`ovoid_x_app / ovoid_y_app / ovoid_axis`), the animators draw rods / packing only for runs whose cfg had them, and
+`device_final.json` now records the LAST row's tube frame (an aborted run stops mid-swing: G26's file had the
+abort-step flange with the final axis).
+
 ### Commands
 
 ```bash

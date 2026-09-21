@@ -257,6 +257,14 @@ CFG = dict(
                                     #           seating takes 8 or 20 steps, which is how the teleport (not the step
                                     #           size) was identified as the cause.
                                     # "off"   : ovoid collision disabled (visual only)
+                                    # "rods"  : (canal mode only) the VAGINAL PART (caps + rods + packing) is its own
+                                    #           body: it goes up the ROD line (the wall's rest axis) with its FINAL
+                                    #           orientation, reaching ovoid_lead_mm below the os level at the end of
+                                    #           S1 and closing on the flange with the swing weight w.  MEASURED: riding
+                                    #           the tube rigidly (G24, G26) tilts the rods/packing by up to 29 deg
+                                    #           inside the vagina; the 18.5 mm packing then needs a 24 mm lumen at
+                                    #           the introitus (G26: wall inverted at station 0, abort step 109).
+    ovoid_lead_mm=10.0,             # "rods": the flange plane's lead below the os's projected height at the end of S1
     ovoid_seat_mm=30.0,             # only used by ovoid_mode="travel" (see build_schedule: for "seat" the ramp
                                     # continues from the lag the caps actually have, a full travel behind the flange)
     tandem_rotation="off",          # "off" = DEFAULT and the CORRECT setting.  Do not use "canal": REFUTED, run G5.
@@ -635,6 +643,10 @@ def build_schedule_canal(cfg, tgt):
     # verdict "crossing"); at BT the ovoid label is 100 % inside the vagina label and the vault's section is
     # centred on the ring to 1-3 mm.  "seat": the caps wait at P_park and seat during D (G23).
     ride = cfg.get("ovoid_mode", "seat") == "travel"
+    rods = cfg.get("ovoid_mode", "seat") == "rods"
+    R_ov = np.asarray(tgt["R_rows"], float)              # "rods": the body's fixed frame = the final applicator frame
+    d_os = float((F_fin - base) @ a_v)                   # the os's projected rise along the rod line during S2 (25 mm)
+    lag1 = d_os + float(cfg.get("ovoid_lead_mm", 10.0))  # "rods": lag below F_fin at the end of S1
     sched = []
     nB = int(cfg.get("n_balloon", 0) or 0)
     for k in range(1, nB + 1):
@@ -654,14 +666,23 @@ def build_schedule_canal(cfg, tgt):
     for row in sched:
         q = geom.canal_path(row["u"], base, a_v, F_fin, a_fin, L, h_intro, x_fin, below)
         row.update(s=float(q["w"]), F=q["F"], tube_axis=q["a"], R_rows=np.array([q["x"], np.cross(q["a"], q["x"]), q["a"]]),
-                   T_corpus=screw_at(tgt["screw"], float(q["w"])), stage=q["stage"],
-                   ov_pos=(np.asarray(q["F"], float).copy() if ride else P_park.copy()), ov_lag=(0.0 if ride else float(park)))
+                   T_corpus=screw_at(tgt["screw"], float(q["w"])), stage=q["stage"])
+        if rods:
+            if q["stage"] == "S1":
+                lag = park + (lag1 - park) * min(1.0, row["u"] / max(1e-9, u1))
+            else:
+                lag = lag1 * (1.0 - float(q["w"]))
+            row.update(ov_pos=F_fin - lag * a_v, ov_lag=float(lag), ov_R_rows=R_ov.copy())
+        else:
+            row.update(ov_pos=(np.asarray(q["F"], float).copy() if ride else P_park.copy()), ov_lag=(0.0 if ride else float(park)))
     nD = max(0, int(cfg["n_seat"]))
     last = sched[-1]
     for k in range(1, nD + 1):
-        lag = 0.0 if ride else park * (1.0 - k / float(nD))
+        lag = 0.0 if (ride or rods) else park * (1.0 - k / float(nD))
         sched.append(dict(phase="D", u=1.0, s=1.0, F=last["F"], tube_axis=last["tube_axis"], R_rows=last["R_rows"],
                           T_corpus=last["T_corpus"], stage="D", ov_pos=F_fin - lag * a_v, ov_lag=float(lag)))
+        if rods:
+            sched[-1]["ov_R_rows"] = R_ov.copy()
     return sched
 
 
@@ -914,9 +935,10 @@ def build_scene(root, cfg=None, inp=None):
     tandem = add_rigid_parts(root, "tandem", [(p, _pobj(p)) for p in TANDEM_PARTS],
                              dgrp, dcol, rigid_pose(R0, F0))
     ov_pose = np.asarray(sched[0]["ov_pos"], float) if "ov_pos" in sched[0] else F0 - sched[0]["ov_lag"] * tgt["axis"]
+    R_ov0 = ovoid_R_rows(sched[0]).T if "R_rows" in sched[0] else R0      # "rods": the body's own (final) frame
     dcol.update(rod_L=dcol["shaft"], rod_R=dcol["shaft"], packing=[0.9, 0.9, 0.8, 0.3])
     ovoids = add_rigid_parts(root, "ovoids", [(p, _pobj(p)) for p in ov_parts],
-                             dgrp, dcol, rigid_pose(R0, ov_pose))
+                             dgrp, dcol, rigid_pose(R_ov0, ov_pose))
 
     # ---- couplings and supports
     ctx = dict(root=root, cfg=cfg, inp=inp, tgt=tgt, sched=sched, X0=X0, nodes=nodes, corpus=corp,
@@ -1046,6 +1068,12 @@ def _add_supports(ctx):
 
 def _ring_perim(R):
     return float(np.linalg.norm(np.diff(np.r_[R, R[:1]], axis=0), axis=1).sum())
+
+
+def ovoid_R_rows(row):
+    """Applicator-frame rows of the OVOIDS body for a schedule row: its own frame when the vaginal part travels
+    separately from the tube (ovoid_mode "rods": ov_R_rows), else the tandem's."""
+    return np.asarray(row.get("ov_R_rows", row["R_rows"]), float)
 
 
 def ovoid_origin(row, a_path):
@@ -1206,7 +1234,7 @@ def _wall_diag_setup(ctx):
                        seg0=np.linalg.norm(np.diff(C0, axis=0), axis=1), dev_parts=parts)
 
 
-def wall_metrics(ctx, X, F, a, Fo=None, R=None):
+def wall_metrics(ctx, X, F, a, Fo=None, R=None, R_ov=None):
     """Per axial station: lumen centre offset from the device axis LINE through the current flange F along a,
     the mean lumen radius, the circumferential stretch, the station's axial coordinate along that line, and the
     minimum distance from each contacting device part's surface to that station's lumen ring.
@@ -1241,8 +1269,9 @@ def wall_metrics(ctx, X, F, a, Fo=None, R=None):
         half = float(np.median(np.abs(np.diff(W["s"])))) if len(W["s"]) > 1 else 2.0
         for p, Vp in (W.get("dev_parts") or {}).items():
             # ovoid parts ride at the ovoid origin (flange minus the seating lag), tube/shaft at the flange
-            org = np.asarray(Fo, float) if (p in OVOID_BODY_PARTS and Fo is not None) else np.asarray(F, float)
-            Pw = org + Vp @ np.asarray(R, float)
+            ovb = p in OVOID_BODY_PARTS and Fo is not None
+            org = np.asarray(Fo, float) if ovb else np.asarray(F, float)
+            Pw = org + Vp @ np.asarray((R_ov if (ovb and R_ov is not None) else R), float)
             gap[p] = np.array([float(np.linalg.norm(Pw[None, :, :] - X[r][:, None, :], axis=2).min())
                                for r in W["rings"]])
             # radius of the nearest device vertex about THIS station's own lumen axis: < r_in means the part is
@@ -1361,7 +1390,7 @@ class HybridController(Sofa.Core.Controller):
         self._set_rigid(c["corpus"], Tc[:3, :3], Tc[:3, 3])
         Rr = np.asarray(r["R_rows"], float)             # PER-STEP orientation (constant when rotation is "off")
         self._set_rigid(c["tandem"], Rr.T, r["F"])      # rigid_pose wants columns = applicator axes, hence .T
-        self._set_rigid(c["ovoids"], Rr.T, ovoid_origin(r, a))
+        self._set_rigid(c["ovoids"], ovoid_R_rows(r).T, ovoid_origin(r, a))   # its own frame in "rods" mode
         if c.get("balloon") is not None:
             self._balloon(r)
         # (2) velocity scaling (quasi-static relaxation during the settle phase)
@@ -1525,7 +1554,8 @@ class HybridController(Sofa.Core.Controller):
             # against a mis-rotated device.  Ground truth for the convention: device_final.json's recorded
             # ovoid_centres_mm reproduce exactly with R_rows and are 2.897 mm out with R_rows.T.
             # The SOFA posing was never affected: rigid_pose wants COLUMNS = applicator axes, which Rdev correctly is.
-            off, rad, st, tt, gap, cont = wall_metrics(c, Xv, r["F"], a_path, Fo, np.asarray(r["R_rows"], float))
+            off, rad, st, tt, gap, cont = wall_metrics(c, Xv, r["F"], a_path, Fo, np.asarray(r["R_rows"], float),
+                                                       ovoid_R_rows(r))
             j = int(np.argmin(np.abs(tt)))              # the station at the flange level = where shaft/ovoids are
             wallm = dict(lumen_axis_off_mm=dict(max=round(float(off.max()), 3), mean=round(float(off.mean()), 3),
                                                 at_flange=round(float(off[j]), 3), station_at_flange=j),

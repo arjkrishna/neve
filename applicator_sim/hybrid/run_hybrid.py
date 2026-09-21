@@ -99,16 +99,19 @@ def write_outputs(ctx, ctrl, out, summary):
     Ft, qt = rig(ctx["tandem"])
     Fo, qo = rig(ctx["ovoids"])
     Fc, qc = rig(ctx["corpus"])
-    a = tgt["tube_axis"]
+    Rl = np.asarray(r.get("R_rows", tgt["R_rows"]), float)     # the LAST row's frame (an aborted run stops mid-swing)
+    R_ov = S.ovoid_R_rows(r) if "R_rows" in r else Rl
+    a = Rl[2]
     dev = dict(units="mm; preBT world RAS (x=R, y=A, z=S)", tag=summary["tag"],
                flange_shift_mm=tgt["delta_mm"], flange_shift_note="SCENARIO parameter Delta (pose.json rule v2)",
                flange_mm=Ft.round(4).tolist(), tube_axis=a.round(6).tolist(),
-               x_app=tgt["R_rows"][0].round(6).tolist(), y_app=tgt["R_rows"][1].round(6).tolist(),
+               x_app=Rl[0].round(6).tolist(), y_app=Rl[1].round(6).tolist(),
+               ovoid_x_app=R_ov[0].round(6).tolist(), ovoid_y_app=R_ov[1].round(6).tolist(), ovoid_axis=R_ov[2].round(6).tolist(),
                tip_mm=(Ft + float(S._param(ctx["inp"]["app"], "L_iu_mm")) * a).round(4).tolist(),
                tandem_quat_xyzw=qt.round(6).tolist(),
                ovoid_origin_mm=Fo.round(4).tolist(), ovoid_quat_xyzw=qo.round(6).tolist(),
                ovoid_lag_mm=round(float((Ft - Fo) @ a), 4), ovoid_mode=ctx["cfg"]["ovoid_mode"],
-               ovoid_centres_mm=[(Fo + np.asarray(c, float) @ tgt["R_rows"]).round(4).tolist()
+               ovoid_centres_mm=[(Fo + np.asarray(c, float) @ R_ov).round(4).tolist()
                                  for c in ctx["inp"]["app"]["landmarks"]["cap_centres"]],
                corpus_translation_mm=Fc.round(4).tolist(), corpus_quat_xyzw=qc.round(6).tolist(),
                corpus_T_preBT_to_final=np.asarray(
@@ -175,6 +178,7 @@ def write_frame(ctx, ctrl, out, row, fc):
     tgt, app = ctx["tgt"], ctx["inp"]["app"]
     a_path = tgt["axis"]                                     # path translation axis
     R_rows = np.asarray(r.get("R_rows", tgt["R_rows"]), float)   # THIS step's applicator frame (rotates in canal mode)
+    R_ov = S.ovoid_R_rows(r) if "R_rows" in r else R_rows       # the vaginal part's own frame ("rods")
     a_tube = R_rows[2]                                       # intrauterine tube axis at this step
     L_iu = float(S._param(app, "L_iu_mm"))
     F = np.asarray(r["F"], float)
@@ -207,9 +211,10 @@ def write_frame(ctx, ctrl, out, row, fc):
                flange_mm=F.round(4).tolist(), tube_axis=a_tube.round(6).tolist(),
                path_axis=a_path.round(6).tolist(), x_app=R_rows[0].round(6).tolist(),
                y_app=R_rows[1].round(6).tolist(), tip_mm=tip.round(4).tolist(), L_iu_mm=L_iu,
+               ovoid_x_app=R_ov[0].round(6).tolist(), ovoid_y_app=R_ov[1].round(6).tolist(), ovoid_axis=R_ov[2].round(6).tolist(),
                r_tandem_mm=float(S._param(app, "r_tandem_mm")),
                ovoid_origin_mm=Fo.round(4).tolist(), ovoid_lag_mm=round(float(r["ov_lag"]), 4),
-               ovoid_centres_mm=[(Fo + np.asarray(c, float) @ R_rows).round(4).tolist()
+               ovoid_centres_mm=[(Fo + np.asarray(c, float) @ R_ov).round(4).tolist()
                                  for c in app["landmarks"]["cap_centres"]],
                # inserted depth, three honest readings of the same motion
                advance_mm=round(u * float(tgt["travel_mm"]), 3),           # travelled along the path so far
@@ -409,7 +414,8 @@ def render(tag):
     states["initial"] = dict(bodies=rest, dev=_dev_world(P, F0, R_rows), note="rest state (preBT), device at u = 0")
     fin = {b: geom.read_obj("%s/%s/final/%s.obj" % (P["runs"], tag, b)) for b in BODIES}
     dv = _dev_world(P, dev["flange_mm"], R_rows, ["tube", "shaft"])
-    dv.update(_dev_world(P, dev["ovoid_origin_mm"], R_rows, ["ovoid_L", "ovoid_R"]))
+    R_ov = np.array([dev["ovoid_x_app"], dev["ovoid_y_app"], dev["ovoid_axis"]], float) if "ovoid_axis" in dev else R_rows
+    dv.update(_dev_world(P, dev["ovoid_origin_mm"], R_ov, ["ovoid_L", "ovoid_R"]))
     states["final"] = dict(bodies=fin, dev=dv, note="converged state, Delta = %g mm" % dev["flange_shift_mm"])
     # ---- interpenetration report (the enabled contact pairs must not end up inside each other)
     rep = {}

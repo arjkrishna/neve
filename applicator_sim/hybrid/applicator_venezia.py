@@ -160,6 +160,8 @@ def default_params(app_in, bdev):
     add("pack_r_mm", 18.5, "mm", "ASSUMED: lumen reference 20.7 mm minus ~2 mm; the necked lumen (18.7-19) then rests on it")
     add("pack_top_mm", 0.0, "mm", "ASSUMED: packing from the flange level (the caps' zone) ...")
     add("pack_len_mm", 70.0, "mm", "ASSUMED: ... 70 mm down the rods (the introitus is ~80 mm below the final flange)")
+    add("pack_top_round_mm", 10.0, "mm", "ASSUMED: height of the elliptical shoulder that domes the packing's top (0 = the flat top of G26)")
+    add("pack_top_r_mm", 12.0, "mm", "ASSUMED: the packing's radius at its top when domed (the caps' apex zone emerges from it)")
     add("ovoid_diam_mm", 40.0, "mm", "FITTED to the BT ovoid label (AP = LR diameter of the cap assembly; initial 40)")
     add("ovoid_height_mm", 22.2, "mm", "MEASURED assembly extent along z (CONTRACT 2)")
     add("ovoid_dome_mm", 8.0, "mm", "FITTED dome height of each cap (= height -> pure half-ellipsoid cap; initial 8)")
@@ -385,7 +387,17 @@ def build_meshes(prm):
                 V, F = sweep(rings, p0, p0 + Lr * d_rod, n_th)
                 parts[name] = (V, F, mesh_stats(V, F, np.pi * rs * rs * Lr))
             rp, t0, Lp = val(prm, "pack_r_mm"), val(prm, "pack_top_mm"), val(prm, "pack_len_mm")
-            rings = [(t * d_rod, EX, y_rod, rp) for t in np.linspace(t0, t0 + Lp, 15)]
+            rnd, r_top = float(val(prm, "pack_top_round_mm")), float(val(prm, "pack_top_r_mm"))
+            ts = list(np.linspace(t0, t0 + Lp, 15))
+            if rnd > 0:                                    # extra stations through the shoulder
+                ts += list(t0 + rnd * (1.0 - np.cos(np.linspace(0.0, np.pi / 2, 9))))
+            ts = sorted(set(round(float(t), 6) for t in ts))
+
+            def r_at(t):                                   # elliptical shoulder r_top -> rp over the top `rnd` mm
+                if rnd <= 0 or t - t0 >= rnd:
+                    return rp
+                return r_top + (rp - r_top) * np.sqrt(max(0.0, 1.0 - ((rnd - (t - t0)) / rnd) ** 2))
+            rings = [(t * d_rod, EX, y_rod, r_at(t)) for t in ts]
             V, F = sweep(rings, t0 * d_rod, (t0 + Lp) * d_rod, 48)
             parts["packing"] = (V, F, mesh_stats(V, F, np.pi * rp * rp * Lp))
     else:

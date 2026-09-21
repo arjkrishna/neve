@@ -125,10 +125,7 @@ class Lumen:
         self.a = a
         self.e_lr = geom.unit(x - (x @ a) * a)                         # patient right, normal to the lumen axis
         self.e_ap = np.cross(a, self.e_lr)                             # anterior, normal to both
-        # Stage 3: the cap rods ride with the ovoids body when the applicator dir provides them
-        for rod in ("rod_L", "rod_R", "packing"):
-            if os.path.exists("%s/%s.obj" % (P["applicator"], rod)) and rod not in OVOIDS:
-                OVOIDS.append(rod)
+        AH.run_extra_parts(tag)                 # Stage 3: rods / packing only when this run had them
         self.dev_app = {p: geom.read_obj("%s/%s.obj" % (P["applicator"], p)) for p in TANDEM + OVOIDS}
         self.rest = {b: geom.read_obj("%s/%s/surface.obj" % (P["meshes"], b)) for b in ("vagina", "cervix", "corpus")
                      if b in self.idx["bodies"]}
@@ -165,7 +162,7 @@ class Lumen:
         for p in TANDEM + OVOIDS:
             V, F = self.dev_app[p]
             o = dev["ovoid_origin_mm"] if p in OVOIDS else dev["flange_mm"]
-            Vw = device_world(V, o, AH.frame_R(dev, self.R))
+            Vw = device_world(V, o, AH.frame_R(dev, self.R, p))
             F = np.asarray(F, int)
             hulls, ext = [], np.full((len(C), 2), np.nan)
             for k in range(len(C)):

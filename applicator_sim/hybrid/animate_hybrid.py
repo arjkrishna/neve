@@ -67,6 +67,21 @@ def run_dir(tag):
     return P["runs"] + "/" + tag
 
 
+def run_extra_parts(tag):
+    """Stage 3: the cap rods and the packing ride with the ovoids body -- for THIS run only when its cfg.json asked
+    for them (device_rods / device_packing) and the applicator dir has the files.  Updates the shared OVOIDS list
+    in place (both animators draw TANDEM + OVOIDS) and returns the parts added."""
+    fn = "%s/%s/cfg.json" % (P["runs"], tag)
+    cfg = load_json(fn) if os.path.exists(fn) else {}
+    want = (["rod_L", "rod_R"] if cfg.get("device_rods") else []) + (["packing"] if cfg.get("device_packing") else [])
+    for p in ("rod_L", "rod_R", "packing"):
+        if p in OVOIDS and p not in want:
+            OVOIDS.remove(p)
+        if p in want and p not in OVOIDS and os.path.exists("%s/%s.obj" % (P["applicator"], p)):
+            OVOIDS.append(p)
+    return [p for p in OVOIDS if p in want]
+
+
 def frames_dir(tag):
     return run_dir(tag) + "/frames"
 
@@ -82,9 +97,13 @@ def load_index(tag):
     return load_json(fi)
 
 
-def frame_R(dev, R_default):
+def frame_R(dev, R_default, part=None):
     """The applicator frame of ONE frame: rows x_app, y_app, tube_axis from its device json (Stage 3, the device
-    rotates during the insertion), else the run-constant R_rows."""
+    rotates during the insertion), else the run-constant R_rows.  For a part of the OVOIDS body (caps, rods,
+    packing): the body's own frame ovoid_x_app / ovoid_y_app / ovoid_axis when the frame carries one (ovoid_mode
+    "rods": the vaginal part travels separately from the tube)."""
+    if part is not None and part in OVOIDS and all(k in dev for k in ("ovoid_x_app", "ovoid_y_app", "ovoid_axis")):
+        return np.array([dev["ovoid_x_app"], dev["ovoid_y_app"], dev["ovoid_axis"]], float)
     if all(k in dev for k in ("x_app", "y_app", "tube_axis")):
         return np.array([dev["x_app"], dev["y_app"], dev["tube_axis"]], float)
     return np.asarray(R_default, float)
@@ -197,10 +216,7 @@ class Scene:
         self.frames = self.idx["frames"]
         self.dev_first = load_json(self.fd + "/" + self.frames[0]["device"])
         self.dev_last = load_json(self.fd + "/" + self.frames[-1]["device"])
-        # Stage 3: the cap rods ride with the ovoids body when the applicator dir provides them
-        for rod in ("rod_L", "rod_R", "packing"):
-            if os.path.exists("%s/%s.obj" % (P["applicator"], rod)) and rod not in OVOIDS:
-                OVOIDS.append(rod)
+        run_extra_parts(tag)                    # Stage 3: rods / packing only when this run had them
         self.dev_app = {p: geom.read_obj("%s/%s.obj" % (P["applicator"], p)) for p in TANDEM + OVOIDS}
         self.rest = {b: geom.read_obj("%s/%s/surface.obj" % (P["meshes"], b)) for b in bodies}
         self.last = {b: geom.read_obj("%s/%s" % (self.fd, self.frames[-1]["surfaces"][b])) for b in bodies}
@@ -318,7 +334,7 @@ class Scene:
         for p in TANDEM + OVOIDS:
             V, F = self.dev_app[p]
             o = dev["ovoid_origin_mm"] if p in OVOIDS else dev["flange_mm"]
-            parts.append((p, poly(pv, device_world(V, o, frame_R(dev, self.R_rows)), F)))
+            parts.append((p, poly(pv, device_world(V, o, frame_R(dev, self.R_rows, p)), F)))
         for k in (0, 1):
             self.pl.subplot(0, k)
             op = OPACITY_CUT if k == 0 else OPACITY_3D
