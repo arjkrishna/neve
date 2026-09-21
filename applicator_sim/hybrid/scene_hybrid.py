@@ -368,14 +368,18 @@ CFG = dict(
                                     #   so the vault leaves the applicator axis before the caps arrive and its
                                     #   posterior wall ends up ~1 mm from the axis.  The fornices belong around the
                                     #   canal, which the caps define; "canal" keeps the vault centred on it.
-                                    # "lift": the apex stations are PROJECTED (ProjectToPlaneConstraint, one plane
-                                    #   per station, normal = the wall axis) onto planes that rise by the mean AXIAL
-                                    #   displacement of the paired cervix nodes (apex_lift_pair): the fornices go up
-                                    #   with the os and are FREE laterally, so the ring / packing centre the vault by
-                                    #   contact and no spring can squeeze the wall against the cervix bulk (G25) or
-                                    #   drag it through the caps (G24).  MEASURED (G28, apex off): nothing lifts the
-                                    #   open-topped wall, the caps leave it through its top (ovoid gap 11 mm above
-                                    #   station 27 at u 0.87) and the seated ring sits 26 mm above the vault.
+                                    # "lift": the apex nodes' AXIAL coordinate (along the wall axis) is prescribed
+                                    #   each step = their rest coordinate + the mean axial displacement of the paired
+                                    #   cervix nodes (apex_lift_pair): the fornices go up with the os and are FREE
+                                    #   laterally, so the ring / packing centre the vault by contact and no spring
+                                    #   can squeeze the wall against the cervix bulk (G25) or drag it through the
+                                    #   caps (G24).  Written directly into the vagina dofs before the step, as the
+                                    #   balloon phase drives wall nodes: SOFA v22.12's ProjectToPlaneConstraint
+                                    #   implements neither applyConstraint (assembled matrix) nor
+                                    #   projectJacobianMatrix (contact constraints) and errors every step (G29 first
+                                    #   try).  MEASURED (G28, apex off): nothing lifts the open-topped wall, the caps
+                                    #   leave it through its top (ovoid gap 11 mm above station 27 at u 0.87) and the
+                                    #   seated ring sits 26 mm above the vault.
     k_apex_mN_per_mm=20.0,
     apex_lift_pair="canal",         # "lift": pair the apex nodes with the nearest cervix "canal" | "surface_nodes"
     # --- supports (CONTRACT 4)
@@ -1023,16 +1027,10 @@ def _add_couplings(ctx):
         ctx["apex_pair"] = cset[d.argmin(1)]
         a_w = geom.unit(np.asarray(inp["meta"]["vagina"]["axis"]["axis"], float))
         g = np.asarray(inp["meta"]["vagina"]["wall"]["grid_index"], int)[apex, 0]     # station of each apex node
-        planes = []
-        for st in sorted(set(int(v) for v in g)):
-            idx = apex[g == st]
-            c0 = X0["vagina"][idx].mean(0)
-            obj = ctx["nodes"]["vagina"].addObject("ProjectToPlaneConstraint", name="apex_lift_%d" % st,
-                                                   indices=[int(i) for i in idx], origin=c0.tolist(),
-                                                   normal=a_w.tolist(), drawSize=0.0)
-            planes.append(dict(station=st, obj=obj, c0=c0, n=int(len(idx))))
-        ctx["apex_planes"], ctx["apex_axis"] = planes, a_w
-        ctx["extra"]["apex_lift_stations"] = [dict(station=p["station"], n=p["n"]) for p in planes]
+        ctx["apex_lift"] = dict(idx=apex, h0=X0["vagina"][apex] @ a_w, a=a_w)         # each node's REST axial coord
+        ctx["apex_axis"] = a_w
+        ctx["extra"]["apex_lift_stations"] = [dict(station=int(st), n=int((g == st).sum()))
+                                              for st in sorted(set(int(v) for v in g))]
 
 
 def _add_supports(ctx):
@@ -1496,11 +1494,16 @@ class HybridController(Sofa.Core.Controller):
             if cfg["apex_attach"] == "recentre":                 # vault ring -> centred on the canal as s -> 1
                 Xc = Xc + float(r["s"]) * c["apex_e"][None, :]
             c["apex_tgt"].position.value = Xc.tolist()
-        if c.get("apex_planes"):                                  # "lift": planes rise with the paired cervix nodes
-            pr = c["apex_pair"]
-            lift = float(((self.X("cervix")[pr] - c["X0"]["cervix"][pr]) @ c["apex_axis"]).mean())
-            for p in c["apex_planes"]:
-                p["obj"].origin.value = (p["c0"] + lift * c["apex_axis"]).tolist()
+        if c.get("apex_lift"):                                    # "lift": the apex rises with the paired cervix nodes
+            L = c["apex_lift"]
+            pr, a_w = c["apex_pair"], L["a"]
+            lift = float(((self.X("cervix")[pr] - c["X0"]["cervix"][pr]) @ a_w).mean())
+            mo = c["nodes"]["vagina"].dofs
+            X = np.array(mo.position.value, dtype=float, copy=True)
+            Xi = X[L["idx"]]
+            Xi += ((L["h0"] + lift) - Xi @ a_w)[:, None] * a_w[None, :]     # prescribe the AXIAL coordinate only
+            X[L["idx"]] = Xi
+            mo.position.value = X.tolist()
             self.apex_lift = lift
 
     def _balloon(self, r):
