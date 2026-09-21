@@ -265,6 +265,10 @@ CFG = dict(
                                     #           inside the vagina; the 18.5 mm packing then needs a 24 mm lumen at
                                     #           the introitus (G26: wall inverted at station 0, abort step 109).
     ovoid_lead_mm=10.0,             # "rods": the flange plane's lead below the os's projected height at the end of S1
+    ovoid_close="T",                # "rods": "T" = the lead closes with the swing weight w (the caps reach the os as
+                                    #   the tandem seats); "D" = the body keeps the lead below the os through the
+                                    #   whole swing (lag = d_os (1 - w) + lead) and seats over the D steps -- the
+                                    #   ovoids are pushed up against the cervix only once the tandem is in place.
     ovoid_seat_mm=30.0,             # only used by ovoid_mode="travel" (see build_schedule: for "seat" the ramp
                                     # continues from the lag the caps actually have, a full travel behind the flange)
     tandem_rotation="off",          # "off" = DEFAULT and the CORRECT setting.  Do not use "canal": REFUTED, run G5.
@@ -364,7 +368,16 @@ CFG = dict(
                                     #   so the vault leaves the applicator axis before the caps arrive and its
                                     #   posterior wall ends up ~1 mm from the axis.  The fornices belong around the
                                     #   canal, which the caps define; "canal" keeps the vault centred on it.
+                                    # "lift": the apex stations are PROJECTED (ProjectToPlaneConstraint, one plane
+                                    #   per station, normal = the wall axis) onto planes that rise by the mean AXIAL
+                                    #   displacement of the paired cervix nodes (apex_lift_pair): the fornices go up
+                                    #   with the os and are FREE laterally, so the ring / packing centre the vault by
+                                    #   contact and no spring can squeeze the wall against the cervix bulk (G25) or
+                                    #   drag it through the caps (G24).  MEASURED (G28, apex off): nothing lifts the
+                                    #   open-topped wall, the caps leave it through its top (ovoid gap 11 mm above
+                                    #   station 27 at u 0.87) and the seated ring sits 26 mm above the vault.
     k_apex_mN_per_mm=20.0,
+    apex_lift_pair="canal",         # "lift": pair the apex nodes with the nearest cervix "canal" | "surface_nodes"
     # --- supports (CONTRACT 4)
     k_cardinal_mN_per_mm=20.0, cardinal_len_mm=25.0,
     cardinal_tension_only=True,     # a ligament is a cable: it resists stretch beyond cardinal_len_mm only
@@ -670,6 +683,8 @@ def build_schedule_canal(cfg, tgt):
         if rods:
             if q["stage"] == "S1":
                 lag = park + (lag1 - park) * min(1.0, row["u"] / max(1e-9, u1))
+            elif cfg.get("ovoid_close", "T") == "D":
+                lag = d_os * (1.0 - float(q["w"])) + (lag1 - d_os)
             else:
                 lag = lag1 * (1.0 - float(q["w"]))
             row.update(ov_pos=F_fin - lag * a_v, ov_lag=float(lag), ov_R_rows=R_ov.copy())
@@ -677,8 +692,9 @@ def build_schedule_canal(cfg, tgt):
             row.update(ov_pos=(np.asarray(q["F"], float).copy() if ride else P_park.copy()), ov_lag=(0.0 if ride else float(park)))
     nD = max(0, int(cfg["n_seat"]))
     last = sched[-1]
+    lag_D0 = float(last["ov_lag"]) if rods else park            # "rods"/"D": the lead still open at the end of T
     for k in range(1, nD + 1):
-        lag = 0.0 if (ride or rods) else park * (1.0 - k / float(nD))
+        lag = 0.0 if ride else lag_D0 * (1.0 - k / float(nD))
         sched.append(dict(phase="D", u=1.0, s=1.0, F=last["F"], tube_axis=last["tube_axis"], R_rows=last["R_rows"],
                           T_corpus=last["T_corpus"], stage="D", ov_pos=F_fin - lag * a_v, ov_lag=float(lag)))
         if rods:
@@ -1001,6 +1017,22 @@ def _add_couplings(ctx):
                                          stiffness=[float(cfg["k_apex_mN_per_mm"])] * len(apex),
                                          external_rest_shape="@/targets/apex_tgt",
                                          external_points=list(range(len(apex))))
+    elif cfg["apex_attach"] == "lift" and len(apex):
+        cset = np.asarray(inp["meta"]["cervix"]["node_sets"][cfg.get("apex_lift_pair", "canal")], int)
+        d = np.linalg.norm(X0["vagina"][apex][:, None, :] - X0["cervix"][cset][None, :, :], axis=2)
+        ctx["apex_pair"] = cset[d.argmin(1)]
+        a_w = geom.unit(np.asarray(inp["meta"]["vagina"]["axis"]["axis"], float))
+        g = np.asarray(inp["meta"]["vagina"]["wall"]["grid_index"], int)[apex, 0]     # station of each apex node
+        planes = []
+        for st in sorted(set(int(v) for v in g)):
+            idx = apex[g == st]
+            c0 = X0["vagina"][idx].mean(0)
+            obj = ctx["nodes"]["vagina"].addObject("ProjectToPlaneConstraint", name="apex_lift_%d" % st,
+                                                   indices=[int(i) for i in idx], origin=c0.tolist(),
+                                                   normal=a_w.tolist(), drawSize=0.0)
+            planes.append(dict(station=st, obj=obj, c0=c0, n=int(len(idx))))
+        ctx["apex_planes"], ctx["apex_axis"] = planes, a_w
+        ctx["extra"]["apex_lift_stations"] = [dict(station=p["station"], n=p["n"]) for p in planes]
 
 
 def _add_supports(ctx):
@@ -1464,6 +1496,12 @@ class HybridController(Sofa.Core.Controller):
             if cfg["apex_attach"] == "recentre":                 # vault ring -> centred on the canal as s -> 1
                 Xc = Xc + float(r["s"]) * c["apex_e"][None, :]
             c["apex_tgt"].position.value = Xc.tolist()
+        if c.get("apex_planes"):                                  # "lift": planes rise with the paired cervix nodes
+            pr = c["apex_pair"]
+            lift = float(((self.X("cervix")[pr] - c["X0"]["cervix"][pr]) @ c["apex_axis"]).mean())
+            for p in c["apex_planes"]:
+                p["obj"].origin.value = (p["c0"] + lift * c["apex_axis"]).tolist()
+            self.apex_lift = lift
 
     def _balloon(self, r):
         """Phase B: drive the balloon from its start section to the wall's rest outer sheet; on the first step
@@ -1624,6 +1662,7 @@ class HybridController(Sofa.Core.Controller):
                    constraint_converged=bool(it < int(cfg["gcs_max_it"]) and np.isfinite(err)),
                    lambda_abs_sum=round(lam_sum, 4), lambda_max=round(lam_max, 4),
                    n_canal_ties=int(self.n_canal_active), canal_d_mm=getattr(self, "canal_d", None),
+                   apex_lift_mm=(round(float(self.apex_lift), 3) if hasattr(self, "apex_lift") else None),
                    cardinal_max_stretch_mm=round(self.lig_ext_max, 4),
                    min_vol_ratio=round(minvol, 4), finite=bool(finite))
         if c.get("balloon") is not None:

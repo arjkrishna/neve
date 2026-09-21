@@ -2112,6 +2112,32 @@ the coaxial lumen, outside the alarm distance: the packing now carries contacts 
 it, i.e. at the vault under the cervix, which is the only place it was ever needed; the caps reach 17.5 mm about the
 rod axis, the cap rods 19.7).  Launched 2026-09-21 17:30.
 
+### G28 — rods mode + 17 mm packing runs clean and fast; with no apex attachment the ring leaves the wall through its open top
+
+`G28 = G27 + pack_r_mm 17.0`.  181 steps, `settle_not_converged` (as every run), 6–13 s/step, 337–702 contacts:
+the contact-count problem is gone.  Kinematics as designed: the vaginal part went up the rod line coaxially
+(lateral offset ≤ 0.4 mm), the packing and rods inside the lumen at every station seen (packing 22/22, rods
+10–11/11, shaft 11/11), bladder 13.1 / rectum 17.4 mm held from the balloon to the end (ground truth +13.7 / +15.5),
+sigmoid 17.2 mm (pushed by the rotating corpus), cervix 28.2 mm on 38 canal ties (canal 0.9–7.2 mm from the tube,
+median 3.1).  But the wall's largest displacement is **0.00 mm from step 108 to the end** — with `apex_attach off`
+nothing lifts it, and this wall is an open tube (lumen 20.7 mm at every station, top station 1 mm below the rest
+os): the cervix rises 25 mm out of its top and the caps follow (ovoid gap 11 mm above station 27 at u 0.87, 14.8
+at the end; caps seen at 0 stations in T/D/H).  The seated ring sits 26 mm above an undisturbed vagina
+(`insertion_G28_{lumen,full}.mp4`, frame 180 viewed: caps and packing dome above the purple wall, only shaft and
+rods inside it).  The cervix's volume ratio dipped to 0.28 in the last third of the swing (0.36 at step 144) and
+recovered to 0.65 in D; G24 stayed near 0.7 there — the difference is the ring closing to within a few mm under
+the os during the swing (`ovoid_close "T"`), so the caps' apex meets the portio's underside as the cervix swings
+anteriorly across them; `ovoid_close "D"` (keep the lead through the swing, seat in D) is the next variable if it
+recurs.
+
+### `apex_attach "lift"` — the fornices rise with the os and are free laterally (G29)
+
+The wall's apex stations (409 nodes over three stations) are projected onto planes normal to the wall axis
+(`ProjectToPlaneConstraint`, one per station) whose origins rise by the mean AXIAL displacement of the nearest
+cervix canal nodes — the os.  No lateral spring exists: the ring and the packing centre the vault by contact, the
+cervix bulk can push the anterior wall outward without squeezing it against a spring (G25), and no spring can drag
+the wall through the caps (G24).  `G29 = G28 + apex_attach lift` launched 2026-09-21 17:52.
+
 ### Commands
 
 ```bash
