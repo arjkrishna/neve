@@ -157,7 +157,7 @@ def default_params(app_in, bdev):
     #      packing (its section is centred on the ring to 1-3 mm, r_mean 13, r_max 22); the vault is held by the ring
     #      and the packing, not by tissue springs.  In the model the wall (10 kPa, 1.2 mm) crushed between the cervix
     #      bulk pushing it and any spring holding the ring (G25); on a kinematic packing the cervix yields instead.
-    add("pack_r_mm", 18.5, "mm", "ASSUMED: lumen reference 20.7 mm minus ~2 mm; the necked lumen (18.7-19) then rests on it")
+    add("pack_r_mm", 17.0, "mm", "ASSUMED: lumen reference 20.7 mm minus 3.7 mm = outside the 3.0 mm contact alarm distance when coaxial, so the packing carries contacts only where the wall is pushed onto it (the vault). MEASURED G27: at 18.5 mm (2.2 mm clearance) every lumen vertex along the packing was a proximity contact: 1739 contacts, 136 s/step")
     add("pack_top_mm", 0.0, "mm", "ASSUMED: packing from the flange level (the caps' zone) ...")
     add("pack_len_mm", 70.0, "mm", "ASSUMED: ... 70 mm down the rods (the introitus is ~80 mm below the final flange)")
     add("pack_top_round_mm", 10.0, "mm", "ASSUMED: height of the elliptical shoulder that domes the packing's top (0 = the flat top of G26)")

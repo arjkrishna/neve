@@ -2069,7 +2069,12 @@ so during the swing the rods and the packing are tilted by 28.9° minus the tube
 axis — 23° at step 109, when the packing's top had just entered the introitus 8.5 mm above station 0.  An 18.5 mm
 cylinder at 23° needs 18.5 / cos 23° + 8.5 · tan 23° ≈ 24 mm of lumen half-width on the tilt side, against 20.7:
 the 1.2 mm wall at the sprung introitus ring was crushed.  G24 (rods, no packing) survived the same sweep because
-its rods are 3 mm thick; its "worst st 0" rows at steps 104–109 were this.
+its rods are 3 mm thick; its "worst st 0" rows at steps 104–109 were this.  The rendered frames
+(`insertion_G25_{lumen,full}.mp4`, `insertion_G26_{lumen,full}.mp4`, viewed) show the sweep directly: the two cap
+rods, 16 mm anterior of the tandem rod and 80 mm long, cross the wall at station 4 in every swing frame — G25 step
+118 section S1 "ovoids: crossing the wall r 19.3–25.8 | lumen 19.8 / wall 20.9", G26 step 109 "r 7.1–21.4" with
+the tilted packing behind them — while the tube itself is inside at every station.  In "rods" mode the rods stay
+on the axis at r ≤ 19.7 mm inside the 20.7 mm lumen, as they did at G23's seated pose (rods inside 16/16).
 
 ### `ovoid_mode "rods"` — the vaginal part goes up the rod line with its final orientation (G27)
 
@@ -2091,6 +2096,21 @@ caps' apex zone emerges from it and no rim leads through the wall.  Frames and a
 (`ovoid_x_app / ovoid_y_app / ovoid_axis`), the animators draw rods / packing only for runs whose cfg had them, and
 `device_final.json` now records the LAST row's tube frame (an aborted run stops mid-swing: G26's file had the
 abort-step flange with the final axis).
+
+### G27 — rods mode works kinematically; an 18.5 mm packing in a 20.7 mm lumen is a contact-count bomb
+
+`G27 = G26 + ovoid_mode "rods"`, `ovoid_lead_mm 10`, domed packing.  Killed by hand at step 105 (u 0.52, w 0.09) —
+not a physics failure: through the approach and the start of the swing the wall's largest displacement stayed at
+0.72–0.84 mm (vol ratio 0.995), the packing's dome passed the introitus coaxially (gap 3.0 mm at station 0 at step
+74), bladder 12.9 / rectum 16.9 mm held, the cervix was being drawn on (3.3 mm at w 0.09, vol ratio 0.87).  What
+failed was the cost: with 2.2 mm of clearance the whole 70 mm packing sits inside the 3.0 mm alarm distance, so
+every lumen vertex along it became a proximity contact as it rose — contacts 234 (step 74) → 878 (86) → 1404
+(93) → 1739 (102), 6 → 33 → 88 → 136 s/step (the GenericConstraintSolver's compliance matrix grows with the square
+of the contact count) — and the remaining 80 steps would have needed 3 h against a 4000 s limit.  Per-station
+packing gaps were 2.0–3.2 mm at every station the packing spanned.  `G28 = G27 with pack_r_mm 17.0` (3.7 mm from
+the coaxial lumen, outside the alarm distance: the packing now carries contacts only where the wall is pushed onto
+it, i.e. at the vault under the cervix, which is the only place it was ever needed; the caps reach 17.5 mm about the
+rod axis, the cap rods 19.7).  Launched 2026-09-21 17:30.
 
 ### Commands
 
