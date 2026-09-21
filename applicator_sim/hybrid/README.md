@@ -2141,6 +2141,21 @@ used `ProjectToPlaneConstraint` (one plane per station): in SOFA v22.12 it imple
 errors every step, so it was replaced by a direct write into the vagina dofs before the step, the mechanism
 `balloon_drive_wall` already uses.  `G29 = G28 + apex_attach lift` relaunched 2026-09-21 18:03.
 
+### G29 — writing only the apex nodes retains half the lift; the whole wall must be unfolded (G30)
+
+`G29 = G28 + apex_attach lift` with the 409 apex nodes' axial coordinate written each step.  181 steps, clean and
+fast (8–13 s/step).  The paired canal nodes rose 19.7 mm by the end (the os's axial lift, less than the flange's
+25 mm because the lowest canal nodes end 3 mm below the flange), but the wall's largest displacement stayed at
+**4.6–4.9 mm** through the swing and 3.9 mm after the settle: the elements below the written stations pull them
+back inside the same implicit step, so a per-step write of three stations is a soft prescription, not a
+constraint.  The caps were inside the lumen at 3 stations at w 0.68 and had left the wall again by w 0.83 (ovoid
+gap 12.4 mm above station 27 at the end; caps seen at 0 stations).  The cervix's volume ratio dipped to 0.34 at
+the end of the swing again (0.65 after D), with the ring closing to the os during the swing (`ovoid_close "T"`).
+**G30 = G29 + `apex_lift_profile linear`**: EVERY wall node's axial coordinate is prescribed, rest coordinate ×
+(1 + lift / H) about the introitus level (H = the apex height, 53.8 mm) — a uniform unfolding from the fixed
+introitus to the vault, which is what the balloon phase's whole-wall drive does and what G23/G24's springs
+produced elastically (axial stretch 1.2–1.4×); lateral coordinates stay free.  Launched 2026-09-21 18:30.
+
 ### Commands
 
 ```bash
