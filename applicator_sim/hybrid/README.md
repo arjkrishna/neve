@@ -2026,6 +2026,22 @@ tandem while the cervix is pushed up, and it is the ring that keeps the vault ce
 "travel"** in canal mode: caps and rods ride the flange from u = 0 (outside the body until the flange enters the
 introitus early in S2), single variable.
 
+### G24 — riding the flange does not hold the vault: the attachment does
+
+`G24 = G23 + ovoid_mode travel` (caps and rods on the flange from u = 0).  The caps are inside the vault and in
+contact from u ≈ 0.75 (ovoid gap 0.1–0.5 mm, 9 stations inside, 0 outside) — and the vault ring centre drifts
+exactly as in G23: 0.6 (u 0.52) → 5.2 (0.69) → 9.2 (0.81) → 12.5 mm (u 1), in lockstep with the corpus screw.
+The caps' posterior edge ends embedded in the drifting posterior wall; at the start of D the wall is crushed
+round the caps (vol ratio 0.62 → 0.48 → **0.16, `abort_inverted_tets` at step 153**, station 26), far side still
+7–8 mm beyond the wall.  So the seating order is not what decides the vault's position.  What does: the apex
+springs in "follow" mode pull the vault after the cervix SURFACE pairs with fixed rest offsets, and the model's
+cervix surface (the anterior tumour bulk) moves ~10–13 mm anteriorly relative to the tied canal during the lift;
+with nothing resisting (the packing follows the wall, the OARs are one-way), even 2 mN/mm springs carry the vault.
+The one run that held the vault on the axis, G22 (0.8–2.5 mm), used the canal-centred `recentre` attachment; the BT
+scan says the same (vault section centred on the ring to 1–3 mm, HR-CTV bulk 4–6 mm off the tandem).  **G25 = G24
++ `apex_attach recentre`, k_apex 20 (G22's), cervix|lumen contact kept** — the vault coupling package, so the
+bulk can still deform the anterior wall locally by contact while the ring stays centred on the canal.
+
 ### Commands
 
 ```bash
