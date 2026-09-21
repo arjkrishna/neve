@@ -332,7 +332,7 @@ class Scene:
                     self.pl.remove_actor("dev_" + p)
                     continue
                 self.pl.add_mesh(mm, color=COL_OVOID if p in OVOIDS else COL_TANDEM,
-                                 opacity=OVOID_OPACITY[k] if p in OVOIDS else 1.0,
+                                 opacity=(0.12 if p == "packing" else OVOID_OPACITY[k]) if p in OVOIDS else 1.0,
                                  smooth_shading=True, name="dev_" + p)
         return dev
 

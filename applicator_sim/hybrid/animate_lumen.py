@@ -163,8 +163,6 @@ class Lumen:
         """Per part and station: the convex section polygon (2-D about the lumen centre) and its LR extent."""
         parts = {}
         for p in TANDEM + OVOIDS:
-            if p == "packing":            # visual only: not part of the containment verdicts
-                continue
             V, F = self.dev_app[p]
             o = dev["ovoid_origin_mm"] if p in OVOIDS else dev["flange_mm"]
             Vw = device_world(V, o, AH.frame_R(dev, self.R))
@@ -205,7 +203,8 @@ class Lumen:
         i2, o2 = sec["rings"][k]
         rin, rout = sec["r_in"][k], sec["r_out"][k]
         out = []                                     # the tube (above the flange, NOT a wall-contact part in Z7S) and
-        for names, what in ((["tube"], "tube"), (["shaft"], "shaft"), (OVOIDS, "ovoids")):   # the shaft are judged apart
+        for names, what in ((["tube"], "tube"), (["shaft"], "shaft"),
+                            ([p for p in OVOIDS if p != "packing"], "ovoids")):   # the packing is visual only
             hs = [parts[p]["hulls"][k] for p in names]
             cls = self.classify(hs, i2, o2)
             rr = np.concatenate([np.linalg.norm(h, axis=1) for h in hs if h is not None]) if cls != "absent" else None
@@ -333,7 +332,7 @@ def draw_sections(L, dev, sec, parts, txt):
         axL.plot(rx[:, j], s, ls="--", lw=0.9, color=PURPLE, alpha=0.8, label="wall at rest" if j == 0 else None)
     axL.axvline(0.0, color="0.5", lw=0.6, ls=":")
     labelled = set()
-    for p in OVOIDS + TANDEM:                                          # ovoids first so the shaft is drawn on top
+    for p in [q for q in OVOIDS if q != "packing"] + TANDEM:              # ovoids first so the shaft is drawn on top
         e = parts[p]["ext"]
         okp = np.isfinite(e).all(1)
         if okp.any():
@@ -369,7 +368,7 @@ def draw_sections(L, dev, sec, parts, txt):
         ax.add_patch(PathPatch(Path(verts, codes), facecolor=PURPLE, alpha=0.55, edgecolor=PURPLE, lw=1.0))
         for r in (ri, ro):
             ax.plot(np.r_[r[:, 0], r[0, 0]], np.r_[r[:, 1], r[0, 1]], ls="--", lw=0.9, color=PURPLE, alpha=0.8)
-        for p in TANDEM + OVOIDS:
+        for p in TANDEM + [q for q in OVOIDS if q != "packing"]:            # the packing is visual only
             h = parts[p]["hulls"][k]
             if h is not None:
                 ax.add_patch(Polygon(h, closed=True, facecolor=COL_OVOID if p in OVOIDS else COL_TANDEM,
