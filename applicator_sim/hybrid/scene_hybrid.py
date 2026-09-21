@@ -1052,8 +1052,11 @@ def _add_couplings(ctx):
             ctx["apex_lift"] = dict(idx=apex, h0=h_all[apex] - h_intro, a=a_w, h_intro=h_intro, H=None, profile="top")
         ctx["apex_axis"] = a_w
         if cfg.get("apex_lift_fix", True):
-            ctx["nodes"]["vagina"].addObject("FixedConstraint", name="apex_fix", fixAll=False,
-                                             indices=[int(i) for i in ctx["apex_lift"]["idx"]])
+            # indices EMPTY through phase B (the driven wall passes through the cervix's portio as it opens and the
+            # cervix must be able to push its top ring aside -- G31 first try crushed the cervix, vol ratio 0.09 at
+            # step 15); the controller sets them to the apex nodes at the first non-B step.
+            ctx["apex_fix"] = ctx["nodes"]["vagina"].addObject("FixedConstraint", name="apex_fix", fixAll=False, indices=[])
+            ctx["apex_fix_on"] = False
         ctx["extra"]["apex_lift_fix"] = bool(cfg.get("apex_lift_fix", True))
         ctx["extra"]["apex_lift_stations"] = [dict(station=int(st), n=int((g == st).sum()))
                                               for st in sorted(set(int(v) for v in g))]
@@ -1524,6 +1527,11 @@ class HybridController(Sofa.Core.Controller):
             c["apex_tgt"].position.value = Xc.tolist()
         if c.get("apex_lift"):                                    # "lift": the apex rises with the paired cervix nodes
             L = c["apex_lift"]
+            if c.get("apex_fix") is not None:
+                want = r["phase"] != "B"
+                if want != c["apex_fix_on"]:
+                    c["apex_fix"].indices.value = [int(i) for i in L["idx"]] if want else []
+                    c["apex_fix_on"] = want
             pr, a_w = c["apex_pair"], L["a"]
             lift = float(((self.X("cervix")[pr] - c["X0"]["cervix"][pr]) @ a_w).mean())
             mo = c["nodes"]["vagina"].dofs

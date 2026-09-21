@@ -2171,7 +2171,11 @@ below the os through the swing and seat over the 10 D steps: the ovoids are push
 once the tandem is in place — G28/G29's cervix dipped to 0.28–0.36 late in the swing with the caps closing under
 the portio).  With the fixed apex the vault ring is also pinned laterally on the device axis, which is what the
 ring and the packing do at BT (vault centred on the ring to 1–3 mm); the cervix bulk, 10–13 mm anterior of the
-canal in the model against 4–6 mm at BT, must then conform to it by contact.  Launched 2026-09-21 18:56.
+canal in the model against 4–6 mm at BT, must then conform to it by contact.  First launch (18:50) aborted at
+step 15, still in the balloon phase, with the CERVIX inverted (0.09): the driven wall starts as a 6 × 2.5 mm slit
+whose top ring lies inside the portio, and with those nodes fixed the cervix|lumen contact could no longer push
+the ring aside as the balloon opened the wall through it.  The FixedConstraint's indices are now empty through
+phase B and set at the first non-B step (the wall is at rest and clear of the cervix by then).  Relaunched 18:58.
 
 ### Commands
 
