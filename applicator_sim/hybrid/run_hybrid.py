@@ -173,7 +173,9 @@ def write_frame(ctx, ctrl, out, row, fc):
     k = int(row["step"])
     r = _sched_at(ctx, k)
     tgt, app = ctx["tgt"], ctx["inp"]["app"]
-    a_path, a_tube = tgt["axis"], tgt["tube_axis"]           # path translation axis / intrauterine tube axis
+    a_path = tgt["axis"]                                     # path translation axis
+    R_rows = np.asarray(r.get("R_rows", tgt["R_rows"]), float)   # THIS step's applicator frame (rotates in canal mode)
+    a_tube = R_rows[2]                                       # intrauterine tube axis at this step
     L_iu = float(S._param(app, "L_iu_mm"))
     F = np.asarray(r["F"], float)
     Fo = S.ovoid_origin(r, a_path)
@@ -203,11 +205,11 @@ def write_frame(ctx, ctrl, out, row, fc):
                u=round(u, 6), corpus_s=round(float(r["s"]), 6),
                units="mm; preBT world RAS (x=R, y=A, z=S)", tag=ctx["cfg"].get("tag"),
                flange_mm=F.round(4).tolist(), tube_axis=a_tube.round(6).tolist(),
-               path_axis=a_path.round(6).tolist(), x_app=tgt["R_rows"][0].round(6).tolist(),
-               y_app=tgt["R_rows"][1].round(6).tolist(), tip_mm=tip.round(4).tolist(), L_iu_mm=L_iu,
+               path_axis=a_path.round(6).tolist(), x_app=R_rows[0].round(6).tolist(),
+               y_app=R_rows[1].round(6).tolist(), tip_mm=tip.round(4).tolist(), L_iu_mm=L_iu,
                r_tandem_mm=float(S._param(app, "r_tandem_mm")),
                ovoid_origin_mm=Fo.round(4).tolist(), ovoid_lag_mm=round(float(r["ov_lag"]), 4),
-               ovoid_centres_mm=[(Fo + np.asarray(c, float) @ tgt["R_rows"]).round(4).tolist()
+               ovoid_centres_mm=[(Fo + np.asarray(c, float) @ R_rows).round(4).tolist()
                                  for c in app["landmarks"]["cap_centres"]],
                # inserted depth, three honest readings of the same motion
                advance_mm=round(u * float(tgt["travel_mm"]), 3),           # travelled along the path so far

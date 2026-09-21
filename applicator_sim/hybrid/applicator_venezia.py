@@ -730,14 +730,13 @@ def canal_path_record(rule, pre, prm):
     for k in range(n + 1):
         u = k / n
         q = geom.canal_path(u, base, a_v, rule["flange"], rule["tube_axis"], L, h_intro, rule["x_app"], below)
-        Tr = geom.corpus_rule_T(pre["a0"], pre["L_end"], rule["d_F_mm"], q["F"], q["a"])
-        Tc = geom.screw_interp(geom.screw_decompose(Tr[:3, :3], Tr[:3, 3]), q["w"])
+        Tc = screw_interp(rule["screw"], q["w"])            # corpus: the final screw, weighted by the S2 progress
         keys.append(dict(u=round(u, 5), stage=q["stage"], w=round(q["w"], 5), F=jz(q["F"], 4), a=jz(q["a"]), x=jz(q["x"]), tip=jz(q["tip"], 4), corpus_T=jz(Tc, 6)))
     q1 = geom.canal_path(0.0, base, a_v, rule["flange"], rule["tube_axis"], L, h_intro, rule["x_app"], below)
     return dict(pars, u1=q1["u1"],
                 definition="S1 (u < u1): tube along the vaginal axis up the axis line, tip from below the introitus to the vault, corpus at rest.  "
-                           "S2: tip = lerp(vault, tip_final, w), axis = slerp(a_v, a_final, w), w = smoothstep; corpus = screw fraction w of the "
-                           "pose rule's target for the current (F, a).  End state = device_final and corpus.T_preBT_to_target exactly.",
+                           "S2: tip = lerp(vault, tip_final, w), axis = slerp(a_v, a_final, w), w = smoothstep; corpus = fraction w of the FINAL "
+                           "screw (rest -> corpus.T_preBT_to_target).  End state = device_final and corpus.T_preBT_to_target exactly.",
                 why="the preBT os is %.1f mm off the vaginal axis line and the lower canal %.1f deg from it: no straight tube lies in the vagina "
                     "and along the canal at once; the tandem goes up the vagina and the cervix is drawn onto it" % (
                         float(np.linalg.norm((pre["O_pre"] - base) - float((pre["O_pre"] - base) @ a_v) * a_v)), geom.angle_deg(pre["a0"], a_v)),

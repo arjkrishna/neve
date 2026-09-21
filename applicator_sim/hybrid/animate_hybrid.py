@@ -82,6 +82,14 @@ def load_index(tag):
     return load_json(fi)
 
 
+def frame_R(dev, R_default):
+    """The applicator frame of ONE frame: rows x_app, y_app, tube_axis from its device json (Stage 3, the device
+    rotates during the insertion), else the run-constant R_rows."""
+    if all(k in dev for k in ("x_app", "y_app", "tube_axis")):
+        return np.array([dev["x_app"], dev["y_app"], dev["tube_axis"]], float)
+    return np.asarray(R_default, float)
+
+
 def device_world(V_app, origin, R_rows):
     """Device surfaces from the applicator frame into preBT world: p = origin + p_app @ R_rows (index.json)."""
     return np.asarray(origin, float) + np.asarray(V_app, float) @ np.asarray(R_rows, float)
@@ -310,7 +318,7 @@ class Scene:
         for p in TANDEM + OVOIDS:
             V, F = self.dev_app[p]
             o = dev["ovoid_origin_mm"] if p in OVOIDS else dev["flange_mm"]
-            parts.append((p, poly(pv, device_world(V, o, self.R_rows), F)))
+            parts.append((p, poly(pv, device_world(V, o, frame_R(dev, self.R_rows)), F)))
         for k in (0, 1):
             self.pl.subplot(0, k)
             op = OPACITY_CUT if k == 0 else OPACITY_3D

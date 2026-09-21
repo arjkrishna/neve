@@ -618,7 +618,6 @@ def build_schedule_canal(cfg, tgt):
     F_fin, a_fin = np.asarray(tgt["flange"], float), geom.unit(tgt["tube_axis"])     # Delta-adjusted final pose
     x_fin = np.asarray(tgt["R_rows"], float)[0]
     L, h_intro, below = float(cp["L_iu_mm"]), float(cp["h_intro_mm"]), float(cp["below_mm"])
-    a0, L_end, d_F = np.asarray(cp["a0"], float), np.asarray(cp["L_end"], float), float(cp["d_F_mm"])
     u1 = geom.canal_path(0.0, base, a_v, F_fin, a_fin, L, h_intro, x_fin, below)["u1"]
     park = cfg.get("ovoid_park_mm")
     park = float(tgt["travel_mm"]) if park is None else float(park)
@@ -634,11 +633,15 @@ def build_schedule_canal(cfg, tgt):
         sched.append(dict(phase="A", u=u1 * k / nA))
     for k in range(1, nT + 1):
         sched.append(dict(phase="T", u=u1 + (1.0 - u1) * k / nT))
+    # The corpus rides the FINAL screw (rest -> pose-rule target) with the S2 weight w.  MEASURED (S3SMOKE): tying
+    # it to the rule's target for the CURRENT flange dragged it along the flange's ~85 mm S2 travel at up to
+    # 5.7 mm / 2.2 deg per step and inverted the cervix (vol ratio -1.6 in one 4.5 mm step); the final screw moves
+    # it 23.5 mm / 15 deg over the S2 steps, as smoothly as rule mode did.  The tube's intermediate line and the
+    # canal cannot coincide mid-swing in any case -- the canal ties and the cervix|lumen contact take that up.
     for row in sched:
         q = geom.canal_path(row["u"], base, a_v, F_fin, a_fin, L, h_intro, x_fin, below)
-        Tr = geom.corpus_rule_T(a0, L_end, d_F, q["F"], q["a"])
         row.update(s=float(q["w"]), F=q["F"], tube_axis=q["a"], R_rows=np.array([q["x"], np.cross(q["a"], q["x"]), q["a"]]),
-                   T_corpus=geom.screw_interp(geom.screw_decompose(Tr[:3, :3], Tr[:3, 3]), q["w"]), stage=q["stage"],
+                   T_corpus=screw_at(tgt["screw"], float(q["w"])), stage=q["stage"],
                    ov_pos=P_park.copy(), ov_lag=float(park))
     nD = max(0, int(cfg["n_seat"]))
     last = sched[-1]
