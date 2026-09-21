@@ -2042,6 +2042,21 @@ scan says the same (vault section centred on the ring to 1–3 mm, HR-CTV bulk 4
 + `apex_attach recentre`, k_apex 20 (G22's), cervix|lumen contact kept** — the vault coupling package, so the
 bulk can still deform the anterior wall locally by contact while the ring stays centred on the canal.
 
+### G25 — the canal-centred attachment holds the vault; the wall then crushes between the cervix and the springs
+
+`G25 = G24 + apex_attach recentre, k_apex 20, cervix|lumen contact on`.  **The vault stays on the caps' axis: 0.2
+(u 0.46) → 0.7 (0.52) → 1.4 (0.63) → 2.0 mm (u 0.68)**, where G23/G24 were at 5–9 mm by then.  `abort_inverted_tets`
+at step 118 (u 0.68): the wall at station 26 goes 0.83 → 0.58 → 0.16 while the cervix (28 mm lift, bulk moving
+anteriorly relative to the tied canal) presses the anterior vault wall through the contact and the springs hold the
+ring where it belongs — the 1.2 mm / 10 kPa wall between a 30 kPa bulk and 5 N/mm of springs collapses.  G22 had
+the same springs and no cervix contact and was fine.  So: the ring's position is right, the cervix contact is right,
+and what is wrong is holding the ring with TISSUE springs.  Clinically the vault is held by the PACKING, a stiff
+mass around the ring that fills the vagina, on which the wall rests and against which the soft cervix yields; at BT
+the vagina label at the ring's level is the device + packing itself.  **G26 = G25 + a kinematic packing** (a 18.5 mm
+cylinder about the rods from the flange 70 mm down, riding with the ring, `packing.obj`, contacting the lumen sheet
+only) **and no apex springs at all** — the vault is held from inside by the caps and the packing and wraps the
+cervix by contact.
+
 ### Commands
 
 ```bash
