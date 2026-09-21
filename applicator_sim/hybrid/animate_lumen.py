@@ -126,7 +126,7 @@ class Lumen:
         self.e_lr = geom.unit(x - (x @ a) * a)                         # patient right, normal to the lumen axis
         self.e_ap = np.cross(a, self.e_lr)                             # anterior, normal to both
         # Stage 3: the cap rods ride with the ovoids body when the applicator dir provides them
-        for rod in ("rod_L", "rod_R"):
+        for rod in ("rod_L", "rod_R", "packing"):
             if os.path.exists("%s/%s.obj" % (P["applicator"], rod)) and rod not in OVOIDS:
                 OVOIDS.append(rod)
         self.dev_app = {p: geom.read_obj("%s/%s.obj" % (P["applicator"], p)) for p in TANDEM + OVOIDS}
@@ -163,6 +163,8 @@ class Lumen:
         """Per part and station: the convex section polygon (2-D about the lumen centre) and its LR extent."""
         parts = {}
         for p in TANDEM + OVOIDS:
+            if p == "packing":            # visual only: not part of the containment verdicts
+                continue
             V, F = self.dev_app[p]
             o = dev["ovoid_origin_mm"] if p in OVOIDS else dev["flange_mm"]
             Vw = device_world(V, o, AH.frame_R(dev, self.R))
@@ -277,7 +279,7 @@ class Side:
         for p in TANDEM + OVOIDS:
             Vw, F = parts[p]["world"]
             pl.add_mesh(poly(pv, Vw, F), color=COL_OVOID if p in OVOIDS else COL_TANDEM,
-                        opacity=0.45 if p in OVOIDS else 1.0, smooth_shading=True, name="dev_" + p)
+                        opacity=(0.12 if p == "packing" else 0.45) if p in OVOIDS else 1.0, smooth_shading=True, name="dev_" + p)
         lab_pts, labs = [], []
         for j, k in enumerate(STATIONS):
             ring = Vv[L.inner[k]]

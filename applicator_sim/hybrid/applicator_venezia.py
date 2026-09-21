@@ -152,6 +152,14 @@ def default_params(app_in, bdev):
         "MEASURED BT applicator label at z = -16.8 (BT): the two cap rods sit 16 mm ANTERIOR of the tandem rod and 8.6 mm apart "
         "LR; (x, y') in the plane normal to the rods through the flange, y' = anterior. Symmetrised about x = 0")
     add("rods", False, "-", "write rod_L.obj / rod_R.obj (the cap rods) and use shaft_style 'straight' for the tandem rod")
+    # ---- the vaginal PACKING (Stage 3, 2026-09-21): a kinematic cylinder about the vaginal rod, riding with the ring,
+    #      that the wall rests on from inside.  MEASURED at BT: the vagina label at the ring's level IS the device +
+    #      packing (its section is centred on the ring to 1-3 mm, r_mean 13, r_max 22); the vault is held by the ring
+    #      and the packing, not by tissue springs.  In the model the wall (10 kPa, 1.2 mm) crushed between the cervix
+    #      bulk pushing it and any spring holding the ring (G25); on a kinematic packing the cervix yields instead.
+    add("pack_r_mm", 18.5, "mm", "ASSUMED: lumen reference 20.7 mm minus ~2 mm; the necked lumen (18.7-19) then rests on it")
+    add("pack_top_mm", 0.0, "mm", "ASSUMED: packing from the flange level (the caps' zone) ...")
+    add("pack_len_mm", 70.0, "mm", "ASSUMED: ... 70 mm down the rods (the introitus is ~80 mm below the final flange)")
     add("ovoid_diam_mm", 40.0, "mm", "FITTED to the BT ovoid label (AP = LR diameter of the cap assembly; initial 40)")
     add("ovoid_height_mm", 22.2, "mm", "MEASURED assembly extent along z (CONTRACT 2)")
     add("ovoid_dome_mm", 8.0, "mm", "FITTED dome height of each cap (= height -> pure half-ellipsoid cap; initial 8)")
@@ -376,6 +384,10 @@ def build_meshes(prm):
                 rings = [(p0 + t * d_rod, EX, y_rod, rs) for t in np.linspace(0.0, Lr, 9)]
                 V, F = sweep(rings, p0, p0 + Lr * d_rod, n_th)
                 parts[name] = (V, F, mesh_stats(V, F, np.pi * rs * rs * Lr))
+            rp, t0, Lp = val(prm, "pack_r_mm"), val(prm, "pack_top_mm"), val(prm, "pack_len_mm")
+            rings = [(t * d_rod, EX, y_rod, rp) for t in np.linspace(t0, t0 + Lp, 15)]
+            V, F = sweep(rings, t0 * d_rod, (t0 + Lp) * d_rod, 48)
+            parts["packing"] = (V, F, mesh_stats(V, F, np.pi * rp * rp * Lp))
     else:
         # curved shaft below the flange
         C, T = shaft_arc(prm, 30); rs = val(prm, "r_shaft_mm")

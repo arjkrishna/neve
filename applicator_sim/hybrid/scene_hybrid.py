@@ -57,7 +57,7 @@ DEFORMABLE = ["cervix", "vagina", "bladder", "rectum", "sigmoid"]     # corpus i
 DEVICE_PARTS = ["tube", "shaft", "ovoid_L", "ovoid_R"]
 TANDEM_PARTS = ["tube", "shaft"]
 OVOID_PARTS = ["ovoid_L", "ovoid_R"]
-ROD_PARTS = ["rod_L", "rod_R"]              # Stage 3: the two cap rods (applicator_v3), ride with the ovoids body
+ROD_PARTS = ["rod_L", "rod_R", "packing"]   # Stage 3: the two cap rods and the packing cylinder, ride with the ovoids body
 OVOID_BODY_PARTS = OVOID_PARTS + ROD_PARTS
 
 # ----------------------------------------------------------------------------- configuration (CONTRACT 4 defaults)
@@ -120,6 +120,11 @@ CFG = dict(
     ovoid_park_mm=None,             # canal mode: the caps (and rods) wait at F_final - park * a_shaft until seating
                                     #   (None = the rule path's travel_mm, i.e. the u = 0 flange as in rule mode)
     device_rods=False,              # load rod_L / rod_R (cap rods, applicator_v3) as parts of the ovoids body
+    device_packing=False,           # load packing.obj (applicator_v3 --rods): a kinematic cylinder about the rods,
+                                    #   riding with the ring, that the vaginal wall rests on from inside.  It touches
+                                    #   the lumen sheet only (list it in wall_contact_parts).  MEASURED: at BT the
+                                    #   vagina at the ring's level is the device + packing; in the model the wall was
+                                    #   crushed between the cervix bulk and the springs holding the ring (G25).
     wall_inner_contact_organs=[],   # organs the wall's LUMEN sheet collides with, e.g. ["cervix"]: the vault stays
                                     #   physically wrapped around the portio instead of following it by springs only
                                     #   (the user: "maintain the physical contact of the vagina and HR-CTV").  These
@@ -414,7 +419,8 @@ CFG = dict(
 #   9 corpus|device (the tandem is the corpus's own)   10 vagina|tandem   11 cervix|tandem  (unmeshed lumina)
 #  12 vagina|ovoids (the ovoids seat in the vaginal lumen; cfg ovoid_vagina_contact)
 GROUPS = dict(corpus=[1, 9], cervix=[1, 2, 11], vagina=[2, 10, 12], bladder=[4], rectum=[3], sigmoid=[3],
-              tube=[9, 10, 11], shaft=[9, 10, 11], ovoid_L=[9, 12], ovoid_R=[9, 12], rod_L=[9, 12], rod_R=[9, 12])
+              tube=[9, 10, 11], shaft=[9, 10, 11], ovoid_L=[9, 12], ovoid_R=[9, 12], rod_L=[9, 12], rod_R=[9, 12],
+              packing=[3, 4, 9, 11, 12])         # the packing meets the vaginal LUMEN only: not the organs, not the cervix
 
 
 def groups_for(cfg):
@@ -883,7 +889,7 @@ def build_scene(root, cfg=None, inp=None):
     # ---- rigid device: tandem (tube + shaft) and ovoids (seated separately, cfg ovoid_mode)
     dcol = dict(tube=[0.15, 0.15, 0.20, 1.0], shaft=[0.15, 0.15, 0.20, 1.0],
                 ovoid_L=[0.35, 0.35, 0.42, 1.0], ovoid_R=[0.35, 0.35, 0.42, 1.0])
-    ov_parts = OVOID_PARTS + (ROD_PARTS if cfg.get("device_rods") else [])
+    ov_parts = OVOID_PARTS + (["rod_L", "rod_R"] if cfg.get("device_rods") else []) + (["packing"] if cfg.get("device_packing") else [])
     dgrp = {k: list(grp[k]) for k in DEVICE_PARTS + ROD_PARTS}
     if cfg.get("vagina_model", "solid") != "wall":       # (the wall has a real lumen: `wall_contact_parts` governs
                                                         #  which device parts touch it, see groups_for)
@@ -908,7 +914,7 @@ def build_scene(root, cfg=None, inp=None):
     tandem = add_rigid_parts(root, "tandem", [(p, _pobj(p)) for p in TANDEM_PARTS],
                              dgrp, dcol, rigid_pose(R0, F0))
     ov_pose = np.asarray(sched[0]["ov_pos"], float) if "ov_pos" in sched[0] else F0 - sched[0]["ov_lag"] * tgt["axis"]
-    dcol.update(rod_L=dcol["shaft"], rod_R=dcol["shaft"])
+    dcol.update(rod_L=dcol["shaft"], rod_R=dcol["shaft"], packing=[0.9, 0.9, 0.8, 0.3])
     ovoids = add_rigid_parts(root, "ovoids", [(p, _pobj(p)) for p in ov_parts],
                              dgrp, dcol, rigid_pose(R0, ov_pose))
 
