@@ -622,6 +622,13 @@ def build_schedule_canal(cfg, tgt):
     park = cfg.get("ovoid_park_mm")
     park = float(tgt["travel_mm"]) if park is None else float(park)
     P_park = F_fin - park * a_v
+    # ovoid_mode "travel" in canal mode: the caps (and rods) RIDE THE FLANGE from u = 0 -- the ring is on the tandem
+    # while the cervix is pushed up, and it is the ring that keeps the vault centred.  MEASURED (G23, caps parked
+    # until D): during T the vault followed the cervix 13-14 mm anteriorly BEFORE the caps arrived, and the caps
+    # then rose into a vault that had left their axis (posterior halves 8-10 mm beyond the posterior wall, section
+    # verdict "crossing"); at BT the ovoid label is 100 % inside the vagina label and the vault's section is
+    # centred on the ring to 1-3 mm.  "seat": the caps wait at P_park and seat during D (G23).
+    ride = cfg.get("ovoid_mode", "seat") == "travel"
     sched = []
     nB = int(cfg.get("n_balloon", 0) or 0)
     for k in range(1, nB + 1):
@@ -642,11 +649,11 @@ def build_schedule_canal(cfg, tgt):
         q = geom.canal_path(row["u"], base, a_v, F_fin, a_fin, L, h_intro, x_fin, below)
         row.update(s=float(q["w"]), F=q["F"], tube_axis=q["a"], R_rows=np.array([q["x"], np.cross(q["a"], q["x"]), q["a"]]),
                    T_corpus=screw_at(tgt["screw"], float(q["w"])), stage=q["stage"],
-                   ov_pos=P_park.copy(), ov_lag=float(park))
+                   ov_pos=(np.asarray(q["F"], float).copy() if ride else P_park.copy()), ov_lag=(0.0 if ride else float(park)))
     nD = max(0, int(cfg["n_seat"]))
     last = sched[-1]
     for k in range(1, nD + 1):
-        lag = park * (1.0 - k / float(nD))
+        lag = 0.0 if ride else park * (1.0 - k / float(nD))
         sched.append(dict(phase="D", u=1.0, s=1.0, F=last["F"], tube_axis=last["tube_axis"], R_rows=last["R_rows"],
                           T_corpus=last["T_corpus"], stage="D", ov_pos=F_fin - lag * a_v, ov_lag=float(lag)))
     return sched
