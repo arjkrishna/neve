@@ -1997,6 +1997,35 @@ axis: the tube-perpendicular caps sweep 17.5 mm about it and the cap rods reach 
 20.7 mm lumen (3,880 nodes / 11,220 tets, min dihedral 26 deg, wall 1.2–1.5 mm); at rest it sits 14 mm into the
 bladder (231 nodes) and 8 mm into the rectum — the balloon runs 60 steps.  The BT vagina averages ~24 mm in radius.
 
+### G23 — the first full Stage-3 run: everything inside except the caps' posterior halves, and the BT truth about the vault
+
+`G23` (231 steps, 33 min, `settle_not_converged` as always).  **Balloon (60 steps, 20.7 mm lumen): bladder 12.5 mm at
+0.82, rectum 16.9 mm at 0.71** — the ground-truth displacements (+13.7 / +15.5) reached by the pre-relaxation alone.
+S1: shaft inside the lumen at every station, uterus at rest.  S2: corpus drawn on smoothly, cervix 28.2 mm at a
+minimum vol ratio of 0.66, canal from 42 mm to 2.5 mm off the tube (38 ties), wall 0.94.  Seated: **shaft 16/16,
+rod_L 16/16, rod_R 16/16, caps 6/6 by the nearest-vertex rule, 0 outside**; bladder 18.9, sigmoid 17.7, cervix 28.3,
+rectum back to 2.9 (16.9 → 2.9 as the vault rose away from it during T); wall 0.91.
+
+But the far-side check (`diag_farside`: max lateral radius of each part's vertices per station vs the wall):
+caps 29–31 mm from the lumen axis at stations 23–27 against an outer wall radius of 20.9–21.8 — **the posterior
+halves are 8–10 mm beyond the posterior vault wall**; shaft and rods 9–17 mm, inside.  The section frames say the
+same: step 138 (end of insertion, caps parked) a straight 20 mm vagina with the shaft inside everywhere, the S4
+lumen centre already ~10 mm anterior of the device; step 228 "ovoids: crossing the wall, r 2.0–27.4 | lumen 20.1 /
+wall 21.4", caps centred 12 mm posterior of the vault centre; rods and shaft inside at S1–S3.  The vault ring centre
+is 12.7–14.1 mm off the rod line (x +7, y +10) — it followed the cervix anteriorly DURING T, with cervix|lumen contact
+on and the canal on the tube, before the caps (parked 100 mm below) arrived; the caps then rose into a vault that had
+left their axis, and one-sided contact cannot recover that.
+
+**Ground truth at BT** (`bt_vault_vs_ring`, slabs along the tandem axis about the ring centre): the ovoid label is
+**100 % inside the vagina label**; at the ring's level (h −10 … +10) the vagina's section is centred on the ring to
+**1–3 mm** (r_mean 13, r_max 22–23: there the "vagina" IS the device + packing); the HR-CTV sits above the ring
+(h > 0) with its section centre 4–6 mm off the tandem axis; below the ring the vagina's centre drifts anteriorly
+(+4 … +10 mm at h −15 … −30).  So the real vault is centred on the ring, and the real cervix bulk is nearly centred on
+the tandem — the model's vault, 13 mm anterior, is wrong, and the reason is the ORDER: clinically the ring is on the
+tandem while the cervix is pushed up, and it is the ring that keeps the vault centred.  **G24 = G23 + `ovoid_mode`
+"travel"** in canal mode: caps and rods ride the flange from u = 0 (outside the body until the flange enters the
+introitus early in S2), single variable.
+
 ### Commands
 
 ```bash
