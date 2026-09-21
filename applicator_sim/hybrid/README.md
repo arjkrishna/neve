@@ -1932,6 +1932,71 @@ relaxed → the vault is at its targets) → G20 (rectum mobility; completes wit
 pairing: still carried, opposite side → the fixed offsets) → G22 (recentre).  Videos `insertion_G22_{lumen,full}.mp4`.
 `wall_limit_s` / `APPSIM_TIMEOUT` should be raised to ~4000 for this mesh (2756 nodes) so the settle completes.
 
+## STAGE 3 — THE DEVICE AS THE LABEL SHOWS IT, AND THE TANDEM THROUGH THE VAGINA INTO THE CANAL (2026-09-21)
+
+The user's corrections, in their words: the ring aligned with the bottom rod "was a mistake, that ovoid setting was
+correct with the previous model"; "the vagina–HR-CTV junction is not realistic, HR-CTV moved from the centre of the
+vagina to the anterior region, better maintain the physical contact"; "use the actual angle of the tandem (30 deg)
+shown in the applicator label volume", "use the updated applicator label under Downloads"; "the tandem has to follow
+the vagina–intrauterine canal — in the current simulation the tandem goes through a path where there is no entry for
+the cervix and uterus; make the tandem placement accurate first, it determines the largest anatomy change"; "the
+ring/ovoids at the vagina–cervix interface perpendicular to the tandem"; "three rods, one from the tandem and two
+from the ring, all through the vagina, straighten it".
+
+### What the new label measures (`Downloads/BT_MRI_label_applicator.nii`, 2026-09-17; `logs/applicator_label_new_geometry.json`)
+
+Same grid as the MRI_GYN copy, 16,499 vs 12,044 voxels: the 4,859 added are the rods through the vagina and out of
+the body.  Sliced along z: the tube alone above z = +34 (32 slices, line rms 0.9 mm, radius 2.4 mm, tip at +84);
+the ovoid body at +8 … +31 (20.2 cc); **three separate rods at −8 … −28 (radius 3.1 mm)**, fused into one labelled
+bundle from −30 to −60.  Tube line vs rod-bundle line (33 slices): **28.9 deg** — the "24 deg" of CONTRACT 2 was
+wrong.  The rod that continues the tube line through the bend is the POSTERIOR one (2.9 mm from the extrapolated
+flange); the two cap rods sit 16 mm anterior of it, 8.6 mm apart.  Ring plane: the ovoid body's minor axis is
+13.8 deg from the tube and 16.0 deg from the rods — not decisive (a lunar-cap dome biases a PCA normal); the ring
+is built perpendicular to the tube on the user's device knowledge.  BT HR-CTV lowest point: **1.0 mm above the ring
+centre** — the ring is at the interface.  In the pre-implant frame (bone alignment): the rods are **2.7 deg** from
+the pre-implant vagina's principal axis (8 deg from the BT vagina's), i.e. exactly the axis every wall has been
+built on; the ring centre is 6.4 mm off that axis and 20 mm above the pre-implant os; the BT vagina label is
+99.9 cc, distended along its whole length.
+
+### `applicator_v3` (`applicator_venezia.py --variant v3 --angle 28.9 --rods --no-fit`; `--scaled-ovoids 26`)
+
+Tube as before; the tandem rod straight down the vaginal axis (`shaft.obj`, r 3.1, 80 mm); `rod_L/rod_R.obj` at
+(x ±4.3, y' +16) in the plane normal to the rods; caps = the fitted lunar caps, perpendicular to the tube (`d26`
+for the runs).  **The pose rule at 28.9 deg now matches the real implanted device to 1.49 deg in axis, 2.3 mm at
+the flange, 1.2 mm at the tip, and the implanted uterus to Dice 0.880 / 1.0 mm centroid error** (at 24 deg: 5.2 deg
+/ 4.1 / 5.1 mm / 0.809 / 4.1 mm; undeformed 24.3 mm).  In-sample Δ re-fits from 22.5 to 25.0 mm.  The user's angle
+is validated by the data, not just adopted.
+
+### The canal path (`geom.canal_path`, `pose.json insertion_path_canal`, cfg `insertion_path "canal"`)
+
+The pre-implant external os is **16.3 mm off the vaginal axis line** and the lower canal (a0) is **24.2 deg** from
+it; a line through the os along a0 passes 37 mm outside the introitus.  No straight tube can lie in the vagina and
+point along the canal at once, so the clinical sequence is modelled: **S1** the tube goes up the vaginal axis line
+(orientation = the vaginal axis, tip from 4 mm below the introitus to the vault; corpus at rest); **S2** a
+tip-pinned swing, tip = lerp(vault, final tip), axis = slerp(vaginal axis → final tube axis), w = smoothstep, while
+the corpus rides the FINAL screw with the same w; the end state is `device_final` and `corpus.T_preBT_to_target`
+bit-exactly, so the BT validation above is untouched.  The caps and rods wait 100 mm below the final flange and seat
+along the rods (`ovoid_park_mm`).  u₁ = 0.41 (uniform tip speed).  Per-step device frames go into the frames and the
+animators now read them (the device rotates during S2).
+
+Two smoke runs: **S3SMOKE** inverted the cervix (vol ratio −1.6 in one 4.5 mm step) because the corpus tracked the
+rule's target for the CURRENT flange — in S2 the flange travels ~85 mm, dragging the corpus at up to 5.7 mm /
+2.2 deg per step; the final screw moves it 23.5 mm / 15 deg over the S2 steps (fixed, 59fe141).  **S3SMOKE2**
+(35 steps) runs end to end: shaft inside the lumen through S1 with the uterus at rest; in S2 the canal comes from
+47 mm to 2.7 mm off the tube and 37 centring ties engage; caps and rods seat with 0 vertices outside the wall; the
+cervix is squeezed mid-swing (0.31, with the new cervix|lumen contact and 14 T steps instead of 50).
+
+### Cervix contact, rods, lumen (cfg `wall_inner_contact_organs`, `device_rods`, `vagina_wall_tet26v3`)
+
+The cervix and the wall were excluded from contact (a rest-overlap workaround from before the fornix), which is
+why the HR-CTV could leave the vault: `wall_inner_contact_organs ["cervix"]` lets the lumen sheet collide with it
+(switched on after the balloon, like the outer sheet's organ pairs), and the apex springs are softened to 2 mN/mm so
+contact, not springs, keeps the vault wrapped around the portio; `apex_attach "recentre"` is retired for this
+device.  The rods are parts of the ovoids body and contact the lumen.  The full-length lumen is sized about the ROD
+axis: the tube-perpendicular caps sweep 17.5 mm about it and the cap rods reach 19.7 mm, so `tet26v3` is a uniform
+20.7 mm lumen (3,880 nodes / 11,220 tets, min dihedral 26 deg, wall 1.2–1.5 mm); at rest it sits 14 mm into the
+bladder (231 nodes) and 8 mm into the rectum — the balloon runs 60 steps.  The BT vagina averages ~24 mm in radius.
+
 ### Commands
 
 ```bash
