@@ -2202,7 +2202,10 @@ flange near the corpus attachment.  The remaining geometric gap: the simulated o
 (the cervix is drawn up 19.8 mm where the pose rule's flange is 25 mm above the rest os; its lowest surface is
 10.9 mm below the flange), and because this wall ends at the os level the caps' apex zone (up to +1.4 mm above
 the flange) stands ~8 mm above the wall's top — the fornices that wrap the portio above the os are not in the
-mesh.  Videos `insertion_G31_{lumen,full}.mp4`.
+mesh.  Videos `insertion_G31_{lumen,full}.mp4`; frame 180 viewed: the purple wall stands ~20 mm above its rest
+wireframe, the lumen has necked to 18.2–19.4 mm at S1–S3 with the shaft and cap rods inside, the section at
+station 25 reads "ovoids: INSIDE the lumen r 8.4–19.7 | lumen 20.7", and the grey caps' top emerges above the
+wall's top edge with the cervix around it.
 
 ### `vagina_wall_tet26v4` — five stations above the os (G32)
 
