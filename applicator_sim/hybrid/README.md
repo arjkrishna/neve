@@ -2205,7 +2205,12 @@ the flange) stands ~8 mm above the wall's top — the fornices that wrap the por
 mesh.  Videos `insertion_G31_{lumen,full}.mp4`; frame 180 viewed: the purple wall stands ~20 mm above its rest
 wireframe, the lumen has necked to 18.2–19.4 mm at S1–S3 with the shaft and cap rods inside, the section at
 station 25 reads "ovoids: INSIDE the lumen r 8.4–19.7 | lumen 20.7", and the grey caps' top emerges above the
-wall's top edge with the cervix around it.
+wall's top edge with the cervix around it.  `diag_farside.py G31` (max lateral radius of each part's vertices per
+station against the wall): caps 8.4 → 17.5 mm at stations 22–27 inside r_in 19.6–20.9 everywhere; the cap rods at
+19.1–19.7 mm sit 0.6 mm into the wall's thickness at station 17 (r_in 18.5 / r_out 19.4), where the stretched
+wall has necked onto them — contact holds them at the surface.  The full-view frame shows the whole
+post-insertion configuration: the vagina lifted, the cervix drawn up the tube with the caps seated under it, the
+corpus rotated anteriorly, bladder pushed anteriorly, rectum posteriorly, sigmoid above the fundus.
 
 ### `vagina_wall_tet26v4` — five stations above the os (G32)
 
