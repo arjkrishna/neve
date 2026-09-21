@@ -382,6 +382,13 @@ CFG = dict(
                                     #   seated ring sits 26 mm above the vault.
     k_apex_mN_per_mm=20.0,
     apex_lift_pair="canal",         # "lift": pair the apex nodes with the nearest cervix "canal" | "surface_nodes"
+    apex_lift_profile="linear",     # "lift": "linear" = EVERY wall node's axial coordinate is prescribed, rest
+                                    #   coordinate x (1 + lift / H) about the introitus level (H = the apex height):
+                                    #   the wall unfolds uniformly from the fixed introitus to the lifted vault, the
+                                    #   write is consistent across the wall and nothing snaps back.  "top" = only
+                                    #   the apex nodes are written.  MEASURED (G29, "top"): the stretched elements
+                                    #   below pull the written nodes back within the implicit step -- the wall
+                                    #   retained 4.6 mm of a 9.2 mm lift at w 0.59.
     # --- supports (CONTRACT 4)
     k_cardinal_mN_per_mm=20.0, cardinal_len_mm=25.0,
     cardinal_tension_only=True,     # a ligament is a cable: it resists stretch beyond cardinal_len_mm only
@@ -1026,11 +1033,21 @@ def _add_couplings(ctx):
         d = np.linalg.norm(X0["vagina"][apex][:, None, :] - X0["cervix"][cset][None, :, :], axis=2)
         ctx["apex_pair"] = cset[d.argmin(1)]
         a_w = geom.unit(np.asarray(inp["meta"]["vagina"]["axis"]["axis"], float))
-        g = np.asarray(inp["meta"]["vagina"]["wall"]["grid_index"], int)[apex, 0]     # station of each apex node
-        ctx["apex_lift"] = dict(idx=apex, h0=X0["vagina"][apex] @ a_w, a=a_w)         # each node's REST axial coord
+        gi = np.asarray(inp["meta"]["vagina"]["wall"]["grid_index"], int)
+        g = gi[apex, 0]                                                               # station of each apex node
+        h_all = X0["vagina"] @ a_w
+        h_intro = float(h_all[gi[:, 0] == 0].mean())                                  # the introitus level
+        if cfg.get("apex_lift_profile", "linear") == "linear":
+            idx = np.arange(len(X0["vagina"]))
+            H_top = float(h_all[apex].mean() - h_intro)
+            ctx["apex_lift"] = dict(idx=idx, h0=h_all[idx] - h_intro, a=a_w, h_intro=h_intro, H=H_top, profile="linear")
+        else:
+            ctx["apex_lift"] = dict(idx=apex, h0=h_all[apex] - h_intro, a=a_w, h_intro=h_intro, H=None, profile="top")
         ctx["apex_axis"] = a_w
         ctx["extra"]["apex_lift_stations"] = [dict(station=int(st), n=int((g == st).sum()))
                                               for st in sorted(set(int(v) for v in g))]
+        ctx["extra"]["apex_lift_profile"] = dict(profile=ctx["apex_lift"]["profile"], n_nodes=int(len(ctx["apex_lift"]["idx"])),
+                                                 H_mm=(round(ctx["apex_lift"]["H"], 3) if ctx["apex_lift"]["H"] else None))
 
 
 def _add_supports(ctx):
@@ -1501,7 +1518,11 @@ class HybridController(Sofa.Core.Controller):
             mo = c["nodes"]["vagina"].dofs
             X = np.array(mo.position.value, dtype=float, copy=True)
             Xi = X[L["idx"]]
-            Xi += ((L["h0"] + lift) - Xi @ a_w)[:, None] * a_w[None, :]     # prescribe the AXIAL coordinate only
+            if L["profile"] == "linear":                          # uniform unfolding: introitus 0 -> apex `lift`
+                h_t = L["h_intro"] + L["h0"] * (1.0 + lift / max(1e-9, L["H"]))
+            else:
+                h_t = L["h_intro"] + L["h0"] + lift
+            Xi += (h_t - Xi @ a_w)[:, None] * a_w[None, :]         # prescribe the AXIAL coordinate only
             X[L["idx"]] = Xi
             mo.position.value = X.tolist()
             self.apex_lift = lift
