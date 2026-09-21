@@ -101,6 +101,12 @@ CFG = dict(
                                      #   A for any r_in(theta).
     lumen_ovoid_files=["ovoid_L_d26s", "ovoid_R_d26s"],  # caps the vault is sized to (applicator/<name>.obj);
                                      #     d26s = 26 mm caps aligned to the STRAIGHT vaginal rod (ring_radius_mm)
+    lumen_about="tube",              # axis the parts' radius is taken about: "tube" (the applicator z; right for caps
+                                     #     aligned to the tube travelling along the tube) | "rod": the vaginal rod line
+                                     #     through the flange (Stage 3: the ring is perpendicular to the TUBE but
+                                     #     travels up the vagina along the RODS, sweeping 17.5 mm about them for the
+                                     #     26 mm caps, and the cap rods reach 19.7 mm)
+    applicator_dir="applicator",     # hybrid/<dir> the parts and applicator.json are read from ("applicator_v3")
     lumen_vault_clear_mm=1.0,        # mm  clearance added to the ring's own radius at the vault
     lumen_low_a_mm=8.0,              # mm  LR semi-axis at the introitus (the slit's long axis)
     lumen_low_b_mm=4.5,              # mm  AP semi-axis at the introitus (the slit's short axis)
@@ -519,23 +525,31 @@ def node_sets(W, sec, cfg, sdf=None):
 
 
 # --------------------------------------------------------------------------- build (py3.13 host)
-def ring_radius_mm(PT, files):
-    """Radius of the cap assembly about the axis it TRAVELS along, so the vault auto-fits whichever caps the run
-    loads (d22 / d26 / d26s ...).  Caps built about the tube axis (d26): max hypot(x, y) about the applicator z.
-    Caps aligned to the straight vaginal rod (d26s, applicator_venezia.py --align-shaft): the record's
-    radius_about_shaft_axis_mm -- about z those caps read 17.3 mm because of the 24 deg lever arm, which would
-    oversize the vault by 4 mm."""
+def ring_radius_mm(PT, files, about="tube"):
+    """Radius of the device parts about the axis they TRAVEL along, so the lumen auto-fits whichever parts the run
+    loads.  about="tube": max hypot(x, y) about the applicator z (caps built about the tube and travelling along it);
+    caps aligned to the straight rod (d26s) use their record's radius_about_shaft_axis_mm.  about="rod": the distance
+    from the vaginal rod line through the flange, direction (0, sin th, -cos th) with th = applicator.json angle_deg
+    -- Stage 3, where the tube-perpendicular ring and the cap rods travel up the vagina along the rods."""
     rr = 0.0
+    d_rod = None
+    if about == "rod":
+        th = np.radians(float(json.load(open(PT["applicator"] + "/applicator.json"))["params"]["angle_deg"]["value"]))
+        d_rod = np.array([0.0, np.sin(th), -np.cos(th)])
     for nm in files:
         tag = nm.split("_")[-1] if nm.startswith("ovoid_") else None
         rec = "%s/ovoids_%s.json" % (PT["applicator"], tag) if tag else None
-        if rec and os.path.exists(rec):
+        if about == "tube" and rec and os.path.exists(rec):
             j = json.load(open(rec))
             if j.get("aligned_to", {}).get("radius_about_shaft_axis_mm") is not None:
                 rr = max(rr, float(j["aligned_to"]["radius_about_shaft_axis_mm"]))
                 continue
-        Vo, _ = geom.read_obj("%s/%s.obj" % (PT["applicator"], nm))
-        rr = max(rr, float(np.hypot(np.asarray(Vo)[:, 0], np.asarray(Vo)[:, 1]).max()))
+        Vo = np.asarray(geom.read_obj("%s/%s.obj" % (PT["applicator"], nm))[0], float)
+        if d_rod is None:
+            rr = max(rr, float(np.hypot(Vo[:, 0], Vo[:, 1]).max()))
+        else:
+            t = Vo @ d_rod
+            rr = max(rr, float(np.linalg.norm(Vo - np.outer(t, d_rod), axis=1).max()))
     return rr
 
 
@@ -548,7 +562,8 @@ def build_one(r0, args, shared):
     cfg["_voxel_mm3"] = shared["vox"]
     PT = shared["PT"]
     if cfg.get("lumen_profile", "uniform") == "device":
-        cfg["_ring_r_mm"] = ring_radius_mm(PT, cfg["lumen_ovoid_files"])
+        PTa = dict(PT, applicator=PT["hybrid"] + "/" + cfg.get("applicator_dir", "applicator"))
+        cfg["_ring_r_mm"] = ring_radius_mm(PTa, cfg["lumen_ovoid_files"], cfg.get("lumen_about", "tube"))
     X, a, c = shared["X"], shared["a"], shared["c"]
     t0 = time.time()
     sec, e1, e2 = label_sections(X, a, c, cfg)

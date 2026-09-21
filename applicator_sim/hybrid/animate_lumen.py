@@ -125,6 +125,10 @@ class Lumen:
         self.a = a
         self.e_lr = geom.unit(x - (x @ a) * a)                         # patient right, normal to the lumen axis
         self.e_ap = np.cross(a, self.e_lr)                             # anterior, normal to both
+        # Stage 3: the cap rods ride with the ovoids body when the applicator dir provides them
+        for rod in ("rod_L", "rod_R"):
+            if os.path.exists("%s/%s.obj" % (P["applicator"], rod)) and rod not in OVOIDS:
+                OVOIDS.append(rod)
         self.dev_app = {p: geom.read_obj("%s/%s.obj" % (P["applicator"], p)) for p in TANDEM + OVOIDS}
         self.rest = {b: geom.read_obj("%s/%s/surface.obj" % (P["meshes"], b)) for b in ("vagina", "cervix", "corpus")
                      if b in self.idx["bodies"]}

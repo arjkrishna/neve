@@ -138,6 +138,20 @@ def default_params(app_in, bdev):
         "inputs/applicator.json measured a 26 mm straight shaft in the BT label; the arc is the contract's device model")
     add("angle_deg", 24.0, "deg", "MEASURED 22-25 deg tube/shaft junction angle (CONTRACT 2), default 24")
     add("r_shaft_mm", float(app_in["r_tandem_mm"]), "mm", "ASSUMED = r_tandem (one continuous tube through the caps)")
+    # ---- Stage 3 (2026-09-21): the VAGINAL PART as the updated BT applicator label shows it (Downloads/BT_MRI_label_
+    #      applicator.nii, hybrid/logs/applicator_label_new_geometry.json): the tandem's own rod continues STRAIGHT from
+    #      the flange down the vaginal axis, and two further rods hang from the caps, all three through the vagina and
+    #      out of the body.  The ring/caps stay perpendicular to the TUBE (the user's device knowledge; the label's
+    #      cap minor axis is 14 deg from the tube and 16 deg from the rods, not decisive).
+    add("shaft_style", "arc", "-", "'arc' = the 30 mm bent shaft of the Stage-1 model; 'straight' = the tandem rod straight down "
+                                   "the vaginal (shaft) axis from the flange, as in the BT label (rods 2.7 deg from the preBT vaginal axis)")
+    add("rod_r_mm", 3.11, "mm", "MEASURED BT applicator label: three rods of median cross-section 30.4 mm^2 (partial volume "
+                                "may add ~0.3 mm); the tube reads 2.37 mm on the same label vs 2.18 by FWHM")
+    add("rod_len_mm", 80.0, "mm", "MEASURED BT applicator label: rods reach 79 mm below the ring centre (out of the body)")
+    add("ovoid_rod_offsets_mm", [[-4.3, 16.0], [4.3, 16.0]], "mm",
+        "MEASURED BT applicator label at z = -16.8 (BT): the two cap rods sit 16 mm ANTERIOR of the tandem rod and 8.6 mm apart "
+        "LR; (x, y') in the plane normal to the rods through the flange, y' = anterior. Symmetrised about x = 0")
+    add("rods", False, "-", "write rod_L.obj / rod_R.obj (the cap rods) and use shaft_style 'straight' for the tandem rod")
     add("ovoid_diam_mm", 40.0, "mm", "FITTED to the BT ovoid label (AP = LR diameter of the cap assembly; initial 40)")
     add("ovoid_height_mm", 22.2, "mm", "MEASURED assembly extent along z (CONTRACT 2)")
     add("ovoid_dome_mm", 8.0, "mm", "FITTED dome height of each cap (= height -> pure half-ellipsoid cap; initial 8)")
@@ -218,6 +232,15 @@ def shaft_arc(prm, n=31):
     C = np.stack([np.zeros(n), rho * (1 - np.cos(al)), -rho * np.sin(al)], 1)
     T = np.stack([np.zeros(n), np.sin(al), -np.cos(al)], 1)
     return C, T
+
+
+def rod_frame(prm):
+    """Direction DOWN the vaginal rod and the unit vector normal to it in the sagittal plane (toward anterior), both in
+    the applicator frame: the rods are the tube axis rotated back by angle_deg about x, pointing down."""
+    th = np.radians(val(prm, "angle_deg"))
+    d_rod = np.array([0.0, np.sin(th), -np.cos(th)])
+    y_rod = np.array([0.0, np.cos(th), np.sin(th)])
+    return d_rod, y_rod
 
 
 def shaft_inside(Q, prm):
@@ -340,11 +363,25 @@ def build_meshes(prm):
     rings += [((0.0, 0.0, L - r + r * np.sin(ph)), EX, EY, r * np.cos(ph)) for ph in np.linspace(0, np.pi / 2, 8)[1:-1]]
     V, F = sweep(rings, (0.0, 0.0, 0.0), (0.0, 0.0, L), n_th)
     parts["tube"] = (V, F, mesh_stats(V, F, np.pi * r * r * (L - r) + 2.0 / 3.0 * np.pi * r ** 3))
-    # curved shaft below the flange
-    C, T = shaft_arc(prm, 30); rs = val(prm, "r_shaft_mm")
-    rings = [(C[i], EX, np.cross(T[i], EX), rs) for i in range(len(C))]
-    V, F = sweep(rings, C[0], C[-1], n_th)
-    parts["shaft"] = (V, F, mesh_stats(V, F, np.pi * rs * rs * val(prm, "shaft_arc_len_mm")))
+    if val(prm, "shaft_style") == "straight":
+        # the tandem rod: straight from the flange down the vaginal (shaft) axis, i.e. the tube axis rotated back by
+        # angle_deg (the rod goes DOWN: d_rod = (0, sin th, -cos th) in the applicator frame)
+        d_rod, y_rod = rod_frame(prm); rs = val(prm, "rod_r_mm"); Lr = val(prm, "rod_len_mm")
+        rings = [(t * d_rod, EX, y_rod, rs) for t in np.linspace(0.0, Lr, 9)]
+        V, F = sweep(rings, np.zeros(3), Lr * d_rod, n_th)
+        parts["shaft"] = (V, F, mesh_stats(V, F, np.pi * rs * rs * Lr))
+        if val(prm, "rods"):
+            for (ox, oy), name in zip(val(prm, "ovoid_rod_offsets_mm"), ("rod_L", "rod_R")):
+                p0 = ox * EX + oy * y_rod
+                rings = [(p0 + t * d_rod, EX, y_rod, rs) for t in np.linspace(0.0, Lr, 9)]
+                V, F = sweep(rings, p0, p0 + Lr * d_rod, n_th)
+                parts[name] = (V, F, mesh_stats(V, F, np.pi * rs * rs * Lr))
+    else:
+        # curved shaft below the flange
+        C, T = shaft_arc(prm, 30); rs = val(prm, "r_shaft_mm")
+        rings = [(C[i], EX, np.cross(T[i], EX), rs) for i in range(len(C))]
+        V, F = sweep(rings, C[0], C[-1], n_th)
+        parts["shaft"] = (V, F, mesh_stats(V, F, np.pi * rs * rs * val(prm, "shaft_arc_len_mm")))
     for side, name in ((-1, "ovoid_L"), (+1, "ovoid_R")):
         parts[name] = ovoid_mesh(prm, side)
     out = {}
@@ -679,6 +716,34 @@ def pose_rule(inputs, params):
 
 
 # ============================================================================ validation against the real BT tandem
+def canal_path_record(rule, pre, prm):
+    """Stage 3 insertion path (geom.canal_path): tube up the VAGINAL axis to the vault, then a tip-pinned swing onto the
+    final tube axis while the corpus is drawn from rest onto the rule's target for the current tube pose.  The record
+    holds the parameters the scene re-evaluates, plus keyframes for the figure / audit."""
+    vg = pre["vagina"]
+    a_v = geom.unit(rule["shaft_axis"]); base = np.asarray(rule["shaft_base"], float)
+    h_intro = float(vg["proj_min"] - float((base - vg["centroid"]) @ a_v))       # introitus height about base (< 0)
+    L = val(prm, "L_iu_mm"); below = val(prm, "tip_below_os_mm")
+    pars = dict(base=jz(base, 4), a_v=jz(a_v), F_fin=jz(rule["flange"], 4), a_fin=jz(rule["tube_axis"]), x_fin=jz(rule["x_app"]),
+                L_iu_mm=L, h_intro_mm=round(h_intro, 3), below_mm=below, a0=jz(pre["a0"]), L_end=jz(pre["L_end"], 4), d_F_mm=round(rule["d_F_mm"], 3))
+    n = int(val(prm, "n_steps")); keys = []
+    for k in range(n + 1):
+        u = k / n
+        q = geom.canal_path(u, base, a_v, rule["flange"], rule["tube_axis"], L, h_intro, rule["x_app"], below)
+        Tr = geom.corpus_rule_T(pre["a0"], pre["L_end"], rule["d_F_mm"], q["F"], q["a"])
+        Tc = geom.screw_interp(geom.screw_decompose(Tr[:3, :3], Tr[:3, 3]), q["w"])
+        keys.append(dict(u=round(u, 5), stage=q["stage"], w=round(q["w"], 5), F=jz(q["F"], 4), a=jz(q["a"]), x=jz(q["x"]), tip=jz(q["tip"], 4), corpus_T=jz(Tc, 6)))
+    q1 = geom.canal_path(0.0, base, a_v, rule["flange"], rule["tube_axis"], L, h_intro, rule["x_app"], below)
+    return dict(pars, u1=q1["u1"],
+                definition="S1 (u < u1): tube along the vaginal axis up the axis line, tip from below the introitus to the vault, corpus at rest.  "
+                           "S2: tip = lerp(vault, tip_final, w), axis = slerp(a_v, a_final, w), w = smoothstep; corpus = screw fraction w of the "
+                           "pose rule's target for the current (F, a).  End state = device_final and corpus.T_preBT_to_target exactly.",
+                why="the preBT os is %.1f mm off the vaginal axis line and the lower canal %.1f deg from it: no straight tube lies in the vagina "
+                    "and along the canal at once; the tandem goes up the vagina and the cervix is drawn onto it" % (
+                        float(np.linalg.norm((pre["O_pre"] - base) - float((pre["O_pre"] - base) @ a_v) * a_v)), geom.angle_deg(pre["a0"], a_v)),
+                keyframes=keys)
+
+
 def load_frames():
     al = json.load(open(P["out"] + "/validation/alignment.json"))
     fr = {k: dict(R=np.array(v["R_BT_to_pre"]), t=np.array(v["t_BT_to_pre"]), role=v["role"], uses_labels=v["uses_labels"])
@@ -1382,10 +1447,17 @@ def main():
     ap.add_argument("--scaled-ovoids", type=float, nargs="+", default=None, metavar="D",
                     help="write lunar caps at realistic assembly diameters D mm (e.g. 22 26 30) as ovoid_{L,R}_d<D>.obj; "
                          "the fitted caps are left untouched")
+    ap.add_argument("--variant", default=None, help="write everything to hybrid/applicator_<variant>/ (e.g. v3) instead of hybrid/applicator/")
+    ap.add_argument("--rods", action="store_true", help="Stage 3: straight tandem rod + the two cap rods (rod_L/rod_R.obj), see params rod_*")
+    ap.add_argument("--angle-source", default=None, help="provenance note recorded for --angle")
     ap.add_argument("--align-shaft", action="store_true",
                     help="with --scaled-ovoids: tilt the caps so their axis follows the STRAIGHT vaginal rod instead of "
                          "the intrauterine tube (tag suffix 's', e.g. ovoid_L_d26s.obj)")
     a = ap.parse_args()
+    global APP
+    base_app = APP
+    if a.variant:
+        APP = HY + "/applicator_" + a.variant
     if a.render3d:
         render3d(); return
     if a.scaled_ovoids:
@@ -1397,11 +1469,18 @@ def main():
     prm = default_params(app_in, bdev)
     if a.angle is not None:
         prm["angle_deg"]["value"] = float(a.angle)
+        if a.angle_source:
+            prm["angle_deg"]["source"] = a.angle_source
+    if a.rods:
+        prm["rods"]["value"] = True
+        prm["shaft_style"]["value"] = "straight"
     if a.n_steps is not None:
         prm["n_steps"]["value"] = int(a.n_steps)
     if a.path_axis is not None:
         prm["path_axis"]["value"] = a.path_axis
     stored = APP + "/applicator.json"
+    if a.no_fit and not os.path.exists(stored) and os.path.exists(base_app + "/applicator.json"):
+        stored = base_app + "/applicator.json"           # a fresh variant dir reuses the base fit
     if a.no_fit and os.path.exists(stored):
         old = json.load(open(stored))["params"]
         for k in FIT_KEYS:
@@ -1470,6 +1549,9 @@ def main():
     # ---- write applicator.json
     ch = needle_channels(prm)
     C_arc, T_arc = shaft_arc(prm, 31)
+    if val(prm, "shaft_style") == "straight":
+        d_rod, _ = rod_frame(prm)
+        C_arc = np.stack([np.zeros(3), val(prm, "rod_len_mm") * d_rod]); T_arc = np.stack([d_rod, d_rod])
     app_out = dict(units="mm, deg", frame=FRAME_APP, device="Venezia-type hybrid applicator, parametric model (identity unconfirmed: RTPLAN / vendor "
                    "geometry not available); surfaces are closed, outward-oriented triangle meshes for SOFA collision + visual models",
                    written=time.strftime("%Y-%m-%d %H:%M:%S"), params=prm, parts=mesh,
@@ -1531,6 +1613,7 @@ def main():
                                                                 settle="after u = 1 until convergence (CONTRACT 5)"),
                             keyframe_fields="u, phase, F (flange), a (tube axis), x (x_app), tip, corpus_s, corpus_T (4x4 preBT -> current)"),
         insertion_path_alt=dict(rule["insertion_path_alt"], note="alternative translation axis (not the default)"),
+        insertion_path_canal=canal_path_record(rule, pre, prm),
         validation=dict(rule_v1=valid, rule_v2=v2, default_rule_score=score))
     json.dump(jz(pose_out), open(APP + "/pose.json", "w"), indent=1)
     print("[pose] wrote", APP + "/pose.json", "and", APP + "/applicator.json", flush=True)

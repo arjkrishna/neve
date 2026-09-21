@@ -307,7 +307,8 @@ def build_one(args, shared, MB):
     cfg["_voxel_mm3"] = shared["vox"]
     PT = shared["PT"]
     if cfg.get("lumen_profile", "uniform") == "device":
-        cfg["_ring_r_mm"] = VW.ring_radius_mm(PT, cfg["lumen_ovoid_files"])
+        PTa = dict(PT, applicator=PT["hybrid"] + "/" + cfg.get("applicator_dir", "applicator"))
+        cfg["_ring_r_mm"] = VW.ring_radius_mm(PTa, cfg["lumen_ovoid_files"], cfg.get("lumen_about", "tube"))
     X, a, c = shared["X"], shared["a"], shared["c"]
     t0 = time.time()
     sec, e1, e2 = VW.label_sections(X, a, c, cfg)

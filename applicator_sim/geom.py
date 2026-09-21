@@ -138,6 +138,92 @@ def pose_path(O, a0, x0, F_fin, a_fin, L_iu, step_mm=1.0, max_rot_deg=0.5, onset
     return out
 
 
+# ----------------------------------------------------------------------------- screw motions and the canal path
+def rodrigues(k, deg):
+    """Rotation by `deg` about the unit axis k."""
+    k = unit(k)
+    K = skew(k)
+    th = np.radians(deg)
+    return np.eye(3) + np.sin(th) * K + (1 - np.cos(th)) * K @ K
+
+
+def screw_decompose(R, t):
+    """(R, t) -> screw: unit axis k, point p0, angle (deg), translation d along k:  T(p) = R (p - p0) + p0 + d k."""
+    th = np.radians(rot_angle_deg(R))
+    if th < 1e-4:
+        return dict(pure_translation=True, axis=unit(t) if np.linalg.norm(t) > 0 else np.array([0.0, 0.0, 1.0]),
+                    point=np.zeros(3), angle_deg=0.0, pitch_mm=float(np.linalg.norm(t)))
+    k = unit(np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]]) / (2 * np.sin(th)))
+    d = float(t @ k)
+    tp = t - d * k
+    p0 = 0.5 * (tp + np.cross(k, tp) / np.tan(th / 2))
+    return dict(pure_translation=False, axis=k, point=p0, angle_deg=float(np.degrees(th)), pitch_mm=d)
+
+
+def screw_interp(sc, s):
+    """Rigid transform (4x4) at fraction s of a screw motion from screw_decompose."""
+    T = np.eye(4)
+    k = np.asarray(sc["axis"], float)
+    if sc.get("pure_translation"):
+        T[:3, 3] = s * float(sc["pitch_mm"]) * k
+        return T
+    p0 = np.asarray(sc["point"], float)
+    Rs = rodrigues(k, s * float(sc["angle_deg"]))
+    T[:3, :3] = Rs
+    T[:3, 3] = p0 - Rs @ p0 + s * float(sc["pitch_mm"]) * k
+    return T
+
+
+def corpus_rule_T(a0, L_end, d_F, F, a):
+    """The pose rule's corpus placement for a tube at flange F with axis a (4x4, preBT -> target): the minimal
+    rotation a0 -> a, and the canal landmark L_end carried to F + d_F a.  applicator_venezia.pose_rule, 3.3."""
+    R = rot_between(a0, a)
+    T = np.eye(4)
+    T[:3, :3] = R
+    T[:3, 3] = (np.asarray(F, float) + float(d_F) * unit(a)) - R @ np.asarray(L_end, float)
+    return T
+
+
+def canal_path(u, base, a_v, F_fin, a_fin, L_iu, h_intro, x_fin, below=4.0, u1=None):
+    """Tandem placement THROUGH the vagina and INTO the canal, in two stages (Stage 3, 2026-09-21).
+
+    Why: the pre-implant external os sits 16 mm off the vaginal axis line and the lower canal is 24 deg from
+    it, so no straight tube can lie in the vagina and point along the canal at once; a line through the os
+    along the canal passes ~37 mm outside the introitus.  Clinically the tandem goes up the vagina and the
+    cervix is DRAWN onto it (traction), then the uterus straightens onto the tube.  Hence:
+      S1 (u < u1): tube along the vaginal axis a_v, translating up the axis line through `base` (the os
+          projected on the line); the tip rises from `below` mm under the introitus (height h_intro < 0 about
+          `base`) to `base` (the vault).  Corpus at rest.
+      S2 (u >= u1): tip-pinned swing: tip = lerp(base, tip_fin, w), a = slerp(a_v, a_fin, w), F = tip - L a,
+          w = smoothstep((u - u1) / (1 - u1)); the caller blends the corpus from rest onto the rule's target
+          for the CURRENT tube pose with the same w (no jump), so at u = 1 the pose and the corpus are the
+          validated final ones.
+    u1 defaults to the S1 share of the total tip travel (uniform tip speed).  x is the applicator x axis,
+    parallel-transported from x_fin so the final frame is bit-identical to the rule's R_rows.
+    Returns dict(F, a, x, tip, w, stage)."""
+    base, a_v, F_fin, a_fin, x_fin = (np.asarray(v, float) for v in (base, a_v, F_fin, a_fin, x_fin))
+    a_v, a_fin = unit(a_v), unit(a_fin)
+    tip_fin = F_fin + L_iu * a_fin
+    h0 = float(h_intro) - float(below)                    # tip height (about base, along a_v) at u = 0
+    s1 = -h0                                              # S1 tip travel (up to the vault at height 0)
+    s2 = float(np.linalg.norm(tip_fin - base))
+    if u1 is None:
+        u1 = s1 / (s1 + s2)
+    u = float(np.clip(u, 0.0, 1.0))
+    if u < u1:
+        tip = base + (h0 + (0.0 - h0) * (u / u1)) * a_v
+        a = a_v
+        w = 0.0
+        stage = "S1"
+    else:
+        w = smoothstep((u - u1) / max(1e-9, 1.0 - u1))
+        tip = lerp(base, tip_fin, w)
+        a = slerp(a_v, a_fin, w)
+        stage = "S2"
+    x = ortho(rot_between(a_fin, a) @ x_fin, a)
+    return dict(F=tip - L_iu * a, a=a, x=x, tip=tip, w=w, stage=stage, u1=float(u1))
+
+
 # ----------------------------------------------------------------------------- rod / spheres
 def rod_project(p, F, a, s_lo, s_hi):
     """Closest point on the segment F + a*s, s in [s_lo, s_hi]; returns (q, s, dist)."""

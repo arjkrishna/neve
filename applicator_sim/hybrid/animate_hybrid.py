@@ -189,6 +189,10 @@ class Scene:
         self.frames = self.idx["frames"]
         self.dev_first = load_json(self.fd + "/" + self.frames[0]["device"])
         self.dev_last = load_json(self.fd + "/" + self.frames[-1]["device"])
+        # Stage 3: the cap rods ride with the ovoids body when the applicator dir provides them
+        for rod in ("rod_L", "rod_R"):
+            if os.path.exists("%s/%s.obj" % (P["applicator"], rod)) and rod not in OVOIDS:
+                OVOIDS.append(rod)
         self.dev_app = {p: geom.read_obj("%s/%s.obj" % (P["applicator"], p)) for p in TANDEM + OVOIDS}
         self.rest = {b: geom.read_obj("%s/%s/surface.obj" % (P["meshes"], b)) for b in bodies}
         self.last = {b: geom.read_obj("%s/%s" % (self.fd, self.frames[-1]["surfaces"][b])) for b in bodies}

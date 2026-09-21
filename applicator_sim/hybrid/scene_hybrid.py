@@ -57,6 +57,8 @@ DEFORMABLE = ["cervix", "vagina", "bladder", "rectum", "sigmoid"]     # corpus i
 DEVICE_PARTS = ["tube", "shaft", "ovoid_L", "ovoid_R"]
 TANDEM_PARTS = ["tube", "shaft"]
 OVOID_PARTS = ["ovoid_L", "ovoid_R"]
+ROD_PARTS = ["rod_L", "rod_R"]              # Stage 3: the two cap rods (applicator_v3), ride with the ovoids body
+OVOID_BODY_PARTS = OVOID_PARTS + ROD_PARTS
 
 # ----------------------------------------------------------------------------- configuration (CONTRACT 4 defaults)
 CFG = dict(
@@ -99,6 +101,30 @@ CFG = dict(
                                     # Stage-1 ovoids showed), so contact could not push them out -- it would only
                                     # hold them.  Excluded exactly as Stage 1 excludes its own rest overlaps
                                     # (cervix|vagina -0.87, rectum|sigmoid -0.57).  [] enables every organ.
+    # --- Stage 3 (2026-09-21): the device as the updated BT applicator label shows it, and a path through the canal
+    applicator_dir="applicator",    # hybrid/<dir> holding applicator.json / pose.json / <part>.obj.  "applicator_v3" =
+                                    # 28.9 deg junction (MEASURED on the label; the rule then matches the BT device to
+                                    # 1.5 deg / 2.3 mm flange / 1.2 mm tip, uterus Dice 0.88), straight tandem rod, two
+                                    # cap rods, ring perpendicular to the TUBE (the user's device knowledge).
+    insertion_path="rule",          # "rule" (unchanged): the device translates along the path axis with its FINAL
+                                    #   orientation from u = 0 and the corpus follows its screw schedule.
+                                    # "canal": geom.canal_path -- S1 the tube goes UP THE VAGINA along the vaginal
+                                    #   axis with the corpus at rest; S2 a tip-pinned swing onto the final tube axis
+                                    #   while the corpus is drawn from rest onto the pose rule's target for the
+                                    #   current tube pose (screw fraction w, no jump); end state = device_final.
+                                    #   WHY: MEASURED, the preBT os is 16 mm off the vaginal axis line and the lower
+                                    #   canal 24 deg from it, so no straight tube lies in the vagina and along the
+                                    #   canal at once; and with "rule" the canal was 20-24 mm from the tube until
+                                    #   u = 0.8 (G18 canal_d_mm).  The tandem goes up the vagina; the cervix is drawn
+                                    #   onto it.  n_approach steps cover S1, n_insert steps S2.
+    ovoid_park_mm=None,             # canal mode: the caps (and rods) wait at F_final - park * a_shaft until seating
+                                    #   (None = the rule path's travel_mm, i.e. the u = 0 flange as in rule mode)
+    device_rods=False,              # load rod_L / rod_R (cap rods, applicator_v3) as parts of the ovoids body
+    wall_inner_contact_organs=[],   # organs the wall's LUMEN sheet collides with, e.g. ["cervix"]: the vault stays
+                                    #   physically wrapped around the portio instead of following it by springs only
+                                    #   (the user: "maintain the physical contact of the vagina and HR-CTV").  These
+                                    #   pairs are OFF during the balloon phase (the driven wall passes through the
+                                    #   cervix) and switched on at the hand-off, like the outer sheet's.
     # --- Stage 2b: relax the OARs OUTWARD before the wall is introduced (the "balloon" phase, B)
     n_balloon=0,                    # steps of phase "B" ahead of the pre-settle.  WHY: the distended reference
                                     # wall is built in the collapsed preBT anatomy, so at rest its OUTER sheet
@@ -388,7 +414,7 @@ CFG = dict(
 #   9 corpus|device (the tandem is the corpus's own)   10 vagina|tandem   11 cervix|tandem  (unmeshed lumina)
 #  12 vagina|ovoids (the ovoids seat in the vaginal lumen; cfg ovoid_vagina_contact)
 GROUPS = dict(corpus=[1, 9], cervix=[1, 2, 11], vagina=[2, 10, 12], bladder=[4], rectum=[3], sigmoid=[3],
-              tube=[9, 10, 11], shaft=[9, 10, 11], ovoid_L=[9, 12], ovoid_R=[9, 12])
+              tube=[9, 10, 11], shaft=[9, 10, 11], ovoid_L=[9, 12], ovoid_R=[9, 12], rod_L=[9, 12], rod_R=[9, 12])
 
 
 def groups_for(cfg):
@@ -428,9 +454,10 @@ def groups_for(cfg):
     for b, i in own.items():
         g[b] = g[b] + [i]
     keep = set(cfg.get("wall_contact_parts", []))
-    for p in DEVICE_PARTS:
+    for p in DEVICE_PARTS + ROD_PARTS:
         g[p] = g[p] + [21] + ([] if p in keep else [22])
-    g["vagina_inner"] = [22] + sorted(own.values())
+    touch = set(cfg.get("wall_inner_contact_organs", []))
+    g["vagina_inner"] = [22] + sorted(v for b, v in own.items() if b not in touch)
     g["vagina_outer"] = [21, 22] + sorted(own[b] for b in cfg.get("wall_outer_exclude", []) if b in own)
     g["vagina"] = list(g["vagina_inner"])                       # wall_collision="single" uses the inner groups
     return g
@@ -478,6 +505,7 @@ def load_inputs(cfg):
         # are copies).  vagina_wall.scene_mesh_root builds and refreshes it.
         import vagina_wall
         P = dict(P, meshes=vagina_wall.scene_mesh_root(P["meshes"], cfg["vagina_wall_dir"]))
+    P = dict(P, applicator=P["hybrid"] + "/" + cfg.get("applicator_dir", "applicator"))
     d = dict(P=P, bodies=json.load(open(P["meshes"] + "/bodies.json")),
              app=json.load(open(P["applicator"] + "/applicator.json")),
              pose=json.load(open(P["applicator"] + "/pose.json")), meta={})
@@ -529,7 +557,8 @@ def corpus_target(inp, cfg):
                 u_ios=u_ios, travel_mm=travel, insertion_axis=mode,
                 axis=p_axis, tube_axis=geom.unit(pose["device_final"]["tube_axis"]),
                 R_rows=np.array(pose["device_final"]["R_rows"], float),
-                is_default=bool(abs(dz - float(pose["default_flange_shift_mm"])) < 1e-9))
+                is_default=bool(abs(dz - float(pose["default_flange_shift_mm"])) < 1e-9),
+                canal=pose.get("insertion_path_canal"))
 
 
 def screw_at(screw, s):
@@ -578,11 +607,55 @@ def rigid_pose(R, t):
 
 
 # ----------------------------------------------------------------------------- schedule
+def build_schedule_canal(cfg, tgt):
+    """Stage 3 schedule: geom.canal_path for A (S1, corpus at rest) and T (S2, corpus drawn on), caps parked at a
+    fixed world point until D, then seated along the shaft (vaginal) axis.  Rows carry F, R_rows, tube_axis,
+    T_corpus and ov_pos (world) instead of a scalar lag."""
+    cp = tgt.get("canal")
+    if not cp:
+        raise ValueError("insertion_path='canal' needs pose.json insertion_path_canal (regenerate the applicator)")
+    a_v = geom.unit(np.asarray(cp["a_v"], float)); base = np.asarray(cp["base"], float)
+    F_fin, a_fin = np.asarray(tgt["flange"], float), geom.unit(tgt["tube_axis"])     # Delta-adjusted final pose
+    x_fin = np.asarray(tgt["R_rows"], float)[0]
+    L, h_intro, below = float(cp["L_iu_mm"]), float(cp["h_intro_mm"]), float(cp["below_mm"])
+    a0, L_end, d_F = np.asarray(cp["a0"], float), np.asarray(cp["L_end"], float), float(cp["d_F_mm"])
+    u1 = geom.canal_path(0.0, base, a_v, F_fin, a_fin, L, h_intro, x_fin, below)["u1"]
+    park = cfg.get("ovoid_park_mm")
+    park = float(tgt["travel_mm"]) if park is None else float(park)
+    P_park = F_fin - park * a_v
+    sched = []
+    nB = int(cfg.get("n_balloon", 0) or 0)
+    for k in range(1, nB + 1):
+        sched.append(dict(phase="B", u=0.0, bal=k / float(nB)))
+    for k in range(int(cfg["n_presettle"])):
+        sched.append(dict(phase="P", u=0.0))
+    nA, nT = max(1, int(cfg["n_approach"])), max(1, int(cfg["n_insert"]))
+    for k in range(1, nA + 1):
+        sched.append(dict(phase="A", u=u1 * k / nA))
+    for k in range(1, nT + 1):
+        sched.append(dict(phase="T", u=u1 + (1.0 - u1) * k / nT))
+    for row in sched:
+        q = geom.canal_path(row["u"], base, a_v, F_fin, a_fin, L, h_intro, x_fin, below)
+        Tr = geom.corpus_rule_T(a0, L_end, d_F, q["F"], q["a"])
+        row.update(s=float(q["w"]), F=q["F"], tube_axis=q["a"], R_rows=np.array([q["x"], np.cross(q["a"], q["x"]), q["a"]]),
+                   T_corpus=geom.screw_interp(geom.screw_decompose(Tr[:3, :3], Tr[:3, 3]), q["w"]), stage=q["stage"],
+                   ov_pos=P_park.copy(), ov_lag=float(park))
+    nD = max(0, int(cfg["n_seat"]))
+    last = sched[-1]
+    for k in range(1, nD + 1):
+        lag = park * (1.0 - k / float(nD))
+        sched.append(dict(phase="D", u=1.0, s=1.0, F=last["F"], tube_axis=last["tube_axis"], R_rows=last["R_rows"],
+                          T_corpus=last["T_corpus"], stage="D", ov_pos=F_fin - lag * a_v, ov_lag=float(lag)))
+    return sched
+
+
 def build_schedule(cfg, tgt):
     """Per-step device / corpus kinematics.  u in [0, 1] is the pose-rule path parameter (pose.json insertion_path):
     the device flange is F(u) = F_final - (1 - u) * travel * axis, and the corpus follows the screw motion
     s(u) = smoothstep((u - u_ios) / (1 - u_ios)).  Phases: P (pre-settle), A (approach), T (insertion),
     D (ovoid seating), H (settle)."""
+    if cfg.get("insertion_path", "rule") == "canal":
+        return build_schedule_canal(cfg, tgt)
     F1, a, D, u_ios = tgt["flange"], tgt["axis"], tgt["travel_mm"], tgt["u_ios"]
 
     def F_of(u):
@@ -800,17 +873,19 @@ def build_scene(root, cfg=None, inp=None):
     # ---- rigid device: tandem (tube + shaft) and ovoids (seated separately, cfg ovoid_mode)
     dcol = dict(tube=[0.15, 0.15, 0.20, 1.0], shaft=[0.15, 0.15, 0.20, 1.0],
                 ovoid_L=[0.35, 0.35, 0.42, 1.0], ovoid_R=[0.35, 0.35, 0.42, 1.0])
-    dgrp = {k: list(grp[k]) for k in DEVICE_PARTS}
+    ov_parts = OVOID_PARTS + (ROD_PARTS if cfg.get("device_rods") else [])
+    dgrp = {k: list(grp[k]) for k in DEVICE_PARTS + ROD_PARTS}
     if cfg.get("vagina_model", "solid") != "wall":       # (the wall has a real lumen: `wall_contact_parts` governs
                                                         #  which device parts touch it, see groups_for)
         if cfg["tandem_lumen_contact"]:                 # let the tandem collide with the cervix and the vagina
             for p in TANDEM_PARTS:
                 dgrp[p] = [g for g in dgrp[p] if g not in (set(grp["vagina"]) | set(grp["cervix"]))]
         if cfg["ovoid_vagina_contact"]:                 # let the ovoids collide with the vagina
-            for p in OVOID_PARTS:
+            for p in OVOID_BODY_PARTS:
                 dgrp[p] = [g for g in dgrp[p] if g not in set(grp["vagina"])]
     if cfg["ovoid_mode"] == "off":
-        dgrp["ovoid_L"] = dgrp["ovoid_R"] = []
+        for p in OVOID_BODY_PARTS:
+            dgrp[p] = []
     sched = build_schedule(cfg, tgt)
     F0 = sched[0]["F"]
     Rdev = tgt["R_rows"].T                              # columns = applicator x, y, z in preBT world
@@ -822,8 +897,9 @@ def build_scene(root, cfg=None, inp=None):
     R0 = np.asarray(sched[0]["R_rows"], float).T        # step-0 orientation; == Rdev when tandem_rotation="off"
     tandem = add_rigid_parts(root, "tandem", [(p, _pobj(p)) for p in TANDEM_PARTS],
                              dgrp, dcol, rigid_pose(R0, F0))
-    ov_pose = F0 - sched[0]["ov_lag"] * tgt["axis"]
-    ovoids = add_rigid_parts(root, "ovoids", [(p, _pobj(p)) for p in OVOID_PARTS],
+    ov_pose = np.asarray(sched[0]["ov_pos"], float) if "ov_pos" in sched[0] else F0 - sched[0]["ov_lag"] * tgt["axis"]
+    dcol.update(rod_L=dcol["shaft"], rod_R=dcol["shaft"])
+    ovoids = add_rigid_parts(root, "ovoids", [(p, _pobj(p)) for p in ov_parts],
                              dgrp, dcol, rigid_pose(R0, ov_pose))
 
     # ---- couplings and supports
@@ -956,6 +1032,14 @@ def _ring_perim(R):
     return float(np.linalg.norm(np.diff(np.r_[R, R[:1]], axis=0), axis=1).sum())
 
 
+def ovoid_origin(row, a_path):
+    """World origin of the ovoids body for a schedule row: an explicit park/seat point (canal mode) or the flange
+    minus the scalar lag along the path axis (rule mode)."""
+    if row.get("ov_pos") is not None:
+        return np.asarray(row["ov_pos"], float)
+    return np.asarray(row["F"], float) - float(row["ov_lag"]) * np.asarray(a_path, float)
+
+
 def _set_group(model, groups):
     """REPLACE a collision model's `group` at runtime and return what it reads back as.
 
@@ -1021,6 +1105,15 @@ def _add_balloon(ctx):
     wall_models = [side.tri, side.lin, side.pnt]
     wall_on = list(grp["vagina_outer"] if cfg["wall_collision"] == "split" else grp["vagina"])
     wall_off = sorted(set(wall_on) | {3, 4})
+    own = dict(corpus=30, cervix=31, bladder=32, rectum=33, sigmoid=34)
+    touch = [b for b in cfg.get("wall_inner_contact_organs", []) if b in own]
+    if touch and cfg["wall_collision"] == "split":     # the driven wall passes through these organs during B
+        inner_on = list(grp["vagina_inner"])
+        wall_models += [vn.inner.tri, vn.inner.lin, vn.inner.pnt]
+        wall_on_list = [wall_on] * 3 + [inner_on] * 3
+        wall_off_list = [wall_off] * 3 + [sorted(set(inner_on) | {own[b] for b in touch})] * 3
+    else:
+        wall_on_list, wall_off_list = [wall_on] * 3, [wall_off] * 3
     W_start = None
     if cfg.get("balloon_drive_wall", False):
         # every wall node: lateral radius scaled by (balloon start radius / rest outer radius) at its station and
@@ -1048,6 +1141,7 @@ def _add_balloon(ctx):
         W_start = C[kw] + axw[:, None] * Tg[kw] + (rhow * scale)[:, None] * ew
     ctx["balloon"] = dict(node=nd, models=models, X_start=X_start, X_end=Xo.copy(), idx=outer, g_on=g_on,
                           g_off=g_off, wall_models=wall_models, wall_on=wall_on, wall_off=wall_off,
+                          wall_on_list=wall_on_list, wall_off_list=wall_off_list,
                           active=False, released=False, w=0.0, n=nB, W_start=W_start, W_cur=None,
                           drive=bool(W_start is not None))
     ctx["extra"]["balloon"] = dict(n_steps=nB, nodes=int(len(outer)), triangles=int(len(tri)),
@@ -1131,7 +1225,7 @@ def wall_metrics(ctx, X, F, a, Fo=None, R=None):
         half = float(np.median(np.abs(np.diff(W["s"])))) if len(W["s"]) > 1 else 2.0
         for p, Vp in (W.get("dev_parts") or {}).items():
             # ovoid parts ride at the ovoid origin (flange minus the seating lag), tube/shaft at the flange
-            org = np.asarray(Fo, float) if (p in OVOID_PARTS and Fo is not None) else np.asarray(F, float)
+            org = np.asarray(Fo, float) if (p in OVOID_BODY_PARTS and Fo is not None) else np.asarray(F, float)
             Pw = org + Vp @ np.asarray(R, float)
             gap[p] = np.array([float(np.linalg.norm(Pw[None, :, :] - X[r][:, None, :], axis=2).min())
                                for r in W["rings"]])
@@ -1157,6 +1251,7 @@ def scene_summary(ctx):
                  np.array(inp["pose"]["corpus"]["corpus_centroid_target"]) -
                  np.array(inp["pose"]["corpus"]["corpus_centroid_pre"]))), 3) if tgt["is_default"] else None,
              n_sched=len(ctx["sched"]), phases={p: sum(1 for r in ctx["sched"] if r["phase"] == p) for p in "BPATD"},
+             insertion_path=cfg.get("insertion_path", "rule"), applicator_dir=cfg.get("applicator_dir", "applicator"),
              material=cfg["material"], groups=groups_for(cfg), insertion_axis=tgt["insertion_axis"],
              vagina_model=cfg.get("vagina_model", "solid"),
              wall=(dict(dir=cfg["vagina_wall_dir"], collision=cfg["wall_collision"],
@@ -1250,7 +1345,7 @@ class HybridController(Sofa.Core.Controller):
         self._set_rigid(c["corpus"], Tc[:3, :3], Tc[:3, 3])
         Rr = np.asarray(r["R_rows"], float)             # PER-STEP orientation (constant when rotation is "off")
         self._set_rigid(c["tandem"], Rr.T, r["F"])      # rigid_pose wants columns = applicator axes, hence .T
-        self._set_rigid(c["ovoids"], Rr.T, r["F"] - float(r["ov_lag"]) * a)
+        self._set_rigid(c["ovoids"], Rr.T, ovoid_origin(r, a))
         if c.get("balloon") is not None:
             self._balloon(r)
         # (2) velocity scaling (quasi-static relaxation during the settle phase)
@@ -1332,7 +1427,7 @@ class HybridController(Sofa.Core.Controller):
         if r["phase"] == "B":
             if not b["active"]:
                 b["active"] = True
-                b["wall_group_seen"] = [_set_group(m, b["wall_off"]) for m in b["wall_models"]]
+                b["wall_group_seen"] = [_set_group(m, g) for m, g in zip(b["wall_models"], b["wall_off_list"])]
             t = float(r["bal"])
             w = float(geom.smoothstep(t)) if cfg.get("balloon_ease", "smoothstep") == "smoothstep" else t
             b["w"] = w
@@ -1347,16 +1442,20 @@ class HybridController(Sofa.Core.Controller):
                 mo.velocity.value = np.zeros_like(b["W_cur"]).tolist()
         elif b["active"] and cfg.get("balloon_mode", "release") == "follow":
             # the packing: the balloon keeps carrying the OAR contact and copies the wall's outer sheet (end of
-            # the previous step); the wall's own outer models stay excluded from the OARs for the whole run
+            # the previous step); the wall's own outer models stay excluded from the OARs for the whole run --
+            # but the LUMEN sheet's organ pairs (wall_inner_contact_organs, e.g. the cervix) come on now
             b["w"] = 1.0
             b["released"] = False
             b["node"].mo.position.value = self.X("vagina")[b["idx"]].tolist()
+            if not b.get("inner_on_done") and len(b["wall_models"]) > 3:
+                b["inner_on_done"] = True
+                b["wall_group_seen"] = [_set_group(m, g) for m, g in zip(b["wall_models"][3:], b["wall_on_list"][3:])]
         elif b["active"] and not b["released"]:
             b["released"] = True
             b["w"] = 1.0
             b["node"].mo.position.value = b["X_end"].tolist()
             b["balloon_group_seen"] = [_set_group(m, b["g_off"]) for m in b["models"]]
-            b["wall_group_seen"] = [_set_group(m, b["wall_on"]) for m in b["wall_models"]]
+            b["wall_group_seen"] = [_set_group(m, g) for m, g in zip(b["wall_models"], b["wall_on_list"])]
 
     # ---------------------------------------------------------------- step end
     def _end(self):
@@ -1401,7 +1500,7 @@ class HybridController(Sofa.Core.Controller):
         wallm = None
         if c.get("wall") is not None and finite and Xv is not None:
             a_path = np.asarray(self.tgt["axis"], float)
-            Fo = np.asarray(r["F"], float) - float(r["ov_lag"]) * a_path
+            Fo = ovoid_origin(r, a_path)
             # R_rows (ROWS = applicator x, y, z), NOT Rdev.  wall_metrics places device vertices as
             # `Pw = org + Vp @ R`, the same row convention as animate_hybrid.device_world and run_hybrid.write_frame,
             # but it was called with Rdev = R_rows.T.  MEASURED on Z7S: the two differ by 17.1 deg and put shaft
@@ -1424,7 +1523,7 @@ class HybridController(Sofa.Core.Controller):
                 wallm["device_gap_mm"] = {p: dict(min=round(float(v.min()), 3), station_min=int(v.argmin()),
                                                   per_station=[round(float(x), 2) for x in v])
                                           for p, v in gap.items()}
-                ov = [v for p, v in gap.items() if p in OVOID_PARTS]
+                ov = [v for p, v in gap.items() if p in OVOID_PARTS]        # the caps only, not the rods
                 if ov:
                     mg = np.minimum.reduce(ov)
                     j2 = int(mg.argmin())

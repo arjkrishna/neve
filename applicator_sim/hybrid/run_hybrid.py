@@ -176,7 +176,7 @@ def write_frame(ctx, ctrl, out, row, fc):
     a_path, a_tube = tgt["axis"], tgt["tube_axis"]           # path translation axis / intrauterine tube axis
     L_iu = float(S._param(app, "L_iu_mm"))
     F = np.asarray(r["F"], float)
-    Fo = F - float(r["ov_lag"]) * a_path
+    Fo = S.ovoid_origin(r, a_path)
     tip = F + L_iu * a_tube
     # ---- corpus: rigid, placed by the pose rule (it has no mechanical DOFs to read)
     Tc = np.asarray(r["T_corpus"], float)
