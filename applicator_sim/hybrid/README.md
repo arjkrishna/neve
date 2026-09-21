@@ -2132,11 +2132,14 @@ recurs.
 
 ### `apex_attach "lift"` — the fornices rise with the os and are free laterally (G29)
 
-The wall's apex stations (409 nodes over three stations) are projected onto planes normal to the wall axis
-(`ProjectToPlaneConstraint`, one per station) whose origins rise by the mean AXIAL displacement of the nearest
-cervix canal nodes — the os.  No lateral spring exists: the ring and the packing centre the vault by contact, the
-cervix bulk can push the anterior wall outward without squeezing it against a spring (G25), and no spring can drag
-the wall through the caps (G24).  `G29 = G28 + apex_attach lift` launched 2026-09-21 17:52.
+The wall's apex nodes (409 over three stations) have their AXIAL coordinate along the wall axis prescribed each
+step: rest coordinate + the mean axial displacement of the nearest cervix canal nodes — the os.  No lateral spring
+exists: the ring and the packing centre the vault by contact, the cervix bulk can push the anterior wall outward
+without squeezing it against a spring (G25), and no spring can drag the wall through the caps (G24).  First try
+used `ProjectToPlaneConstraint` (one plane per station): in SOFA v22.12 it implements neither `applyConstraint`
+(the assembled-matrix path of SparseLDL) nor `projectJacobianMatrix` (the contact-constraint path) and logs both
+errors every step, so it was replaced by a direct write into the vagina dofs before the step, the mechanism
+`balloon_drive_wall` already uses.  `G29 = G28 + apex_attach lift` relaunched 2026-09-21 18:03.
 
 ### Commands
 
