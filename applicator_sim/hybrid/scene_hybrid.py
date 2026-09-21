@@ -382,7 +382,14 @@ CFG = dict(
                                     #   seated ring sits 26 mm above the vault.
     k_apex_mN_per_mm=20.0,
     apex_lift_pair="canal",         # "lift": pair the apex nodes with the nearest cervix "canal" | "surface_nodes"
-    apex_lift_profile="linear",     # "lift": "linear" = EVERY wall node's axial coordinate is prescribed, rest
+    apex_lift_fix=True,             # "lift": FixedConstraint on the written nodes, so the write HOLDS through the
+                                    #   solve (dx = 0, zero compliance for contacts) and the vault ring is pinned
+                                    #   laterally on the device axis -- the ring + packing at BT.  MEASURED: without
+                                    #   it the write is a soft prescription for a STRETCHING shape of this wall: G29
+                                    #   (apex nodes only) kept 4.6 of 9.2 mm, G30 (whole wall, linear) 0.35 of
+                                    #   10.4 mm, while the balloon's slit-to-tube drive holds because bending is
+                                    #   what the 1.2 mm wall barely resists.  Use with apex_lift_profile "top".
+    apex_lift_profile="top",        # "lift": "linear" = EVERY wall node's axial coordinate is prescribed, rest
                                     #   coordinate x (1 + lift / H) about the introitus level (H = the apex height):
                                     #   the wall unfolds uniformly from the fixed introitus to the lifted vault, the
                                     #   write is consistent across the wall and nothing snaps back.  "top" = only
@@ -1044,6 +1051,10 @@ def _add_couplings(ctx):
         else:
             ctx["apex_lift"] = dict(idx=apex, h0=h_all[apex] - h_intro, a=a_w, h_intro=h_intro, H=None, profile="top")
         ctx["apex_axis"] = a_w
+        if cfg.get("apex_lift_fix", True):
+            ctx["nodes"]["vagina"].addObject("FixedConstraint", name="apex_fix", fixAll=False,
+                                             indices=[int(i) for i in ctx["apex_lift"]["idx"]])
+        ctx["extra"]["apex_lift_fix"] = bool(cfg.get("apex_lift_fix", True))
         ctx["extra"]["apex_lift_stations"] = [dict(station=int(st), n=int((g == st).sum()))
                                               for st in sorted(set(int(v) for v in g))]
         ctx["extra"]["apex_lift_profile"] = dict(profile=ctx["apex_lift"]["profile"], n_nodes=int(len(ctx["apex_lift"]["idx"])),

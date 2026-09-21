@@ -2156,6 +2156,23 @@ the end of the swing again (0.65 after D), with the ring closing to the os durin
 introitus to the vault, which is what the balloon phase's whole-wall drive does and what G23/G24's springs
 produced elastically (axial stretch 1.2–1.4×); lateral coordinates stay free.  Launched 2026-09-21 18:30.
 
+### G30 — a position write cannot hold a stretching shape of this wall; the lift needs a projective constraint (G31)
+
+`G30 = G29 + apex_lift_profile linear` (every wall node's axial coordinate written each step).  Killed at step
+126 (w 0.65): the os had risen 10.4 mm and the wall's largest displacement was **0.35 mm** — worse than G29's
+half.  The explanation is the wall's two stiffnesses.  The balloon phase's whole-wall drive holds because
+slit-to-tube is a BENDING shape, which a 1.2 mm shell barely resists (its mass wins over dt²·K in the implicit
+step, so the written shape survives the solve); an axial lift is a STRETCHING shape, where dt²·K wins and the wall
+relaxes to rest inside the same step — a per-step write is then no more than an initial condition.  Only a
+projective constraint holds through the solve.  **G31 = G30 + `apex_lift_fix`** (a `FixedConstraint` on the 409
+apex nodes: dx = 0 in every solve, zero compliance for contacts; their axial coordinate is moved by the write,
+their lateral coordinate stays at rest) **+ `apex_lift_profile top` + `ovoid_close D`** (the caps stay 10 mm
+below the os through the swing and seat over the 10 D steps: the ovoids are pushed up against the cervix only
+once the tandem is in place — G28/G29's cervix dipped to 0.28–0.36 late in the swing with the caps closing under
+the portio).  With the fixed apex the vault ring is also pinned laterally on the device axis, which is what the
+ring and the packing do at BT (vault centred on the ring to 1–3 mm); the cervix bulk, 10–13 mm anterior of the
+canal in the model against 4–6 mm at BT, must then conform to it by contact.  Launched 2026-09-21 18:56.
+
 ### Commands
 
 ```bash
