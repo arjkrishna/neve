@@ -2177,6 +2177,43 @@ whose top ring lies inside the portio, and with those nodes fixed the cervix|lum
 the ring aside as the balloon opened the wall through it.  The FixedConstraint's indices are now empty through
 phase B and set at the first non-B step (the wall is at rest and clear of the cervix by then).  Relaunched 18:58.
 
+### G31 — the first seated pose of the Stage-3 device: vault lifted with the os and centred, caps inside, OARs at ground truth
+
+`G31 = G30 + apex_lift_fix + apex_lift_profile top + ovoid_close D` (relaunch with the FixedConstraint switched on
+after the balloon).  **181 steps, 2251 s, `settle_not_converged` as every run; 7–35 s/step.**  Seated state
+(step 180):
+
+| quantity | G31 | ground truth / target |
+|---|---|---|
+| vault lift (paired canal nodes → wall apex) | 19.7 mm, held exactly (wall umax 19.7) | flange 25 mm above the rest os |
+| vault axis offset, stations 22–27 | ≤ 0.7 mm | BT: vault centred on the ring to 1–3 mm |
+| lumen radius, stations 22–27 | 19.6–20.9 mm | BT: r_mean 13, r_max 22 at the ring level |
+| caps (section containment) | inside 6/6 stations seen, 0 outside | BT: ovoid label 100 % inside the vagina |
+| shaft / cap rods / packing | inside 12/12, 12/12, 23/23 | — |
+| bladder / rectum / sigmoid displacement | 12.9 / 14.2 / 17.2 mm | +13.7 / +15.5 / — |
+| cervix | 28.2 mm on 38 ties, canal 0.9–5.5 mm from the tube (median 2.6); vol ratio 0.56 | — |
+| wall | vol ratio 0.92 (worst at station 25) | — |
+
+The cervix's transient dip at the end of the swing (0.28 at w 0.97) is not the caps — with `ovoid_close D` they
+were still 10 mm below the os — but the end of the screw and the ties; it recovers to 0.66 in D and settles at
+0.56, with the worst tets (0.56–0.79, none below 0.5, p5 0.95) in two places: at the flange level 15–21 mm
+lateral of the tube, where the bulk presses on the fixed vault ring next to the caps, and 25–34 mm above the
+flange near the corpus attachment.  The remaining geometric gap: the simulated os ends **6.4 mm below the flange**
+(the cervix is drawn up 19.8 mm where the pose rule's flange is 25 mm above the rest os; its lowest surface is
+10.9 mm below the flange), and because this wall ends at the os level the caps' apex zone (up to +1.4 mm above
+the flange) stands ~8 mm above the wall's top — the fornices that wrap the portio above the os are not in the
+mesh.  Videos `insertion_G31_{lumen,full}.mp4`.
+
+### `vagina_wall_tet26v4` — five stations above the os (G32)
+
+`vagina_wall_tet.py build --variant tet26v4` with tet26v3's settings (`centre_dev_max_mm 0`, `lumen_about rod`,
+`applicator_dir applicator_v3`, `lumen_ovoid_files` d26 caps + rods, `lumen_low_a/b_mm 20.68`) plus
+`fornix_extend_stations 5`: 33 stations, 4,636 nodes / 13,461 tets, min dihedral 22.5°, gate passed; the added
+stations (heights 55.8–63.8 mm above the introitus, 2–10 mm above the os) keep the device-sized lumen and are
+widened by the fornix logic to clear the portio (r_in 21.0 → 22.5 mm mean, up to 28.5 on 96 rays), their wall
+area tapered to 25 % of the last measured station (thickness floor 1.2 mm).  The apex set is now stations 30–32
+(432 nodes).  `G32 = G31 on tet26v4` launched 2026-09-21 19:31; render tree `v4out`.
+
 ### Commands
 
 ```bash
