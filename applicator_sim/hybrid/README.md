@@ -2222,6 +2222,29 @@ widened by the fornix logic to clear the portio (r_in 21.0 → 22.5 mm mean, up 
 area tapered to 25 % of the last measured station (thickness floor 1.2 mm).  The apex set is now stations 30–32
 (432 nodes).  `G32 = G31 on tet26v4` launched 2026-09-21 19:31; render tree `v4out`.
 
+### G32 — on the extended vault the caps are enclosed: the seated pose to quote for Stage 3
+
+`G32 = G31 on vagina_wall_tet26v4`.  181 steps, 3294 s, `settle_not_converged`; 8 s/step through the balloon
+and the approach, 26–32 s/step from mid-swing on (1,100–1,180 contacts: the larger wall has more lumen vertices
+inside the 17 mm packing's 3 mm alarm distance once the lift necks the lumen).  Seated state (step 180):
+
+| quantity | G32 | G31 | ground truth / target |
+|---|---|---|---|
+| vault lift, held exactly | 19.8 mm | 19.7 | flange 25 mm above the rest os |
+| vault axis offset (stations 27–32) | ≤ 0.8 mm | ≤ 0.7 | BT: centred on the ring to 1–3 mm |
+| lumen radius, stations 27–32 | 20.3–22.5 mm | (27: 20.9) | BT: r_mean 13, r_max 22 at the ring level |
+| caps: stations seen / inside / outside | 10 / 10 / 0 | 6 / 6 / 0 | BT: ovoid label 100 % inside the vagina |
+| shaft, rods, packing inside | 12/12, 12/12 + 13/13, 27/27 | all | — |
+| bladder / rectum / sigmoid | 12.9 / 13.6 / 17.2 mm | 12.9 / 14.2 / 17.2 | +13.7 / +15.5 / — |
+| cervix | 28.2 mm, 38 ties, canal 0.9–5.4 mm from the tube (median 2.8), vol ratio 0.59 | 0.56 | — |
+| wall vol ratio | 0.90 | 0.92 | — |
+
+The caps are now seen at 10 stations instead of 6 — the five added stations wrap the caps' apex zone, so the
+whole ring sits inside the vagina as the BT ovoid label does.  The cervix dips to 0.41 during D, when the caps
+close their last 10 mm under the portio (`ovoid_close D`), and recovers to 0.6: that is the seating push, and it
+is directed the right way — at BT the HR-CTV's bottom is 1 mm above the ring centre, while the model's os still
+hangs 6.4 mm below the flange.  Videos `insertion_G32_{lumen,full}.mp4` (render tree `v4out`).
+
 ### Commands
 
 ```bash
