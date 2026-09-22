@@ -2243,7 +2243,12 @@ The caps are now seen at 10 stations instead of 6 — the five added stations wr
 whole ring sits inside the vagina as the BT ovoid label does.  The cervix dips to 0.41 during D, when the caps
 close their last 10 mm under the portio (`ovoid_close D`), and recovers to 0.6: that is the seating push, and it
 is directed the right way — at BT the HR-CTV's bottom is 1 mm above the ring centre, while the model's os still
-hangs 6.4 mm below the flange.  Videos `insertion_G32_{lumen,full}.mp4` (render tree `v4out`).
+hangs 6.4 mm below the flange.  Videos `insertion_G32_{lumen,full}.mp4` (render tree `v4out`); frame 180 viewed:
+the purple wall now closes over the caps' top, the section at station 25 reads "ovoids: INSIDE the lumen r
+3.7–19.5 | lumen 19.6" (the necked wall rests on the caps' far side), and `diag_farside.py G32` gives the caps'
+max lateral radius 8.2 → 17.5 → 11.0 mm at stations 23–32 against r_in 19.1–22.5 (≥ 2 mm inside at every
+station), the cap rods 19.0–20.1 mm at the surface of the necked wall (0.3–0.6 mm into its thickness at stations
+18–22, within r_out), and the tube crossing the extended vault obliquely at 2.4–5.9 mm from the axis.
 
 ### Commands
 
