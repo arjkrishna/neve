@@ -2249,6 +2249,9 @@ the purple wall now closes over the caps' top, the section at station 25 reads "
 max lateral radius 8.2 → 17.5 → 11.0 mm at stations 23–32 against r_in 19.1–22.5 (≥ 2 mm inside at every
 station), the cap rods 19.0–20.1 mm at the surface of the necked wall (0.3–0.6 mm into its thickness at stations
 18–22, within r_out), and the tube crossing the extended vault obliquely at 2.4–5.9 mm from the axis.
+`diag_cervix.py G32`: no cervix tet below 0.5 (min 0.59, p5 0.94, median 1.00); the worst sit at the flange level
+21–24 mm lateral of the tube, where the bulk presses on the fixed vault ring, and 25–34 mm up the tube near the
+corpus attachment — the same two places as G31.
 
 ### Commands
 
