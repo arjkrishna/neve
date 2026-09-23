@@ -2253,6 +2253,24 @@ station), the cap rods 19.0–20.1 mm at the surface of the necked wall (0.3–0
 21–24 mm lateral of the tube, where the bulk presses on the fixed vault ring, and 25–34 mm up the tube near the
 corpus attachment — the same two places as G31.
 
+**The vagina–HR-CTV junction, measured against BT** (`diag_junction.py G32`, 5 mm slabs along the tandem axis
+about the ring centre; this supersedes the pre-lift figure of 10–13 mm anterior, which was measured against the
+canal on a vault the springs were dragging):
+
+| slab above the ring | HR-CTV centre from the ring axis, G32 | same at BT | HR-CTV ↔ lumen min gap, G32 |
+|---|---|---|---|
+| 0–5 mm | 9.6 mm | 20.4 (242 vox, the tip) | 1.11 mm |
+| 5–10 | 5.8 | 12.6 | 0.63 |
+| 10–15 | 4.0 | 6.4 | 0.77 |
+| 15–20 | 4.8 | 5.9 | 0.58 |
+| 20–25 | 5.6 | 5.8 | 0.81 |
+| 25–35 | 6.7–7.5 | 3.8–5.0 | — (above the wall) |
+
+The HR-CTV is back on the device axis to within 4–7 mm against BT's 3–6 mm, and its residual offset is 0–3 mm
+POSTERIOR, not anterior.  The two surfaces touch at every level where both exist (gap 0.6–1.1 mm, 6–35 lumen
+nodes within 2 mm per slab, no interpenetration): the physical contact the user asked for is held by the
+cervix|lumen contact pair, not by springs.  The ring plane is 0.16° from perpendicular to the tandem.
+
 ### Commands
 
 ```bash
