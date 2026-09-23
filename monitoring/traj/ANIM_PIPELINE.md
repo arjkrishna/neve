@@ -159,7 +159,73 @@ blocks; the step count and outcome in the episode folder name so the recovery ep
 are visible without opening anything; key frames prefixed `k0…k9` so they sort in
 narrative order, with the event index and the step number in the name.
 
-## 5. Constraints and open points
+## 5. Implementation status (2026-09-19)
+
+Built and smoke-tested end to end (4 replay episodes of the baseline's 94.9 % checkpoint
+on the carotid validation anatomies: records → typed → key frames + trace + GIF +
+indexes in 27 s):
+
+| piece | file | notes |
+|---|---|---|
+| recorder (tier 2/3) | `training _scripts/util/traj_record.py` | `TrajRecordWrapper(env)`; records only while `TRAJ_RECORD_DIR` is set; both device polylines resampled to 64 nodes (float16) + tip, insertion, `proj_s`, cross-track, fold, off-branch, catheter slack, `d_tgt`, command, reward, term/trunc, wall time; planned path, target, centerlines (+ on-path flags) once per episode. ~1 KB per step. Never raises into the env. |
+| replay hook | `training _scripts/eval_anatomies.py --traj_record` | wraps the master eval env and the per-worker factory; `--seed_list` replays explicit seeds (the trainer's `EVAL_SEEDS` → same seed→anatomy/target as the in-run validation blocks) |
+| launcher | `launch_eval_carotid_traj.sh` | = `launch_eval_topbrain.sh` + `carotid_data` mount + `traj_record.py` mount + the 16 validation anatomies + `--traj_record`; `SEED_LIST=validation` for the 98 in-run seeds; passes `EVE_RL_ACTOR_ZERO_OBS` / `EVE_RL_CRITIC_ZERO_OBS` through (a masked checkpoint evaluated without them is silently wrong) |
+| renderer | `monitoring/traj/traj_render.py` | types each record with `saved/traj/cluster_model.npz`, phases from the canonical detector, key frames `k0/k1/k2/k3/k4/k9`, 2-panel frames (fixed camera on the planned-path bbox + tip inset; progress and slack traces with stall windows), GIF via Pillow (no ffmpeg in the image or on the host), `index.csv` per block, `by_seed/*.html` |
+| log-only tier (tier 1) | `traj_render.py --from-logs <tag> --scenery <records_dir>` | log episodes carry the guidewire tip only; the 3-D panel shows the tip track, and centerlines / planned path are borrowed from tier-2 records of the same anatomy. Needs series extracted after 2026-09-19 (they now store `tip`). |
+
+Usage:
+
+```bash
+# replay a checkpoint on the validation seeds, recording every episode (~20-25 min / 98 episodes at 16 workers)
+SEED_LIST=validation N_WORKER=16 ./launch_eval_carotid_traj.sh /opt/eve_training/results/.../checkpoints/checkpoint1545187.everl
+# masked (ablation) checkpoints need the mask:
+EVE_RL_ACTOR_ZERO_OBS=101,102,106,107,113,115,116,118,119,123 SEED_LIST=validation ./launch_eval_carotid_traj.sh .../checkpoint1005189.everl
+# render recoveries + failures (default), movies as GIF, four processes
+python monitoring/traj/traj_render.py <ckpt-dir>/eval_anatomies_<ckpt>/traj_records/<run_tag> <out_dir> --block ck1005189 --jobs 4
+python monitoring/traj/traj_render.py --from-logs car_v3 --scenery <records_dir> <out_dir>      # tier 1
+```
+
+Measured on the first real replay (ablation checkpoint 1760615, the 13 seeds that failed
+its latest in-run block, 3 workers alongside the live training run): 13 records in
+~45 min (the 600-step failures dominate), ~1 KB per recorded step; the replay produced
+2 light recoveries, 1 deep recovery, a shove-fight success, a near-target buckle fight,
+a mid-path thrash and a 243 mm mega-coil — and 6 clean successes on seeds that had
+failed in-run, the ORBIT noise floor at work. Rendering: ~30 s per episode at two
+processes; key frames 5–13 per episode; GIFs 1.9–5.8 MB with the dense cadence limited
+to ±15 steps around the phase points (a 230-step stall at 2-step cadence throughout was
+a 7–12 MB GIF), before the 900 px downscale. The recorded tip agrees with the log's
+`tip3d` to 0.06 mm after `tracking3d_to_vessel_cs((20, 5), (0, 0, 0))` — which is how
+tier 1 places historical episodes on the scenery.
+
+First result the pipeline produced — the ablation's peak checkpoint (1005189, 91.8 %
+in-run) against its current one (1760615, 86.7 %), replayed on the 13 seeds that failed
+its latest in-run block, rendered into
+`2026-09-17_180209_rcca_carotid_v3_noprivactor/diagnostics/anim/` (`by_seed/` pages
+show each seed under both checkpoints):
+
+| seed | peak ck1005189 | current ck1760615 |
+|---|---|---|
+| 91 | clean, 70 steps | light recovery, 354 steps |
+| 118 | clean, 58 steps | deep recovery, 427 steps |
+| 120 | clean, 37 steps | light recovery, 456 steps |
+| 122 | clean, 51 steps | shove fight (won), 208 steps |
+| 93 | clean, 92 steps | mid-path thrash, failed |
+| 161 | shove fight (won), 232 steps | mega-coil, failed |
+| 55 | near-target buckle fight, failed | near-target buckle fight, failed |
+| 8, 43, 44, 50, 80, 108 | clean (26–85 steps) | clean (34–71 steps) |
+
+12/13 vs 10/13 succeeded, but 11 clean successes at the peak against 6 now: the seeds the
+peak solved in ~60 steps are the ones the current checkpoint survives only by recovery or
+loses to thrash and coil — the atlas' "seeds migrate from recovery to clean as a run
+improves" running backwards as this run decays. n = 13 and one replay each; the ORBIT
+twist is unseeded, so a seed's outcome is a draw, not a constant.
+
+Not done: the env5 hook for recording the in-run validation blocks (tier 3) — `env5.py`
+is bind-mounted into the live ablation container; wrap `env_eval` in
+`DualDeviceNav_train.py` with `TrajRecordWrapper` after the run ends. Movies are GIF
+only; an MP4 path needs ffmpeg in the image.
+
+## 6. Constraints and open points
 
 - The running container **bind-mounts** `training _scripts/util/env5.py`,
   `snapshot.py` and `DualDeviceNav_train.py` from this worktree. Editing them while

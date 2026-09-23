@@ -289,7 +289,7 @@ class Writer:
         self.tag = tag
         self.fo = open(prefix + ".features.jsonl", "w")
         self.series = {k: [] for k in ("proj", "gw", "cath", "fold", "onpath", "phys",
-                                       "dgw", "cmd0", "xt", "dtgt", "rew")}
+                                       "dgw", "cmd0", "xt", "dtgt", "rew", "tip")}
         self.offsets = [0]; self.keys = []; self.n = 0
 
     def emit(self, E):
@@ -319,8 +319,15 @@ class Writer:
         s["xt"].append(np.clip(np.round(np.nan_to_num(np.asarray(E["xt"] if E["xt"] else [np.nan] * n, float), nan=-1) * 100), -32000, 32000).astype(np.int16))
         s["dtgt"].append(np.clip(np.round(np.nan_to_num(np.asarray(E["dtgt"] if E["dtgt"] else [np.nan] * n, float), nan=-1) * 10), -32000, 32000).astype(np.int16))
         s["rew"].append(np.clip(np.round(np.asarray(E["rew"]) * 1000), -32000, 32000).astype(np.int16))
+        # guidewire tip (vessel CS, mm x10) -- the only per-step geometry the logs carry
+        tip = np.asarray(E["tip"], np.float64) if E["tip"] else np.full((n, 3), np.nan)
+        if len(tip) != n:
+            tip = np.full((n, 3), np.nan)
+        s["tip"].append(np.clip(np.round(np.nan_to_num(tip, nan=-3276.8) * 10), -32768, 32767).astype(np.int16))
         self.offsets.append(self.offsets[-1] + n)
-        self.keys.append("%s|%s|%s" % (self.tag, m["pid"], m["ep"]))
+        # same unique key as traj_load.make_key (pid+ep collides across eval blocks)
+        wt = m["wt"] if m["wt"] == m["wt"] else -1
+        self.keys.append("%s|%s|%s|%d" % (self.tag, m["file"], m["ep"], int(round(wt))))
         self.n += 1
 
     def close(self, prefix):

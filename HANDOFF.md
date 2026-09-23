@@ -1858,7 +1858,7 @@ start, everything else identical to the baseline. Validation, step-matched:
 | ~1254k | 38.8 % (critic divergence) | **87.8 %** |
 | ~1510k | 94.9 % | 84.7 % |
 | ~1760k | 96.9 % | 86.7 % |
-| ~2080k | 92.9 % | — |
+| ~2003k / ~2080k | 92.9 % | 83.7 % |
 | ~2289k | 96.9 % | — |
 
 Three things to carry forward:
@@ -1875,6 +1875,13 @@ Three things to carry forward:
    trajectory atlas (`monitoring/traj/`, `saved/traj/`): mid-path thrash — the type that
    correlates −0.55 with block success — goes 0 → 0 → 1 → 4 → 7 across blocks 3→7, while
    recovery-type successes hold flat at 9-12 per block. Check this, not just the scalar.
+
+4. **The decay is visible episode by episode.** Replaying the peak (1005189) and current
+   (1760615) checkpoints on the 13 seeds that fail the current in-run block, with
+   per-step device recording (`monitoring/traj/ANIM_PIPELINE.md` §5): the peak solves
+   11 of them cleanly in ~60 steps; the current checkpoint solves 6 cleanly, three only
+   by 350–450-step recoveries, and loses two to thrash and a 243 mm coil. Movies and key
+   frames are under the run's `diagnostics/anim/`.
 
 So **do not assume the full ablation will track the baseline for the first megastep and
 diverge later**; budget checkpoints densely before 1 M (§15.7.4 makes the same point for
@@ -1943,6 +1950,14 @@ docker exec rcca_carotid_v3_nopriv_full python3 -c \
 The last line must print the same ten indices twice. If `critic ()` comes back, the
 mount is missing and the run is actor-only — stop it and relaunch.
 
+**The same applies to EVALUATING a masked checkpoint.** The mask lives in the process
+environment, not in the checkpoint: an `eval_anatomies.py` run (or any host test) of an
+actor-masked checkpoint without `EVE_RL_ACTOR_ZERO_OBS` set feeds the actor the ten
+columns it never trained on — their input weights are whatever the unseeded init left
+there, so the policy is silently wrong, with no error. `launch_eval_carotid_traj.sh`
+passes both `ZERO_OBS` variables through when they are set in the calling shell; the
+older eval launchers do not, and must be given `-e` lines or edited the same way.
+
 ## 16.6 What the full ablation answers, and the control it still lacks
 
 With both masked there is no privileged information anywhere, so the result is the first
@@ -1967,3 +1982,43 @@ H0. The baseline used `change_every 10` for its first megastep before being resu
 so "ablation vs baseline" confounds the mask with the anatomy schedule. Anyone with spare
 capacity should run that control alongside the full ablation — it is the same launcher
 with both `ZERO_OBS` vars removed, and it is what makes either ablation interpretable.
+
+
+## 17 Frontier replay campaign (2026-09-20/21): which seeds measure the frontier, and what it is made of
+
+Full report: `saved/eve_paper/neurovascular/full/mesh_ben/frontier_campaign/REPORT.md` (protocol,
+tables, seed lists, caveats); `README.md` there has the checkpoint tables and the launch fixes. Drivers
+and manifests: `monitoring/traj/campaign/`; analysis `monitoring/traj/traj_frontier.py`, comparison
+pages `traj_compare_page.py`, films `traj_render.py` (recorder `training _scripts/util/traj_record.py`,
+`eval_anatomies.py --traj_record --seed_list`). 27 replay runs, 2 217 filmed episodes, every one with
+a GIF, trace and key frames under `frontier_campaign/anim_{carotid,host,procedural}/`.
+
+What to carry forward:
+
+1. **The carotid frontier is ten seeds.** Of the 47 validation seeds that ever looked hard, 14 are
+   solved by every checkpoint (the 40 % divergence one included), 23 separate 75 % from 93 %, and
+   only **23, 31, 55, 93, 134, 167, 8, 16, 139, 154** separate 93 % from 97 %. Evaluate future carotid
+   checkpoints by replaying the 33 decisive seeds four times (~30 min) rather than the 98 once.
+2. **The frontier is recovery.** On those ten seeds, half of the best checkpoint's successes are
+   unload-and-repush recoveries (14 % on easy seeds); every strong checkpoint shows the same split. Its
+   five failures are doorstep stalls at 90–94 % of the path that repeated withdrawals never convert.
+3. **Coil avoidance is learned by 1.55 M and is what the actor-masked ablation lacks.** Loop rate 23 %
+   at 0.8 M -> 2 % from 1.55 M on; the best checkpoint escaped every loop it formed. The ablation loops
+   in 6–15 % of episodes and is stuck in half of them; its decayed checkpoint regresses to mid-path stalls.
+   Seed-by-seed page: `analysis_part1/compare_abl_best_vs_car_best.html`.
+4. **Real patient.** Carotid best 94/98 = 95.9 % (reproduces the other machine's ~95 %), 92.9 % on the
+   85 seeds TopBrain v2 finds hard, looping once in 268 episodes; TopBrain v2 56.5 % with loops in 54 %
+   of episodes and 69 % of failures (59–3 seed-paired). The masked ablation scored 81/85 and TopBrain v3
+   79/85 there, each a single replay. TopBrain v2's three replays scored 41/60/43 of 85 on the same
+   seeds — unexplained run-level variance, keep in mind for any single-replay host number.
+5. **Procedural policy = catheter-led sprinter without recovery.** 42.6 % on the carotid frontier seeds
+   (27–0 against the carotid best), 46.9 % on the host (52–2), 50 % on its own anatomies where the carotid
+   best gets 58.2 % with a superset of its successes (8–0). Catheter-led advance never appears on the
+   carotid frontier; it is not what separates the frontier models.
+
+Traps hit: the procedural v3c checkpoint needs
+`ARCH_FLAGS="--algo awac --hidden 256 256 --aux_labels 0,1,5,6 --embedder_layers 0 --log_std_min -2 --log_std_max 0.0"`
+(4-unit auxiliary head; without `--aux_labels` the state_dict load fails) and must sit under this
+worktree's results tree because the evaluator writes next to the checkpoint and `results16` is mounted
+read-only; masked checkpoints need `EVE_RL_ACTOR_ZERO_OBS` at eval time; `docker run -i` inside a
+`while read` loop swallows the manifest unless given `< /dev/null`.

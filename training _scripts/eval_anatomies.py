@@ -642,6 +642,19 @@ def main():
                    choices=["centerlines", "mesh", "off"],
                    help="per-episode PNG snapshots (successes AND failures, "
                         "bucketed by outcome) for failure forensics")
+    p.add_argument("--seed_list", default="",
+                   help="explicit comma-separated episode seeds (overrides "
+                        "--seed_base/--n_episodes). Use the trainer's "
+                        "EVAL_SEEDS list to replay the in-run validation "
+                        "blocks on the same seed->anatomy/target mapping, so "
+                        "recorded episodes line up with the atlas by seed.")
+    p.add_argument("--traj_record", action="store_true",
+                   help="record both device polylines + navigation scalars at "
+                        "EVERY step of every episode (util/traj_record.py) to "
+                        "<out_dir>/traj_records/<run_tag>/*.npz for offline "
+                        "key-frame / movie rendering (monitoring/traj/"
+                        "traj_render.py). ~0.2 MB per episode; no rendering "
+                        "happens in the workers.")
     p.add_argument("--seed_base", type=int, default=900000,
                    help="held-out seed band; must not overlap training "
                         "(procedural_seed..+n_worker) or the legacy eval "
@@ -847,7 +860,13 @@ def main():
 
     change_every = (10 ** 9 if (a.frozen_anatomy or a.real_patient_anatomy)
                     else a.change_every)
-    seeds = [a.seed_base + i for i in range(a.n_episodes)]
+    if a.seed_list.strip():
+        seeds = [int(s) for s in a.seed_list.split(",") if s.strip()]
+        a.n_episodes = len(seeds)
+        print(f"[eval-anat] explicit seed list: {len(seeds)} seeds "
+              f"({seeds[0]}..{seeds[-1]}); --seed_base/--n_episodes ignored")
+    else:
+        seeds = [a.seed_base + i for i in range(a.n_episodes)]
 
     # Snapshots: env5 reads these env vars at import/step time, and the
     # workers inherit os.environ on spawn — so they MUST be set before the
@@ -966,6 +985,27 @@ def main():
         print(f"[eval-anat] anatomy regeneration: every {change_every} "
               f"episode(s), per-worker streams (seeds {a.seed_base + 10000}, "
               f"{a.seed_base + 20000}, … x{a.n_worker})")
+
+    # Per-step trajectory recording (ANIM_PIPELINE tier 2). The wrapper only
+    # records while TRAJ_RECORD_DIR is set; workers inherit os.environ on
+    # spawn and receive a deepcopy of env_eval (or a factory-built env), so
+    # both the master env and the factory output are wrapped. env_train is
+    # sizing-only and never stepped -- left unwrapped.
+    if a.traj_record:
+        from util.traj_record import TrajRecordWrapper
+        rec_dir = os.path.join(out_dir, "traj_records", run_tag)
+        os.makedirs(rec_dir, exist_ok=True)
+        os.environ["TRAJ_RECORD_DIR"] = rec_dir
+        env_eval = TrajRecordWrapper(env_eval)
+        if env_eval_factory is not None:
+            _raw_factory = env_eval_factory
+
+            def env_eval_factory(worker_id: int):
+                return TrajRecordWrapper(_raw_factory(worker_id))
+        print(f"[eval-anat] TRAJ_RECORD_DIR={rec_dir} (per-step device "
+              f"polylines + scalars, one .npz per episode)")
+    else:
+        os.environ.pop("TRAJ_RECORD_DIR", None)
         if a.topbrain:
             # HOW THE COHORT IS SAMPLED — read this before quoting a
             # per-anatomy rate. TopBrainAnatomySet.reset() zeroes _generation
