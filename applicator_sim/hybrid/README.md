@@ -2271,6 +2271,14 @@ POSTERIOR, not anterior.  The two surfaces touch at every level where both exist
 nodes within 2 mm per slab, no interpenetration): the physical contact the user asked for is held by the
 cervix|lumen contact pair, not by springs.  The ring plane is 0.16° from perpendicular to the tandem.
 
+### Videos: every G-run from G10 on now has one
+
+`figs/anim/insertion_<tag>_{lumen,full}.mp4` exists for G10–G32 (lumen and full for each).  Each run must be
+rendered through the tree whose `meshes` junction matches ITS wall: `t26out` for `vagina_wall_tet26` (G11–G13),
+`t26uout` for `tet26u` (G14–G22), `v3out` for `tet26v3` (G23–G31), `v4out` for `tet26v4` (G32).  The full view
+reads only the run's own frame surfaces and renders through any tree; the lumen view reads the wall mesh's grid
+index and fails with an IndexError on a mismatched tree (G11–G13 through `t26uout`: index 1834 out of bounds).
+
 ### Commands
 
 ```bash
