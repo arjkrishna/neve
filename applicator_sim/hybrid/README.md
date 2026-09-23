@@ -2279,6 +2279,39 @@ rendered through the tree whose `meshes` junction matches ITS wall: `t26out` for
 reads only the run's own frame surfaces and renders through any tree; the lumen view reads the wall mesh's grid
 index and fails with an IndexError on a mismatched tree (G11–G13 through `t26uout`: index 1834 out of bounds).
 
+### Scored against the BT labels (`eval_hybrid.py score`, 2026-09-22): the simulation now beats both comparators where it acts
+
+Dice (E_app / PELVIS frame) and symmetric mean surface distance in mm.  NONE = preBT bodies unmoved; K0 = corpus
+and cervix carried rigidly by the pose rule (the contract's two pre-declared comparators, scored 2026-09-11 with
+the Stage-1 device, default Δ 22.5).  Two evaluator changes were needed first, both committed: a SIM run is
+now scored with ITS applicator variant and every part it loaded (the default folder gave G32 the Stage-1
+bent-shaft device with no packing), and a WALL run gets `vagina_filled` = the solid enclosed by the wall's outer
+sheet scored against the BT vagina | applicator label (the contract's `vagina` metric compares the hollow 1.2 mm
+shell with the solid label — 0.06 — and `vagina+device` depends on how much lumen the device happens to fill).
+
+| structure | NONE | K0@22.5 | G22 (old device) | G23 | **G32** | BT vol |
+|---|---|---|---|---|---|---|
+| cervix (HR-CTV − uterus) | 0.27 / 0.21, 9.3 mm | 0.61 / 0.57, 4.4 | 0.66 / 0.62, 3.9 | 0.67 / 0.64, 3.9 | **0.66 / 0.64, 3.8** | 47 cc |
+| vagina, filled solid | 0.40 / 0.39, 7.6 ¹ | 0.40 / 0.39 ¹ | 0.57 / 0.54, 6.6 | 0.46 / 0.44, 8.8 | **0.63 / 0.63, 6.1** | 100 cc |
+| bladder | 0.77 / 0.79, 5.2 | unmoved | 0.83 / 0.85, 3.9 | 0.86 / 0.86, 3.1 | **0.87 / 0.87, 3.0** | — |
+| rectum | 0.40 / 0.37, 7.8 | unmoved | 0.42 / 0.38, 6.5 | 0.38 / 0.38, 8.5 | **0.41 / 0.40, 6.3** | — |
+| sigmoid | 0.25 / 0.19, 19.0 | unmoved | 0.24 / 0.18, 19.8 | 0.19 / 0.18, 20.8 | 0.19 / 0.18, 20.9 | — |
+| corpus (rigid rule) | 0.35 / 0.26 | 0.88 / 0.81 | 0.88 / 0.81 | 0.88 / 0.88 | 0.88 / 0.88 | — |
+
+¹ NONE / K0 have the solid preBT vagina body, so their `vagina+device` is the number comparable to `vagina_filled`.
+
+Reading: the deformable cervix beats the rigid carry (0.66 vs 0.61, 3.8 vs 4.4 mm) — the opposite of the Stage-1
+finding that FEM lost to rigid placement; the bladder is moved only by the simulation and it lands within 3 mm
+(0.87 vs 0.77 unmoved); the vagina occupies the real distended vagina at 0.63 against 0.40 for the collapsed
+preBT body and 0.57 for G22; the rectum's surface error improves (7.8 → 6.3 mm) though its Dice barely moves; the
+sigmoid is not predicted by anything (its BT position is unrelated to the preBT one); the corpus is the rule's.
+Pose-rule error in the PELVIS frame: axis 1.49°, flange 2.29 mm; tip-to-serosa 5.42 mm (BT 5.44).  Device-to-OAR
+minimum distance is 0.0 mm to bladder and rectum against BT's 6.3 / 2.8 mm: the cap rods sit in the thickness
+of a 1.2 mm wall whose outer sheet the OARs rest on, whereas the real rods have ~3 mm of wall and packing between
+them and the rectum — the wall's thickness is the model's gap here, not the rods' position.  The evaluator prints
+"RUN DID NOT COMPLETE" for every run because CONTRACT 5's settle criterion is never met; the metrics are the state
+at the end of the 25 settle steps.
+
 ### Commands
 
 ```bash

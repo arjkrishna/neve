@@ -327,9 +327,20 @@ def model_sim(cx, tag):
             surfs[b] = cx.rest[b]; missing.append(b)
     cfg = json.load(open(rd + "/cfg.json")) if os.path.exists(rd + "/cfg.json") else {}
     summ = json.load(open(rd + "/summary.json")) if os.path.exists(rd + "/summary.json") else {}
+    devsurf, appd = run_devsurf(cx, cfg)
+    dj = json.load(open(rd + "/device_final.json"))
+    if dev is not None and "ovoid_origin_mm" in dj:
+        dev["ov_origin"] = dj["ovoid_origin_mm"]
+        if "ovoid_axis" in dj:
+            dev["ov_R_rows"] = [dj["ovoid_x_app"], dj["ovoid_y_app"], dj["ovoid_axis"]]
+    wall_meta = None
+    if cfg.get("vagina_model") == "wall":
+        wall_meta = json.load(open(run_mesh_dirs(tag)["vagina"] + "/meta.json"))
     return Model("SIM", surfs, dev, meta=dict(tag=tag, cfg=cfg, bodies_missing_final_obj=missing,
                                               flange_shift_mm=run_delta(cfg, summ, dev, cx),
-                                              run_status=run_status(summ)))
+                                              run_status=run_status(summ), devsurf=devsurf,
+                                              device_parts=sorted(devsurf.keys()), applicator_dir=appd,
+                                              wall_meta=wall_meta))
 
 
 def run_delta(cfg, summ, dev, cx):
@@ -364,22 +375,68 @@ def run_status(summ):
 
 
 # --------------------------------------------------------------------------------------------- masks + scoring
-def device_mask(cx, dev, fmap):
-    """Union of the four device parts, placed at `dev` in preBT world, mapped by fmap, voxelised on the BT grid.
+OVOID_BODY = ("ovoid_L", "ovoid_R", "rod_L", "rod_R", "packing")   # ride with the ovoids body (Stage 3)
+
+
+def device_mask(cx, dev, fmap, devsurf=None):
+    """Union of the device parts, placed at `dev` in preBT world, mapped by fmap, voxelised on the BT grid.
     The parts are voxelised SEPARATELY and OR-ed: they overlap (the tube runs through the caps) and the even-odd
-    stencil rule would cancel the overlap if they were merged into one polydata."""
+    stencil rule would cancel the overlap if they were merged into one polydata.  Parts of the OVOIDS body use its
+    own origin / frame when `dev` carries them (Stage 3, device_final.json ovoid_origin_mm, ovoid_x_app ...)."""
     if dev is None:
         return None
     m = np.zeros(cx.bt.shape, bool)
-    for _, (V, F) in cx.devsurf.items():
-        Vw = np.asarray(dev["flange"], float) + V @ np.asarray(dev["R_rows"], float)
+    for p, (V, F) in (devsurf if devsurf is not None else cx.devsurf).items():
+        org, R = np.asarray(dev["flange"], float), np.asarray(dev["R_rows"], float)
+        if p in OVOID_BODY and dev.get("ov_origin") is not None:
+            org, R = np.asarray(dev["ov_origin"], float), np.asarray(dev.get("ov_R_rows", dev["R_rows"]), float)
+        Vw = org + V @ R
         m |= ev.voxelize(fmap(Vw), F, cx.bt.shape, cx.bt.aff)
     return m
 
 
+def run_devsurf(cx, cfg):
+    """The device surfaces of ONE run: its applicator variant (cfg applicator_dir), the cap files it used
+    (cfg device_part_files), plus the cap rods and the packing when the run loaded them."""
+    appd = HYB + "/" + cfg.get("applicator_dir", "applicator")
+    files = dict(cfg.get("device_part_files") or {})
+    parts = list(DEVICE_PARTS) + (["rod_L", "rod_R"] if cfg.get("device_rods") else []) + \
+        (["packing"] if cfg.get("device_packing") else [])
+    out = {}
+    for p in parts:
+        fn = "%s/%s.obj" % (appd, files.get(p, p))
+        if os.path.exists(fn):
+            out[p] = geom.read_obj(fn)
+    return out, appd
+
+
+def wall_outer_solid(V, F, meta):
+    """A WALL run's vagina as a closed SOLID: the outer-sheet faces of the deformed surface plus a fan disc closing
+    each end ring.  (V, F) = final/vagina.obj (surface order), meta = the wall mesh's meta.json."""
+    s2n = np.asarray(meta["surface_obj_vertex_to_tet_node"], int)
+    g = np.asarray(meta["wall"]["grid_index"], int)
+    n_rd, n_ax = int(meta["wall"]["n_radial"]), int(meta["wall"]["n_axial"])
+    outer = set(int(i) for i in meta["node_sets"]["outer_surface"])
+    F = np.asarray(F, int)
+    keep = np.array([all(int(s2n[v]) in outer for v in f) for f in F], bool)
+    faces = [list(f) for f in F[keep]]
+    V = np.asarray(V, float).tolist()
+    for k in (0, n_ax - 1):
+        ring = [v for v in range(len(s2n)) if g[s2n[v], 0] == k and g[s2n[v], 1] == n_rd]
+        ring.sort(key=lambda v: int(g[s2n[v], 2]))
+        c = len(V); V.append(np.mean([V[v] for v in ring], axis=0).tolist())
+        for i in range(len(ring)):
+            faces.append([c, ring[i], ring[(i + 1) % len(ring)]])
+    return np.asarray(V, float), np.asarray(faces, int)
+
+
 def model_masks(cx, model, fmap):
     m = {b: ev.voxelize(fmap(V), F, cx.bt.shape, cx.bt.aff) for b, (V, F) in model.surfs.items()}
-    dev = device_mask(cx, model.dev, fmap)
+    wm = (model.meta or {}).get("wall_meta")
+    if wm is not None:
+        Vs, Fs = wall_outer_solid(*model.surfs["vagina"], wm)
+        m["vagina_filled"] = ev.voxelize(fmap(Vs), Fs, cx.bt.shape, cx.bt.aff)
+    dev = device_mask(cx, model.dev, fmap, devsurf=(model.meta or {}).get("devsurf"))
     m["device"] = dev
     m["vagina+device"] = (m["vagina"] | dev) if dev is not None else m["vagina"]
     return m
@@ -424,9 +481,13 @@ def score_model(cx, model, frame):
     m = model_masks(cx, model, fmap)
     bt = cx.bt
     out = dict(frame=finfo, structures={})
-    for s in SCORED:
-        out["structures"][s] = fe.metrics_ext(m[s], cx.ref[s], bt.sp, bt.vv)
-        out["structures"][s]["BT_vol_cc"] = round(float(cx.ref[s].sum() * bt.vv / 1000.0), 3)
+    for s in list(SCORED) + (["vagina_filled"] if "vagina_filled" in m else []):
+        ref = cx.ref["vagina+device"] if s == "vagina_filled" else cx.ref[s]
+        out["structures"][s] = fe.metrics_ext(m[s], ref, bt.sp, bt.vv)
+        out["structures"][s]["BT_vol_cc"] = round(float(ref.sum() * bt.vv / 1000.0), 3)
+        if s == "vagina_filled":
+            out["structures"][s]["definition"] = ("WALL run: the solid enclosed by the wall's outer sheet (outer faces + "
+                                                  "fan discs at both end rings) vs BT vagina | applicator")
     # device-derived quantities
     F_b = fmap(np.asarray(model.dev["flange"], float)[None])[0]
     tip_b = fmap(np.asarray(model.dev["tip"], float)[None])[0]
@@ -505,7 +566,8 @@ def cmd_score(tag, cx=None, quiet=False):
                   % (tag, st.get("status"), st.get("converged"), st.get("reached_final_pose"),
                      st.get("inverted_tets"), st.get("final_u"), st.get("n_steps") or 0))
             print("    %s" % st.get("warning"), flush=True)
-        print_table("SIM %s" % tag, [(s, res["E_app"]["structures"][s], res["PELVIS"]["structures"][s]) for s in SCORED])
+        print_table("SIM %s" % tag, [(s, res["E_app"]["structures"][s], res["PELVIS"]["structures"][s])
+                                     for s in list(SCORED) + [q for q in ("vagina_filled",) if q in res["E_app"]["structures"]]])
         pr = res["PELVIS"]["pose_rule_error"]
         print("  pose-rule error (PELVIS): axis %.2f deg | flange %.2f mm (along %.2f, lateral %.2f)"
               % (pr["axis_angle_deg"], pr["flange_offset_mm"]["total"], pr["flange_offset_mm"]["along_BT_axis"],
