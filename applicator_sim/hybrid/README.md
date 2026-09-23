@@ -2267,9 +2267,7 @@ canal on a vault the springs were dragging):
 | 25–35 | 6.7–7.5 | 3.8–5.0 | — (above the wall) |
 
 The HR-CTV is back on the device axis to within 4–7 mm against BT's 3–6 mm, and its residual offset is 0–3 mm
-POSTERIOR, not anterior.  The two surfaces touch at every level where both exist (gap 0.6–1.1 mm, 6–35 lumen
-nodes within 2 mm per slab, no interpenetration): the physical contact the user asked for is held by the
-cervix|lumen contact pair, not by springs.  The ring plane is 0.16° from perpendicular to the tandem.
+POSTERIOR, not anterior.  **Correction (2026-09-23, signed distances):** the gap figures above are vertex-to-vertex distances, which cannot see penetration, and the claim of none was wrong.  Measured with the cervix surface's signed distance (`label_views.py`): 42 lumen-sheet nodes and 31 outer-sheet nodes of the wall lie INSIDE the cervix, up to 4.9 mm deep, all at the patient-right and mostly anterior part of the vault (stations 27-32); 57 % of them are the fixed apex nodes of `apex_attach lift`, which contact cannot move, so the cervix bulk passes through the wall there.  Elsewhere the wall rests on the cervix (34 % of the vault rim within 1.5 mm); in the device's sagittal plane the only contact is the anterior fornix, the posterior fornix is open.
 
 ### Videos: every G-run from G10 on now has one
 
@@ -2311,6 +2309,25 @@ of a 1.2 mm wall whose outer sheet the OARs rest on, whereas the real rods have 
 them and the rectum — the wall's thickness is the model's gap here, not the rods' position.  The evaluator prints
 "RUN DID NOT COMPLETE" for every run because CONTRACT 5's settle criterion is never met; the metrics are the state
 at the end of the 25 settle steps.
+
+### Labelled stills (`label_views.py`) and what the labelling measured
+
+`APPSIM_OUT=<tree> py -3.11 hybrid/label_views.py --tag G32` writes `figs/labeled/G32_step0180_{sagittal,oblique}.png`:
+the two orientations of the full-view MP4 at the seated state, with every organ, the applicator parts (tandem,
+tip, flange, tandem rod, ovoid caps, ovoid rods, packing) and the landmarks (introitus, vaginal lumen, fornices /
+vault rim, vagina-HR-CTV junction, external and internal os, intrauterine canal, fundus) called out.  The
+intrauterine canal is the pre-insertion canal polyline (`inputs/canal.npz`) carried by the deformation: each point
+moves with the cervix or the rigid corpus.  In the oblique view the ovoid caps are drawn as dashed outlines
+through the tissue and the wall nodes inside the cervix as red points.  All numbers on the figures are computed
+from the run's files.  The render tree needs `inputs/` and `hybrid/eval/` junctions besides the usual ones.
+Two findings came out of it:
+
+- **The tandem leaves the canal near the fundus.**  Within the labelled canal it stays within 2.1 mm of the
+  tandem through the cervix and up to ~40 mm above the flange; above that the rigid uterus's cavity curves toward
+  the patient's left, 5.8 mm off the straight tandem at 47 mm and 11.3 mm at the top of the label (13.2 mm at the
+  extrapolated end).  A real uterus straightens onto the tandem; the rigid corpus cannot, so the upper tandem runs
+  through myometrium in the model.  Tip-to-serosa (5.4 mm vs BT 5.4) is unaffected.
+- **The contact defect at the right-anterior fornix** described in the correction above.
 
 ### Commands
 
