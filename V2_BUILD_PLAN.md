@@ -34,7 +34,7 @@ deliberate: it makes v1 → v2 a controlled comparison.
 |---|---|---|---|
 | mesher | binary spheres, Gaussian ×2, iso (min+max)/2, 0.6/0.6/0.9 mm | SDF, iso 0, **0.45 mm isotropic** | 0.64 → 0.06 mm median deficit; one component |
 | `DISTAL_TRIM_MM` | 4.0 | **0** | SDF cap is a full-radius hemisphere; verified by enclosure |
-| `ROUTE_MIN_R` (B donor route) | 1.60 | **1.0** | 1.0 mm tube meshes at 0.97; navigable radius 0.97 − 0.3 contact ≥ 0.35 catheter; restores stenosis to ~60 % |
+| `ROUTE_MIN_R` (B donor route) | 1.60 | **1.0** | 1.0 mm tube meshes at 0.97; navigable radius 0.97 − 0.3 contact ≥ 0.35 catheter; shipped grade up to 56 %, 30 of 223 at ≥ 50 % (measured; v1 capped at 36 %) |
 | siphon floor (A, new) | none | **1.0** | label necks (0.3 mm) are segmentation error; ICA is never that narrow |
 | `ECA_MESH_R_MM` | 1.6 | **1.0** | same enterability arithmetic; the ECA is a decoy |
 | `FUSE_BAND_MM` | 0.35 | **0.35** (measured 0.2) | two 1.6 mm tubes merge below a 0.2 mm gap at 0.45 mm voxels; keep the margin |

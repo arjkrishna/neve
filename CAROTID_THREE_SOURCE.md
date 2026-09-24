@@ -5,7 +5,12 @@ class of bug that produced silently wrong geometry twice in this pipeline.
 
     host arch        eve_bench/data/dualdevicenav      ostium to the first seam
     lower            CarotidAnalyzer bifurcation DB    real CCA + ICA/ECA fork + cervical ICA
-    siphon           TopBrain / TopCoW                 skull base to the ICA terminus
+    siphon           TopBrain                          skull base to the ICA terminus
+
+Siphon donors are named `topcow_mr_NNN` because TopBrain's labels were drawn on
+the TopCoW MR scans. TopCoW's own labels are not used: its ICA stops about 18 mm
+below the circle of Willis (`TOPBRAIN_PIPELINE.md`, *Why TopCoW does NOT extend
+this further*).
 
 The point of the third source is the **ECA fork**. The previous 49 anatomies vary
 only in the siphon and have no carotid bifurcation at all, because the host's RCCA
@@ -17,10 +22,51 @@ that those anatomies cannot represent.
     carotid_tools/extend_ica.py             copy a real distal 10 mm into ICAs that fall short
     carotid_tools/match_sections.py         decide which lower joins which siphon, under usage caps
     carotid_tools/graft_three.py            compose, repair, write centerlines
-    topbrain_tools/bake_meshes.py           bake the collision mesh per anatomy
+    topbrain_tools/bake_meshes.py           bake the collision mesh per anatomy (v1)
+    topbrain_tools/bake_meshes_v2.py        v2: signed-distance mesher (sdf_mesher.py)
+    topbrain_tools/bake_meshes_v3.py        v3: v2 tubes unioned with the real surfaces (sdf_union.py)
     topbrain_tools/check_anatomies.py       load / insert / enclose / ROUTE-CONNECTIVITY / target / fit
     monitoring/figure_carotid_anatomies.py  four-colour QC figures, two per image
     carotid_tools/run_container.sh          run any of the above with the right mounts
+
+---
+
+## Current state (v2 / v3)
+
+This document is the build record of the **v1** set, `carotid_data/anatomies/`
+(215). The set has since been rebuilt twice from the same 237-pair plan. Both
+rebuilds keep every graft fix recorded below; what changes is the mesher, plus
+the constants that existed only to compensate for it.
+
+| | v1 (this document) | v2 | v3 |
+|---|---|---|---|
+| folder | `carotid_data/anatomies/` | `anatomies_v2/` | `anatomies_v3/` |
+| anatomies | 215 | **223** | **223**, same as v2 |
+| collision mesh | blurred binary tube, 3.7 k triangles | signed-distance tube, 0.45 mm grid, 20 k triangles | v2 tube ∪ the real Zenodo lumen (CCA/ICA/ECA) and the TopBrain siphon surface |
+| `ROUTE_MIN_R` / `ECA_MESH_R_MM` | 1.60 / 1.60 | 1.0 / 1.0 | 1.0 / 1.0 |
+| siphon floor (`--siphon-min-r`) | none | 1.0 | 1.0 |
+| `FUSE_BAND_MM` | 0.35 | 0.35 | 0.35 |
+| navigable (meshed lumen − 0.3 mm contact ≥ 0.35 mm catheter) | 71 / 215 | **223 / 223** | **223 / 223** |
+| shipped stenosis grade, max | 36 % | 56 % | 56 % |
+| anatomies at or above NASCET 50 % | 0 | 30 | 30 |
+
+v2 gains eight anatomies over v1:
+
+- **five** that v1 excluded as severed at the siphon terminus
+  (`excluded_severed.json`). The signed-distance mesher and the 1.0 mm siphon
+  floor keep that terminus open.
+- **three** `case_w_014_right__*` pairs that v1 rejected for fusing. The lower
+  floors put their clearance back above the fusing band.
+
+The 14 pairs still not built are fusing rejections. v3's centerlines are
+identical to v2's, so only the mesh differs; each v3 `provenance.json` also
+records the transforms the graft applied (`xform`), which the union uses to
+carry the source surfaces into place.
+
+The grade is the declared grade on the centerline, after the floor, measured
+the way `build_manifest.py` measures it: `1 − min ICA radius / distal ICA radius`.
+Constants and guards: `V2_BUILD_PLAN.md`. Results: `MESHING_PIPELINE_ANALYSIS.md`
+§7–8, and `BUILD_v2.json` / `BUILD_v3.json` in each folder.
 
 ---
 
@@ -135,7 +181,8 @@ conditioning no longer drives the failures.
 
 ## Consequences for the set
 
-**Radius floors.** `ROUTE_MIN_R = 1.60` on the donor CCA/ICA and `ECA_MESH_R_MM = 1.60` on
+**Radius floors** *(v1; both are 1.0 mm in v2/v3, and the siphon is floored too)*.
+`ROUTE_MIN_R = 1.60` on the donor CCA/ICA and `ECA_MESH_R_MM = 1.60` on
 the fork, pre-compensating the mesher's erosion *and* its `decimate(0.99)` — roughly half of
 what the floor buys is decimation, so re-deriving it against the un-decimated surface yields
 ~1.35 and the wrong conclusion. Host and siphon are untouched, so the one segment the two
@@ -177,6 +224,8 @@ that test reads −3.7 to −10.2 mm in *every* anatomy. `eca_reentry()` is topo
 the contiguous opening run at the fork's origin is the bifurcation; any overlap resuming after
 it has ended is a ring, and the ECA is cut back before it. Fired on 5, rejected 5 more.
 
+v1, as shipped in `carotid_data/anatomies/`:
+
 | | |
 |---|---|
 | anatomies | **215**, all unique pairs |
@@ -207,14 +256,21 @@ the ECA re-entry ring. The remaining drift is structural — B's donor bifurcati
 arclength against the pinned 130 mm seam, so its z-rise floor sits below A's, and A's range is
 not a population range because A holds the host and cervical carotid fixed.
 
-## Known accepted cost
+## Known accepted cost *(v1)*
 
-The radius floor caps every shipped ICA stenosis grade at ~37%, erasing the 40–74% population
+The v1 radius floor caps every shipped ICA stenosis grade at ~37%, erasing the 40–74% population
 the donor database was built around. Set B therefore contains **no clinically significant
 carotid stenosis** (the NASCET threshold is 50%). This is deliberate and reversible: roughly
 half the erosion is `decimate(0.99)` rather than the smoothing, so baking the affected subset
 at a finer decimation would let the floor drop and keep more grade, at the cost of SOFA
 collision performance. Do not claim lesion realism for this set as it stands.
+
+**In v2/v3 this is largely recovered.** At a 1.0 mm floor the shipped grade
+reaches 56 %: 30 of 223 anatomies are at or above the NASCET 50 % threshold,
+and 47 are at or above 40 %. Donor grades above 56 % (the database goes to 74 %)
+are still capped, so the most severe lesions remain absent. The v3 union does
+not change this: where the real lumen pinches below the floor, the floored tube
+wins by construction.
 
 ## Rebuilding
 
@@ -225,6 +281,13 @@ collision performance. Do not claim lesion realism for this set as it stands.
     bash carotid_tools/run_container.sh python3 topbrain_tools/check_anatomies.py --selftest
     bash carotid_tools/run_container.sh python3 topbrain_tools/check_anatomies.py --anatomies carotid_data/anatomies
     # figures: monitoring/figure_carotid_anatomies.py carotid_data/anatomies saved/figs/carotid_fixed --shard i/6
+
+    # v2: same pairing, the v2 constants, the signed-distance baker
+    bash carotid_tools/run_container.sh python3 carotid_tools/graft_three.py --out carotid_data/anatomies_v2 --route-min-r 1.0 --eca-mesh-r 1.0 --distal-trim 0 --fuse-band 0.35 --siphon-min-r 1.0 --only LO:HI
+    bash carotid_tools/run_container.sh python3 topbrain_tools/bake_meshes_v2.py --anatomies carotid_data/anatomies_v2 --shard i/n
+    # v3: graft into anatomies_v3 with the same flags (that run records provenance.json["xform"]), then
+    bash carotid_tools/run_container.sh python3 topbrain_tools/bake_meshes_v3.py --anatomies carotid_data/anatomies_v3 --shard i/n
+    bash carotid_tools/run_container.sh python3 topbrain_tools/check_anatomies.py --anatomies carotid_data/anatomies_v3
 
 `graft_three.py`, `bake_meshes.py`, `check_anatomies.py` and the figure script all take
 `--shard i/n`; each writes only into its own anatomy folders, so shards need no coordination.

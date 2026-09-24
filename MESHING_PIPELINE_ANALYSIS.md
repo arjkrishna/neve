@@ -350,8 +350,10 @@ Meshed lumen along the RCCA route, every anatomy (`saved/mesher_probe/compare_v1
 | mesh components, median (max) | 3 (4) | **1 (1)** | 3 (4) | **1 (1)** |
 | per-anatomy min-lumen change v2 − v1 | | **+0.74 mm median, none worse** | | **+0.78 mm median, none worse** |
 
-Set B built 223 of 237 pairs against v1's 215: the lower ECA floor removed eight
-fusing rejections. Set A's centerlines are identical to v1's on the shared prefix
+Set B built 223 of 237 pairs against v1's 215. Of the eight gained, five are the
+anatomies v1 excluded as severed at the siphon terminus, now open, and three are
+`case_w_014_right` pairs v1 rejected for fusing; the 14 not built are fusing
+rejections. Set A's centerlines are identical to v1's on the shared prefix
 (49/49), +5 mm at the terminus (no trim), and six siphons have radii lifted to
 1.0 mm at their label necks (`mr_001, 003_L, 007_L, 010_L, 013, 015`); rise, kink
 and junction statistics are unchanged (`validate_anatomies.py`).
