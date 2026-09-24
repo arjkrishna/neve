@@ -2022,3 +2022,331 @@ Traps hit: the procedural v3c checkpoint needs
 worktree's results tree because the evaluator writes next to the checkpoint and `results16` is mounted
 read-only; masked checkpoints need `EVE_RL_ACTOR_ZERO_OBS` at eval time; `docker run -i` inside a
 `while read` loop swallows the manifest unless given `< /dev/null`.
+
+# 18. THE FULL ABLATION RAN — the asymmetry was harmful, and the decay did not reproduce
+
+`2026-09-19_200649_rcca_carotid_v3_nopriv_full`, launched on the Stony Brook machine
+(`D:\Arjun\neve`) 2026-09-19 18:06 UTC, stopped 2026-09-21 15:29 UTC after 45.4 h and
+2,511,649 explore steps. Eleven evals, eleven checkpoints, all committed. This is the run
+§16.4 specified, and it answers §16.6.
+
+## 18.1 Validity — the §16.5 checks, all four
+
+Run before anything else was believed, in the first ten minutes:
+
+| check | result |
+|---|---|
+| `qnetwork.py` mounts | 1 |
+| both `ZERO_OBS` in `.Config.Env` | present, identical ten indices |
+| `q._CRITIC_ZERO_OBS` in-process | `(101,102,106,107,113,115,116,118,119,123)` |
+| `p._ACTOR_ZERO_OBS` in-process | same ten |
+
+The critic tuple is NOT `()`, so this is a genuine full ablation and not an actor-only run
+under a full-ablation name. The roster logged at startup is the v3 split — TRAIN 153,
+HELD-OUT 16, EXCLUDED 54, `base_seed=12345`, `change_every=3` — so §16.4 item 3's silent
+set-difference failure did not occur.
+
+## 18.2 The curve
+
+Validation, 98 seeds on the 16 held-out anatomies, cycled and seed-determined so the set is
+identical at every checkpoint. Read from the runner's own `Quality:` line in `main.log` —
+**not** reconstructed by counting episode blocks in the container log, which is off by one
+or more because explore and eval outcomes interleave at block edges.
+
+| steps | baseline `2026-09-09_213120` | actor-only `2026-09-17_180209` | **full ablation** |
+|---|---|---|---|
+| 0 (H0) | 50.0 % | 31.6 % | 44.9 % |
+| ~260k | 82.7 % | 43.9 % | **94.9 %** |
+| ~500k | 67.3 % | 70.4 % | **82.7 %** |
+| ~760k | 76.5 % | 91.8 % | **93.9 %** |
+| ~1005k | 87.8 % | 91.8 % | **93.9 %** |
+| ~1255k | 38.8 % | 87.8 % | **90.8 %** |
+| ~1500k | 94.9 % | 84.7 % | 91.8 % |
+| ~1750k | 96.9 % | 86.7 % | 89.8 % |
+| ~2010k | 92.9 % | — | 90.8 % |
+| ~2255k | 96.9 % | — | 92.9 % |
+| ~2510k | — | — | 93.9 % |
+
+Mean eval reward tracks it: 1.40 → 5.34 → 4.00 → 5.41 → 5.39 → 5.12 → 5.12 → 4.96 → 5.22
+→ 5.24 → 5.29.
+
+## 18.3 What it answers
+
+**Against actor-only, which is the unconfounded comparison** — both ran `change_every 3`
+from the same H0, differing only in whether the critic is masked — the full ablation is
+higher at *every* step-matched point, by 51.0, 12.3, 2.1, 2.1, 3.0, 7.1 and 3.1 points.
+That is §16.6's third reading, the one it called unlikely: **the asymmetry was actively
+harmful.** A critic scoring states by information the actor cannot act on made the policy
+worse, and that is now the best available explanation for the actor-only run's
+generalization gap in §16.3.
+
+**The §16.3 decay does not reproduce.** Actor-only peaked at 91.8 % and decayed to
+84.7/86.7 (seed-paired McNemar p = 0.021, not the ORBIT noise floor). The full ablation
+holds 89.8–93.9 % across 1.75 M steps after first reaching 93.9 % at 754k — no peak, no
+decay, and far steadier than the baseline's 38.8–96.9 swings, including the baseline's
+critic divergence at ~1255k which has no counterpart here.
+
+**Consequences for the project.** The teacher/critic asymmetry is not worth preserving, so
+the teacher→student distillation line loses its motivation (§16.6 anticipated this under
+the first reading; the third reading makes it stronger). Subject to the frontal-projection
+caveat of §14 — not to a privileged-tail caveat — the ~90–94 % plateau is the first
+deployable number in this project.
+
+**What it does NOT answer.** The baseline ends slightly higher (96.9 % vs ~93 %), but that
+comparison is the confounded one: `change_every 10` for its first megastep. §16.6's missing
+control — an unmasked `change_every 3` run from the same H0 — is still missing, and it is
+still what would make the baseline column interpretable. Nothing here removes that need.
+
+## 18.4 How it ended — a stall, not a crash
+
+After eval #11 wrote `checkpoint2511649` cleanly, the next explore block began:
+
+```
+exploration: steps=2522319 >= episode_limit=22900. Setting time limit for workers to finish to 180s
+```
+
+and the run wedged there. Over the following 2 h 17 m: no episode completed,
+`batches_produced` fell from ~18/s to 0.2/s, the replay buffer (full at its 2,000,000
+capacity) flapped `can_sample=False`, and the 19 worker processes sat at 11–28 % CPU.
+**`EVE_RL_WATCHDOG_STALL_S=2400` did not fire** — 40 min elapsed with no episode and
+nothing restarted, `RestartCount=0`. That watchdog does not cover this stall mode; anyone
+relying on it to babysit an overnight run should know that.
+
+Worker `Restaring Agent worker_N because of Timeout` events totalled **309** over 45 h
+(~7/h, spread evenly across hours rather than clustered at evals), rising in frequency
+through the run. Whether that is this project's normal background churn or specific to
+this machine is not established here.
+
+Nothing was lost: all eleven checkpoints and all eleven `Quality:` lines predate the stall.
+The run was stopped with `docker stop -t 60` (exit 143, `OOMKilled=false`).
+
+## 18.5 Corrections to §16.4's machine guidance
+
+Measured on this machine, which has a 31.7 GB host and a Docker/WSL2 VM capped at 24 GB by
+`.wslconfig`:
+
+- **`--shm-size` is not the constraint and never was.** `/dev/shm` peaked at **14 MB of
+  24 GB (1 %)** across the entire 45 h run, sampled repeatedly. §16.4 item 4's "30 GB shm"
+  provisions the wrong resource; raising it buys nothing. What is scarce is ordinary
+  process RSS.
+- **A SOFA worker is ~1.6 GB resident, not ~1.2 GB.** Sixteen of them plus trainer and
+  replay subprocess ran at 86–90 % of a 23.47 GiB VM, peaking 93 %, with `free` reporting
+  0 MB free / ~1.9 GB available. It completed without an OOM kill, but there is no headroom
+  at 16 workers on a 32 GB machine. Use ~12 workers there, or a bigger host — not a bigger
+  `--shm-size`.
+- **Throughput was 18–19 steps/s, not ~12**, so checkpoints landed every ~4 h rather than
+  6–7 h.
+- **Rewrite the launcher's host paths.** §16.4 item 1 is correct and was needed again: all
+  74 mounts carried `D:\neve\.claude\worktrees\rl_improv_18_p2`, which does not exist here.
+  Note `D:\Arjun\workspace\neve` is a *symlink* to `D:\Arjun\neve` on this machine, so
+  launchers written against the older root resolve correctly and need no rewrite.
+
+## 18.6 Host-testing a MASKED checkpoint — a protocol requirement §13.3 does not state
+
+`launch_eval_anatomies.sh` passed no environment into its container, so the §13.3 command
+run unchanged on these checkpoints would have evaluated a masked policy **with the mask
+off** — the network receiving real values in ten columns it was trained to see as zero,
+an input-distribution mismatch with no error and no warning. Any host number produced that
+way is void.
+
+The launcher now forwards both vars:
+
+```
+-e EVE_RL_ACTOR_ZERO_OBS="${EVE_RL_ACTOR_ZERO_OBS:-}" \
+-e EVE_RL_CRITIC_ZERO_OBS="${EVE_RL_CRITIC_ZERO_OBS:-}" \
+```
+
+Unset forwards the empty string, which `_parse_actor_zero_obs` maps to `()`
+(`gaussianpolicy.py:13`), so every existing unmasked host test is byte-identical to before.
+Verified in-image both ways: with the ten indices set the eval container reports the ten;
+with it empty it reports `()`. `gaussianpolicy.py` was already mounted by that launcher;
+`qnetwork.py` is not, which does not matter for a success rate because only the actor
+selects actions.
+
+**So: host-testing any §16 checkpoint requires `EVE_RL_ACTOR_ZERO_OBS` set to the same ten
+indices used in training.** This applies to the actor-only run's checkpoints too, which
+have never been host-tested.
+
+## 18.7 Open
+
+1. **Host TEST of the five checkpoints above 92 % validation** — DONE, see §19. The short
+   version: validation could not rank them (flat 92.9–94.9 % against a 49.0–94.9 % host
+   spread) and `checkpoint1004560` leads at **94.9 % host**. Two open caveats, both in
+   §19.2: every number is a SINGLE launch on a frame where launch noise is large, and
+   whether §15.7's baselines transfer is unresolved (the anatomy hash differs for reasons
+   not yet found; the shipped data is NOT the cause).
+2. **The trajectory atlas has not been run on this run.** `saved/traj/` already contains
+   `car_nopriv` (the actor-only run, 6,477 explore / 490 val episodes) and `car_v3`, so the
+   comparison is built; this run's 490+ val episodes need extracting and labelling against
+   the existing centroids — refitting would make the numbers non-comparable. §16.3's third
+   point is that the failure *character* moves independently of the scalar: watch
+   `7:midpath-thrash` and `10:proximal-thrash`, which run 0.14 and 0.00 success.
+3. **The unmasked `change_every 3` control** (§16.6) — still not run, still what the
+   baseline column needs.
+
+# 19. HOST TEST of the full ablation — validation cannot rank these checkpoints
+
+Six host runs on 2026-09-21: the five checkpoints above 92 % validation, plus H0 as the
+control that establishes the frame. §13.3 command, 98 episodes each, `CHANGE_EVERY=1`,
+`--real_patient_anatomy`, **plus the actor/critic masks** (§18.6 — without them the numbers
+would be void).
+
+| checkpoint | validation | **HOST** | 95 % CI | CCA (27) | ICA-mid (41) | siphon (30) |
+|---|---|---|---|---|---|---|
+| 0 (H0) | 44.9 % | **11.2 %** | 6.4–19.0 | 40.7 % | 0.0 % | 0.0 % |
+| 258986 | 94.9 % | **49.0 %** | 39.3–58.7 | 100 % | 48.8 % | 3.3 % |
+| 753957 | 93.9 % | **56.1 %** | 46.3–65.5 | 100 % | 68.3 % | 0.0 % |
+| **1004560** | 93.9 % | **94.9 %** | 88.6–97.8 | 100 % | 97.6 % | **86.7 %** |
+| 2253372 | 92.9 % | **79.6 %** | 70.6–86.4 | 96.3 % | 87.8 % | 53.3 % |
+| 2511649 | 93.9 % | **89.8 %** | 82.2–94.4 | 100 % | 95.1 % | 73.3 % |
+
+## 19.1 The result
+
+**READ §19.2's LAST PARAGRAPH FIRST: every number below is a SINGLE launch, and launch
+noise on this frame is large.** The claims here are ordered by how much noise they survive.
+
+**Validation cannot rank these checkpoints.** It is flat at 92.9–94.9 % across all five
+while host spans 49.0–94.9 %. The checkpoint validation rates *highest* — 258986 at 94.9 % —
+is the **worst** on host by 46 points. This is §10.2 and §15.7.3 again, in its most extreme
+form yet: the two measurements are not merely weakly correlated here, they are close to
+unrelated over a range where one of them is saturated. *Caveat:* single launches, against
+§14.6's ±10-episode ORBIT floor (§19.2), so the 46-point gap should be replicated before it
+is quoted as a magnitude — though it is four times that floor, which is the reason this
+claim is listed first. The qualitative claim — that a 2-point validation spread carries no
+information about host ordering — does not depend on the magnitude at all.
+
+**The siphon is the entire spread.** CCA runs 96–100 % for every trained checkpoint; the
+differences live past the 212 mm cut. 258986 and 753957 reach the siphon 1/30 and 0/30 —
+they do not fail there, they never arrive. Whatever validation rewards at those steps does
+not produce distal progress on the shipped surface.
+
+**The peak is LATE — the opposite of §15.7.2.** On the v3 run the peak was early (257k) and
+training past it destroyed the gain. Here 258986 is the worst trained checkpoint and the
+peak is 1004560, with 2253372 dipping and 2511649 recovering. §16.3's "budget checkpoints
+densely before 1 M" was written to catch an early peak; for this run the early checkpoints
+are the ones that did not matter. **Do not carry either shape forward as a prior** — two
+runs, two opposite answers, is the lesson.
+
+## 19.2 The frame — UNRESOLVED, and H0 cannot resolve it
+
+All six runs log `anatomy=24903450018f`, constant across all 98 episodes, with seeds
+`900000+i`. §15.7's validity check requires `867c5770632a`, the hash in every prior host
+test and in the July real-patient matrix (`saved/monitor_rcca_procedural.md`). Ours differs,
+and **why is not known** — it does not by itself establish a different geometry, only a
+different hash over `vt.branches`.
+
+**The shipped data is NOT the cause — this was checked properly after a first pass claimed
+it was.** `eve_bench/data/` has exactly one commit in its entire history (`905b58a`,
+2026-03-20), covering both the meshes and `Centrelines_comb/*.mrk.json`; and the copies
+inside the `eve-training-fixed` image are byte-identical to the repo's (md5 on all three
+`.obj` files). Also **not** the cause: the two hash implementations (`eval_anatomies.py:603`
+and `env5.py:1023` hash identically, and a `--verify_variation` preflight on this machine
+prints `24903450018f` at *both* points); the code path (`no factory, no regeneration` is
+from `61edfb6`, the commit that produced the July matrix itself); or any commit to
+`vesseltree/`/`simulation/` since 2026-09-07 (there are none). A host test of the
+carotid_v3 run on this machine on **2026-09-14** already logged `24903450018f`, so the value
+predates this ablation entirely and is not a property of its checkpoints.
+
+**The cause is still unknown.** Note that the eval container mounts individual `eve/` and
+`eve_bench/` *modules* but not the whole tree, so any unmounted module resolves from the
+image, which is not version-controlled — that is where to look next.
+
+**The 25.5 % H0 baseline is RETRACTED and was never comparable — see §3.2 and §5 Trap 1.**
+A first pass here compared this run's H0 (11.2 %) against July's 25.5 % and concluded the
+route was harder. **Withdrawn.** July's entire real-patient matrix was measured on a
+*re-meshed reconstruction*, not the patient surface: `RCCAVariedFromMesh` always re-meshes,
+and the wire collides with the surface, not the centerlines that the zero-amplitude check
+verified. §3.2 lists "real patient 35.7 %" under **do not quote**; the 25.5 % H0 from the
+same matrix is the same measurement and inherits the retraction. §5 Trap 1 records the fix —
+pinning the original `.obj` — and its effect: **35.7 % → 75.5 %**.
+
+That is also the likely origin of the hash difference: `867c5770632a` belongs to the
+regenerated reconstruction and `24903450018f` to the pinned original surface. **Not
+verified** — the zero-amplitude path reproduced the *centerlines* to zero float error and
+the hash is over centerlines, so the mechanism is not fully accounted for. Do not treat this
+as settled.
+
+**REAL-mesh H0 numbers are 1–12 %; everything above ~25 % is a regenerated or multi-anatomy
+surface.** The comparable pair is this run's 11.2 % against the 2026-09-14 real-patient host
+test of carotid_v3 `checkpoint0`, which scored **1/98 = 1.0 %** on the same single anatomy
+`24903450018f`. A ~10-point spread between two launches of an untrained policy is exactly
+§14.6's documented ORBIT noise floor (±10 episodes, bimodal).
+
+**A second first-pass error, corrected here as a warning.** That same pass cited three runs
+from `eval_anatomies_checkpoint0/` as three *launches of the same test* spanning 1 %–52 %,
+and concluded launch noise was ~51 points. They are not replicates — check the anatomy
+count before comparing any two host numbers:
+
+| run | distinct anatomies | result |
+|---|---|---|
+| `20260914_204127` | **1** (`24903450018f`) | 1/98 = **1.0 %** — the real-patient test |
+| `20260914_225548` | **15** | 41/98 = 41.8 % — multi-anatomy |
+| `20260915_012442` | **8** | 51/98 = 52.0 % — multi-anatomy |
+
+`grep -ho 'anatomy=[0-9a-f]*' logs/<ts>/*.log | sort | uniq -c` is the whole check, and the
+per-run `logs/<timestamp>/` directories make it available for every host test ever run.
+
+**The single-run caveat still applies to §19's own table.** Each of the five checkpoints
+above was run ONCE, and §14.6's ±10-episode floor applies to all of them. The
+2253372/2511649 ordering (79.6 % vs 89.8 %) is not separable from that. A
+trained policy actively re-stabilises its own orbit and should be steadier than H0 — but
+that is an expectation, not a measurement. §14.6's remedy is explicit and cheap:
+multi-launch averaging. **Replicate before publishing any of these numbers.**
+
+## 19.3 Consequences
+
+1. **Host-test before believing a validation number on this line of work.** Not as a
+   confirmation step — as the measurement. Validation's 2-point spread across these five
+   checkpoints encodes a 46-point host spread.
+2. **`checkpoint1004560` is the best candidate, on one launch each.** Training to 2.5 M
+   scored worse (89.8 %) than stopping at 1.0 M (94.9 %), but 4.9 points on single launches
+   is inside the noise this frame demonstrates (§19.2) — so "1004560 beats 2511649" is a
+   lead to confirm, not a result. What is safe is that both far exceed 258986/753957
+   (49.0/56.1 %), a gap of ~40 points with the siphon at 86.7/73.3 % against 3.3/0.0 %.
+   **Replicate 1004560 and 2511649 2–3× before choosing between them.**
+3. **§16.6's reading is unchanged** — §18.3 rests on validation curves that are step-matched
+   against runs measured the same way, so the frame question here does not touch it. But the
+   *absolute* claim in §18.3 ("the first deployable number") should not be quoted from the
+   validation plateau, and cannot yet be quoted from host either: **94.9 % at 1004560 on
+   `24903450018f` is one launch.** Replicate it before it goes in a paper.
+4. **Re-run the actor-only and baseline checkpoints in THIS frame** if the three-way
+   comparison is ever to be made on host rather than validation. That is five more
+   host runs per arm, ~15 min each, and it is the only way to compare them on the
+   measurement that has been shown to matter.
+
+## 19.4 Replication — the two leading checkpoints, three launches each
+
+Run 2026-09-21 after §19.3 was written, as its item 2 asked. Same command as §19 (masks on),
+98 episodes, `CHANGE_EVERY=1`, `--real_patient_anatomy`; each launch a fresh container, so
+each gets a fresh un-reseeded initial-twist draw — the variance §14.6 says to average over.
+Launches interleaved (1004560 r2, 2511649 r2, 1004560 r3, 2511649 r3) so any drift over the
+hour hits both checkpoints evenly. Every launch logged exactly one anatomy, `24903450018f`.
+Figures are each launch's own console report, and each total matches its timestamped jsonl.
+
+| launch | 1004560 | siphon (30) | 2511649 | siphon (30) |
+|---|---|---|---|---|
+| r1 (the §19 table) | 93/98 = 94.9 % | 26 | 88/98 = 89.8 % | 22 |
+| r2 | 92/98 = 93.9 % | 25 | 93/98 = 94.9 % | 25 |
+| r3 | 92/98 = 93.9 % | 25 | 89/98 = 90.8 % | 22 |
+| **pooled** | **277/294 = 94.2 %** | 76/90 = 84.4 % | **270/294 = 91.8 %** | 69/90 = 76.7 % |
+| spread across launches | 1.0 pt | | 5.1 pt | |
+
+`episodes_official_<ts>.jsonl` — 1004560: `20260921_180543`, `20260921_231518`,
+`20260922_001013`; 2511649: `20260921_182614`, `20260921_232458`, `20260922_002042`.
+CCA was 27/27 in all six launches; ICA-mid 39–41/41.
+
+What it settles:
+
+1. **The two checkpoints are not separable.** They are 7 episodes apart out of 294, and the
+   ordering flipped on r2. This supersedes §19.3 item 2: the single-launch gap (94.9 vs 89.8)
+   was noise, as flagged. 1004560 remains the better candidate only in the weaker sense that it
+   is *steadier* — a 1.0-point spread against 5.1, and a siphon that never drops below 25/30
+   while 2511649 lands at 22/30 in two launches of three.
+2. **Launch noise for a trained policy on this surface is ~1–5 points** across these six
+   launches — well inside §14.6's ±10-episode floor, which was measured on an *untrained*
+   policy that cannot steer out of a bad initial twist. Two checkpoints is a small sample:
+   treat it as a first calibration, not a constant.
+3. **The ~40-point gap to 258986 / 753957 (49.0 / 56.1 %) is far outside that noise**, so
+   that comparison stands on single launches. §19.3 item 3's rule is unchanged: 94.2 % pooled
+   is still a number on `24903450018f`, and §19.2's frame question still applies to any
+   comparison against a figure measured on `867c5770632a`.
