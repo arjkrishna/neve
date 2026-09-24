@@ -53,6 +53,8 @@ NAME="${NAME:-eval_anatomies}"
 docker rm "$NAME" 2>/dev/null || true
 
 docker run --name "$NAME" --rm -i --gpus all --shm-size=16g \
+  -e EVE_RL_ACTOR_ZERO_OBS="${EVE_RL_ACTOR_ZERO_OBS:-}" \
+  -e EVE_RL_CRITIC_ZERO_OBS="${EVE_RL_CRITIC_ZERO_OBS:-}" \
   -v "D:\Arjun\workspace\neve\training _scripts\DualDeviceNav_train.py:/opt/eve_training/training_scripts/DualDeviceNav_train.py" \
   -v "D:\Arjun\workspace\neve\training _scripts\util\env.py:/opt/eve_training/training_scripts/util/env.py" \
   -v "D:\Arjun\workspace\neve\training _scripts\util\env2.py:/opt/eve_training/training_scripts/util/env2.py" \
