@@ -2342,11 +2342,16 @@ What it settles:
    was noise, as flagged. 1004560 remains the better candidate only in the weaker sense that it
    is *steadier* — a 1.0-point spread against 5.1, and a siphon that never drops below 25/30
    while 2511649 lands at 22/30 in two launches of three.
-2. **Launch noise for a trained policy on this surface is ~1–5 points** across these six
-   launches — well inside §14.6's ±10-episode floor, which was measured on an *untrained*
-   policy that cannot steer out of a bad initial twist. Two checkpoints is a small sample:
-   treat it as a first calibration, not a constant.
-3. **The ~40-point gap to 258986 / 753957 (49.0 / 56.1 %) is far outside that noise**, so
-   that comparison stands on single launches. §19.3 item 3's rule is unchanged: 94.2 % pooled
-   is still a number on `24903450018f`, and §19.2's frame question still applies to any
-   comparison against a figure measured on `867c5770632a`.
+2. **For these two strong checkpoints, launch-to-launch spread was 1.0 and 5.1 points** —
+   well inside §14.6's ±10-episode floor, which was measured on an untrained policy. This is
+   **not** a calibration for trained policies in general. Near 94 % success the binomial
+   variance is compressed against the ceiling, and §17 item 4 records a trained policy —
+   TopBrain v2, which coils on the host — scoring 41, 60 and 43 of 85 across three replays of
+   the same seeds, a spread far beyond binomial. Launch noise depends on the policy; replicate
+   any host number a conclusion rests on.
+3. **The ~40-point gap to 258986 / 753957 (49.0 / 56.1 %) is larger than any launch spread
+   recorded so far**, TopBrain v2's 19-of-85 swing included, so its direction is safe. Its
+   *size* is not: those two checkpoints ran once each and sit in the ~50 % regime where launch
+   variance is largest — replicate them before quoting the magnitude. §19.3 item 3's rule is
+   unchanged: 94.2 % pooled is a number on `24903450018f`, and §19.2's frame question still
+   applies to any comparison against a figure measured on `867c5770632a`.
