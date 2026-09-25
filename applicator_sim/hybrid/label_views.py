@@ -251,7 +251,9 @@ def oblique_camera(st, Sw, Sh):
     return focal + d * D, focal
 
 
-def render(st, view, Sw, Sh):
+def render(st, view, Sw, Sh, add_actors=None, after=None, labels=True):
+    """Render one view.  Hooks (used by overlay_views.py): add_actors(pl, pv, dict(x_cut, cut)) adds actors before
+    the render; after(proj, info) runs with the live projection before the plotter closes, its result is returned."""
     pv = AH._pv()
     cut = view == "sagittal"
     x_cut = float(st.F[0] + 0.5 * float(st.dev["L_iu_mm"]) * st.a[0])          # the MP4's cut plane
@@ -294,6 +296,8 @@ def render(st, view, Sw, Sh):
     pl.add_mesh(pv.Spline(st.canal, 300).tube(radius=0.9), color=COL_CANAL, smooth_shading=True)
     if not cut and len(st.pen):                               # the contact defect: wall nodes inside the cervix
         pl.add_points(st.X["vagina"][st.pen], color=COL_DEFECT, point_size=11, render_points_as_spheres=True)
+    if add_actors is not None:
+        add_actors(pl, pv, dict(x_cut=x_cut, cut=cut))
     if cut:
         pscale = 0.5 * max(hi[2] - lo[2], hi[1] - lo[1]) * 1.04
         cam = np.array([c[0] - 600.0, c[1], c[2]])
@@ -325,11 +329,12 @@ def render(st, view, Sw, Sh):
             outlines.append(hull2d([proj(q) for q in st.parts[pname][0]]))
     info = dict(x_cut=x_cut, cam=cam, clipped=clipped, proj=proj, outlines=outlines,
                 px_per_mm=(img.shape[0] / (2 * pscale)) if cut else None)
-    lab = labels_for(st, view, info)
+    lab = labels_for(st, view, info) if labels else []
     for L in lab:
         L["px"] = [proj(q) for q in L["pts"]]
+    extra = after(proj, info) if after is not None else None
     pl.close()
-    return img, lab, info
+    return img, lab, info, extra
 
 
 def labels_for(st, view, info):
@@ -574,7 +579,7 @@ def main():
     for view in a.views.split(","):
         Sh = a.size if view == "sagittal" else int(a.size * 1.15)
         Sw = a.size if view == "sagittal" else int(a.size * 0.93)
-        img, lab, info = render(st, view, Sw, Sh)
+        img, lab, info, _ = render(st, view, Sw, Sh)
         out = "%s/%s_step%04d_%s.png" % (od, a.tag, st.step, view)
         compose(img, lab, info, view, st, out)
         print("wrote", out, "(%d labels)" % len(lab))

@@ -2329,6 +2329,48 @@ Two findings came out of it:
   through myometrium in the model.  Tip-to-serosa (5.4 mm vs BT 5.4) is unaffected.
 - **The contact defect at the right-anterior fornix** described in the correction above.
 
+### G32 against the BT segmentations: what is misaligned and why (`bt_overlay.py`, `overlay_views.py`)
+
+`python hybrid/bt_overlay.py prep --tag G32` (host) maps every BT label into the run's frame through the
+evaluator's pelvis registration and records volumes, centroids and cause measurements in
+`figs/overlay_prep/G32_PELVIS/stats.json`; `overlay_views.py` (py3.11) draws them over both views
+(`figs/labeled/G32_step0180_overlay_{sagittal,oblique}.png`, local only).  Centroids of the simulated bodies are
+taken from their voxelised masks, as the evaluator scores them (the signed-volume centroid of the wall's
+open-ended solid was meaningless: 44 cc and a 46 mm offset).
+
+| structure | volume before -> after (scans) | real centroid move | simulated move | simulation vs scan |
+|---|---|---|---|---|
+| uterus | 38 -> 38 cc | 24.3 mm | 23.5 mm (1 deg apart) | 1.0 mm |
+| bladder | 251 -> 232 cc | 8.1 mm | 5.6 mm (30 deg) | 4.4 mm |
+| rectum | 39 -> 41 cc | 9.3 mm: 8 posterior, 5 superior | 3.9 mm: 4 posterior | 7.6 mm |
+| HR-CTV outside the uterus | 46 -> 39 cc | 23.1 mm | 22.6 mm (28 deg) | 11.3 mm, 11 mm to the patient's right |
+| vagina (filled) | 11 (collapsed) -> 100 cc | -- | -- | 11.4 mm: 9 mm anterior, 6 superior |
+| sigmoid | 40 -> 27 cc | 30.8 mm, 28 to the right | 5.8 mm | 29.5 mm |
+
+- **Applicator and uterus are placed right**: tandem 1.5 deg / 2.3 mm from the real one, ring 3.9 mm from the scan's
+  ovoid label, uterus 1 mm.  The misalignments are in how the soft tissue responds.
+- **HR-CTV: right lift, wrong side of the tandem.**  Its bulk (outside the uterus) sits 6.0 mm to the patient's
+  right of the pre-insertion canal; at BT it sits 4.7 mm to the LEFT of the real tandem; the model keeps it 4.8 mm
+  right.  Relative to the canal/tandem its right half went 28 -> 14 cc and its left half 17 -> 24 cc: shrinkage
+  alone cannot make one side grow.  The model's lower 23 mm of cervical canal (and so its external os) is
+  extrapolated: the pre-insertion IUcanal label starts 23 mm above the os, and the extrapolation runs 7-12 mm to
+  the patient's left of the tumour bulk.  The real tandem runs within 1.2 mm of the BT canal label all the way up.
+  Candidates: the canal path through the lower cervix (the ties pull the wrong tissue onto the tube), a left push
+  of the portio during insertion, or a change of the HR-CTV contour definition between the scans.
+- **Vagina: right length (both end 80-86 mm below the flange), wrong shape and position.**  At the ring level the
+  model's vault is 47 x 37 mm (L-R x A-P) against 26 x 26 in the scan: the fornix clearance flare; lower down the
+  model is a round 33-35 mm tube where the scan is 28-34 x 36-39 (flattened L-R).  The whole model vagina is 9 mm
+  anterior of the scan's: the real distension is posterior (packing behind the ring), the model's packing and
+  lumen are centred on the tandem rod.
+- **Rectum** follows from the vagina: the real one moved 8 mm posterior and 5 mm up, the model's 4 mm posterior;
+  no posterior packing and no rectovaginal coupling (the vault lifts 20 mm, the rectum's anterior wall does not
+  follow), with supports holding it.
+- **Bladder** aligned within 4 mm; 19 cc emptier at BT (filling is not modelled).
+- **Sigmoid** moved 31 mm (28 to the right) and lost a third of its labelled volume between the scans: bowel
+  motion, not driven by the applicator; nothing in the model can predict it.
+- **Canal**: the BT canal lies on the real tandem; the model's rigid uterus keeps its pre-insertion curve, 13 mm off
+  the tandem near the fundus.
+
 ### Commands
 
 ```bash
