@@ -125,8 +125,8 @@ class Lumen:
         self.a = a
         self.e_lr = geom.unit(x - (x @ a) * a)                         # patient right, normal to the lumen axis
         self.e_ap = np.cross(a, self.e_lr)                             # anterior, normal to both
-        AH.run_extra_parts(tag)                 # Stage 3: rods / packing only when this run had them
-        self.dev_app = {p: geom.read_obj("%s/%s.obj" % (P["applicator"], p)) for p in TANDEM + OVOIDS}
+        AH.run_extra_parts(tag)                 # the run's own parts: rods / packing, or no ovoid body at all
+        self.dev_app = {p: geom.read_obj(AH.part_obj(p)) for p in TANDEM + OVOIDS}
         self.rest = {b: geom.read_obj("%s/%s/surface.obj" % (P["meshes"], b)) for b in ("vagina", "cervix", "corpus")
                      if b in self.idx["bodies"]}
         self.rest_sec = self.wall_sections(self.rest["vagina"][0])
@@ -161,7 +161,7 @@ class Lumen:
         parts = {}
         for p in TANDEM + OVOIDS:
             V, F = self.dev_app[p]
-            o = dev["ovoid_origin_mm"] if p in OVOIDS else dev["flange_mm"]
+            o = AH.ovoid_origin(dev) if p in OVOIDS else dev["flange_mm"]
             Vw = device_world(V, o, AH.frame_R(dev, self.R, p))
             F = np.asarray(F, int)
             hulls, ext = [], np.full((len(C), 2), np.nan)
@@ -200,8 +200,10 @@ class Lumen:
         i2, o2 = sec["rings"][k]
         rin, rout = sec["r_in"][k], sec["r_out"][k]
         out = []                                     # the tube (above the flange, NOT a wall-contact part in Z7S) and
-        for names, what in ((["tube"], "tube"), (["shaft"], "shaft"),
-                            ([p for p in OVOIDS if p != "packing"], "ovoids")):   # the packing is visual only
+        groups = [(["tube"], "tube"), (["shaft"], "shaft")]
+        if OVOIDS:                                   # a tandem-only run has no ovoid group (not "not at this level")
+            groups.append(([p for p in OVOIDS if p != "packing"], "ovoids"))   # the packing is visual only
+        for names, what in groups:
             hs = [parts[p]["hulls"][k] for p in names]
             cls = self.classify(hs, i2, o2)
             rr = np.concatenate([np.linalg.norm(h, axis=1) for h in hs if h is not None]) if cls != "absent" else None
@@ -252,7 +254,7 @@ class Side:
         pts = [L.rest["vagina"][0], geom.read_obj(L.fd + "/" + last["surfaces"]["vagina"])[0]]
         if "cervix" in L.rest:
             pts += [L.rest["cervix"][0], geom.read_obj(L.fd + "/" + last["surfaces"]["cervix"])[0]]
-        oc = np.asarray(dev_last["ovoid_centres_mm"], float)
+        oc = AH.ovoid_centres(dev_last)                                # (0, 3) for a tandem-only run
         pts += [oc - 24.0, oc + 24.0, np.atleast_2d(dev_last["flange_mm"])]
         V = np.vstack(pts)
         lo, hi = V.min(0) - 8.0, V.max(0) + 8.0
@@ -290,8 +292,9 @@ class Side:
             pass
         pl.add_text(txt, position="upper_left", font_size=10, color="black", name="info")
         pl.add_text("see-through side view from the patient's left (ANTERIOR left, SUPERIOR up), nothing cut:\n"
-                    "vaginal wall translucent purple, tube/shaft black, ovoids grey, cervix/corpus faint,\n"
-                    "rest state = wireframe; coloured rings = the section levels S1-S4 of the right-hand panels",
+                    "vaginal wall translucent purple, tube/shaft black, %scervix/corpus faint,\n"
+                    "rest state = wireframe; coloured rings = the section levels S1-S4 of the right-hand panels"
+                    % ("ovoids grey, " if OVOIDS else "no ring (tandem only), "),
                     position="lower_left", font_size=8, color="black", name="cap")
         pl.camera_position = self.cam
         pl.camera.parallel_projection = True
@@ -391,8 +394,9 @@ def draw_sections(L, dev, sec, parts, txt):
             y -= 0.115 if num else 0.06
     fig.text(0.06, 0.008, "cross-sections: planes normal to the lumen axis at S1-S4; purple = vaginal wall now, "
                           "dashed = wall at rest (both about their own lumen centre); black = tube/shaft, "
-                          "grey = ovoids.\nverdicts are read off these same sections (r = distance of the device "
-                          "section from the lumen centre).\n" + L.log_line(int(dev["step"])),
+                          "%s.\nverdicts are read off these same sections (r = distance of the device "
+                          "section from the lumen centre).\n" % ("grey = ovoids" if OVOIDS else "no ovoid body")
+             + L.log_line(int(dev["step"])),
              fontsize=7.5, va="bottom")
     return fig
 
@@ -418,7 +422,7 @@ def render(tag, name=None, every=1, limit=None, fps=9.0, hold_last_s=1.5, gif_ma
         Vv, Fv = geom.read_obj(L.fd + "/" + f["surfaces"]["vagina"])
         sec = L.wall_sections(Vv)
         parts = L.device_sections(dev, sec["C"])
-        txt, _ = overlay(tag, dev, list(L.idx["bodies"]), L.n_last, False, True)
+        txt, _ = overlay(tag, dev, list(L.idx["bodies"]), L.n_last, False, True, fr=f)
         left = side.draw(f, Vv, Fv, parts, sec, txt)
         fig = draw_sections(L, dev, sec, parts, txt)
         right = od + "/_sections.png"

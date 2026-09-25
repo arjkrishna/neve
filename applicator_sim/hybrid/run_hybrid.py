@@ -97,7 +97,8 @@ def write_outputs(ctx, ctrl, out, summary):
         q = np.array(node.rig.position.value, dtype=float)[0]
         return q[:3], q[3:]
     Ft, qt = rig(ctx["tandem"])
-    Fo, qo = rig(ctx["ovoids"])
+    ovb = ctx.get("ovoids") is not None                 # ovoid_mode "none" (tandem body alone, TF0): no ovoid body
+    Fo, qo = rig(ctx["ovoids"]) if ovb else (None, None)
     Fc, qc = rig(ctx["corpus"])
     Rl = np.asarray(r.get("R_rows", tgt["R_rows"]), float)     # the LAST row's frame (an aborted run stops mid-swing)
     R_ov = S.ovoid_R_rows(r) if "R_rows" in r else Rl
@@ -109,10 +110,12 @@ def write_outputs(ctx, ctrl, out, summary):
                ovoid_x_app=R_ov[0].round(6).tolist(), ovoid_y_app=R_ov[1].round(6).tolist(), ovoid_axis=R_ov[2].round(6).tolist(),
                tip_mm=(Ft + float(S._param(ctx["inp"]["app"], "L_iu_mm")) * a).round(4).tolist(),
                tandem_quat_xyzw=qt.round(6).tolist(),
-               ovoid_origin_mm=Fo.round(4).tolist(), ovoid_quat_xyzw=qo.round(6).tolist(),
-               ovoid_lag_mm=round(float((Ft - Fo) @ a), 4), ovoid_mode=ctx["cfg"]["ovoid_mode"],
+               ovoid_origin_mm=Fo.round(4).tolist() if ovb else None,
+               ovoid_quat_xyzw=qo.round(6).tolist() if ovb else None,
+               ovoid_lag_mm=round(float((Ft - Fo) @ a), 4) if ovb else None, ovoid_mode=ctx["cfg"]["ovoid_mode"],
+               ovoid_body=ovb,
                ovoid_centres_mm=[(Fo + np.asarray(c, float) @ R_ov).round(4).tolist()
-                                 for c in ctx["inp"]["app"]["landmarks"]["cap_centres"]],
+                                 for c in ctx["inp"]["app"]["landmarks"]["cap_centres"]] if ovb else [],
                corpus_translation_mm=Fc.round(4).tolist(), corpus_quat_xyzw=qc.round(6).tolist(),
                corpus_T_preBT_to_final=np.asarray(
                    ctx["sched"][min(ctrl.k, len(ctx["sched"])) - 1]["T_corpus"] if ctrl.k else np.eye(4)).round(6).tolist(),
@@ -126,7 +129,10 @@ def write_outputs(ctx, ctrl, out, summary):
 
 # ----------------------------------------------------------------------------- per-step frames (animate_hybrid.py)
 PHASE_NAMES = dict(B="OAR pre-relaxation (balloon)", P="pre-settle", A="approach", T="insertion",
-                   D="ovoid seating", H="settle")
+                   D="ovoid seating", H="settle",
+                   # insertion_path "tandem_first" (G32 fix plan S5 / TF0)
+                   V="tandem up the vagina (tandem first)", C="tandem through the canal, uterus rotating about the os",
+                   L="lift: tandem and uterus together")
 
 
 def _sched_at(ctx, k):
@@ -182,7 +188,8 @@ def write_frame(ctx, ctrl, out, row, fc):
     a_tube = R_rows[2]                                       # intrauterine tube axis at this step
     L_iu = float(S._param(app, "L_iu_mm"))
     F = np.asarray(r["F"], float)
-    Fo = S.ovoid_origin(r, a_path)
+    ovb = ctx.get("ovoids") is not None                      # ovoid_mode "none": the tandem body alone (TF0)
+    Fo = S.ovoid_origin(r, a_path) if ovb else None
     tip = F + L_iu * a_tube
     # ---- corpus: rigid, placed by the pose rule (it has no mechanical DOFs to read)
     Tc = np.asarray(r["T_corpus"], float)
@@ -200,6 +207,14 @@ def write_frame(ctx, ctrl, out, row, fc):
                          "step %d phase %s: deformed %s surface, preBT world RAS mm, run %s (local only)"
                          % (k, row["phase"], b, ctx["cfg"].get("tag")))
         files[b] = fn
+    # ---- S6 diagnostics (cfg frame_u_bodies): every tet node's displacement, for exact carries of interior points
+    #      (the canal the tie drives); the surfaces above are the boundary only
+    files_u = {}
+    for b in ctx["cfg"].get("frame_u_bodies") or []:
+        if b in fc["bodies"] and b != "corpus":
+            fn = "step_%04d_%s_u.npy" % (k, b)
+            np.save(os.path.join(fd, fn), (np.asarray(ctrl.X(b), float) - ctx["X0"][b]).astype(np.float32))
+            files_u[b] = fn
     # ---- device state (every coordinate read from pose.json / applicator.json, none hard-coded)
     ins = ctx["inp"]["pose"]["inputs"]
     O_pre = np.asarray(ins["O_pre"]["value"], float)
@@ -213,9 +228,10 @@ def write_frame(ctx, ctrl, out, row, fc):
                y_app=R_rows[1].round(6).tolist(), tip_mm=tip.round(4).tolist(), L_iu_mm=L_iu,
                ovoid_x_app=R_ov[0].round(6).tolist(), ovoid_y_app=R_ov[1].round(6).tolist(), ovoid_axis=R_ov[2].round(6).tolist(),
                r_tandem_mm=float(S._param(app, "r_tandem_mm")),
-               ovoid_origin_mm=Fo.round(4).tolist(), ovoid_lag_mm=round(float(r["ov_lag"]), 4),
+               ovoid_origin_mm=Fo.round(4).tolist() if ovb else None,
+               ovoid_lag_mm=round(float(r["ov_lag"]), 4) if ovb else None,
                ovoid_centres_mm=[(Fo + np.asarray(c, float) @ R_ov).round(4).tolist()
-                                 for c in app["landmarks"]["cap_centres"]],
+                                 for c in app["landmarks"]["cap_centres"]] if ovb else [],
                # inserted depth, three honest readings of the same motion
                advance_mm=round(u * float(tgt["travel_mm"]), 3),           # travelled along the path so far
                remaining_mm=round((1.0 - u) * float(tgt["travel_mm"]), 3),
@@ -227,11 +243,20 @@ def write_frame(ctx, ctrl, out, row, fc):
                n_canal_ties=row.get("n_canal_ties"), dx_max_mm=row.get("dx_max_mm"),
                min_vol_ratio=row.get("min_vol_ratio"), wall_ms=row.get("wall_ms"),
                settle_step=row.get("settle_step"))
+    if not ovb:
+        dev["ovoid_body"] = False
+    if r.get("w_r") is not None:
+        # tandem-first rows (S5): the planned tip = carried tau(d) + w_r delta (tf_metrics.plan_at reads tip_s / w_r);
+        # tip_s = the tip's arclength along the planned path from O_true (negative in the vagina, = d in C, S1b)
+        dev.update(tip_s=round(float(r["tip_s"]), 4), d_mm=round(float(r["d_mm"]), 4), tf_d_mm=round(float(r["d_mm"]), 4),
+                   w_r=round(float(r["w_r"]), 6), w_l=round(float(r["w_l"]), 6))
     dj = "step_%04d_device.json" % k
     with open(os.path.join(fd, dj), "w") as fh:
         json.dump(dev, fh, default=_json)
     fc["index"].append(dict(step=k, phase=row["phase"], phase_name=dev["phase_name"], u=dev["u"],
                             device=dj, surfaces=files))
+    if files_u:                                              # S6 diagnostics only (cfg frame_u_bodies)
+        fc["index"][-1]["u_npy"] = files_u
     fc["ms"].append(1000.0 * (time.perf_counter() - t0))
     with open(os.path.join(fd, "index.json"), "w") as fh:
         json.dump(dict(tag=ctx["cfg"].get("tag"), frame_every=int(ctx["cfg"].get("frame_every") or 0),
@@ -314,7 +339,7 @@ def run_one(cfg, tag):
         n_settle_steps=int(sum(1 for r in rows if r["phase"] == "H")),
         ms_per_step_median=round(float(np.median(wall)), 1), ms_per_step_mean=round(float(wall.mean()), 1),
         ms_per_step_by_phase={p: round(float(np.median([r["wall_ms"] for r in rows if r["phase"] == p])), 1)
-                              for p in "BPATDH" if any(r["phase"] == p for r in rows)},
+                              for p in "BPATDVCLH" if any(r["phase"] == p for r in rows)},
         total_s=round(time.perf_counter() - t0, 1), t_init_s=round(t_init, 2),
         convergence=dict(rule="CONTRACT 5: %d consecutive settle steps with max nodal change < %g mm AND constraint "
                               "residual per contact < %g AND the constraint solver within its iteration cap"

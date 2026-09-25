@@ -224,6 +224,183 @@ def canal_path(u, base, a_v, F_fin, a_fin, L_iu, h_intro, x_fin, below=4.0, u1=N
     return dict(F=tip - L_iu * a, a=a, x=x, tip=tip, w=w, stage=stage, u1=float(u1))
 
 
+# ----------------------------------------------------------------------------- tandem-first kinematics (G32 fix plan S5)
+# The tandem goes in FIRST and its tip follows the physician's tandem path (hybrid/tandem_path.py, S3): phase V up the
+# vaginal slit to the os O_true, phase C through the labelled lower canal while the corpus ROTATES about the os, phase
+# L tandem + corpus lifted together onto the validated final pose.  The pose rule's corpus transform is split for that:
+#     T_final = Trans(L) o Rot(theta about p),   p = O_true,   L = T_final(p) - p,
+# so the os does not move in C (the vault stays on the portio) and the cranial lift comes last, with the device.
+# A part L_C of the lift may be started in C (the plan's fallbacks: caudal traction, part of the lift; flagged), in
+# which case the corpus in C is Trans(w L_C) o Rot(w theta about p) and L lifts by L - L_C.
+# Pure numpy, py3.8-safe: the host (hybrid/tf_gate.py) searches the rotation weight w_r(d) against the wall and
+# applicator_venezia.tandem_first_record stores the knots in pose.json; the scene regenerates the SAME rows from them
+# with tandem_first_path (scene_hybrid.build_schedule_tandem_first).
+def rigid4(R, t):
+    T = np.eye(4)
+    T[:3, :3] = np.asarray(R, float)
+    T[:3, 3] = np.asarray(t, float)
+    return T
+
+
+def corpus_split(T, p):
+    """T (4x4) = Trans(L) o Rot(theta about p): the unit rotation axis k, theta (deg), L = T(p) - p and the pivot."""
+    T = np.asarray(T, float)
+    R, t = T[:3, :3], T[:3, 3]
+    p = np.asarray(p, float)
+    k = unit(np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]]))
+    return dict(pivot=p, axis=k, theta_deg=rot_angle_deg(R), L=R @ p + t - p)
+
+
+def tf_corpus_T(pivot, axis, theta_deg, w, L_C=None):
+    """Corpus transform at rotation weight w: Trans(w L_C) o Rot(w theta about the pivot) (4x4)."""
+    p = np.asarray(pivot, float)
+    Rw = rodrigues(axis, float(w) * float(theta_deg))
+    t = p - Rw @ p
+    if L_C is not None:
+        t = t + float(w) * np.asarray(L_C, float)
+    return rigid4(Rw, t)
+
+
+def polyline_at(P, sv, q):
+    """Points at arclengths q on the polyline P (vertex arclengths sv, increasing), extrapolated linearly beyond
+    both ends along the end segments."""
+    P = np.asarray(P, float)
+    sv = np.asarray(sv, float)
+    q = np.atleast_1d(np.asarray(q, float))
+    out = np.stack([np.interp(q, sv, P[:, k]) for k in range(3)], 1)
+    lo, hi = q < sv[0], q > sv[-1]
+    if lo.any():
+        d0 = (P[1] - P[0]) / (sv[1] - sv[0])
+        out[lo] = P[0] + np.outer(q[lo] - sv[0], d0)
+    if hi.any():
+        d1 = (P[-1] - P[-2]) / (sv[-1] - sv[-2])
+        out[hi] = P[-1] + np.outer(q[hi] - sv[-1], d1)
+    return out
+
+
+def tf_axis_fit(tip, Q, wq):
+    """Direction of the line through `tip` that best fits the points Q (weights wq, least squares on the
+    perpendicular distances): the top eigenvector of the weighted scatter about the tip, oriented towards the tip."""
+    D = np.asarray(Q, float) - np.asarray(tip, float)
+    M = (D * np.asarray(wq, float)[:, None]).T @ D
+    _, U = np.linalg.eigh(M)
+    a = U[:, -1]
+    return unit(-a if a @ (np.asarray(tip, float) - np.asarray(Q, float)[0]) < 0 else a)
+
+
+def seg_within_frac(P, F, a, L, tol):
+    """Fraction of the points P within `tol` of the segment F .. F + L a (the tube line of the canal-in-tube tests)."""
+    P = np.atleast_2d(np.asarray(P, float))
+    if not len(P):
+        return 1.0
+    q = P - np.asarray(F, float)
+    h = np.clip(q @ a, 0.0, float(L))
+    return float(np.mean(np.linalg.norm(q - np.outer(h, a), axis=1) <= float(tol)))
+
+
+def tf_least_motion_axis(a_prev, a_goal, frac_fn, frac_min, n_bisect=40):
+    """The axis that moves LEAST from a_prev towards a_goal (along the great circle) while frac_fn(axis) >= frac_min:
+    a_prev itself if it already satisfies it, else the first satisfying point found by bisection, else a_goal.
+    Returns (axis, alpha in [0, 1] = how far along a_prev -> a_goal)."""
+    a_prev, a_goal = unit(a_prev), unit(a_goal)
+    if frac_fn(a_prev) >= frac_min or angle_deg(a_prev, a_goal) < 1e-9:
+        return a_prev, 0.0
+    if frac_fn(a_goal) < frac_min:
+        return a_goal, 1.0
+    lo, hi = 0.0, 1.0
+    for _ in range(int(n_bisect)):
+        mid = 0.5 * (lo + hi)
+        if frac_fn(slerp(a_prev, a_goal, mid)) >= frac_min:
+            hi = mid
+        else:
+            lo = mid
+    return unit(slerp(a_prev, a_goal, hi)), hi
+
+
+def tf_frame(a, a_fin, x_fin):
+    """Applicator rows (x, y, z) for tube axis a: x_fin carried by the minimal rotation a_fin -> a (as canal_path),
+    so the frame is exactly the final one at a = a_fin and never spins about the tube."""
+    a = unit(a)
+    x = ortho(rot_between(a_fin, a) @ np.asarray(x_fin, float), a)
+    return np.array([x, np.cross(a, x), a])
+
+
+def tf_row_V(prm, q):
+    """Phase V row: tip at path arclength q (< 0 in the vagina), tube axis = the chord of the path over the tube
+    length behind the tip, corpus at rest."""
+    tau_pts, tau_s, L = prm["tau_pts"], prm["tau_s"], float(prm["L_iu"])
+    tip = polyline_at(tau_pts, tau_s, [q])[0]
+    a = unit(tip - polyline_at(tau_pts, tau_s, [q - L])[0])
+    return dict(phase="V", tip_s=float(q), d_mm=float(q), w_r=0.0, w_l=0.0, tip=tip, F=tip - L * a, tube_axis=a,
+                R_rows=tf_frame(a, prm["a_fin"], prm["x_fin"]), T_corpus=np.eye(4), axis_alpha=None, axis_beta=0.0)
+
+
+def tf_row_C(prm, d, w, a_prev):
+    """Phase C row at depth d and rotation weight w (the plan's formula):
+        tip = T_C(w) tau(d) + w delta,   T_C(w) = Trans(w L_C) o Rot(w theta about p),
+    tau = the path for d <= follow_mm (the labelled lower canal), then straight along a_lc.  Tube axis: the line
+    through the tip fitted to the traversed carried path (carried O_true weighted fit_w_os), reached from the previous
+    row's axis by the LEAST motion that keeps frac_min of the traversed lower canal (0 <= s <= min(d, follow_mm))
+    within frac_tol_mm of the tube, then blended onto a_fin by beta = smoothstep((sigma - sigma0) / (1 - sigma0)),
+    sigma = (d / d_fin + w) / 2, so the row at (d_fin, 1) is exactly the tandem at Trans(L_C - L) device_final."""
+    tau_pts, tau_s = np.asarray(prm["tau_pts"], float), np.asarray(prm["tau_s"], float)
+    L, d_fin, fol = float(prm["L_iu"]), float(prm["d_fin"]), float(prm["follow_mm"])
+    Tc = tf_corpus_T(prm["pivot"], prm["rot_axis"], prm["theta_deg"], w, prm["L_C"])
+    Rc, tc = Tc[:3, :3], Tc[:3, 3]
+    tip = Rc @ polyline_at(tau_pts, tau_s, [d])[0] + tc + float(w) * np.asarray(prm["delta"], float)
+    if d >= float(prm["fit_min_mm"]):
+        ss = np.linspace(0.0, d, int(np.ceil(d)) + 1)
+        Q = polyline_at(tau_pts, tau_s, ss) @ Rc.T + tc
+        wq = np.ones(len(Q))
+        wq[0] = float(prm["fit_w_os"])
+        a_goal = tf_axis_fit(tip, Q, wq)
+    else:
+        a_goal = unit(a_prev)
+    m = (tau_s >= 0.0) & (tau_s <= min(d, fol))
+    canal = tau_pts[m] @ Rc.T + tc
+    tol = float(prm["frac_tol_mm"])
+
+    def frac_fn(a):
+        return seg_within_frac(canal, tip - L * a, a, L, tol)
+    a_lm, alpha = tf_least_motion_axis(a_prev, a_goal, frac_fn, float(prm["frac_min"]))
+    s0 = float(prm["blend_sigma0"])
+    sigma = 0.5 * (max(float(d), 0.0) / d_fin + float(w))
+    beta = smoothstep((sigma - s0) / (1.0 - s0))
+    a = unit(slerp(a_lm, prm["a_fin"], beta)) if beta > 0.0 else a_lm
+    return dict(phase="C", tip_s=float(d), d_mm=float(d), w_r=float(w), w_l=0.0, tip=tip, F=tip - L * a, tube_axis=a,
+                R_rows=tf_frame(a, prm["a_fin"], prm["x_fin"]), T_corpus=Tc, axis_alpha=float(alpha),
+                axis_beta=float(beta), axis_goal_deg=angle_deg(a, a_goal), frac_plan=frac_fn(a))
+
+
+def tf_row_L(prm, wl):
+    """Phase L row: tandem and corpus translate together by w_l (L - L_C) from the end of C."""
+    L_rem = np.asarray(prm["L"], float) - np.asarray(prm["L_C"], float)
+    Tc = tf_corpus_T(prm["pivot"], prm["rot_axis"], prm["theta_deg"], 1.0, prm["L_C"])
+    Tc[:3, 3] += float(wl) * L_rem
+    a = unit(prm["a_fin"])
+    F = np.asarray(prm["F_fin"], float) - (1.0 - float(wl)) * L_rem
+    return dict(phase="L", tip_s=float(prm["d_fin"]), d_mm=float(prm["d_fin"]), w_r=1.0, w_l=float(wl),
+                tip=F + float(prm["L_iu"]) * a, F=F, tube_axis=a, R_rows=tf_frame(a, prm["a_fin"], prm["x_fin"]),
+                T_corpus=Tc, axis_alpha=None, axis_beta=1.0)
+
+
+def tandem_first_path(prm):
+    """Every V, C and L row of the tandem-first schedule from its parameters (pose.json
+    insertion_path_tandem_first["params"], written by applicator_venezia.tandem_first_record): V at the knots
+    V_tip_s, C at the knots C_knots [[d, w_r], ...] (the host's containment search, hybrid/tf_gate.py), L at L_w.
+    The C axis depends on the previous row (least motion), so the rows are generated in order.  Rows: phase, tip_s
+    (the tip's arclength along the planned path from O_true = the depth d in C; S1b depth engagement), d_mm, w_r,
+    w_l, tip, F, tube_axis, R_rows (rows = applicator x, y, z), T_corpus (4x4 preBT -> current)."""
+    rows = [tf_row_V(prm, q) for q in prm["V_tip_s"]]
+    a_prev = rows[-1]["tube_axis"] if rows else unit(prm["a_start"])
+    for d, w in prm["C_knots"]:
+        r = tf_row_C(prm, float(d), float(w), a_prev)
+        rows.append(r)
+        a_prev = r["tube_axis"]
+    rows += [tf_row_L(prm, wl) for wl in prm["L_w"]]
+    return rows
+
+
 # ----------------------------------------------------------------------------- rod / spheres
 def rod_project(p, F, a, s_lo, s_hi):
     """Closest point on the segment F + a*s, s in [s_lo, s_hi]; returns (q, s, dist)."""

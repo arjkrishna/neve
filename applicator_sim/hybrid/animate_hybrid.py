@@ -13,9 +13,18 @@ Each frame is two panels:
   LEFT   a sagittal-like view along the patient LR axis (camera on the patient's left looking +x, so ANTERIOR is on
          the LEFT and SUPERIOR is up), parallel projection, with the anatomy CUT at the device's own sagittal plane
          and the near (patient-left) half removed, so the device inside the tissue is visible (--no-clip disables).
+         A stretch of the tube / shaft the cut removes all or nearly all of (it lies in front of the section:
+         TF0c's curved vaginal shaft; the tube early in a tandem-first run, since the plane is the LAST frame's) is
+         drawn whole, see-through, with a dark silhouette, and the caption says so (front_cells).
   RIGHT  an oblique 3-D view from the patient's left-anterior-superior, nothing cut, bladder/sigmoid translucent.
 Both carry the six organs in the scene's own colours (meshes/bodies.json), the device in grey, and the REST state as
 a faint wireframe, so the motion is visible.  The cameras are fixed for the whole run.
+
+Device parts are the run's own (run_extra_parts): the tandem body (tube + shaft) always; the ovoid body (caps, and the
+rods / packing when the run loaded them) only when the run had one.  A tandem-only run (applicator.json params
+tandem_only, e.g. applicator_v4 for TF0; or cfg device_ovoids false / ovoid_mode "none" / device_parts) has none,
+and every ovoid-dependent actor, legend entry and camera point is simply left out.  cfg device_part_files (G32: the
+26 mm caps) is honoured as the scene honours it.  Render through the run's own tree: hybrid/render_tree.py.
 """
 import argparse
 import json
@@ -46,6 +55,56 @@ OPACITY_3D = dict(corpus=0.92, cervix=0.95, vagina=1.0, bladder=0.20, rectum=0.5
 # the ovoid assembly is 39 mm across and sits exactly where the tissue of interest is, so an opaque one hides the
 # vagina/portio it is seating against -- the one thing this animation exists to show.  Translucent in the cut view.
 OVOID_OPACITY = (0.50, 0.85)                        # (cut panel, oblique panel)
+# The sagittal cut keeps x >= x_cut (the plane through the mid-point of the tube).  A tandem-body stretch whose whole
+# cross-section lies IN FRONT of that plane (camera side) would vanish with the removed half: TF0c's curved vaginal
+# shaft lies 0-8 mm in front at step 192 (0.00 of its vertices kept) and the 22 mm of the applicator_v4 tube below the
+# flange up to 6 mm (the tube leans in x), so the tandem rod disappeared from the section.  A stretch the cut removes
+# all or nearly all of -- each 1 mm cross-section station keeping less than FRONT_KEEP_FRAC of its vertices, i.e.
+# the tandem axis more than 0.59 r in front of the plane (a cylinder keeps acos(d / r) / pi) and the clipped band
+# narrower than 81 % of its diameter -- is drawn WHOLE, see-through, with a dark silhouette, over the clipped part
+# (which is drawn as before).  Per station, not per part: a cut through a part keeps about half of its vertices
+# wherever it cuts it (G32 step 180: tube 0.51, straight rod 0.45 of the whole part), so a per-part "less than half
+# kept" test would redraw G32's rod.  MEASURED on G32, every station of every frame: at least 0.42 kept in the
+# labelled still's cut, 0.37 in the video's (its plane is the last frame's): nothing is redrawn, its renders are
+# unchanged.  TF0c: such a stretch in all 102 frames of the still's cut (the whole shaft at steps 192 / 213; the
+# tube below the flange or the shaft's far end, outside the body, elsewhere) and in 71 of the video's.  The ovoid
+# body is left out: its far cap and rod lie in the removed half BY DESIGN (G32: left cap 13 mm, left rod 8 mm in
+# front; the labels say so).
+FRONT_PARTS = ("tube", "shaft")
+FRONT_KEEP_FRAC = 0.30
+FRONT_OPACITY = 0.55
+COL_FRONT_EDGE = (0.0, 0.0, 0.0)
+STATION_MM = 1.0                                    # cross-section bins along a part's own axis
+
+
+def part_stations(part, V_app, app=None):
+    """Station (1 mm bin of the arclength along the part's own axis) of every vertex of a tandem-body part, in the
+    applicator frame: along the swept centreline for the applicator_v4 shaft (landmarks.shaft_centreline, from the
+    flange), else along the principal axis of its vertices (a straight tube or rod)."""
+    V = np.asarray(V_app, float)
+    lm = (app or {}).get("landmarks", {})
+    if part == "shaft" and "shaft_centreline" in lm:
+        C = np.vstack([[0.0, 0.0, 0.0], np.asarray(lm["shaft_centreline"], float)])
+        s = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(C, axis=0), axis=1))]
+        ss = np.arange(0.0, s[-1] + 1e-9, 0.25 * STATION_MM)
+        Cs = np.array([[np.interp(v, s, C[:, k]) for k in range(3)] for v in ss])
+        t = ss[np.argmin(np.linalg.norm(V[:, None, :] - Cs[None, :, :], axis=2), axis=1)]
+    else:
+        c = V.mean(0)
+        t = (V - c) @ np.linalg.svd(V - c, full_matrices=False)[2][0]
+    return np.floor((t - t.min()) / STATION_MM).astype(int)
+
+
+def front_cells(stations, Vw, F, x_cut):
+    """The faces of a part (world vertices Vw, faces F) on a stretch the cut (x >= x_cut kept) removes all or nearly
+    all of: stations keeping less than FRONT_KEEP_FRAC of their vertices; and how far in front of the plane the part
+    reaches there (mm; 0 when none).  Returns (face mask, mm)."""
+    x = np.asarray(Vw, float)[:, 0]
+    n = np.bincount(stations)
+    kept = np.bincount(stations, weights=(x >= x_cut).astype(float), minlength=len(n)) / np.maximum(n, 1)
+    vf = kept[stations] < FRONT_KEEP_FRAC
+    fm = vf[np.asarray(F, int)].any(1)
+    return fm, (float(x_cut - x[vf].min()) if vf.any() else 0.0)
 
 
 def paths():
@@ -67,19 +126,174 @@ def run_dir(tag):
     return P["runs"] + "/" + tag
 
 
-def run_extra_parts(tag):
-    """Stage 3: the cap rods and the packing ride with the ovoids body -- for THIS run only when its cfg.json asked
-    for them (device_rods / device_packing) and the applicator dir has the files.  Updates the shared OVOIDS list
-    in place (both animators draw TANDEM + OVOIDS) and returns the parts added."""
+PART_FILES = {}                                     # cfg device_part_files of the run being drawn (run_extra_parts)
+OVOID_BODY_ALL = ("ovoid_L", "ovoid_R", "rod_L", "rod_R", "packing")
+
+
+def run_cfg(tag):
     fn = "%s/%s/cfg.json" % (P["runs"], tag)
-    cfg = load_json(fn) if os.path.exists(fn) else {}
+    return load_json(fn) if os.path.exists(fn) else {}
+
+
+def app_json():
+    return load_json(P["applicator"] + "/applicator.json")
+
+
+def part_obj(p):
+    """The OBJ a device part was loaded from in the run: cfg device_part_files overrides the file name (G32 loaded
+    ovoid_L_d26.obj as ovoid_L), exactly as scene_hybrid._pobj and eval_hybrid.run_devsurf read it.  A tree whose
+    applicator junction points at a variant dir that holds the override under the plain name (the README's v4out:
+    applicator_v3_d26/ovoid_L.obj IS ovoid_L_d26.obj, byte-identical) falls back to <part>.obj, with a warning."""
+    fn = "%s/%s.obj" % (P["applicator"], PART_FILES.get(p, p))
+    if p in PART_FILES and not os.path.exists(fn) and os.path.exists("%s/%s.obj" % (P["applicator"], p)):
+        print("[parts] %s: %s not in %s; using %s.obj (build the tree with render_tree.py to be sure)"
+              % (p, os.path.basename(fn), P["applicator"], p))
+        PART_FILES.pop(p)
+        fn = "%s/%s.obj" % (P["applicator"], p)
+    return fn
+
+
+def ovoid_body_on(cfg, app=None):
+    """Whether the run carried an ovoid body.  False for a tandem-only applicator (applicator.json params
+    tandem_only, applicator_v4: tube + shaft only, no ring, rods or packing), cfg device_ovoids false, ovoid_mode
+    "none", or a cfg device_parts list without ovoid parts.  ovoid_mode "off" is NOT tandem-only: the scene still
+    loads and moves the ovoid body there, it only drops its contacts (scene_hybrid, dgrp = [])."""
+    app = app if app is not None else app_json()
+    if bool((app.get("params", {}).get("tandem_only") or {}).get("value")):
+        return False
+    if cfg.get("device_ovoids") is False or cfg.get("ovoid_mode") == "none":
+        return False
+    if cfg.get("device_parts"):
+        return any(p in OVOID_BODY_ALL for p in cfg["device_parts"])
+    return True
+
+
+def run_extra_parts(tag):
+    """The device parts of THIS run, set in the shared TANDEM / OVOIDS lists in place (every renderer draws
+    TANDEM + OVOIDS) and in PART_FILES.  Stage 3: the cap rods and the packing ride with the ovoids body only when
+    the run's cfg.json asked for them (device_rods / device_packing) and the applicator dir has the files.  A
+    tandem-only run (ovoid_body_on False) empties OVOIDS; a part whose OBJ is missing is dropped rather than crash
+    the render.  Returns the rods / packing parts added (the pre-S6c return value)."""
+    cfg = run_cfg(tag)
+    PART_FILES.clear()
+    PART_FILES.update(cfg.get("device_part_files") or {})
     want = (["rod_L", "rod_R"] if cfg.get("device_rods") else []) + (["packing"] if cfg.get("device_packing") else [])
     for p in ("rod_L", "rod_R", "packing"):
         if p in OVOIDS and p not in want:
             OVOIDS.remove(p)
-        if p in want and p not in OVOIDS and os.path.exists("%s/%s.obj" % (P["applicator"], p)):
+        if p in want and p not in OVOIDS and os.path.exists(part_obj(p)):
             OVOIDS.append(p)
+    for p in ("ovoid_L", "ovoid_R"):                    # restore the caps (a previous call may have removed them)
+        if p not in OVOIDS:
+            OVOIDS.insert(("ovoid_L", "ovoid_R").index(p), p)
+    if not ovoid_body_on(cfg):
+        del OVOIDS[:]
+    if cfg.get("device_parts"):
+        keep = set(cfg["device_parts"])
+        OVOIDS[:] = [p for p in OVOIDS if p in keep]
+        TANDEM[:] = [p for p in ("tube", "shaft") if p in keep]
+    OVOIDS[:] = [p for p in OVOIDS if os.path.exists(part_obj(p))]
+    TANDEM[:] = [p for p in TANDEM if os.path.exists(part_obj(p))]
     return [p for p in OVOIDS if p in want]
+
+
+def ovoid_centres(dev):
+    """The frame's cap centres as an (n, 3) array; (0, 3) for a run without caps (tandem-only: cap_centres = [])."""
+    return np.asarray(dev.get("ovoid_centres_mm") or [], float).reshape(-1, 3)
+
+
+def ovoid_origin(dev):
+    """The ovoid body's origin of one frame; the flange when the frame has none (tandem-only)."""
+    return dev["ovoid_origin_mm"] if dev.get("ovoid_origin_mm") is not None else dev["flange_mm"]
+
+
+_PHASE_NAMES = None
+
+
+def phase_names():
+    """run_hybrid.PHASE_NAMES, read from its SOURCE (ast), not imported: run_hybrid imports the scene lazily but is a
+    container module, and the tandem-first phases (V, C, L, ...) are added there by S5.  A frame written before a
+    phase had a name carries phase_name == phase; the renderers then look the name up here."""
+    global _PHASE_NAMES
+    if _PHASE_NAMES is None:
+        import ast
+        _PHASE_NAMES = {}
+        try:
+            with open(HERE + "/run_hybrid.py") as fh:
+                tree = ast.parse(fh.read())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "PHASE_NAMES"
+                                                        for t in node.targets):
+                    v = node.value
+                    if isinstance(v, ast.Call):                         # PHASE_NAMES = dict(B="...", ...)
+                        _PHASE_NAMES.update({k.arg: ast.literal_eval(k.value) for k in v.keywords if k.arg})
+                    else:                                               # PHASE_NAMES = {"B": "...", ...}
+                        _PHASE_NAMES.update(ast.literal_eval(v))
+        except Exception as e:                                          # never let a name lookup stop a render
+            print("[phase_names] could not read run_hybrid.PHASE_NAMES: %s" % e)
+    return _PHASE_NAMES
+
+
+def phase_label(dev):
+    """'V (vaginal travel)': the frame's own phase_name, else run_hybrid.PHASE_NAMES, else the letter alone."""
+    ph = str(dev.get("phase", "?"))
+    nm = dev.get("phase_name")
+    if not nm or nm == ph:
+        nm = phase_names().get(ph, ph)
+    return ph, nm
+
+
+TF_PHASES = ("V", "C", "L", "R_L", "R_R", "K1", "K2")   # fix plan S5 / S6c: phases of the tandem-first schedules
+
+
+def is_tandem_first(tag, idx=None):
+    """cfg insertion_path 'tandem_first', or any exported frame in a tandem-first phase."""
+    if str(run_cfg(tag).get("insertion_path", "")).startswith("tandem_first"):
+        return True
+    idx = idx if idx is not None else (load_json(frames_dir(tag) + "/index.json")
+                                       if os.path.exists(frames_dir(tag) + "/index.json") else {"frames": []})
+    return any(f.get("phase") in TF_PHASES for f in idx["frames"])
+
+
+_TF = {}
+
+
+def tf_metrics(tag):
+    """eval/<tag>/tf_metrics.json (S0, tf_metrics.py) by step, or {} when the run has not been scored."""
+    if tag not in _TF:
+        fn = "%s/eval/%s/tf_metrics.json" % (P["hybrid"], tag)
+        _TF[tag] = {}
+        if os.path.exists(fn):
+            try:
+                _TF[tag] = {int(f["step"]): f for f in load_json(fn).get("frames", [])}
+            except Exception as e:
+                print("[tf_metrics] %s unreadable: %s" % (fn, e))
+    return _TF[tag]
+
+
+def frame_depth(tag, dev, fr=None):
+    """Tandem depth d of one frame, mm past the external os (O_true, tandem_path.npz), with its source:
+    the frame's planned depth (device json tf_d_mm / tip_s_mm / tip_s, written by the tandem-first schedule),
+    else S0's d_used_mm for this step (tf_metrics.json), else MEASURED here = (tip - O_true carried) . tube axis,
+    O_true carried by inverse-distance interpolation of the frame's cervix SURFACE displacement (an approximation
+    of S0's harmonic carry; say so on the figure).  Returns (d, source) or (None, None)."""
+    for k in ("tf_d_mm", "tip_s_mm", "tip_s"):
+        if dev.get(k) is not None:
+            return float(dev[k]), "planned (%s)" % k
+    tm = tf_metrics(tag).get(int(dev["step"]))
+    if tm and (tm.get("insertion") or {}).get("d_used_mm") is not None:
+        return float(tm["insertion"]["d_used_mm"]), "S0 tf_metrics (%s)" % tm["insertion"].get("d_source", "")
+    fn = P["out"] + "/inputs/tandem_path.npz"
+    if fr is None or not os.path.exists(fn) or "cervix" not in fr.get("surfaces", {}):
+        return None, None
+    O = np.asarray(np.load(fn)["O_true"], float)
+    V0, _ = geom.read_obj("%s/cervix/surface.obj" % P["meshes"])
+    V1, _ = geom.read_obj("%s/%s" % (frames_dir(tag), fr["surfaces"]["cervix"]))
+    d = np.linalg.norm(np.asarray(V0, float) - O, axis=1)
+    nn = np.argsort(d)[:12]
+    w = 1.0 / np.maximum(d[nn], 1e-6) ** 2
+    Oc = O + (w[:, None] * (np.asarray(V1, float)[nn] - np.asarray(V0, float)[nn])).sum(0) / w.sum()
+    return float((np.asarray(dev["tip_mm"], float) - Oc) @ geom.unit(dev["tube_axis"])), "measured (surface IDW)"
 
 
 def frames_dir(tag):
@@ -139,7 +353,7 @@ def prep(tag, half_width_mm=95.0, margin_mm=45.0):
             lo.append(V.min(0))
             hi.append(V.max(0))
     for d in (dev0, dev):
-        pts = np.array([d["flange_mm"], d["tip_mm"], d["ovoid_origin_mm"]], float)
+        pts = np.array([d["flange_mm"], d["tip_mm"], ovoid_origin(d)], float)
         lo.append(pts.min(0) - 25.0)
         hi.append(pts.max(0) + 25.0)
     lo = np.min(lo, 0) - margin_mm
@@ -216,8 +430,8 @@ class Scene:
         self.frames = self.idx["frames"]
         self.dev_first = load_json(self.fd + "/" + self.frames[0]["device"])
         self.dev_last = load_json(self.fd + "/" + self.frames[-1]["device"])
-        run_extra_parts(tag)                    # Stage 3: rods / packing only when this run had them
-        self.dev_app = {p: geom.read_obj("%s/%s.obj" % (P["applicator"], p)) for p in TANDEM + OVOIDS}
+        run_extra_parts(tag)                    # the run's own parts: rods / packing, or no ovoid body at all
+        self.dev_app = {p: geom.read_obj(part_obj(p)) for p in TANDEM + OVOIDS}
         self.rest = {b: geom.read_obj("%s/%s/surface.obj" % (P["meshes"], b)) for b in bodies}
         self.last = {b: geom.read_obj("%s/%s" % (self.fd, self.frames[-1]["surfaces"][b])) for b in bodies}
         # ---- the cut plane: the device's own sagittal plane (mid-point of the final tube)
@@ -261,9 +475,10 @@ class Scene:
                                  name="rest_" + b)
         self.pl.subplot(0, 1)
         self.pl.add_axes(xlabel="R", ylabel="A", zlabel="S", line_width=3)
-        self.pl.add_legend(labels=[(b, self.col[b]) for b in bodies]
-                           + [("tube / shaft", COL_TANDEM), ("ovoids", COL_OVOID), ("rest state", (0.6, 0.6, 0.6))],
-                           bcolor="white", face="rectangle", size=(0.17, 0.04 + 0.035 * (len(bodies) + 3)),
+        dev_keys = [("tube / shaft", COL_TANDEM)] + ([("ovoids", COL_OVOID)] if OVOIDS else []) \
+            + [("rest state", (0.6, 0.6, 0.6))]          # no ovoid entry for a tandem-only run
+        self.pl.add_legend(labels=[(b, self.col[b]) for b in bodies] + dev_keys,
+                           bcolor="white", face="rectangle", size=(0.17, 0.04 + 0.035 * (len(bodies) + len(dev_keys))),
                            loc="lower right")            # upper right collides with the per-frame info text
         # ---- cameras, fixed for every frame
         w0 = 0.44 * size[0]
@@ -274,6 +489,10 @@ class Scene:
                      (0.0, 0.0, 1.0)]
         self.apply_cameras()
         self._shown = False
+        self._sil = {}                          # (panel, part) -> silhouette of a stretch drawn in front of the cut
+        self.front = {}                         # this frame's parts with a stretch in front of the cut: part -> mm
+        app = app_json()
+        self.stations = {p: part_stations(p, self.dev_app[p][0], app) for p in TANDEM if p in FRONT_PARTS}
 
     def _box(self, zoom):
         """The camera box.  Default: everything the run touches.  --zoom: the vagina and the seated ovoids."""
@@ -282,7 +501,7 @@ class Scene:
             for b in ("vagina", "cervix"):
                 if b in self.bodies:
                     pts += [self.rest[b][0], self.last[b][0]]
-            oc = np.asarray(self.dev_last["ovoid_centres_mm"], float)
+            oc = ovoid_centres(self.dev_last)               # (0, 3) for a tandem-only run: drops out of the box
             pts += [oc - 24.0, oc + 24.0, np.atleast_2d(self.dev_last["flange_mm"])]
             if pts:
                 V = np.vstack(pts)
@@ -290,7 +509,7 @@ class Scene:
         for b in self.bodies:
             pts += [self.rest[b][0], self.last[b][0]]
         for d in (self.dev_first, self.dev_last):
-            oc = np.asarray(d["ovoid_centres_mm"], float)
+            oc = ovoid_centres(d)
             pts += [np.atleast_2d(d["flange_mm"]), np.atleast_2d(d["tip_mm"]), oc - 22.0, oc + 22.0]
         V = np.vstack(pts)
         return self._headroom(V.min(0) - 4.0, V.max(0) + 4.0)
@@ -326,6 +545,7 @@ class Scene:
         """Replace the moving actors with this frame's surfaces and device."""
         pv = self.pv
         dev = load_json(self.fd + "/" + fr["device"])
+        self.front = {}
         meshes = []
         for b in self.bodies:
             V, F = geom.read_obj("%s/%s" % (self.fd, fr["surfaces"][b]))
@@ -333,7 +553,7 @@ class Scene:
         parts = []
         for p in TANDEM + OVOIDS:
             V, F = self.dev_app[p]
-            o = dev["ovoid_origin_mm"] if p in OVOIDS else dev["flange_mm"]
+            o = ovoid_origin(dev) if p in OVOIDS else dev["flange_mm"]
             parts.append((p, poly(pv, device_world(V, o, frame_R(dev, self.R_rows, p)), F)))
         for k in (0, 1):
             self.pl.subplot(0, k)
@@ -343,13 +563,29 @@ class Scene:
                 self.pl.add_mesh(mm, color=self.col[b], opacity=op[b], smooth_shading=True, specular=0.15,
                                  name="body_" + b)
             for p, m in parts:
-                mm = m.clip(normal="x", origin=(self.x_cut, 0, 0), invert=False) if (k == 0 and self.clip) else m
+                cut = k == 0 and self.clip
+                mm = m.clip(normal="x", origin=(self.x_cut, 0, 0), invert=False) if cut else m
                 if mm.n_points == 0:
                     self.pl.remove_actor("dev_" + p)
+                else:
+                    self.pl.add_mesh(mm, color=COL_OVOID if p in OVOIDS else COL_TANDEM,
+                                     opacity=(0.12 if p == "packing" else OVOID_OPACITY[k]) if p in OVOIDS else 1.0,
+                                     smooth_shading=True, name="dev_" + p)
+                if p not in self.stations:
                     continue
-                self.pl.add_mesh(mm, color=COL_OVOID if p in OVOIDS else COL_TANDEM,
-                                 opacity=(0.12 if p == "packing" else OVOID_OPACITY[k]) if p in OVOIDS else 1.0,
-                                 smooth_shading=True, name="dev_" + p)
+                old = self._sil.pop((k, p), None)             # last frame's silhouette of this part, if any
+                if old is not None:
+                    self.pl.renderer.remove_actor(old, render=False)
+                fm, fmm = front_cells(self.stations[p], m.points, self.dev_app[p][1], self.x_cut) if cut \
+                    else (None, 0.0)
+                if fm is None or not fm.any():                # THIS panel's renderer only (Plotter.remove_actor by
+                    self.pl.renderer.remove_actor("front_" + p, render=False)   # name clears it from both panels)
+                    continue
+                F = np.asarray(self.dev_app[p][1], int)[fm]     # the stretch in front of the section: whole,
+                sub = pv.PolyData(np.asarray(m.points), np.c_[np.full(len(F), 3), F].ravel())   # see-through, outlined
+                self.pl.add_mesh(sub, color=COL_TANDEM, opacity=FRONT_OPACITY, smooth_shading=True, name="front_" + p)
+                self._sil[(k, p)] = self.pl.add_silhouette(sub, color=COL_FRONT_EDGE, line_width=1.6)
+                self.front[p] = fmm
         return dev
 
     def shot(self, path):
@@ -364,17 +600,35 @@ class Scene:
         self.pl.close()
 
 
-def overlay(tag, dev, bodies, n_last, clip, zoom):
+_TF_RUN = {}
+
+
+def depth_line(tag, dev, fr=None):
+    """Second overlay line.  Stage 1-3 runs (G32): the schedule's travel and the tip past O_pre, as always.  A
+    tandem-first run: the tandem depth d past the physician's external os (O_true), which is what its phases are
+    defined by (fix plan S5), with the source of the number (frame_depth)."""
+    if tag not in _TF_RUN:
+        _TF_RUN[tag] = is_tandem_first(tag)
+    if not _TF_RUN[tag]:
+        return ("inserted depth %.1f / %.1f mm along the path (u = %.2f)   tip %+.1f mm past the preBT external os"
+                % (dev["advance_mm"], dev["advance_mm"] + dev["remaining_mm"], dev["u"], dev["tip_beyond_O_pre_mm"]))
+    d, src = frame_depth(tag, dev, fr)
+    s = ("tandem depth d %.1f mm past the external os (O_true; %s)" % (d, src)) if d is not None else \
+        "tandem depth: not available"
+    return s + "   u = %.2f" % float(dev.get("u", float("nan")))
+
+
+def overlay(tag, dev, bodies, n_last, clip, zoom, fr=None):
     """step / phase / inserted depth / max displacement -- the four numbers the animation must state."""
     d = dev["disp"]
     order = [b for b in BODIES if b in bodies]
     umax = max(d[b]["umax_mm"] for b in order) if order else float("nan")
     per = "  ".join("%s %.1f" % (b[:3], d[b]["umax_mm"]) for b in order)
-    txt = ("run %s   step %d/%d   phase %s (%s)%s\n" % (tag, dev["step"], n_last, dev["phase"], dev["phase_name"],
+    ph, ph_name = phase_label(dev)
+    txt = ("run %s   step %d/%d   phase %s (%s)%s\n" % (tag, dev["step"], n_last, ph, ph_name,
                                                         ("  settle %d" % dev["settle_step"])
                                                         if dev.get("settle_step") else "")
-           + "inserted depth %.1f / %.1f mm along the path (u = %.2f)   tip %+.1f mm past the preBT external os\n"
-           % (dev["advance_mm"], dev["advance_mm"] + dev["remaining_mm"], dev["u"], dev["tip_beyond_O_pre_mm"])
+           + depth_line(tag, dev, fr) + "\n"
            + "max |u| %.1f mm  (%s)   contacts %d   dx %.3f mm/step"
            % (umax, per, dev["n_contacts"] or 0, dev["dx_max_mm"] or 0.0))
     cap = ("sagittal-like view: camera on the patient's left, ANTERIOR left, SUPERIOR up"
@@ -430,12 +684,19 @@ def render(tag, name=None, bodies=None, every=1, limit=None, fps=9.0, hold_last_
     sc = Scene(tag, bodies, size=size, backdrop=backdrop, zoom=zoom, clip=clip)
     n_last = idx["frames"][-1]["step"]
     sc.text(1, "oblique 3-D view from the patient's left-anterior-superior (nothing cut; bladder and sigmoid "
-               "translucent)\nrest state = faint wireframe   device = grey   Delta = %g mm" % idx["flange_shift_mm"],
+               "translucent)\nrest state = faint wireframe   device = grey   Delta = %g mm%s"
+            % (idx["flange_shift_mm"], "" if OVOIDS else "   tandem only (no ring, rods or packing)"),
             "cap1", position="lower_left", font_size=8)
-    pngs = []
+    pngs, fronts = [], {}
     for i, f in enumerate(fr):
         dev = sc.draw_frame(f)
-        txt, cap = overlay(tag, dev, bodies, n_last, clip, zoom)
+        if sc.front:
+            fronts[str(dev["step"])] = {p: round(v, 2) for p, v in sc.front.items()}
+        txt, cap = overlay(tag, dev, bodies, n_last, clip, zoom, fr=f)
+        if sc.front:                                  # tandem stretches the cut would remove (front_cells)
+            cap += ("\nsee-through, outlined: the %s where %s IN FRONT of the cut plane (up to %.0f mm)"
+                    % (" and ".join(dict(tube="tube", shaft="vaginal shaft")[p] for p in sc.front),
+                       "it lies" if len(sc.front) == 1 else "they lie", max(sc.front.values())))
         sc.text(0, txt, "info0", font_size=10)
         sc.text(0, cap, "cap0", position="lower_left", font_size=8)
         sc.text(1, txt, "info1", font_size=10)
@@ -448,7 +709,12 @@ def render(tag, name=None, bodies=None, every=1, limit=None, fps=9.0, hold_last_
     meta = dict(tag=tag, name=name, bodies=bodies, zoom=bool(zoom), clip=bool(clip), backdrop=bool(sc.bd is not None),
                 pngs=[os.path.basename(p) for p in pngs], fps=fps, hold_last_s=hold_last_s, size=list(size),
                 png_size_mb=round(sum(os.path.getsize(p) for p in pngs) / 1e6, 1), gif=gif,
-                camera=dict(lo=sc.lo.round(2).tolist(), hi=sc.hi.round(2).tolist(), x_cut=round(sc.x_cut, 3)))
+                camera=dict(lo=sc.lo.round(2).tolist(), hi=sc.hi.round(2).tolist(), x_cut=round(sc.x_cut, 3)),
+                device_parts=dict(tandem=list(TANDEM), ovoid_body=list(OVOIDS),
+                                  files={p: os.path.basename(part_obj(p)) for p in TANDEM + OVOIDS},
+                                  applicator=P["applicator"]))
+    if fronts:                                          # steps with a tube / shaft stretch drawn in front of the cut
+        meta["drawn_in_front_of_cut_mm"] = fronts
     with open(od + "/frames.json", "w") as fh:
         json.dump(meta, fh, indent=1)
     print("[render] %d PNG in %s (%.1f MB), gif %s" % (len(pngs), od, meta["png_size_mb"], gif["path"]))

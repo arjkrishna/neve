@@ -2371,6 +2371,84 @@ open-ended solid was meaningless: 44 cc and a 46 mm offset).
 - **Canal**: the BT canal lies on the real tandem; the model's rigid uterus keeps its pre-insertion curve, 13 mm off
   the tandem near the fundus.
 
+## STAGE 3b -- TANDEM FIRST ALONG THE PHYSICIAN'S CANAL (TF0, 2026-09-25)
+
+**Why.** The physician who drew the labels reviewed G32: the applicator and vagina look unrealistic, the final
+vagina / HR-CTV alignment is off, the expansion is too much (probably an inaccurate applicator model), and the tandem
+must strictly follow the intrauterine canal, which was drawn deliberately as ONE connected tube from inside the
+uterus through the HR-CTV to the vagina, with the tandem inserted FIRST.  The user added that the ovoid rods must be
+connected to the ring caps.  A 19-agent audit (5 investigators, 10 adversarial verifiers, synthesis, 2 critics,
+revision) produced an ordered fix plan, kept locally with its raw results in `logs/audit_G32/` (patient
+measurements).  Its root causes: (R1) the applicator is the wrong shape -- rods not attached to the caps, the tube
+bends at the ring instead of running straight through it and curving 22-24 mm below, the label's ring is a ~40 mm
+disc; (R2) G32 is not tandem-first and its tube never travels in the canal (ring and packing enter first, the tube
+collides with nothing, the corpus lifts on a preset screw, and the canal ties aimed at the FINAL tube axis -- a
+bug); (R3) the wall is a pre-opened 41 mm cylinder centred on the misplaced rods, with a frozen fornix flare, too
+short; (R4) the model's external os and lower 23 mm of canal were extrapolated through tumour -- the physician's
+path runs up a collapsed slit of vagina label that lies inside the HR-CTV label and which the mesher turned into
+solid cervix; (R5) contact leaks; (R6) the HR-CTV changed shape between the scans (only ~3 mm of its side error is
+path-attributable).  Steps S3, S0, S1, S2, S4a, S5 and S6 of that plan are implemented here; the ring (S4b), the
+device-driven wall (S7), the upper canal (S9) and organ calibration (S8) are not.
+
+**What was built** (all additive; G32's default path replays bit-identically, schedule rows and scene graph, and its
+figures are pixel-identical):
+- `tandem_path.py` (S3): the physician's path as one polyline, introitus -> vaginal slit -> IUcanal -> fundus
+  (123.5 mm; os `O_true` = the canal's vaginal end, 0.87 mm from the label, 11.0 mm below the internal os), written to
+  `inputs/tandem_path.npz`; cervix node sets `canal_path` / `canal_path_s` (39 nodes, 24 on the vaginal side) added
+  to `meshes/cervix/meta.json` without re-meshing.  Two of its 13 checks miss by label-edge effects (os to L_end 2.02
+  vs 1.5 mm; one slice 1.52 vs 1.5 mm).
+- `tf_metrics.py` (S0): per-frame insertion metrics (tip to plan, canal in tube, ties, containment against the open
+  lumen sheet), penetration by signed distance, junction / vagina / HR-CTV / organ tables and device vs the updated
+  label; uses each frame's exact node displacements.  G32 reproduces all 40 verified baselines.
+- `scene_hybrid.py` (S1): `canal_tie_axis "row"` (the fix; default `"final"` keeps G32), `canal_engage "depth"`
+  (a node ties when the tip passes it), `canal_tie_set "canal_path"`; `test_ties.py` (9 host unit tests).
+- S2 contact options: `collision_proximity_mm` per collision model and the `oar_sheet_penalty_mN_per_mm` P4 penalty
+  (it keeps organs in front of the sheet through phase B but chatters afterwards -- documented in the code).
+- `applicator_venezia.py --variant v4 --tandem-only` (S4a): the tandem body measured from the updated label -- a
+  straight tube through the ring level to 22 mm below the flange, then the vaginal tandem swept along the label's
+  centreline (tandem rod label-to-model 0.03 mm mean); the tube pose is G32's validated one.  Rebuilds keep the
+  tandem-first record (guard).
+- S5: `geom.tandem_first_path`, `scene_hybrid` `insertion_path "tandem_first"` (phases V -> C -> L), `tf_gate.py`
+  host gate; `render_tree.py`, and the renderers handle tandem-only runs, a canal view (`overlay_views.py --views
+  canal`) and device parts lying in front of the sagittal cut.
+
+**Contact probes (S2, phase B / through T):** a slower balloon (PRB1), a 1 mm balloon contact margin (PRB2) and a
+subdivided balloon (PRB3) do not stop organs crossing the moving sheet (the rectum crossing is geometric); only the
+P4 penalty does (PRB4). A 1.0 mm proximity margin on both wall sheets (PRB5c) stops wall nodes entering the cervix
+(0 on every frame; PRB5a leaks 18 nodes from step 123).
+
+**S5 finding: the clinical schedule does not fit the current wall.**  With the uterus only rotating about the os
+during the canal phase (lift later, with the ring), the unlifted tandem sits 14 mm posterior-left of the tet26v4
+lumen, which was built around the old v3 rod; caudal traction cannot fix a sideways miss.  The runs therefore use the
+plan's fallback 2, read as "the part of the lift ACROSS the vaginal axis during C" (13.8 mm across, 0 along the
+axis), flagged non-clinical.  The plan's alternative is fallback 3: run the tandem-first check in the device-driven
+wall (S7).
+
+**TF0 runs** (304 steps each, `settle_not_converged` as always, no NaN or inverted tets):
+
+| run | change | result |
+|---|---|---|
+| TF0 | as planned | cervix volume ratio 0.27, 51 wall nodes inside the cervix, settle diverged |
+| TF0b | + wall-sheet margin (PRB5c) | wall-in-cervix fixed; settle 1.13 mm/step |
+| **TF0c** | + canal tie stiffness 400 | the run to show |
+
+TF0c: the tip follows the planned path within 0.33 mm; all 39 canal ties engage exactly as the tip passes them (G32
+had none until step 125); the final path from the flange to 20 mm above the os lies within 3.04 mm of the tube (G32
+7.5); 0 wall nodes inside the cervix (G32 73) and 0 bladder vertices behind the wall (G32 59); uterus Dice 0.883.
+It fails: the lower canal leaves the tube during the two rotation ramps (5 frames, fraction 0.48-0.81, worst point
+3.86 mm against 3.35) because the ties move a node at most 0.5 mm per step; cervix volume ratio 0.40, from small
+cervix-corpus interface tets squeezed during the same ramps; HR-CTV offset +4.04 mm (G32 +4.83; the plan expected
+about +3, but the upper cervix follows the corpus target); phase B 14.7 s/step (the margin); settle not converged.
+Unchanged by design (same final pose as G32): upper canal 17.3 mm off the tube, tip 13.1 mm from the carried canal.
+Scores (pelvis frame): cervix 0.62, vagina 0.64, bladder 0.87, rectum 0.41, uterus 0.88.  Renders (local):
+`figs/labeled/TF0c_step{0141,0159,0192,0213,0237,0303}_{sagittal,oblique,canal}.png`,
+`TF0c_step0303_overlay_{sagittal,oblique}.png`, `figs/anim/insertion_TF0c_{full,lumen}.mp4`.
+
+**Open decisions:** accept the non-clinical lateral lift in C or move the tandem-first check into the device-driven
+wall (fallback 3); the ring size (40 mm from the label or 26 mm), which blocks S4b and S7; and the physician
+checkpoint questions (is the upper vaginal slit inside the HR-CTV open lumen; should the tandem straighten the top 15
+mm of the canal, which curves 55 deg left; is this the travel path meant).
+
 ### Commands
 
 ```bash

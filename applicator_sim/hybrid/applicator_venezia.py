@@ -5,6 +5,10 @@
     python applicator_venezia.py --no-fit           # reuse the ovoid fit stored in applicator/applicator.json
     python applicator_venezia.py --angle 24 --n-steps 80 --path-axis shaft
     py -3.11 applicator_venezia.py --render3d       # pyvista render of the device meshes -> figs/applicator_3d.png
+    python -P applicator_venezia.py --variant v4 --tandem-only [--pose-from v3] [--app-label <updated label>]
+        # fix plan S4a/S4c: the tandem body alone (tube + vaginal tandem, one rigid body) measured on the UPDATED BT
+        # applicator label, with v3's validated tube pose; writes applicator_v4/ (see main_tandem_only).  A rebuild
+        # keeps pose.json insertion_path_tandem_first while the body is unchanged, else stops ([--force]: stale_records)
 
 Outputs under <APPSIM_OUT>/hybrid/ (default ~/Downloads/MRI_GYN_sim/hybrid):
     applicator/{tube.obj, shaft.obj, ovoid_L.obj, ovoid_R.obj}   closed, outward-oriented surfaces in the APPLICATOR frame
@@ -1455,6 +1459,1201 @@ def scaled_ovoids(diams, align_shaft=False):
     return rows
 
 
+# ============================================================================ v4: the tandem body from the updated BT label
+# Fix plan of the G32 audit (hybrid/logs/audit_G32/fix_plan_G32_audit.md), S4a (tandem body) and S4c (label
+# measurement and validation).  S4b (the ring halves with their rods) waits on the ring-size decision U1, so nothing
+# below builds an ovoid body: a v4 directory holds the tandem alone (tube.obj + shaft.obj = ONE rigid body in the scene).
+# What the updated label shows and v3 got wrong (audit R1): the real tube runs STRAIGHT through the ring to z_app
+# -22..-24; below that the vaginal tandem curves forward (y_app ~0 -> ~21 mm over z_app -24..-50) into a three-rod
+# bundle that leaves the body ~25-28 deg from the tube.  v3 bent 28.9 deg AT the flange and hung its cap rods 16 mm in
+# front of the tandem rod (8.8-17 mm anterior of the real rods in the pelvis frame).
+FRAME_APP_V4 = ("applicator frame v4 = the BT LABEL frame: origin = flange (the inputs/applicator.json BT flange projected "
+                "onto the label tube axis), z = label tube axis flange->tip (slab-centroid line of the updated applicator "
+                "label minus the ovoid label, 15-55 mm above the flange), x = BT world x orthogonalised against z, "
+                "y = z cross x (anterior); mm")
+TANDEM_V4_PARTS = ("tube", "shaft")
+POSE_RULE_KEYS = ("L_iu_mm", "angle_deg", "tip_below_os_mm", "n_steps", "path_axis", "corpus_ease", "tilt_axis",
+                  "d_F_margin_mm", "vagina_fixed_inferior_mm", "shaft_axis_mode", "shaft_line_through", "flange_shift_mm",
+                  "shift_axis", "flange_shift_sweep_mm")
+V4_DROPPED_PREFIXES = ("ovoid_", "pack_", "rod_")
+V4_DROPPED_KEYS = ("shaft_arc_len_mm", "channel_radius_mm", "n_parallel_per_ovoid", "n_oblique_per_ovoid", "oblique_deg",
+                   "oblique_radius_mm", "needle_r_mm", "parallel_azimuth_deg", "oblique_azimuth_deg", "mesh_voxel_mm")
+
+
+def v4_params(prm):
+    """The tandem-body (v4) parameters, added to / overriding default_params; the ovoid-body, packing, rod and needle
+    parameters are dropped (no ovoid body exists in a tandem-only variant).  Returns the dropped keys."""
+    dropped = [k for k in list(prm) if k.startswith(V4_DROPPED_PREFIXES) or k in V4_DROPPED_KEYS]
+    for k in dropped:
+        del prm[k]
+
+    def add(k, v, unit, source, note=""):
+        prm[k] = dict(value=v, unit=unit, source=source, **({"note": note} if note else {}))
+
+    add("tandem_only", True, "-", "fix plan S4a/S6: v4 = the tandem body alone (tube + vaginal tandem, one rigid body); the "
+        "ring halves (S4b) wait on the ring-size decision U1")
+    add("r_tandem_mm", 2.35, "mm", "MEASURED (fix plan S4a): MRI FWHM 4.5-5.2 mm of the tube on the updated BT applicator "
+        "label; the scene reads this key as the TUBE radius.  label_geometry.tube.r_eq_mm = this build's voxel-count radius")
+    add("r_shaft_mm", 3.15, "mm", "MEASURED (fix plan S4a): FWHM 6.30 mm of the vaginal tandem rod on the updated label.  "
+        "label_geometry.tandem.r_label_mm = this build's tilt-corrected section radius (partial volume adds ~0.2 mm)")
+    add("shaft_style", "label_sweep", "-", "v4: the vaginal tandem = a tube of r_shaft_mm swept (sweep_polyline, parallel-"
+        "transport frames) along the tandem centreline measured on the updated label, then straight along the measured "
+        "bundle axis past the introitus.  One rigid body with the tube: there is no bend AT the flange any more")
+    add("rods", False, "-", "v4 tandem-only: no ovoid rods (S4b)")
+    add("label_axis_s_mm", [15.0, 55.0], "mm", "DEFINITION (fix plan 'Frames'): the label tube axis is the slab-centroid line "
+        "of (updated applicator minus ovoid) over this height range above the json flange, along the json axis")
+    add("label_axis_slab_mm", 2.0, "mm", "NUMERICAL: slab height of that line fit")
+    add("label_axis_lat_mm", 6.0, "mm", "NUMERICAL: voxels within this distance of the json axis enter the line fit (8 mm "
+        "gives the same line to 0.001 deg); also the radius that defines the ring's on-axis extent")
+    add("label_station_mm", 2.0, "mm", "NUMERICAL: spacing of the label-frame z planes the rods are traced on (voxels are "
+        "1.125 x 1.125 x 1.6 mm)")
+    add("label_plane_px_mm", 0.5, "mm", "NUMERICAL: in-plane resampling of those planes (trilinear, >= 0.5 = inside)")
+    add("rod_min_px", 6, "-", "NUMERICAL: plane components under 6 px (1.5 mm2) are ignored (ring-edge specks)")
+    add("tandem_start_max_off_mm", 2.5, "mm", "NUMERICAL: the first tandem section below the ring must lie this close to "
+        "the tube axis (the junk just under the ring sits >= 4 mm off it)")
+    add("tandem_min_req_mm", 2.0, "mm", "NUMERICAL: minimum equivalent radius of the first tandem section")
+    add("track_min_req_mm", 1.5, "mm", "NUMERICAL: minimum equivalent radius while tracking the tandem downward")
+    add("track_max_jump_mm", 3.5, "mm", "NUMERICAL: largest in-plane step between consecutive tandem sections (after linear "
+        "extrapolation of the last two)")
+    add("rod_merge_req_mm", 5.0, "mm", "NUMERICAL: a section above this equivalent radius holds more than one rod (one rod "
+        "reads 2.9-4.3 mm at tilts 0-50 deg, the merged bundle 6.3-7.8 mm)")
+    add("bundle_gap_max", 2, "-", "NUMERICAL: planes allowed between the last separable tandem section and the bundle")
+    add("bundle_full_frac", 0.9, "-", "NUMERICAL: bundle sections with r_eq >= this x the median (the plateau) define the "
+        "bundle axis.  MEASURED: r_eq 6.3, 6.6 at the merge, 7.0-7.8 on the plateau, 6.5 where the label ends; the tapering "
+        "end alone turns a line fit by ~2 deg")
+    add("tandem_select_margin_mm", 0.75, "mm", "NUMERICAL: label voxels within (section semi-axis + this) of the traced "
+        "tandem centre, and nearer to it than to any other rod, form the label tandem rod scored by S4c")
+    add("shaft_overlap_mm", 1.0, "mm", "NUMERICAL: the shaft's top ring sits this far inside the tube, so the one rigid body "
+        "has no gap at the junction")
+    add("shaft_ring_step_mm", 2.5, "mm", "NUMERICAL: ring spacing on the straight bundle-axis extension (the traced part keeps "
+        "its 2 mm stations)")
+    add("shaft_past_introitus_mm", 20.0, "mm", "ASSUMED: the straight extension ends this far beyond the preBT introitus "
+        "plane (vaginal principal axis) with the device at device_final; at the unlifted end of C it is ~22 mm further out")
+    return dropped
+
+
+def label_applicator_file(arg=None):
+    """Path of the UPDATED BT applicator label (tube, ring, tandem rod, the two ovoid rods and their bundle).  It was drawn
+    after the original label set and sits beside the read-only data folder, not in it; --app-label or APPSIM_APP_LABEL
+    override.  Local patient data: the path is recorded, the file is never copied."""
+    cands = [arg, os.environ.get("APPSIM_APP_LABEL"),
+             os.path.dirname(P["data"].rstrip("/")) + "/BT_MRI_label_applicator.nii"]
+    for c in cands:
+        if c and os.path.exists(c):
+            return c.replace("\\", "/")
+    raise FileNotFoundError("updated BT applicator label not found (tried %s); pass --app-label" % [c for c in cands if c])
+
+
+def load_label_new(fn):
+    """The updated applicator label and the BT ovoid label (same grid, checked)."""
+    import nibabel as nib
+    im = nib.load(fn)
+    ov = nib.load(P["data"] + "/BT_MRI_label_ovoid.nii")
+    if im.shape != ov.shape or not np.allclose(im.affine, ov.affine, atol=1e-4):
+        raise ValueError("%s is not on the BT label grid" % fn)
+    aff = im.affine.copy()
+    return dict(app=np.asarray(im.dataobj) > 0, ovoid=np.asarray(ov.dataobj) > 0, aff=aff, shape=tuple(im.shape),
+                vv=float(abs(np.linalg.det(aff[:3, :3]))), file=fn)
+
+
+def _vox_world(mask, aff):
+    return np.argwhere(mask).astype(float) @ aff[:3, :3].T + aff[:3, 3]
+
+
+def label_frame(lab, app_in, prm):
+    """The BT label frame (fix plan, 'Frames').  Axis = the slab-centroid line of (updated applicator minus ovoid) over
+    label_axis_s_mm above the inputs/applicator.json flange (heights along the json axis); origin = the json flange
+    projected onto that line; roll = the json convention (x = BT world x orthogonalised against z, y = z cross x).  That
+    roll is the model's own: device_final's x_app carried into BT by the BONE frame lies on it (validate_device_vs_label
+    reports the angle)."""
+    Fj = np.asarray(app_in["origin_BT_world"], float)
+    zj = geom.unit(np.asarray(app_in["R_rows_BT_world"], float)[2])
+    W = _vox_world(lab["app"] & ~lab["ovoid"], lab["aff"])
+    q = W - Fj
+    s = q @ zj
+    lat = np.linalg.norm(q - np.outer(s, zj), axis=1)
+    s_lo, s_hi = [float(v) for v in val(prm, "label_axis_s_mm")]
+    h, lat_max = float(val(prm, "label_axis_slab_mm")), float(val(prm, "label_axis_lat_mm"))
+    cen = []
+    for s0 in np.arange(s_lo, s_hi - 1e-9, h):
+        m = (s >= s0) & (s < s0 + h) & (lat < lat_max)
+        if m.sum() >= 4:
+            cen.append(W[m].mean(0))
+    cen = np.array(cen)
+    if len(cen) < 5:
+        raise ValueError("label tube: only %d slabs with voxels in s %g..%g" % (len(cen), s_lo, s_hi))
+    c = cen.mean(0)
+    _, _, vt = np.linalg.svd(cen - c, full_matrices=False)
+    z = geom.unit(vt[0] if vt[0] @ zj >= 0 else -vt[0])
+    O = c + float((Fj - c) @ z) * z
+    r = cen - c
+    res = np.linalg.norm(r - np.outer(r @ z, z), axis=1)
+    return dict(origin=O, R=geom.frame_from(z), axis=z, n_slabs=int(len(cen)), slab_line_rms_mm=float(np.sqrt((res ** 2).mean())),
+                angle_to_json_axis_deg=geom.angle_deg(z, zj), origin_from_json_flange_mm=float(np.linalg.norm(O - Fj)),
+                json_flange=Fj, json_axis=zj)
+
+
+class LabelPlanes:
+    """z_app = const planes of the label frame, resampled at px mm (trilinear on the 0/1 masks, >= 0.5 = inside).
+    components(z) = the connected pieces of (applicator minus ovoid) in that plane, with centroid and equivalent radius."""
+
+    def __init__(self, lab, O, R, px, xr=(-40.0, 40.0), yr=(-40.0, 75.0)):
+        self.O, self.R = np.asarray(O, float), np.asarray(R, float)
+        self.inv = np.linalg.inv(lab["aff"])
+        self.app, self.ov = lab["app"].astype(np.float32), lab["ovoid"].astype(np.float32)
+        self.px = float(px)
+        self.xs = np.arange(xr[0], xr[1] + 1e-9, px)
+        self.ys = np.arange(yr[0], yr[1] + 1e-9, px)
+        self.X, self.Y = np.meshgrid(self.xs, self.ys, indexing="ij")
+
+    def _sample(self, vol, z):
+        from scipy import ndimage as ndi
+        Pp = np.stack([self.X, self.Y, np.full_like(self.X, z)], -1).reshape(-1, 3)
+        ijk = (self.O + Pp @ self.R) @ self.inv[:3, :3].T + self.inv[:3, 3]
+        return (ndi.map_coordinates(vol, ijk.T, order=1, mode="constant", cval=0.0) >= 0.5).reshape(self.X.shape)
+
+    def components(self, z, min_px):
+        from scipy import ndimage as ndi
+        lab_, n = ndi.label(self._sample(self.app, z) & ~self._sample(self.ov, z))
+        out = []
+        for k in range(1, n + 1):
+            pix = np.argwhere(lab_ == k)
+            if len(pix) < min_px:
+                continue
+            x, y = self.xs[pix[:, 0]], self.ys[pix[:, 1]]
+            out.append(dict(x=float(x.mean()), y=float(y.mean()), r_eq=float(np.sqrt(len(pix) * self.px ** 2 / np.pi)),
+                            n_px=int(len(pix)), px_x=x, px_y=y))
+        return out
+
+
+def _station_tangents(P):
+    """Unit tangents of a station polyline (central differences, one-sided at the ends)."""
+    P = np.asarray(P, float)
+    if len(P) < 2:
+        return np.tile([0.0, 0.0, -1.0], (len(P), 1))
+    T = np.empty_like(P)
+    T[0], T[-1] = P[1] - P[0], P[-1] - P[-2]
+    T[1:-1] = P[2:] - P[:-2]
+    return T / np.linalg.norm(T, axis=1, keepdims=True)
+
+
+def measure_label_geometry(lab, app_in, prm):
+    """S4c: every tandem-body dimension measured on the updated BT applicator label, in the BT label frame (label_frame).
+    Nothing is taken from an analysis script: the rods are traced plane by plane here.
+      tube      applicator-minus-ovoid voxels above the ovoid label (with the 0-12 mm 'collar' of label around the tube)
+      tandem    the rod that leaves the ring bore on the axis, traced downward (nearest section to the extrapolated
+                position) until its section merges with the ovoid rods (r_eq > rod_merge_req_mm)
+      bundle    the merged three-rod section below; its axis = the line through the full sections' centroids
+      tandem in the bundle: the posterior lobe of each bundle section (the tandem is the posterior rod: its centre is one
+                label-rod semi-axis in front of the section's posterior edge)
+    Returns (geo, vox): geo is JSON-able; vox holds label-frame voxel centres of the label parts that
+    validate_device_vs_label scores against (all, ovoid, tube, tandem, tandem_in_bundle)."""
+    fr = label_frame(lab, app_in, prm)
+    O, R = fr["origin"], fr["R"]
+
+    def to_lf(W):
+        return (np.asarray(W, float) - O) @ R.T
+
+    idx_a = np.argwhere(lab["app"] & ~lab["ovoid"])                 # grid indices, same order as Qa
+    Qa = to_lf(idx_a.astype(float) @ lab["aff"][:3, :3].T + lab["aff"][:3, 3])
+    Qo = to_lf(_vox_world(lab["ovoid"], lab["aff"]))
+    lat_max = float(val(prm, "label_axis_lat_mm"))
+    ro = np.hypot(Qo[:, 0], Qo[:, 1])
+    ring = dict(z_top_mm=float(Qo[:, 2].max()), z_bottom_mm=float(Qo[:, 2].min()),
+                z_top_on_axis_mm=float(Qo[ro < lat_max, 2].max()), z_bottom_on_axis_mm=float(Qo[ro < lat_max, 2].min()),
+                on_axis_radius_mm=lat_max, vol_cc=float(len(Qo) * lab["vv"] / 1000.0),
+                note="ovoid label (the ring; its rod sockets hang below it off the axis).  Measured only: the ring is S4b")
+    # ---- tube
+    Qt = Qa[Qa[:, 2] > ring["z_top_mm"]]
+    rt = np.hypot(Qt[:, 0], Qt[:, 1])
+    core = rt < 4.0
+    z_tip = float(Qt[core, 2].max())
+    z_lo_c, z_hi_c = ring["z_top_mm"] + 14.0, z_tip - 3.0            # above the collar, below the rounded tip
+    cz = core & (Qt[:, 2] > z_lo_c) & (Qt[:, 2] < z_hi_c)
+    tube = dict(z_tip_label_mm=z_tip, n_vox=int(len(Qt)), n_vox_core=int(core.sum()),
+                r_eq_mm=float(np.sqrt(cz.sum() * lab["vv"] / (np.pi * max(1e-6, z_hi_c - z_lo_c)))),
+                r_eq_zone_mm=[z_lo_c, z_hi_c], lateral_rms_core_mm=float(np.sqrt((rt[core] ** 2).mean())),
+                z_range_mm=[float(Qt[:, 2].min()), float(Qt[:, 2].max())],
+                definition="applicator-minus-ovoid voxels above the ovoid label top; core = within 4 mm of the label axis; "
+                           "r_eq = voxel volume of the core between ring top + 14 mm (above the collar) and tip - 3 mm over "
+                           "that length")
+    # ---- trace the rods on z planes below the ring's on-axis bottom
+    st = float(val(prm, "label_station_mm"))
+    pl = LabelPlanes(lab, O, R, float(val(prm, "label_plane_px_mm")))
+    min_px, r_merge = int(val(prm, "rod_min_px")), float(val(prm, "rod_merge_req_mm"))
+    z0 = -st * np.ceil(-ring["z_bottom_on_axis_mm"] / st - 1e-9)
+    zs = np.arange(z0, float(Qa[:, 2].min()) - st, -st)
+    comps = [pl.components(float(z), min_px) for z in zs]
+    start_off, jump = float(val(prm, "tandem_start_max_off_mm")), float(val(prm, "track_max_jump_mm"))
+    T = []
+    for i in range(min(6, len(zs))):
+        cand = [c for c in comps[i] if float(val(prm, "tandem_min_req_mm")) <= c["r_eq"] <= r_merge
+                and np.hypot(c["x"], c["y"]) <= start_off]
+        if cand:
+            T.append((i, min(cand, key=lambda c: np.hypot(c["x"], c["y"]))))
+            break
+    if not T:
+        raise ValueError("no tandem section within %.1f mm of the tube axis in the 6 planes below the ring" % start_off)
+    for i in range(T[0][0] + 1, len(zs)):
+        p = np.array([T[-1][1]["x"], T[-1][1]["y"]])
+        if len(T) >= 2:
+            p = 2.0 * p - np.array([T[-2][1]["x"], T[-2][1]["y"]])
+        cand = [c for c in comps[i] if c["r_eq"] >= float(val(prm, "track_min_req_mm"))
+                and np.hypot(c["x"] - p[0], c["y"] - p[1]) <= jump]
+        if not cand:
+            break
+        c = min(cand, key=lambda c: np.hypot(c["x"] - p[0], c["y"] - p[1]))
+        if c["r_eq"] > r_merge:
+            break
+        T.append((i, c))
+    Tp = np.array([[c["x"], c["y"], zs[i]] for i, c in T])
+    tT = _station_tangents(Tp)
+    cosT = np.abs(tT[:, 2])
+    r_eqT = np.array([c["r_eq"] for _, c in T])
+    r_lab = float(np.median(r_eqT * np.sqrt(cosT)))       # a z-plane cuts a rod tilted by t in an ellipse of area pi r^2 / cos t
+    # ---- the bundle below the last separable tandem section
+    B, gap = [], 0
+    for i in range(T[-1][0] + 1, len(zs)):
+        c = max(comps[i], key=lambda c: c["n_px"]) if comps[i] else None
+        if c is None or c["r_eq"] < r_merge:
+            if B:
+                break
+            gap += 1
+            if gap > int(val(prm, "bundle_gap_max")):
+                break
+            continue
+        B.append((i, c))
+    if len(B) < 3:
+        raise ValueError("bundle: only %d merged sections below the tandem" % len(B))
+    rB = np.array([c["r_eq"] for _, c in B])
+    full = rB >= float(val(prm, "bundle_full_frac")) * float(np.median(rB))
+    Bc = np.array([[c["x"], c["y"], zs[i]] for i, c in B])
+    cb = Bc[full].mean(0)
+    _, _, vt = np.linalg.svd(Bc[full] - cb, full_matrices=False)
+    d_b = geom.unit(vt[0] if vt[0][2] < 0 else -vt[0])              # bundle axis, pointing DOWN (out of the body)
+    cos_b = abs(float(d_b[2]))
+    lobe = []
+    for i, c in B:                                                  # the tandem = the bundle's posterior rod
+        y_min = float(c["px_y"].min())
+        band = c["px_y"] <= y_min + r_lab / cos_b
+        lobe.append([float(c["px_x"][band].mean()), y_min + r_lab / cos_b, float(zs[i])])
+    lobe = np.array(lobe)
+    # ---- label voxel sets scored in S4c
+    margin = float(val(prm, "tandem_select_margin_mm"))
+    by_i = {i: c for i, c in T}
+    sel_T = np.zeros(len(Qa), bool)
+    zT_inc = Tp[::-1, 2]
+    for i, _ in T:
+        m = np.abs(Qa[:, 2] - zs[i]) <= 0.5 * st + 1e-9
+        if not m.any():
+            continue
+        q = Qa[m]
+        cx, cy = np.interp(q[:, 2], zT_inc, Tp[::-1, 0]), np.interp(q[:, 2], zT_inc, Tp[::-1, 1])
+        semi = np.interp(q[:, 2], zT_inc, (r_lab / cosT)[::-1]) + margin
+        dT = np.hypot(q[:, 0] - cx, q[:, 1] - cy)
+        others = [c for c in comps[i] if c is not by_i[i]]
+        dO = np.min([np.hypot(q[:, 0] - c["x"], q[:, 1] - c["y"]) for c in others], axis=0) if others else np.full(len(q), np.inf)
+        sel_T[np.nonzero(m)[0][(dT <= semi) & (dT < dO)]] = True
+    sel_L = np.zeros(len(Qa), bool)
+    zL_inc = lobe[::-1, 2]
+    mL = (Qa[:, 2] <= lobe[0, 2] + 0.5 * st) & (Qa[:, 2] >= lobe[-1, 2] - 0.5 * st)
+    q = Qa[mL]
+    lx, ly = np.interp(q[:, 2], zL_inc, lobe[::-1, 0]), np.interp(q[:, 2], zL_inc, lobe[::-1, 1])
+    sel_L[np.nonzero(mL)[0][(np.hypot(q[:, 0] - lx, q[:, 1] - ly) <= r_lab / cos_b + margin) & (q[:, 1] <= ly + 0.5)]] = True
+    geo = dict(
+        label_file=lab["file"], ovoid_label_file=P["data"] + "/BT_MRI_label_ovoid.nii",
+        frame=dict(origin_BT_world=O, R_rows_BT_world=R, axis_BT_world=fr["axis"], n_slabs=fr["n_slabs"],
+                   slab_line_rms_mm=fr["slab_line_rms_mm"], angle_to_json_axis_deg=fr["angle_to_json_axis_deg"],
+                   origin_from_json_flange_mm=fr["origin_from_json_flange_mm"],
+                   definition="axis = slab-centroid line (%g mm slabs, voxels < %g mm from the json axis) of applicator minus "
+                              "ovoid over s %s mm above the json flange; origin = the json flange projected onto it; x = BT "
+                              "world x orthogonalised, y = z cross x" % (val(prm, "label_axis_slab_mm"), lat_max,
+                                                                        val(prm, "label_axis_s_mm"))),
+        ring=ring, tube=tube,
+        tandem=dict(stations_xyz_req=np.c_[Tp, r_eqT], tilt_deg=np.degrees(np.arccos(np.clip(cosT, -1, 1))),
+                    z_first_mm=float(Tp[0, 2]), z_last_mm=float(Tp[-1, 2]), n_stations=int(len(Tp)), r_label_mm=r_lab,
+                    r_eq_raw_median_mm=float(np.median(r_eqT)), n_label_vox=int(sel_T.sum()),
+                    definition="posterior rod leaving the ring bore, traced on %g mm z planes from the first section within "
+                               "%g mm of the axis below the ring's on-axis bottom until it merges into the bundle; "
+                               "r_label = median of r_eq * sqrt(cos tilt)" % (st, start_off)),
+        bundle=dict(stations_xyz_req=np.c_[Bc, rB], full=full, axis_app_down=d_b,
+                    angle_to_tube_deg=geom.angle_deg(d_b, -EZ), median_r_eq_mm=float(np.median(rB)),
+                    z_range_mm=[float(Bc[:, 2].max()), float(Bc[:, 2].min())], label_end_z_mm=float(Qa[:, 2].min()),
+                    chord_angle_to_tube_deg=geom.angle_deg(geom.unit(Bc[full][-1] - Bc[full][0]), -EZ),
+                    chord_all_angle_to_tube_deg=geom.angle_deg(geom.unit(Bc[-1] - Bc[0]), -EZ),
+                    tandem_lobe_xyz=lobe, n_lobe_label_vox=int(sel_L.sum()),
+                    lobe_line_angle_to_tube_deg=geom.angle_deg(geom.unit(lobe[-1] - lobe[0]), -EZ),
+                    definition="largest section below the tandem with r_eq > rod_merge_req_mm; axis = PCA line through the "
+                               "centroids of the plateau sections (r_eq >= bundle_full_frac x median); chord angles = first -> "
+                               "last plateau / any section (the fix plan's 27.7 deg is such a chord, json frame); tandem lobe "
+                               "= (mean x of the posterior band, posterior edge + r_label / cos(bundle angle))"),
+        stations=[dict(z=float(z), comps=[[c["x"], c["y"], c["r_eq"]] for c in cs]) for z, cs in zip(zs, comps)],
+        stations_note="every applicator-minus-ovoid component (x, y, r_eq) per z plane below the ring: the rod data S4b needs")
+    # the tube part as the a3 / a14 analysis split it (the reference the S4c tube threshold was set on): applicator minus
+    # ovoid in the IMAGE slices above the ovoid label's highest slice.  It leaves out the part of the 0-12 mm 'collar' of
+    # label around the tube (fix plan Q8: air in the fornix or device?) that shares slices with the tilted ring.
+    k_top = int(np.nonzero(lab["ovoid"].any((0, 1)))[0].max())
+    m3 = lab["app"] & ~lab["ovoid"]
+    m3[:, :, :k_top + 1] = False
+    vox = dict(all=Qa, ovoid=Qo, tube=Qt, tube_a3=to_lf(_vox_world(m3, lab["aff"])), tandem=Qa[sel_T], tandem_in_bundle=Qa[sel_L],
+               idx_tube=idx_a[Qa[:, 2] > ring["z_top_mm"]], idx_tandem=idx_a[sel_T], idx_tandem_in_bundle=idx_a[sel_L])
+    geo["tube"]["a3_split"] = dict(ovoid_top_image_slice=k_top, n_vox=int(len(vox["tube_a3"])),
+                                   definition="applicator minus ovoid in the image slices above the ovoid label's top slice "
+                                              "(scratch wf_applicator/a3_parts.py, the split of the a14 reference 1.07 / 4.33 mm)")
+    print("[label v4] frame: %d slabs, rms %.2f mm, %.2f deg from the json axis, origin %.2f mm from the json flange; ring on "
+          "axis z %.1f..%.1f; tube tip z %.1f, r_eq %.2f; tandem z %.1f..%.1f (%d sections, r_label %.2f); bundle z %.1f..%.1f, "
+          "axis %.1f deg from the tube" % (fr["n_slabs"], fr["slab_line_rms_mm"], fr["angle_to_json_axis_deg"],
+                                           fr["origin_from_json_flange_mm"], ring["z_bottom_on_axis_mm"], ring["z_top_on_axis_mm"],
+                                           z_tip, tube["r_eq_mm"], Tp[0, 2], Tp[-1, 2], len(Tp), r_lab, Bc[0, 2], Bc[-1, 2],
+                                           geo["bundle"]["angle_to_tube_deg"]), flush=True)
+    return geo, vox
+
+
+def sweep_polyline(C, r, n_th, e1_ref=EX):
+    """Closed tube of radius r along the polyline C (n, 3), each ring oriented by PARALLEL-TRANSPORT frames: the first
+    ring's e1 = e1_ref orthogonalised against the first tangent, every next e1 = the previous one turned by the minimal
+    rotation between consecutive tangents (no twist about the curve; Frenet frames flip at inflections and on straight
+    runs).  Tangent at an interior vertex = the bisector of its two segments.  Flat fan caps at both ends (sweep).
+    Returns (V, F, check): check.min_spacing_ratio = min over bends of (shorter adjacent segment) / (r tan(bend / 2));
+    below 1 the rings of the inner side of a bend could cross."""
+    C = np.asarray(C, float)
+    seg = np.diff(C, axis=0)
+    Ls = np.linalg.norm(seg, axis=1)
+    if len(C) < 2 or (Ls < 1e-9).any():
+        raise ValueError("sweep_polyline: needs >= 2 distinct consecutive points")
+    u = seg / Ls[:, None]
+    mid = [u[i - 1] + u[i] for i in range(1, len(u))]
+    if any(np.linalg.norm(m) < 1e-6 for m in mid):
+        raise ValueError("sweep_polyline: the polyline folds back on itself")
+    T = np.vstack([u[:1]] + [geom.unit(m)[None] for m in mid] + [u[-1:]])
+    e1 = geom.ortho(e1_ref, T[0])
+    rings = []
+    for i in range(len(C)):
+        if i > 0:
+            e1 = geom.ortho(geom.rot_between(T[i - 1], T[i]) @ e1, T[i])
+        rings.append((C[i], e1, np.cross(T[i], e1), r))
+    V, F = sweep(rings, C[0], C[-1], n_th)
+    ratios = [min(Ls[i - 1], Ls[i]) / (r * np.tan(0.5 * np.radians(geom.angle_deg(u[i - 1], u[i]))))
+              for i in range(1, len(u)) if geom.angle_deg(u[i - 1], u[i]) > 1e-3]
+    bends = [geom.angle_deg(u[i - 1], u[i]) for i in range(1, len(u))]
+    return V, F, dict(min_spacing_ratio=float(min(ratios)) if ratios else None, max_bend_deg=float(max(bends)) if bends else 0.0,
+                      n_rings=int(len(C)), arclength_mm=float(Ls.sum()))
+
+
+def tandem_centreline_v4(geo, prm, F_fin, R_fin, P_intro, a_v):
+    """Centreline (applicator frame) of the vaginal tandem: from shaft_overlap_mm inside the tube's bottom, through the
+    traced label tandem and its lobe in the bundle (one 1-2-1 smoothing pass; the tube's bottom point is kept), then
+    straight along the measured bundle axis until the end lies shaft_past_introitus_mm beyond the preBT introitus plane
+    with the device at device_final (F_fin, R_fin rows).  The tube's bottom = one station above the first label section
+    of the tandem: there the label first shows the rod itself below the ring (fix plan: straight to z_app ~ -22)."""
+    st = float(val(prm, "label_station_mm"))
+    T = np.asarray(geo["tandem"]["stations_xyz_req"], float)[:, :3]
+    Lb = np.asarray(geo["bundle"]["tandem_lobe_xyz"], float)
+    z_j = float(T[0, 2]) + st
+    S = np.vstack([[0.0, 0.0, z_j], T, Lb])
+    Sm = S.copy()
+    Sm[1:-1] = 0.25 * S[:-2] + 0.5 * S[1:-1] + 0.25 * S[2:]
+    C = np.vstack([[0.0, 0.0, z_j + float(val(prm, "shaft_overlap_mm"))], Sm])
+    d = geom.unit(np.asarray(geo["bundle"]["axis_app_down"], float))
+    R_fin = np.asarray(R_fin, float)
+    a_v = geom.unit(a_v)
+    k = float((d @ R_fin) @ a_v)
+    if k > -0.3:
+        raise ValueError("bundle axis does not point out of the vagina at device_final (cos %.2f to -a_v)" % -k)
+    h0 = float((np.asarray(F_fin, float) + C[-1] @ R_fin - np.asarray(P_intro, float)) @ a_v)
+    t_ext = max(0.0, (-float(val(prm, "shaft_past_introitus_mm")) - h0) / k)
+    n = max(1, int(np.ceil(t_ext / float(val(prm, "shaft_ring_step_mm")))))
+    C = np.vstack([C, C[-1] + np.outer(np.linspace(0.0, t_ext, n + 1)[1:], d)])
+    end_h = float((np.asarray(F_fin, float) + C[-1] @ R_fin - np.asarray(P_intro, float)) @ a_v)
+    info = dict(z_tube_bottom_mm=z_j, i_first_label=2, n_tandem=int(len(T)), n_lobe=int(len(Lb)),
+                i_tandem=[2, 2 + len(T)], i_lobe=[2 + len(T), 2 + len(T) + len(Lb)],
+                label_end_height_above_introitus_mm=h0, extension_mm=t_ext, end_beyond_introitus_mm=-end_h,
+                end_app=C[-1], end_dir_app=d, arclength_mm=float(geom.arclength(C)[-1]),
+                definition="C[0] = (0, 0, tube bottom + overlap), C[1] = the tube's bottom on the axis, C[i_tandem] = the "
+                           "smoothed label tandem sections, C[i_lobe] = the tandem lobe in the bundle, then the straight "
+                           "extension along the bundle axis")
+    return C, info
+
+
+def write_meshes_v4(VF):
+    """Write the v4 tandem-body parts (tube.obj, shaft.obj) into APP."""
+    os.makedirs(APP, exist_ok=True)
+    for name in TANDEM_V4_PARTS:
+        V, F = VF[name]
+        geom.write_obj(os.path.join(APP, name + ".obj"), V, F,
+                       header="%s of the v4 tandem body (tube + vaginal tandem = one rigid body), built from the updated BT "
+                              "applicator label; %s" % (name, FRAME_APP_V4))
+
+
+def build_meshes_v4(prm, C, z_tube_bottom, write=True):
+    """tube.obj (r_tandem_mm, straight on the axis from z_tube_bottom to the hemispherical tip at L_iu) and shaft.obj
+    (r_shaft_mm swept along C) in the v4 applicator frame.  Returns (stats per part, {part: (V, F)}).  write=False
+    builds in memory only (main_tandem_only checks the pose.json records it must keep before it writes anything)."""
+    n_th = int(val(prm, "mesh_n_theta"))
+    L, r, rs = val(prm, "L_iu_mm"), val(prm, "r_tandem_mm"), val(prm, "r_shaft_mm")
+    zb = float(z_tube_bottom)
+    parts = {}
+    n_cyl = int(np.ceil((L - r - zb) / 3.5)) + 1                  # ~3.5 mm ring spacing, as the v1-v3 tube
+    rings = [((0.0, 0.0, z), EX, EY, r) for z in np.linspace(zb, L - r, n_cyl)]
+    rings += [((0.0, 0.0, L - r + r * np.sin(ph)), EX, EY, r * np.cos(ph)) for ph in np.linspace(0, np.pi / 2, 8)[1:-1]]
+    V, F = sweep(rings, (0.0, 0.0, zb), (0.0, 0.0, L), n_th)
+    parts["tube"] = (V, F, mesh_stats(V, F, np.pi * r * r * (L - r - zb) + 2.0 / 3.0 * np.pi * r ** 3))
+    V, F, chk = sweep_polyline(C, rs, n_th)
+    st = mesh_stats(V, F, np.pi * rs * rs * chk["arclength_mm"])
+    st["sweep_check"] = chk
+    parts["shaft"] = (V, F, st)
+    out, VF = {}, {}
+    for name, (V, F, st) in parts.items():
+        st["file"] = name + ".obj"
+        out[name], VF[name] = st, (V, F)
+        print("[applicator v4] %-6s tris %5d verts %5d open %d nonmanifold %d badorient %d vol %8.1f mm3 (ref %8.1f, %+.2f %%) "
+              "closed=%s" % (name, st["tris"], st["verts"], st["open_edges"], st["nonmanifold_edges"],
+                             st["inconsistent_orientation_edges"], st["signed_volume_mm3"], st["reference_volume_mm3"],
+                             st["vol_err_pct"], st["closed_oriented"]), flush=True)
+    if write:
+        write_meshes_v4(VF)
+    return out, VF
+
+
+def _sdf(V, F):
+    """Signed distance to a closed, outward-oriented triangle mesh (negative inside): vtkImplicitPolyDataDistance."""
+    import vtk
+    from vtk.util import numpy_support as ns
+    pts = vtk.vtkPoints()
+    pts.SetData(ns.numpy_to_vtk(np.ascontiguousarray(V, float), deep=True))
+    conn = np.ascontiguousarray(np.asarray(F, np.int64).ravel())
+    offs = np.arange(0, conn.size + 1, 3, dtype=np.int64)
+    ca = vtk.vtkCellArray()
+    ca.SetData(ns.numpy_to_vtkIdTypeArray(offs, deep=True), ns.numpy_to_vtkIdTypeArray(conn, deep=True))
+    pd = vtk.vtkPolyData()
+    pd.SetPoints(pts)
+    pd.SetPolys(ca)
+    f = vtk.vtkImplicitPolyDataDistance()
+    f.SetInput(pd)
+
+    def ev(X):
+        X = np.atleast_2d(np.asarray(X, float))
+        return np.array([f.EvaluateFunction(float(x[0]), float(x[1]), float(x[2])) for x in X])
+    return ev
+
+
+def _dist_stats(d):
+    d = np.asarray(d, float)
+    if not len(d):
+        return dict(n=0)
+    return dict(n=int(len(d)), mean_mm=float(d.mean()), p95_mm=float(np.percentile(d, 95)), max_mm=float(d.max()),
+                frac_le_1p5mm=float((d <= 1.5).mean()))
+
+
+def _mask_isosurface(mask, aff, level=0.5):
+    """Triangle surface (BT world mm) of a 0/1 voxel mask at `level`: vtkMarchingCubes on the index grid (voxel centres at
+    integer indices, as the nibabel affine), the mask cropped to its bounding box and zero-padded by one voxel so the
+    surface closes, then carried to world by the affine.  Returns (V, F)."""
+    import vtk
+    from vtk.util import numpy_support as ns
+    ijk = np.argwhere(mask)
+    lo = np.maximum(ijk.min(0) - 1, 0)
+    hi = np.minimum(ijk.max(0) + 2, np.asarray(mask.shape))
+    sub = np.pad(np.asarray(mask[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]], np.float32), 1)
+    img = vtk.vtkImageData()
+    img.SetDimensions(*[int(n) for n in sub.shape])
+    img.SetSpacing(1.0, 1.0, 1.0)
+    img.SetOrigin(0.0, 0.0, 0.0)
+    img.GetPointData().SetScalars(ns.numpy_to_vtk(np.ascontiguousarray(sub.ravel(order="F")), deep=True))
+    mc = vtk.vtkMarchingCubes()
+    mc.SetInputData(img)
+    mc.SetValue(0, float(level))
+    mc.ComputeNormalsOff()
+    mc.ComputeGradientsOff()
+    mc.Update()
+    pd = mc.GetOutput()
+    V = ns.vtk_to_numpy(pd.GetPoints().GetData()).astype(float) + (lo - 1)
+    F = ns.vtk_to_numpy(pd.GetPolys().GetConnectivityArray()).astype(np.int64).reshape(-1, 3)
+    return V @ np.asarray(aff, float)[:3, :3].T + np.asarray(aff, float)[:3, 3], F
+
+
+def _surface_samples(V, F, density, seed):
+    """Points uniform by area on a triangle surface (density per mm2, fixed seed: reproducible)."""
+    V, F = np.asarray(V, float), np.asarray(F, int)
+    A = 0.5 * np.linalg.norm(np.cross(V[F[:, 1]] - V[F[:, 0]], V[F[:, 2]] - V[F[:, 0]]), axis=1)
+    rng = np.random.default_rng(seed)
+    n = int(np.ceil(A.sum() * float(density)))
+    t = rng.choice(len(F), size=n, p=A / A.sum())
+    s, r2 = np.sqrt(rng.random(n)), rng.random(n)
+    return ((1.0 - s)[:, None] * V[F[t, 0]] + (s * (1.0 - r2))[:, None] * V[F[t, 1]] + (s * r2)[:, None] * V[F[t, 2]])
+
+
+def _polyline_param(C, Q):
+    """Parameter u = j + t of each point's nearest point on the polyline C (segment j, fraction t): u = i at station i."""
+    C, Q = np.asarray(C, float), np.asarray(Q, float)
+    a, d = C[:-1], np.diff(C, axis=0)
+    t = np.clip(np.einsum("nmk,mk->nm", Q[:, None, :] - a[None], d) / (d * d).sum(1)[None], 0.0, 1.0)
+    dist = np.linalg.norm(Q[:, None, :] - (a[None] + t[..., None] * d[None]), axis=2)
+    j = dist.argmin(1)
+    return j + t[np.arange(len(Q)), j]
+
+
+def model_to_label(VF, lab, geo, C, cl, prm, density=4.0, seed=0):
+    """The MODEL-to-label side of the S4c distance (review L1: label-to-model = max(0, signed distance) over label voxels
+    reads ~0 for any model that CONTAINS the label, so an oversized model passes it; this side grows with the excess).
+    Points uniform on the tandem-body surface (`density` per mm2, fixed seed) in the label frame -> distance to the label:
+    0 inside it (trilinear 0/1 mask >= 0.5), else the distance to the mask's 0.5 iso-surface (_mask_isosurface, carried
+    into the label frame).  Label = updated applicator label U ovoid label (every device voxel: the model tube runs through
+    the ring, the vaginal tandem through the three-rod bundle).  Scored only where the label shows the part:
+      tube_above_ring    tube surface with z_app > ring top (includes the tip: a model tube longer than the label's shows)
+      tube_above_collar  z_app > ring top + 12 mm (clear of the collar, Q8)
+      tandem_rod         shaft surface whose nearest centreline point lies between the first traced tandem section and
+                         the first bundle lobe (cl i_tandem .. i_lobe)
+      tandem_in_bundle   between the first and the last bundle lobe (inside the bundle an oversize is hidden up to the
+                         bundle's own width: r_eq ~7 mm around three rods)
+    The tube inside the ring slab, the shaft's junction stations and its straight extension past the label end are not
+    scored (no label to compare with)."""
+    from scipy import ndimage as ndi
+    O = np.asarray(geo["frame"]["origin_BT_world"], float)
+    R = np.asarray(geo["frame"]["R_rows_BT_world"], float)
+    ring = geo["ring"]
+    U = lab["app"] | lab["ovoid"]
+    Vs, Fs = _mask_isosurface(U, lab["aff"])
+    dist = _sdf((Vs - O) @ R.T, Fs)                         # label frame; |value| = distance to the iso-surface
+    inv = np.linalg.inv(lab["aff"])
+    Uf = U.astype(np.float32)
+
+    def m2l(Q):
+        ijk = (O + Q @ R) @ inv[:3, :3].T + inv[:3, 3]
+        out_ = ndi.map_coordinates(Uf, ijk.T, order=1, mode="constant", cval=0.0) < 0.5
+        d = np.zeros(len(Q))
+        if out_.any():
+            d[out_] = np.abs(dist(Q[out_]))
+        return d
+
+    def stats(d):
+        s = _dist_stats(d)
+        if len(d):
+            s["frac_outside_label"] = float((d > 0).mean())
+        return s
+    Pt = _surface_samples(*VF["tube"], density, seed)
+    Ps = _surface_samples(*VF["shaft"], density, seed + 1)
+    dt, ds = m2l(Pt), m2l(Ps)
+    u = _polyline_param(C, Ps)
+    i_t, i_l = cl["i_tandem"], cl["i_lobe"]
+    sel = dict(tube_above_ring=(dt, Pt[:, 2] > ring["z_top_mm"]), tube_above_collar=(dt, Pt[:, 2] > ring["z_top_mm"] + 12.0),
+               tandem_rod=(ds, (u >= i_t[0]) & (u < i_l[0])), tandem_in_bundle=(ds, (u >= i_l[0]) & (u <= i_l[1] - 1)))
+    out = {k: stats(d[m]) for k, (d, m) in sel.items()}
+    out["all_scored"] = stats(np.concatenate([dt[sel["tube_above_ring"][1]], ds[sel["tandem_rod"][1] | sel["tandem_in_bundle"][1]]]))
+    out["tube_tip_model_minus_label_mm"] = float(val(prm, "L_iu_mm")) - float(geo["tube"]["z_tip_label_mm"])
+    out["sampling"] = dict(density_per_mm2=float(density), seed=int(seed), n_tube=int(len(Pt)), n_shaft=int(len(Ps)),
+                           label_surface_tris=int(len(Fs)), label_surface_verts=int(len(Vs)))
+    out["definition"] = ("model surface point (uniform by area) -> distance OUTSIDE the label (applicator U ovoid; 0 inside "
+                         "by the trilinear mask >= 0.5, else the distance to the mask's 0.5 iso-surface).  The other side "
+                         "of label_to_model_mm: an oversized model shows here, not there.  tube_tip_model_minus_label_mm = "
+                         "L_iu - the label tube's tip (z_tip_label_mm)")
+    return out
+
+
+def validate_device_vs_label(VF, geo, vox, lab, prm, C, cl, rule, frames, app_in, src_pose, src_name):
+    """S4c: the v4 tandem body against the updated BT label, and its pose.  In-sample geometry fit (the parts were
+    measured on this label): a consistency ceiling, not validation (fix plan S4).
+      at the BT pose (the label frame is the part frame, so the parts sit where the label is):
+        Dice(tandem body, applicator minus ovoid) on the BT grid (also outside the ring slab, and over tube + separable
+        tandem only: the model has no ring and no ovoid rods, the label has both); label-to-model distance = max(0,
+        signed distance to the body) of the label voxels of the tube, the tandem rod and the tandem lobe in the bundle;
+        model-to-label distance (model_to_label: surface points of the body outside the label) -- the label-to-model
+        side alone cannot see a model that is too LARGE (review L1)
+      tube pose: device_final (this pose.json, re-derived) against the source variant's, and against both BT axes
+      pelvis frame: at the device_final (= G32) tube pose the model's vaginal tandem stations against the label's, carried
+        BT -> preBT by frames.BONE (y = x R^T + t)"""
+    import evaluate as ev
+    g = geo
+    O = np.asarray(g["frame"]["origin_BT_world"], float)
+    R = np.asarray(g["frame"]["R_rows_BT_world"], float)
+    zL = R[2]
+    L = float(val(prm, "L_iu_mm"))
+    out = dict(frame="BT label frame at the BT pose (applicator_v4 parts placed with origin_BT_world / R_rows_BT_world)",
+               note="IN-SAMPLE: the parts were measured on this label (fix plan S4: a consistency ceiling, not validation)")
+    # ---- Dice on the BT grid
+    Lm = lab["app"] & ~lab["ovoid"]
+    M = np.zeros(lab["shape"], bool)
+    for p in TANDEM_V4_PARTS:
+        V, F = VF[p]
+        M |= ev.voxelize(O + np.asarray(V, float) @ R, F, lab["shape"], lab["aff"])
+    idx = np.argwhere(M | Lm)
+    zq = (idx.astype(float) @ lab["aff"][:3, :3].T + lab["aff"][:3, 3] - O) @ zL
+    ring = g["ring"]
+    out_ring = (zq > ring["z_top_mm"]) | (zq < ring["z_bottom_on_axis_mm"])
+    tz = out_ring & (zq >= g["tandem"]["z_last_mm"] - 0.5 * float(val(prm, "label_station_mm")))
+    # the label's OWN tandem parts (tube with its collar, tandem rod, tandem lobe in the bundle), without the ovoid rods
+    Lt = np.zeros(lab["shape"], bool)
+    for k in ("idx_tube", "idx_tandem", "idx_tandem_in_bundle"):
+        Lt[tuple(np.asarray(vox[k]).T)] = True
+    no_collar = out_ring & ((zq < ring["z_bottom_on_axis_mm"]) | (zq > ring["z_top_mm"] + 12.0))
+
+    def dice(sel, ref=None):
+        ii = tuple(idx[sel].T)
+        m, l_ = M[ii], (Lm if ref is None else ref)[ii]
+        return float(2.0 * (m & l_).sum() / max(1, m.sum() + l_.sum()))
+    out["dice"] = dict(vs_app_minus_ovoid=dice(np.ones(len(idx), bool)), outside_ring_slab=dice(out_ring),
+                       tube_and_separable_tandem=dice(tz), vs_label_tandem_parts_outside_ring=dice(out_ring, Lt),
+                       vs_label_tandem_parts_outside_ring_and_collar=dice(no_collar, Lt),
+                       model_cc=float(M.sum() * lab["vv"] / 1000.0),
+                       label_cc=float(Lm.sum() * lab["vv"] / 1000.0),
+                       note="the label also holds the two ovoid rods and their bundle (below the ring) and the model tube "
+                            "runs through the ring slab where the label is 'ovoid': those parts cap the first two numbers; "
+                            "the third keeps only z_app above the ring and down to the last separable tandem section (it "
+                            "still holds both ovoid rods).  vs_label_tandem_parts = against the label's own tandem parts "
+                            "(tube with collar, tandem rod, tandem lobe in the bundle; label_check vox sets) outside the ring "
+                            "slab, and also without the 12 mm collar zone above the ring (Q8).  Model voxels beyond the "
+                            "image field (the shaft's extension) do not count")
+    # ---- label -> model distances (label frame = part frame)
+    sd = {p: _sdf(*VF[p]) for p in TANDEM_V4_PARTS}
+    probe = np.array([[0.0, 0.0, 0.5 * L], C[len(C) // 2], [30.0, 30.0, 0.0]])
+    s_t, s_s = float(sd["tube"](probe[:1])[0]), float(sd["shaft"](probe[1:2])[0])
+    s_far = min(float(sd["tube"](probe[2:])[0]), float(sd["shaft"](probe[2:])[0]))
+    if not (s_t < 0 and s_s < 0 and s_far > 0):
+        raise RuntimeError("signed-distance sign check failed (inside %.2f / %.2f, far %.2f)" % (s_t, s_s, s_far))
+
+    def l2m(Q):
+        return np.maximum(0.0, np.minimum(sd["tube"](Q), sd["shaft"](Q)))
+    Qt = vox["tube"]
+    core = np.hypot(Qt[:, 0], Qt[:, 1]) < 4.0
+    dT = l2m(Qt)
+    above = Qt[:, 2] > ring["z_top_mm"] + 12.0
+    out["label_to_model_mm"] = dict(tube=_dist_stats(l2m(vox["tube_a3"])), tube_incl_collar=_dist_stats(dT),
+                                    tube_core_r_lt_4mm=_dist_stats(dT[core]), tube_above_collar=_dist_stats(dT[above]),
+                                    tandem_rod=_dist_stats(l2m(vox["tandem"])),
+                                    tandem_in_bundle=_dist_stats(l2m(vox["tandem_in_bundle"])),
+                                    definition="label voxel centre -> max(0, signed distance to tube U shaft).  tube (GATED) = "
+                                               "the a3 / a14 split (label_geometry.tube.a3_split), the reference the S4c "
+                                               "threshold was set on; tube_incl_collar = every applicator-minus-ovoid voxel "
+                                               "above the ovoid label in the label frame, with the 0-12 mm collar (Q8); "
+                                               "tube_core = those within 4 mm of the axis; tube_above_collar = z_app > ring "
+                                               "top + 12 mm.  ONE-SIDED: a model larger than the label reads ~0 here; "
+                                               "see model_to_label_mm")
+    # ---- model -> label distances (review L1: the other side; an oversized model shows here)
+    m2l = model_to_label(VF, lab, g, C, cl, prm)
+    lm_ = out["label_to_model_mm"]
+    m2l["vs_label_to_model_thresholds"] = dict(
+        note="REPORTED, not gated: the S4c label-to-model thresholds applied to this side for reference",
+        tandem_rod_mean_le_1mm=bool(m2l["tandem_rod"]["mean_mm"] <= 1.0), tandem_rod_p95_le_2mm=bool(m2l["tandem_rod"]["p95_mm"] <= 2.0),
+        tube_above_ring_mean_le_1p5mm=bool(m2l["tube_above_ring"]["mean_mm"] <= 1.5))
+    out["model_to_label_mm"] = m2l
+    for k, k2 in (("tube_above_ring", "tube"), ("tube_above_collar", "tube_above_collar"), ("tandem_rod", "tandem_rod"),
+                  ("tandem_in_bundle", "tandem_in_bundle")):
+        print("[S4c] INFO %-17s model-to-label mean %.3f / P95 %.3f / max %.3f mm (%.1f %% of %d points outside);  "
+              "label-to-model (%s) mean %.3f / P95 %.3f mm" % (k, m2l[k]["mean_mm"], m2l[k]["p95_mm"], m2l[k]["max_mm"],
+                                                                100.0 * m2l[k]["frac_outside_label"], m2l[k]["n"], k2,
+                                                                lm_[k2]["mean_mm"], lm_[k2]["p95_mm"]), flush=True)
+    # ---- ring bore (for S4b: the ring halves will have a central bore of r 4.0 mm)
+    Vall = np.vstack([VF[p][0] for p in TANDEM_V4_PARTS])
+    inr = (Vall[:, 2] <= ring["z_top_on_axis_mm"]) & (Vall[:, 2] >= ring["z_bottom_on_axis_mm"])
+    out["ring_bore"] = dict(max_radius_in_ring_span_mm=float(np.hypot(Vall[inr, 0], Vall[inr, 1]).max()) if inr.any() else None,
+                            ring_span_z_mm=[ring["z_bottom_on_axis_mm"], ring["z_top_on_axis_mm"]],
+                            note="largest distance of a tandem-body vertex from the axis within the ring's on-axis span (S4b bore r 4.0)")
+    # ---- tube pose: re-derived device_final vs the source variant, and the tube error in BT
+    sdf_ = src_pose["device_final"]
+    F_fin, a_fin, x_fin = (np.asarray(rule["flange"], float), geom.unit(rule["tube_axis"]), geom.unit(rule["x_app"]))
+    pose = dict(source="applicator_%s/pose.json device_final" % src_name,
+                flange_diff_mm=float(np.linalg.norm(F_fin - np.asarray(sdf_["flange"], float))),
+                tube_axis_diff_deg=geom.angle_deg(a_fin, sdf_["tube_axis"]), roll_x_diff_deg=geom.angle_deg(x_fin, sdf_["x_app"]))
+    fb = frames["BONE"]
+    Rb, tb = np.asarray(fb["R"], float), np.asarray(fb["t"], float)
+    F_bt = (F_fin - tb) @ Rb                                    # x_BT = R^T (y - t)
+    a_bt = geom.unit(Rb.T @ a_fin)
+    tip_bt = F_bt + L * a_bt
+    zj = geom.unit(np.asarray(app_in["R_rows_BT_world"], float)[2])
+    dO = F_bt - O
+    pose["tube_error_BT"] = dict(
+        angle_to_json_axis_deg=geom.angle_deg(a_bt, zj), angle_to_label_axis_deg=geom.angle_deg(a_bt, zL),
+        tip_to_json_tip_mm=float(np.linalg.norm(tip_bt - np.asarray(app_in["tip_BT_world"], float))),
+        tip_to_label_tube_tip_mm=float(np.linalg.norm(tip_bt - (O + g["tube"]["z_tip_label_mm"] * zL))),
+        tip_to_label_axis_at_L_iu_mm=float(np.linalg.norm(tip_bt - (O + L * zL))),
+        flange_to_label_origin_along_mm=float(dO @ zL), flange_to_label_origin_lateral_mm=float(np.linalg.norm(dO - (dO @ zL) * zL)),
+        roll_model_x_vs_label_x_deg=geom.angle_deg(geom.ortho(Rb.T @ x_fin, zL), R[0]),
+        frame="frames.BONE (validation/alignment.json), x_BT = R^T (y_pre - t)")
+    out["tube_pose"] = pose
+    # ---- pelvis frame: the vaginal tandem at the device_final tube pose vs the mapped label tandem
+    R_fin = np.asarray(rule["R_rows"], float)
+
+    def to_pre_model(p):
+        return F_fin + np.atleast_2d(p) @ R_fin
+
+    def to_pre_label(p):
+        return (O + np.atleast_2d(p) @ R) @ Rb.T + tb
+    pel = {}
+    for key, raw, (i0, i1) in (("tandem_rod", np.asarray(g["tandem"]["stations_xyz_req"], float)[:, :3], cl["i_tandem"]),
+                               ("tandem_in_bundle", np.asarray(g["bundle"]["tandem_lobe_xyz"], float), cl["i_lobe"])):
+        d = to_pre_model(C[i0:i1]) - to_pre_label(raw)
+        n = np.linalg.norm(d, axis=1)
+        pel[key] = dict(n=int(len(n)), mean_mm=float(n.mean()), max_mm=float(n.max()), mean_dx_mm=float(d[:, 0].mean()),
+                        mean_dy_mm=float(d[:, 1].mean()), mean_dz_mm=float(d[:, 2].mean()),
+                        z_app_range_mm=[float(raw[0, 2]), float(raw[-1, 2])])
+    # the same physical label sections, but the tandem geometry referred to the JSON frame (v1-v3, and the scratch
+    # analysis vaf/v3_pelvis.py behind the fix plan's 3.1 mm): separates the frame choice from the geometry
+    Fj = np.asarray(app_in["origin_BT_world"], float)
+    Rj = np.asarray(app_in["R_rows_BT_world"], float)
+    raw = np.asarray(g["tandem"]["stations_xyz_req"], float)[:, :3]
+    Wlab = O + raw @ R
+    dj = (F_fin + ((Wlab - Fj) @ Rj.T) @ R_fin) - (Wlab @ Rb.T + tb)
+    nj = np.linalg.norm(dj, axis=1)
+    F_L_pre = O @ Rb.T + tb
+    pel["tandem_rod_if_referred_to_json_frame"] = dict(mean_mm=float(nj.mean()), max_mm=float(nj.max()),
+                                                        mean_dx_mm=float(dj[:, 0].mean()), mean_dy_mm=float(dj[:, 1].mean()),
+                                                        mean_dz_mm=float(dj[:, 2].mean()))
+    pel["pose_decomposition"] = dict(flange_minus_label_origin_pre_mm=F_fin - F_L_pre,
+                                     flange_offset_mm=float(np.linalg.norm(F_fin - F_L_pre)),
+                                     tube_axis_vs_label_axis_deg=geom.angle_deg(a_fin, Rb @ zL),
+                                     note="d(p) = (F_fin - BONE(origin)) + p (R_fin - R_label carried by BONE): the flange "
+                                          "offset plus the 2.4 deg axis error times the lever arm; neither is geometry")
+    g32 = _load_json_or_empty(P["out"] + "/hybrid/runs/G32/device_final.json")
+    if g32:
+        pel["G32_device_final_vs_pose"] = dict(flange_mm=float(np.linalg.norm(np.asarray(g32["flange_mm"], float) - F_fin)),
+                                               tube_axis_deg=geom.angle_deg(g32["tube_axis"], a_fin),
+                                               x_app_deg=geom.angle_deg(g32["x_app"], x_fin))
+    pel["definition"] = ("model = the built centreline stations placed at device_final (F + p R_rows); label = the raw traced "
+                         "sections placed at the BT label pose and carried BT -> preBT by frames.BONE; d = model - label "
+                         "(preBT RAS: +x right, +y anterior, +z superior)")
+    out["pelvis_frame"] = pel
+    # ---- acceptance (fix plan S4a / S4c items that apply to the tandem body)
+    lm = out["label_to_model_mm"]
+    acc = [
+        dict(test="tandem rod: label-to-model mean <= 1.0 mm", measured=lm["tandem_rod"]["mean_mm"], pass_=lm["tandem_rod"]["mean_mm"] <= 1.0),
+        dict(test="tandem rod: label-to-model P95 <= 2.0 mm", measured=lm["tandem_rod"]["p95_mm"], pass_=lm["tandem_rod"]["p95_mm"] <= 2.0),
+        dict(test="tube (a3/a14 split): label-to-model mean <= 1.5 mm (P95 reported; with the whole collar see tube_incl_collar)",
+             measured=lm["tube"]["mean_mm"], p95_mm=lm["tube"]["p95_mm"], incl_collar_mean_mm=lm["tube_incl_collar"]["mean_mm"],
+             pass_=lm["tube"]["mean_mm"] <= 1.5),
+        dict(test="tube pose = source device_final within 0.1 mm / 0.05 deg (flange, axis, roll)",
+             measured=[pose["flange_diff_mm"], pose["tube_axis_diff_deg"], pose["roll_x_diff_deg"]],
+             pass_=pose["flange_diff_mm"] <= 0.1 and pose["tube_axis_diff_deg"] <= 0.05 and pose["roll_x_diff_deg"] <= 0.05),
+        dict(test="pelvis frame, G32 tube pose: vaginal tandem within 3.5 mm of the mapped label tandem (max over the sections)",
+             measured=pel["tandem_rod"]["max_mm"], mean_mm=pel["tandem_rod"]["mean_mm"], mean_dy_mm=pel["tandem_rod"]["mean_dy_mm"],
+             pass_=pel["tandem_rod"]["max_mm"] <= 3.5),
+        dict(test="Dice(tandem body, applicator minus ovoid): reported, no floor", measured=out["dice"]["vs_app_minus_ovoid"], pass_=True),
+    ]
+    for a_ in acc:
+        a_["pass"] = bool(a_.pop("pass_"))
+    out["acceptance"] = acc
+    out["pass_all"] = all(a_["pass"] for a_ in acc)
+    for a_ in acc:
+        print("[S4c] %-4s %s: %s" % ("PASS" if a_["pass"] else "FAIL", a_["test"], jz(a_["measured"], 3)), flush=True)
+    return out
+
+
+def fig_v4_label_check(geo, vox, VF, C, check, fn):
+    """Label frame, sagittal (y) and coronal (x) projections: the label parts against the v4 tandem body."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, axs = plt.subplots(1, 2, figsize=(13, 11))
+    for ax, (i, xl) in zip(axs, ((1, "y_app (mm, anterior ->)"), (0, "x_app (mm, patient right ->)"))):
+        for key, col, s, lbl in (("ovoid", "navajowhite", 1, "ovoid label (ring; not built, S4b)"),
+                                 ("all", "0.72", 1, "applicator minus ovoid (incl. the ovoid rods)"),
+                                 ("tube", "tab:blue", 2, "label tube"), ("tandem", "tab:green", 2, "label tandem rod"),
+                                 ("tandem_in_bundle", "tab:olive", 2, "label tandem in the bundle")):
+            Q = vox[key]
+            ax.scatter(Q[:, i], Q[:, 2], s=s, c=col, label=lbl, rasterized=True)
+        for p, col in (("tube", "m"), ("shaft", "darkmagenta")):
+            V = VF[p][0]
+            ax.scatter(V[:, i], V[:, 2], s=0.4, c=col, alpha=0.5, rasterized=True)
+        ax.plot(C[:, i], C[:, 2], "-", color="darkmagenta", lw=1.4, label="v4 vaginal tandem centreline (mesh dots around)")
+        ax.plot([0, 0], [C[1, 2], float(np.max(VF["tube"][0][:, 2]))], "--", color="m", lw=1.2, label="v4 tube axis")
+        ax.set_xlabel(xl)
+        ax.set_ylabel("z_app (mm, along the tube; 0 = flange)")
+        ax.set_aspect("equal")
+        ax.grid(alpha=0.3)
+    axs[0].legend(loc="lower left", fontsize=8, markerscale=4)
+    lm, d, ml = check["label_to_model_mm"], check["dice"], check["model_to_label_mm"]
+    fig.suptitle("applicator v4 tandem body vs the updated BT applicator label (BT label frame; IN-SAMPLE fit)\n"
+                 "label-to-model: tandem rod mean %.2f / P95 %.2f mm, tube (a3 split) mean %.2f / P95 %.2f mm (with the whole "
+                 "collar %.2f mm)\nmodel-to-label: tandem rod mean %.2f / P95 %.2f mm, tube above the ring mean %.2f / P95 "
+                 "%.2f mm, in the bundle mean %.2f / P95 %.2f mm\nDice vs app-minus-ovoid %.3f, vs the label's tandem parts "
+                 "outside the ring %.3f;  bundle axis %.1f deg from the tube" % (
+                     lm["tandem_rod"]["mean_mm"], lm["tandem_rod"]["p95_mm"], lm["tube"]["mean_mm"], lm["tube"]["p95_mm"],
+                     lm["tube_incl_collar"]["mean_mm"], ml["tandem_rod"]["mean_mm"], ml["tandem_rod"]["p95_mm"],
+                     ml["tube_above_ring"]["mean_mm"], ml["tube_above_ring"]["p95_mm"], ml["tandem_in_bundle"]["mean_mm"],
+                     ml["tandem_in_bundle"]["p95_mm"], d["vs_app_minus_ovoid"], d["vs_label_tandem_parts_outside_ring"],
+                     geo["bundle"]["angle_to_tube_deg"]), fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    os.makedirs(os.path.dirname(fn), exist_ok=True)
+    fig.savefig(fn, dpi=90)
+    plt.close(fig)
+    print("[fig] wrote", fn, flush=True)
+
+
+def _max_abs_diff(a, b):
+    return float(np.max(np.abs(np.asarray(a, float) - np.asarray(b, float))))
+
+
+# pose.json records gated against THIS variant's tandem body (hybrid/tf_gate.py): written by tandem_first_record, never
+# inherited from --pose-from, kept across a --tandem-only rebuild only while the body they were gated against is unchanged
+BODY_PATH_RECORDS = ("insertion_path_tandem_first",)
+
+
+def tandem_body_depends(params, pose, VF):
+    """What a tandem-first record was gated against: the inputs hybrid/tf_gate.Geo reads from the applicator dir (the
+    tube.obj / shaft.obj geometry, L_iu_mm, r_tandem_mm, the default Delta, its corpus entry and device_final's axis and
+    rows).  mesh_sha256 = sha256 of each part's OBJ body exactly as geom.write_obj writes it (v lines at %.4f, f lines;
+    no header), so an in-memory build and the file on disk hash alike.  params: applicator.json params; pose: pose.json;
+    VF: {part: (V, F)}."""
+    import hashlib
+    sh = {}
+    for p in TANDEM_V4_PARTS:
+        V, F = VF[p]
+        h = hashlib.sha256()
+        h.update("".join("v %.4f %.4f %.4f\n" % tuple(v) for v in np.asarray(V, float)).encode("ascii"))
+        h.update("".join("f %d %d %d\n" % (f[0] + 1, f[1] + 1, f[2] + 1) for f in np.asarray(F, int)).encode("ascii"))
+        sh[p] = h.hexdigest()
+    delta = float(pose["default_flange_shift_mm"])
+    by = pose["corpus"]["by_flange_shift_mm"]
+    e = by[[k for k in by if abs(float(k) - delta) < 1e-9][0]]
+    df = pose["device_final"]
+    return dict(mesh_sha256=sh, L_iu_mm=float(params["L_iu_mm"]["value"]), r_tandem_mm=float(params["r_tandem_mm"]["value"]),
+                default_flange_shift_mm=delta, flange=[float(x) for x in e["flange"]],
+                T_preBT_to_target=np.asarray(e["T_preBT_to_target"], float).tolist(),
+                tube_axis=[float(x) for x in df["tube_axis"]], R_rows=np.asarray(df["R_rows"], float).tolist(),
+                definition="tandem_body_depends (applicator_venezia): the tandem body and pose a tandem-first record was "
+                           "gated against; a --tandem-only rebuild keeps the record only while these are unchanged")
+
+
+def _depends_on_disk(app_dir):
+    """tandem_body_depends of what an applicator dir holds now, or (None, why) when it is incomplete."""
+    fa, fp = os.path.join(app_dir, "applicator.json"), os.path.join(app_dir, "pose.json")
+    missing = [f for f in [fa, fp] + [os.path.join(app_dir, p + ".obj") for p in TANDEM_V4_PARTS] if not os.path.exists(f)]
+    if missing:
+        return None, "missing %s" % [os.path.basename(f) for f in missing]
+    try:
+        VF = {p: geom.read_obj(os.path.join(app_dir, p + ".obj")) for p in TANDEM_V4_PARTS}
+        return tandem_body_depends(json.load(open(fa))["params"], json.load(open(fp)), VF), None
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        return None, "unreadable (%s: %s)" % (type(e).__name__, e)
+
+
+def _depends_diff(ref, new, tol=1e-6):
+    """Differences between two tandem_body_depends dicts (mesh hashes exact, numbers within tol)."""
+    out = []
+    for k in sorted((set(ref) | set(new)) - {"definition"}):
+        if k not in ref or k not in new:
+            out.append("%s: present on one side only" % k)
+        elif k == "mesh_sha256":
+            out += ["%s.obj geometry changed" % p for p in sorted(set(ref[k]) | set(new[k])) if ref[k].get(p) != new[k].get(p)]
+        else:
+            try:
+                d = _max_abs_diff(ref[k], new[k])
+            except ValueError:
+                d = np.inf
+            if not d <= tol:
+                out.append("%s differs by %.3g" % (k, d))
+    return out
+
+
+def _tf_record_problems(rec, pose_new, deps_new, deps_old, why_old):
+    """Why a kept insertion_path_tandem_first record would no longer match the rebuilt variant ([] = it still does).
+    Same final-pose test as tandem_first_record, plus the body it was gated against: the record's depends_on, or for a
+    record written before depends_on existed, the body on disk before this rebuild (tf_gate read it from there)."""
+    probs = []
+    try:
+        prm = rec["params"]
+        dF = _max_abs_diff(prm["F_fin"], pose_new["device_final"]["flange"])
+        da = geom.angle_deg(prm["a_fin"], pose_new["device_final"]["tube_axis"])
+    except (KeyError, TypeError, ValueError) as e:
+        return ["record params unreadable (%s: %s)" % (type(e).__name__, e)]
+    if dF > 1e-3 or da > 1e-3:
+        probs.append("final pose moved: params F_fin / a_fin are %.3g mm / %.3g deg from the rebuilt device_final" % (dF, da))
+    fs = rec.get("flange_shift_mm")
+    if fs is None or abs(float(fs) - float(pose_new["default_flange_shift_mm"])) > 1e-9:
+        probs.append("flange_shift_mm %s != the rebuilt default_flange_shift_mm %s" % (fs, pose_new["default_flange_shift_mm"]))
+    ref, src = rec.get("depends_on"), "the record's depends_on"
+    if ref is None:
+        ref, src = deps_old, "the body on disk before this rebuild (record without depends_on)"
+    if ref is None:
+        probs.append("cannot verify the body the record was gated against: no depends_on in the record and the variant "
+                     "dir was incomplete before this rebuild (%s)" % why_old)
+    else:
+        probs += ["%s (vs %s)" % (d, src) for d in _depends_diff(ref, deps_new)]
+    return probs
+
+
+def carry_path_records(old_pose, pose_new, deps_new, deps_old, why_old, force=False):
+    """Review M8: a --tandem-only rebuild must not drop the insertion_path_* records other steps wrote into the variant's
+    pose.json (tandem_first_record's insertion_path_tandem_first).  Every insertion_path_* key of the OLD pose.json that
+    the rebuilt one does not carry is returned VERBATIM (full precision: the scene regenerates the rows from its params):
+      BODY_PATH_RECORDS  kept when _tf_record_problems finds nothing; otherwise the rebuild is REFUSED (SystemExit before
+                         anything is written) unless force, which moves the record to pose.json stale_records[key] (kept for
+                         the audit, invisible to the scene: re-run hybrid/tf_gate.py search --write)
+      any other key      kept, unchecked (reported)
+    old pose.json stale_records are carried too.  Returns (keep, stale_records, messages)."""
+    keep, stale, msgs = {}, dict(old_pose.get("stale_records") or {}), []
+    for k, rec in old_pose.items():
+        if not k.startswith("insertion_path") or k in pose_new:
+            continue
+        if k not in BODY_PATH_RECORDS:
+            keep[k] = rec
+            msgs.append("%s kept verbatim (not a body-gated record: unchecked)" % k)
+            continue
+        probs = _tf_record_problems(rec, pose_new, deps_new, deps_old, why_old)
+        if not probs:
+            keep[k] = rec
+            msgs.append("%s kept verbatim (written %s; final pose, Delta and tandem body unchanged, checked against %s)"
+                        % (k, rec.get("written"), "its depends_on" if rec.get("depends_on") else "the body on disk"))
+        elif force:
+            stale[k] = dict(record=rec, moved=time.strftime("%Y-%m-%d %H:%M:%S"), why=probs,
+                            note="moved here by a --tandem-only --force rebuild: the record no longer matches this variant's "
+                                 "body / pose; the scene does not read it (re-run hybrid/tf_gate.py search --write)")
+            msgs.append("%s NO LONGER MATCHES the rebuilt variant (%s): --force moved it to stale_records" % (k, "; ".join(probs)))
+        else:
+            raise SystemExit("refusing to rebuild: pose.json %s no longer matches the rebuilt variant:\n  %s\nNothing was "
+                             "written.  Re-run hybrid/tf_gate.py search --write after the rebuild, or pass --force to move the "
+                             "record to pose.json stale_records." % (k, "\n  ".join(probs)))
+    return keep, stale, msgs
+
+
+def _dump_json_atomic(obj, fn):
+    tmp = fn + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(obj, fh, indent=1)
+    os.replace(tmp, fn)
+
+
+def main_tandem_only(a):
+    """v4 (fix plan S4a + S4c): the tandem body alone, measured on the updated BT applicator label, carrying the SAME
+    validated tube pose as the source variant (--pose-from, default v3).  pose.json is the source's, copied, and checked
+    field by field against a re-derivation by the same rule (pose_rule with the source's rule parameters); only the
+    device-geometry fields (shaft end, cap centres) are replaced.  Writes applicator_<variant>/{tube.obj, shaft.obj,
+    applicator.json, pose.json} and logs/applicator_venezia_<variant>.json; no ovoid, rod or packing file.
+    A REBUILD keeps the insertion_path_* records other steps wrote into this variant's pose.json (tandem_first_record's
+    insertion_path_tandem_first, review M8) verbatim, so the build and the record can run in either order; a body-gated
+    record that no longer matches the rebuilt body / pose stops the rebuild before anything is written, unless --force
+    (carry_path_records).  Everything is built and checked in memory first; pose.json is replaced atomically."""
+    import copy
+    t0 = time.time()
+    if not a.variant:
+        raise SystemExit("--tandem-only builds a NEW applicator variant: pass --variant (e.g. v4)")
+    src = HY + "/applicator_" + a.pose_from
+    if os.path.abspath(src) == os.path.abspath(APP):
+        raise SystemExit("--pose-from must name another variant than --variant")
+    old = _load_json_or_empty(APP + "/applicator.json")
+    if old and not old.get("params", {}).get("tandem_only", {}).get("value", False):
+        raise SystemExit("%s holds an applicator that is not tandem-only: refusing to overwrite it (pick a new --variant)" % APP)
+    if os.path.isdir(APP):
+        stray = sorted(f for f in os.listdir(APP) if f.endswith(".obj") and os.path.splitext(f)[0] not in TANDEM_V4_PARTS)
+        if stray:
+            raise SystemExit("%s already holds non-tandem parts %s: a tandem-only variant must not" % (APP, stray))
+    # the records a rebuild must keep (M8), read before anything is written
+    old_pose = {}
+    if os.path.exists(APP + "/pose.json"):
+        old_pose = json.load(open(APP + "/pose.json"))           # unreadable -> stop: it may hold a record to keep
+    deps_old, why_old = _depends_on_disk(APP) if old_pose else (None, "no pose.json")
+    for d in (LOGS, FIGS):
+        os.makedirs(d, exist_ok=True)
+    app_in = json.load(open(P["inputs"] + "/applicator.json"))
+    bdev = json.load(open(P["out"] + "/final/bdev.json"))
+    src_app, src_pose = json.load(open(src + "/applicator.json")), json.load(open(src + "/pose.json"))
+    if src_pose.get("rule_version") != "v2":
+        raise SystemExit("the source pose (%s) is not rule v2" % src)
+    prm = default_params(app_in, bdev)
+    dropped = v4_params(prm)
+    # ---- the pose rule with the source's parameters (the validated tube pose is kept, fix plan S4a 'Pose rule')
+    for k in POSE_RULE_KEYS:
+        prm[k]["value"] = src_app["params"][k]["value"]
+        prm[k]["source"] = "copied from applicator_%s (%s)" % (a.pose_from, src_app["params"][k]["source"])
+    prm["angle_deg"]["source"] = ("POSE RULE, copied from applicator_%s: the anatomical angle between the preBT vaginal principal "
+                                  "axis and the tube (fix plan S4a: 'an anatomical angle, not a device bend').  The v4 geometry "
+                                  "does not use it" % a.pose_from)
+    prm_rule = json.loads(json.dumps(src_app["params"]))     # the source's own parameter set: the SAME rule (its arc
+    #                                                          shaft_end output is replaced by the v4 shaft end below)
+    pre = load_pre()
+    Pf, n_fix = vagina_fixed_point(pre, val(prm_rule, "vagina_fixed_inferior_mm"))
+    rule_inputs = dict(O_pre=pre["O_pre"], L_end=pre["L_end"], a0=pre["a0"], internal_os=pre["internal_os"],
+                       canal_above_L_end_mm=pre["canal_above_L_end_mm"], vagina_fixed_point=Pf, corpus_centroid=pre["uterus_X"].mean(0),
+                       vagina_axis=pre["vagina"]["axis"], vagina_centroid=pre["vagina"]["centroid"])
+    rule = pose_rule(rule_inputs, prm_rule)
+    df_src = src_pose["device_final"]
+    rederive = dict(flange_mm=_max_abs_diff(rule["flange"], df_src["flange"]), tube_axis=_max_abs_diff(rule["tube_axis"], df_src["tube_axis"]),
+                    x_app=_max_abs_diff(rule["x_app"], df_src["x_app"]), R_rows=_max_abs_diff(rule["R_rows"], df_src["R_rows"]),
+                    tip_mm=_max_abs_diff(rule["tip"], df_src["tip"]),
+                    corpus_T=_max_abs_diff(rule["corpus_T"], src_pose["corpus"]["T_preBT_to_target"]),
+                    insertion_path_F_mm=max(_max_abs_diff(q["F"], s["F"]) for q, s in zip(rule["insertion_path"]["keyframes"],
+                                                                                          src_pose["insertion_path"]["keyframes"])))
+    by = src_pose["corpus"]["by_flange_shift_mm"]
+    for key in by:
+        p2 = json.loads(json.dumps(prm_rule))
+        p2["flange_shift_mm"]["value"] = float(key)
+        r2 = pose_rule(rule_inputs, p2)
+        rederive["by_flange_shift_%s" % key] = max(_max_abs_diff(r2["flange"], by[key]["flange"]),
+                                                   _max_abs_diff(r2["corpus_T"], by[key]["T_preBT_to_target"]))
+    cp = canal_path_record(rule, pre, prm_rule)
+    rederive["insertion_path_canal_F_mm"] = max(_max_abs_diff(q["F"], s["F"]) for q, s in zip(cp["keyframes"],
+                                                                                             src_pose["insertion_path_canal"]["keyframes"]))
+    worst = max(rederive.values())
+    print("[pose v4] pose rule re-derived with applicator_%s's parameters: max |difference| to its pose.json %.2e "
+          "(flange %.2e mm)" % (a.pose_from, worst, rederive["flange_mm"]), flush=True)
+    if worst > 1e-3:
+        raise SystemExit("the re-derived pose differs from applicator_%s/pose.json by %.4g: not the same rule" % (a.pose_from, worst))
+    # ---- the label, the centreline and the meshes
+    lab = load_label_new(label_applicator_file(a.app_label))
+    geo, vox = measure_label_geometry(lab, app_in, prm)
+    vg = pre["vagina"]
+    P_intro = vg["centroid"] + vg["proj_min"] * vg["axis"]
+    C, cl = tandem_centreline_v4(geo, prm, rule["flange"], rule["R_rows"], P_intro, vg["axis"])
+    mesh, VF = build_meshes_v4(prm, C, cl["z_tube_bottom_mm"], write=False)
+    frames = load_frames()
+    check = validate_device_vs_label(VF, geo, vox, lab, prm, C, cl, rule, frames, app_in, src_pose, a.pose_from)
+    check["pose_rederivation_max_abs_diff"] = rederive
+    # ---- applicator.json
+    L = val(prm, "L_iu_mm")
+    lm_ = dict(flange=[0.0, 0.0, 0.0],
+               flange_note="applicator-frame origin = the flange: the inputs/applicator.json BT flange projected onto the label "
+                           "tube axis (fix plan 'Frames'); the device pose (pose.json device_final) places this point",
+               tip=[0.0, 0.0, L], tube_bottom=[0.0, 0.0, cl["z_tube_bottom_mm"]], shaft_start=C[0], junction=C[1],
+               tandem_label_first=C[cl["i_tandem"][0]], tandem_label_last=C[cl["i_tandem"][1] - 1], bundle_lobe_last=C[cl["i_lobe"][1] - 1],
+               shaft_end=C[-1], shaft_end_dir=cl["end_dir_app"], shaft_centreline=C, shaft_centreline_info=cl,
+               ring_top_on_axis_z=geo["ring"]["z_top_on_axis_mm"], ring_bottom_on_axis_z=geo["ring"]["z_bottom_on_axis_mm"],
+               cap_centres=[], cap_centres_note="no ovoid body in a tandem-only variant (S4b blocked on U1): the list is empty")
+    app_out = dict(units="mm, deg", frame=FRAME_APP_V4, variant=a.variant,
+                   device="Venezia-type tandem body v4: tube + vaginal tandem, ONE rigid body (the scene loads tube.obj + "
+                          "shaft.obj as the tandem), built from the updated BT applicator label (fix plan S4a); the ring halves "
+                          "with their rods are pending (S4b, decision U1).  Identity unconfirmed: RTPLAN / vendor geometry not available",
+                   written=time.strftime("%Y-%m-%d %H:%M:%S"), params=prm, dropped_params=dropped,
+                   dropped_params_note="ovoid-body, packing, rod and needle parameters of default_params: no such body in v4",
+                   parts=mesh, tandem_parts=list(TANDEM_V4_PARTS), landmarks=lm_, label_geometry=geo, label_check=check,
+                   BT_pose=dict(frame="BT world (nibabel affine of BT_MRI_label_*.nii)", origin_BT_world=geo["frame"]["origin_BT_world"],
+                                R_rows_BT_world=geo["frame"]["R_rows_BT_world"],
+                                note="the BT LABEL frame (fix plan 'Frames') = this variant's part frame at the BT pose: p_BT = "
+                                     "origin + p_app @ R_rows.  v1-v3 used the json pose (BT_pose_json)"),
+                   BT_pose_json=dict(origin_BT_world=app_in["origin_BT_world"], R_rows_BT_world=app_in["R_rows_BT_world"],
+                                     note="inputs/applicator.json BT tandem pose (v1-v3 frame)"),
+                   pose_from=dict(variant=a.pose_from, applicator_json=src + "/applicator.json", pose_json=src + "/pose.json"))
+    app_json = jz(app_out)
+    # ---- pose.json: the source's, with the device-geometry fields of v4 (never the source's body-gated records)
+    pose_out = copy.deepcopy(src_pose)
+    for k in BODY_PATH_RECORDS + ("stale_records",):
+        pose_out.pop(k, None)
+    R_fin, F_fin = np.asarray(rule["R_rows"], float), np.asarray(rule["flange"], float)
+    pose_out["written"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    pose_out["device_final"]["shaft_end"] = jz(F_fin + C[-1] @ R_fin, 4)
+    pose_out["device_final"]["shaft_end_dir"] = jz(cl["end_dir_app"] @ R_fin)
+    pose_out["device_final"]["cap_centres_world"] = []
+    pose_out["device_final"]["v4_note"] = ("tube pose identical to applicator_%s (copied; re-derived by the same rule, max |diff| "
+                                           "%.1e); shaft_end = the far end of the v4 vaginal tandem, %.1f mm beyond the preBT "
+                                           "introitus plane; no ovoid body" % (a.pose_from, worst, cl["end_beyond_introitus_mm"]))
+    pose_out["v4"] = dict(pose_from=a.pose_from, pose_rederivation_max_abs_diff=rederive,
+                          tandem_body=dict(parts=list(TANDEM_V4_PARTS), shaft_end_world=F_fin + C[-1] @ R_fin,
+                                           tube_bottom_world=F_fin + np.array([0.0, 0.0, cl["z_tube_bottom_mm"]]) @ R_fin,
+                                           introitus_point_preBT=P_intro, introitus_normal_preBT=vg["axis"],
+                                           end_beyond_introitus_mm=cl["end_beyond_introitus_mm"]),
+                          note="insertion_path_tandem_first (fix plan S5) is written by tandem_first_record (hybrid/tf_gate.py "
+                               "search --write), not here; a rebuild keeps it verbatim while the body it was gated against "
+                               "is unchanged (carry_path_records)")
+    pose_json = jz(pose_out)
+    keep, stale, msgs = carry_path_records(old_pose, pose_json, tandem_body_depends(app_json["params"], pose_json, VF),
+                                           deps_old, why_old, force=getattr(a, "force", False))
+    pose_json.update(keep)                                     # verbatim: NOT through jz (full-precision params)
+    if stale:
+        pose_json["stale_records"] = stale
+    for m in msgs:
+        print("[pose v4] %s" % m, flush=True)
+    # ---- write (every check above passed): meshes, applicator.json, pose.json (atomic)
+    os.makedirs(APP, exist_ok=True)
+    write_meshes_v4(VF)
+    json.dump(app_json, open(APP + "/applicator.json", "w"), indent=1)
+    _dump_json_atomic(pose_json, APP + "/pose.json")
+    print("[pose v4] wrote %s/{applicator.json, pose.json, tube.obj, shaft.obj}; kept %s" % (APP, sorted(keep) or "no record"),
+          flush=True)
+    if not a.no_figs:
+        fig_v4_label_check(geo, vox, VF, C, check, os.path.join(FIGS, "applicator_%s_label_check.png" % a.variant))
+    files = sorted(os.listdir(APP))
+    log = dict(started=time.strftime("%Y-%m-%d %H:%M:%S"), args=vars(a), wall_s=round(time.time() - t0, 1), files=files,
+               label_check=check, label_geometry=dict(frame=geo["frame"], tube=geo["tube"], ring=geo["ring"],
+                                                       tandem={k: v for k, v in geo["tandem"].items() if k != "stations_xyz_req"},
+                                                       bundle={k: v for k, v in geo["bundle"].items() if k not in ("stations_xyz_req", "tandem_lobe_xyz", "full")}),
+               centreline=cl, mesh=mesh)
+    json.dump(jz(log), open(LOGS + "/applicator_venezia_%s.json" % a.variant, "w"), indent=1)
+    print("[done v4] %s: files %s; S4c pass_all %s; wall %.1f s" % (APP, files, check["pass_all"], time.time() - t0), flush=True)
+
+
+# ============================================================================ fix plan S5: the tandem-first record
+TF_DEFINITION = (
+    "Tandem-first insertion (G32 fix plan S5).  The validated corpus transform is split as T_final = Trans(L) o "
+    "Rot(theta about p), p = O_true (the physician's external os, inputs/tandem_path.npz), L = T_final(p) - p.  "
+    "V: the tip runs up the vaginal part of the physician's path to O_true, tube axis = the chord of the path over the "
+    "tube length behind the tip, corpus at rest.  C: depth d 0 -> d_fin = L_iu - d_F, tip = T_C(w_r) tau(d) + w_r delta, "
+    "T_C(w) = Trans(w L_C) o Rot(w theta about p); tau = the labelled canal for follow_mm, then straight along a_lc; "
+    "tube axis = the line through the tip fitted to the traversed carried path, reached from the previous row by the "
+    "least motion that keeps frac_min of the traversed lower canal within frac_tol_mm, blended onto a_fin at the end; "
+    "w_r(d) = the smallest monotone weight that keeps the tandem body in the wall's rest lumen (hybrid/tf_gate.py); "
+    "the last C row = the tandem at Trans(L_C - L) device_final.  L: tandem and corpus translate together by "
+    "w_l (L - L_C), the last row = device_final and corpus.T_preBT_to_target.  L_C = 0 is the plan's design; a "
+    "non-zero L_C is a flagged fallback (caudal traction, or part of the lift started in C).  Rows are regenerated "
+    "from params by geom.tandem_first_path (scene_hybrid.build_schedule_tandem_first).")
+
+
+def _tf_json(o):
+    """numpy -> JSON at FULL precision (the scene regenerates the rows from params and compares them with `rows`)."""
+    if isinstance(o, dict):
+        return {k: _tf_json(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_tf_json(v) for v in o]
+    if isinstance(o, np.ndarray):
+        return _tf_json(o.tolist())
+    if isinstance(o, np.bool_):
+        return bool(o)
+    if isinstance(o, np.integer):
+        return int(o)
+    if isinstance(o, np.floating):
+        return float(o)
+    return o
+
+
+def tandem_first_record(app_dir, params, info=None, wall=None):
+    """Write pose.json["insertion_path_tandem_first"] of a TANDEM-ONLY applicator (applicator_v4, --tandem-only).
+
+    params: the geom.tandem_first_path parameter dict found by hybrid/tf_gate.py search (tau polyline, corpus split,
+    L_C, delta, final pose, V / C / L knots, axis-rule constants).  They are stored at full precision; the rows are
+    regenerated from the STORED params (so the scene's own regeneration reproduces them bit for bit) and stored too,
+    rounded to 1e-9, for the audit, for tf_metrics (tau_pts / tau_s / delta_mm / w_r_table) and for the scene's
+    staleness check.  info: provenance (mode, fallback, lift_in_C, gate summary, search) merged into the record.
+    Refuses a directory that is not tandem-only, and params whose final pose is not this pose.json's device_final.
+    Only this one key of pose.json is written (atomically: temp file + os.replace); every other key, and whatever a
+    --tandem-only build wrote, is left as it is.  depends_on = tandem_body_depends of the dir's tube.obj / shaft.obj,
+    applicator.json and pose.json as they are now (what tf_gate read): a later --tandem-only rebuild keeps the record
+    verbatim only while those are unchanged (carry_path_records), so the two steps can run in either order."""
+    app = json.load(open(os.path.join(app_dir, "applicator.json")))
+    if not app.get("params", {}).get("tandem_only", {}).get("value", False):
+        raise SystemExit("tandem_first_record: %s is not a tandem-only applicator (applicator.json params.tandem_only)"
+                         % app_dir)
+    fn = os.path.join(app_dir, "pose.json")
+    pose = json.load(open(fn))
+    missing = [p + ".obj" for p in TANDEM_V4_PARTS if not os.path.exists(os.path.join(app_dir, p + ".obj"))]
+    if missing:
+        raise SystemExit("tandem_first_record: %s has no %s (the record is gated against the tandem body)" % (app_dir, missing))
+    deps = tandem_body_depends(app["params"], pose, {p: geom.read_obj(os.path.join(app_dir, p + ".obj")) for p in TANDEM_V4_PARTS})
+    df = pose["device_final"]
+    prm = json.loads(json.dumps(_tf_json(params)))                     # exactly what the scene will read
+    dF = float(np.abs(np.asarray(prm["F_fin"], float) - np.asarray(df["flange"], float)).max())
+    da = geom.angle_deg(prm["a_fin"], df["tube_axis"])
+    if dF > 1e-3 or da > 1e-3:
+        raise SystemExit("tandem_first_record: params' final pose is %.2e mm / %.2e deg from device_final" % (dF, da))
+    rows = geom.tandem_first_path(prm)
+
+    def rr(x):
+        return np.round(np.asarray(x, float), 9).tolist()
+    rec = dict(definition=TF_DEFINITION, frame=FRAME_PRE, units="mm, deg", version="tf_gate/1.0 (fix plan S5 pass 1)",
+               written=time.strftime("%Y-%m-%d %H:%M:%S"), flange_shift_mm=float(pose["default_flange_shift_mm"]),
+               wall=wall, params=prm,
+               # tf_metrics (S0) reads these top-level keys: the planned path, delta and w_r(d)
+               tau_pts=prm["tau_pts"], tau_s=prm["tau_s"], tau_follow_mm=prm["follow_mm"], delta_mm=prm["delta"],
+               w_r_table=dict(d_mm=[k[0] for k in prm["C_knots"]], w_r=[k[1] for k in prm["C_knots"]]),
+               n_rows=dict(V=len(prm["V_tip_s"]), C=len(prm["C_knots"]), L=len(prm["L_w"])),
+               rows=[dict(i=i, phase=r["phase"], tip_s=round(r["tip_s"], 9), d_mm=round(r["d_mm"], 9),
+                          w_r=round(r["w_r"], 9), w_l=round(r["w_l"], 9), F=rr(r["F"]), tube_axis=rr(r["tube_axis"]),
+                          x_app=rr(r["R_rows"][0]), tip=rr(r["tip"]), T_corpus=rr(r["T_corpus"]))
+                     for i, r in enumerate(rows)])
+    if info:
+        rec.update(_tf_json(info))
+    rec["depends_on"] = deps
+    pose["insertion_path_tandem_first"] = rec
+    _dump_json_atomic(pose, fn)
+    return rec
+
+
 # ============================================================================ main
 def main():
     ap = argparse.ArgumentParser()
@@ -1476,6 +2675,17 @@ def main():
     ap.add_argument("--align-shaft", action="store_true",
                     help="with --scaled-ovoids: tilt the caps so their axis follows the STRAIGHT vaginal rod instead of "
                          "the intrauterine tube (tag suffix 's', e.g. ovoid_L_d26s.obj)")
+    ap.add_argument("--tandem-only", action="store_true",
+                    help="fix plan S4a/S4c: build the tandem body alone (tube + vaginal tandem swept along the label "
+                         "centreline) from the UPDATED BT applicator label into applicator_<variant>/ (needs --variant); "
+                         "pose.json = the --pose-from variant's, re-derived by the same rule and checked; no ovoid body")
+    ap.add_argument("--pose-from", default="v3", help="with --tandem-only: the variant whose validated tube pose is kept (v3)")
+    ap.add_argument("--force", action="store_true",
+                    help="with --tandem-only: rebuild even when the variant's pose.json insertion_path_tandem_first no longer "
+                         "matches the rebuilt body / pose (it is moved to pose.json stale_records; without --force the "
+                         "rebuild stops before writing anything)")
+    ap.add_argument("--app-label", default=None, help="with --tandem-only: the updated BT applicator label (default "
+                                                      "APPSIM_APP_LABEL, else <data>/../BT_MRI_label_applicator.nii)")
     a = ap.parse_args()
     global APP
     base_app = APP
@@ -1485,6 +2695,8 @@ def main():
         render3d(); return
     if a.scaled_ovoids:
         scaled_ovoids(a.scaled_ovoids, align_shaft=a.align_shaft); return
+    if a.tandem_only:
+        main_tandem_only(a); return
     t0 = time.time()
     for d in (APP, FIGS, LOGS):
         os.makedirs(d, exist_ok=True)

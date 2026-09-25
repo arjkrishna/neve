@@ -2,6 +2,7 @@
 views of label_views.py (--overlay), plus the numbers that say what is misaligned and why.
 
     python hybrid/bt_overlay.py prep --tag G32            # -> figs/overlay_prep/<tag>_PELVIS/{<name>.obj, stats.json}
+    python hybrid/bt_overlay.py prep --tag X --run-dir <folder> --out <dir>   # a run folder elsewhere / another output
 
 Frame: the evaluator's PELVIS frame (validation/alignment.json, peri-organ MI registration; no organ label enters
 its fit), y_pre = R x_BT + t.  So the overlays compare the simulated organs with the real ones relative to the
@@ -9,7 +10,18 @@ pelvis, and include the pose rule's device error.  Surfaces: marching cubes on e
 mapped voxel -> BT world -> preBT world.  Per structure, stats.json records the label volumes before and after
 insertion, and three centroids: preBT label, BT label (mapped), and the simulated body at rest and at the end.
 Their differences separate "the model moved it the wrong way" from "the organ changed volume or shape, which the
-model cannot do".  Patient-derived output: local only."""
+model cannot do".
+
+HR-CTV side split (fix plan S0, "reference hygiene"): the preBT HR-CTV outside the uterus is split right / left of the
+PHYSICIAN'S path (inputs/tandem_path.npz: voxel x minus the path's x at the voxel's z, tandem_path.py's path_xz
+definition, +3.2 mm / 24.2 : 21.6 cc on this patient), not of the canal.npz line (O_pre -> internal os, whose lower
+22.5 mm is extrapolated through tumour: +6.0 mm / 28.3 : 17.4 cc).  The canal.npz numbers are kept under *_canal_npz
+for the G16-G32 record.  The BT split stays against the real tandem.
+
+Device: the run's own applicator dir (cfg applicator_dir; eval_hybrid.run_devsurf), so a v4 run's vaginal axis is its
+swept shaft (landmarks.shaft_end_dir) and a run without a ring has no ring offset (null).  MEASURED why: the pre-S6c
+code read hybrid/applicator/ (the Stage-1 device, angle 24 deg) for every run, so G32's vagina widths were taken
+along a 24 deg rod instead of its 28.9 deg one.  Patient-derived output: local only."""
 import argparse
 import json
 import os
@@ -93,7 +105,24 @@ def centreline(P, step=2.0):
     return np.array(out)
 
 
-def prep(tag):
+def run_mesh_dirs(cfg):
+    """eval_hybrid.run_mesh_dirs for a cfg (so a run folder outside hybrid/runs works): every body is
+    meshes/<body>/ except a wall run's vagina, loaded from meshes/_scene_<vagina_wall_dir>/vagina/."""
+    d = {b: "%s/%s" % (EH.MESHES, b) for b in EH.BODIES}
+    if cfg.get("vagina_model") == "wall":
+        wd = cfg.get("vagina_wall_dir", "vagina_wall")
+        for cand in ("%s/_scene_%s/vagina" % (EH.MESHES, wd), "%s/%s" % (EH.MESHES, wd)):
+            if os.path.exists(cand + "/tets.vtk"):
+                d["vagina"] = cand
+                break
+        else:
+            raise SystemExit("vagina_model='wall' but no mesh for vagina_wall_dir=%r under %s" % (wd, EH.MESHES))
+    return d
+
+
+def prep(tag, run_dir=None, out=None):
+    """run_dir: the run folder (default hybrid/runs/<tag>); out: the output folder (default
+    figs/overlay_prep/<tag>_PELVIS).  Both exist so a test or a synthetic run never writes into the data's figs."""
     cx = EH.Ctx()
     fmap, R, t = cx.pelvis_map()
     to_pre = lambda X: np.asarray(X, float) @ R.T + t           # BT world -> preBT world (y = R x + t)
@@ -110,7 +139,7 @@ def prep(tag):
     prem = {"cervix": pre["HR-CTV"][0] & ~pre["uterus"][0], "corpus": pre["uterus"][0], "vagina": pre["vagina"][0],
             "bladder": pre["bladder"][0], "rectum": pre["rectum"][0], "sigmoid": pre["sigmoid"][0]}
     vv_pre = float(abs(np.linalg.det(pre_aff[:3, :3])))
-    out = "%s/overlay_prep/%s_PELVIS" % (EH.FIGS, tag)
+    out = (out or "%s/overlay_prep/%s_PELVIS" % (EH.FIGS, tag)).replace("\\", "/")
     os.makedirs(out, exist_ok=True)
     # ---- surfaces of the BT structures in the preBT (model) frame
     for n, m in btm.items():
@@ -121,9 +150,9 @@ def prep(tag):
     np.save(out + "/IUcanal_centreline_bt.npy", cl_bt)
     np.save(out + "/IUcanal_centreline_pre.npy", cl_pre)
     # ---- the numbers
-    rd = "%s/%s" % (EH.RUNS, tag)
+    rd = (run_dir or "%s/%s" % (EH.RUNS, tag)).replace("\\", "/")
     cfg = json.load(open(rd + "/cfg.json"))
-    mdirs = EH.run_mesh_dirs(tag)
+    mdirs = run_mesh_dirs(cfg)
     stats = dict(tag=tag, frame="PELVIS (validation/alignment.json frames.%s): y_pre = R x_BT + t" % EH.PELVIS_KEY,
                  axes="preBT world RAS: +x = patient right, +y = anterior, +z = superior", structures={})
     model_pts = {}
@@ -163,34 +192,53 @@ def prep(tag):
     # device: the real applicator / ovoid labels vs the model device
     dj = json.load(open(rd + "/device_final.json"))
     stats["device"] = dict(ovoid_label_centroid=to_pre(mask_points(btm["ovoid"], bt.aff)).mean(0).round(2).tolist(),
-                           model_ovoid_centres=np.asarray(dj["ovoid_centres_mm"], float).round(2).tolist(),
+                           model_ovoid_centres=np.asarray(dj.get("ovoid_centres_mm") or [], float).round(2).tolist(),
                            model_flange=dj["flange_mm"], model_tube_axis=dj["tube_axis"],
                            bt_flange_pre=to_pre(bt.F[None])[0].round(2).tolist(),
                            bt_axis_pre=(bt.a @ R.T).round(5).tolist())
     # ---- the measurements behind the likely causes
     F_m, a_m = np.asarray(dj["flange_mm"], float), geom.unit(dj["tube_axis"])
     Fbt, abt = to_pre(bt.F[None])[0], geom.unit(bt.a @ R.T)
-    th = np.radians(float(json.load(open(EH.APPD + "/applicator.json"))["params"]["angle_deg"]["value"]))
+    appj = json.load(open(EH.run_devsurf(None, cfg)[1] + "/applicator.json"))     # the RUN's applicator variant
+    th = np.radians(float(appj["params"]["angle_deg"]["value"]))
     R_ov = np.array([dj["ovoid_x_app"], dj["ovoid_y_app"], dj["ovoid_axis"]], float) if "ovoid_axis" in dj else \
         np.array([dj["x_app"], dj["y_app"], dj["tube_axis"]], float)
-    up_v = -(np.array([0.0, np.sin(th), -np.cos(th)]) @ R_ov)
+    if "shaft_centreline" in appj.get("landmarks", {}):         # v4: the swept vaginal tandem's own end direction
+        R_t = np.array([dj["x_app"], dj["y_app"], dj["tube_axis"]], float)
+        up_v = -geom.unit(np.asarray(appj["landmarks"]["shaft_end_dir"], float) @ R_t)
+    else:                                                       # v1-v3: the straight rod at angle_deg
+        up_v = -(np.array([0.0, np.sin(th), -np.cos(th)]) @ R_ov)
     cz = np.load(EH.INP + "/canal.npz")
     cp, ios = np.asarray(cz["pts"], float), int(cz["i_internal_os"])
     a_pre = geom.unit(cp[ios] - cp[0])
+    tp = np.load(EH.INP + "/tandem_path.npz")                     # S3: the physician's tandem path
+    tpts, O_true = np.asarray(tp["pts"], float), np.asarray(tp["O_true"], float)
+    a_lc = geom.unit(np.asarray(tp["a_lc"], float))
 
     def lr_split(P, O_, d, vox_cc):
+        """Right / left of the LINE O_ + t d: the lateral x-component (the real tandem; canal.npz for the record)."""
         q = P - O_
         x = (q - np.outer(q @ d, d))[:, 0]
         return round(float((x > 0).sum() * vox_cc), 1), round(float((x <= 0).sum() * vox_cc), 1), float(x.mean())
+
+    def lr_split_path(P, path, vox_cc):
+        """Right / left of the PHYSICIAN'S PATH: voxel x minus the path's x at the voxel's z (tandem_path.py
+        path_xz, which reproduces the plan's +3.2 mm / 24.1-24.4 : 21.4-21.7 cc)."""
+        o = np.argsort(path[:, 2])
+        x = P[:, 0] - np.interp(P[:, 2], path[o, 2], path[o, 0])
+        return round(float((x > 0).sum() * vox_cc), 1), round(float((x < 0).sum() * vox_cc), 1), float(x.mean())
     Hp = mask_points(prem["cervix"], pre_aff)
     Hb = to_pre(mask_points(btm["cervix"], bt.aff))
-    rp, lp, xp = lr_split(Hp, cp[0], a_pre, vv_pre / 1000.0)
+    rp, lp, xp = lr_split_path(Hp, tpts, vv_pre / 1000.0)
+    rp_c, lp_c, xp_c = lr_split(Hp, cp[0], a_pre, vv_pre / 1000.0)
     rb, lb, xb = lr_split(Hb, Fbt, abt, bt.vv / 1000.0)
     Xc = np.asarray(__import__("vagina_wall").read_vtk_legacy(mdirs["cervix"] + "/tets.vtk")[0], float) + \
         np.load("%s/final/cervix_u.npy" % rd)
     xm = float(((Xc - F_m) - np.outer((Xc - F_m) @ a_m, a_m))[:, 0].mean())
     Pc = mask_points(pre["IUcanal"][0], pre_aff)
     lab_start = float(((Pc - cp[0]) @ a_pre).min())
+    lab_start_true = float(((Pc - O_true) @ a_lc).min())
+    oc_m = np.asarray(dj.get("ovoid_centres_mm") or [], float).reshape(-1, 3)
     q = cl_bt - Fbt
     bt_canal_dev = float(np.linalg.norm(q - np.outer(q @ abt, abt), axis=1).max())
     widths = {}
@@ -205,14 +253,24 @@ def prep(tag):
                            round(float(np.percentile(Q[:, 1], 97) - np.percentile(Q[:, 1], 3)), 1)]
         widths["%+.0f" % hh] = row
     stats["measurements"] = dict(
-        hrctv_lr_split_cc=dict(pre_right=rp, pre_left=lp, bt_right=rb, bt_left=lb,
-                               note="HR-CTV outside the uterus, right / left of the pre-insertion canal line (pre) and of the real tandem (BT)"),
-        hrctv_mean_x_offset_mm=dict(pre_vs_canal=round(xp, 1), bt_vs_tandem=round(xb, 1), model_vs_tandem=round(xm, 1),
-                                    note="+ = patient right"),
+        hrctv_lr_split_cc=dict(pre_right=rp, pre_left=lp, bt_right=rb, bt_left=lb, reference="tandem_path",
+                               note="HR-CTV outside the uterus, right / left of the physician's tandem path (pre: voxel x "
+                                    "minus the path's x at its z, tandem_path.npz) and of the real tandem (BT)"),
+        hrctv_lr_split_cc_canal_npz=dict(pre_right=rp_c, pre_left=lp_c,
+                                         note="pre-S6c reference: right / left of the canal.npz line O_pre -> internal os"),
+        hrctv_mean_x_offset_mm=dict(pre_vs_path=round(xp, 1), pre_vs_canal=round(xp_c, 1), bt_vs_tandem=round(xb, 1),
+                                    model_vs_tandem=round(xm, 1), note="+ = patient right"),
         canal_label_starts_above_os_mm=round(lab_start, 1),
+        canal_label_starts_above_O_true_mm=round(lab_start_true, 1),
+        canal_label_note="above_os: from canal.npz's O_pre along a0 (the extrapolated lower canal G16-G32 tied); "
+                         "above_O_true: from the physician's external os along a_lc (tandem_path.npz)",
         bt_canal_vs_real_tandem_max_mm=round(bt_canal_dev, 1),
         vagina_width_lr_ap_mm=widths,
-        ring_offset_mm=(to_pre(mask_points(btm["ovoid"], bt.aff)).mean(0) - np.asarray(dj["ovoid_centres_mm"], float).mean(0)).round(1).tolist())
+        vagina_width_axis="up_v = %s (%s)" % (np.round(up_v, 4).tolist(), "v4 shaft_end_dir" if "shaft_centreline"
+                                              in appj.get("landmarks", {}) else "straight rod at %.1f deg"
+                                              % np.degrees(th)),
+        ring_offset_mm=((to_pre(mask_points(btm["ovoid"], bt.aff)).mean(0) - oc_m.mean(0)).round(1).tolist()
+                        if len(oc_m) else None))
     ev_m = "%s/%s/metrics.json" % (EH.EVALD, tag)
     if os.path.exists(ev_m):
         m = json.load(open(ev_m))["frames"]["PELVIS"]
@@ -235,8 +293,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["prep"])
     ap.add_argument("--tag", required=True)
+    ap.add_argument("--run-dir", default=None, help="run folder (default hybrid/runs/<tag>)")
+    ap.add_argument("--out", default=None, help="output folder (default figs/overlay_prep/<tag>_PELVIS)")
     a = ap.parse_args()
-    prep(a.tag)
+    prep(a.tag, a.run_dir, a.out)
 
 
 if __name__ == "__main__":
