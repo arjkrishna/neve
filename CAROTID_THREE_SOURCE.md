@@ -39,8 +39,9 @@ that those anatomies cannot represent.
 
 This document is the build record of the **v1** set, `carotid_data/anatomies/`
 (215). The set has since been rebuilt twice from the same 237-pair plan. Both
-rebuilds keep every graft fix recorded below; what changes is the mesher, plus
-the constants that existed only to compensate for it.
+rebuilds keep every graft fix recorded below; what changes is the mesher and the
+floors that compensated for it (route and ECA 1.6 → 1.0 mm). The 0.35 mm fusing
+band is kept, and a 1.0 mm siphon floor is new.
 
 | | v1 (this document) | v2 | v3 |
 |---|---|---|---|
@@ -51,26 +52,46 @@ the constants that existed only to compensate for it.
 | siphon floor (`--siphon-min-r`) | none | 1.0 | 1.0 |
 | `FUSE_BAND_MM` | 0.35 | 0.35 | 0.35 |
 | navigable (meshed lumen − 0.3 mm contact ≥ 0.35 mm catheter) | 71 / 215 | **223 / 223** | **223 / 223** |
-| shipped stenosis grade, max | 36 % | 56 % | 56 % |
-| anatomies at or above NASCET 50 % | 0 | 30 | 30 |
+| stenosis grade on the shipped ICA, max (own distal / donor distal) | 37 % / 36 % | 60 % / 56 % | 60 % / 56 % |
+| anatomies at ≥ 50 % (own / donor distal) | 0 | 24 / 25 | 24 / 25 |
 
-v2 gains eight anatomies over v1:
+v2 gains eight anatomies over v1 and loses none:
 
-- **five** that v1 excluded as severed at the siphon terminus
-  (`excluded_severed.json`). The signed-distance mesher and the 1.0 mm siphon
-  floor keep that terminus open.
-- **three** `case_w_014_right__*` pairs that v1 rejected for fusing. The lower
-  floors put their clearance back above the fusing band.
+- **five** that v1 excluded after baking as severed at the siphon terminus
+  (`excluded_severed.json`). In v2/v3 all five are one mesh component and
+  navigable. Four (the `topcow_mr_007_L` and `topcow_mr_003_L` pairs) were
+  regrafted with the 1.0 mm siphon floor. `case_w_040_left__topcow_mr_023_L` was
+  not floored in v2 (raw siphon minimum 1.32 mm), so for it the signed-distance
+  mesher alone keeps the terminus open.
+- **three** `case_w_014_right__*` pairs (`topcow_mr_010`, `_011_L`, `_027`) that
+  v1's grafter rejected at the ECA re-entry gate. With the 1.6 mm ECA floor the
+  ECA came back within the 0.35 mm band of the route at 16 mm, which left the
+  ECA shorter than `ECA_MIN_MM` = 17 mm. Lowering `ECA_MESH_R_MM` to 1.0 mm opens
+  that gap to +0.36 mm and removes the re-entry. The route floor plays no part:
+  these routes are never floored.
 
-The 14 pairs still not built are fusing rejections. v3's centerlines are
-identical to v2's, so only the mesh differs; each v3 `provenance.json` also
-records the transforms the graft applied (`xform`), which the union uses to
-carry the source surfaces into place.
+The 14 pairs still not built were rejected by the grafter (`BUILD_v2.json`:
+"fusing below the band"). No grafter log survives. A reconstruction from shipped
+data puts 13 of them at the final clearance gate, most as outright overlaps
+(−0.2 to −4.1 mm) with the LVA or LCCA rather than near-contact. It cannot decide
+the 14th (`case_w_026_left__topcow_mr_002`). v3's centerlines are identical to
+v2's, so only the mesh differs. Each v3 `provenance.json` also records the
+transforms the graft applied (`xform`), which the union uses to carry the source
+surfaces into place.
 
-The grade is the declared grade on the centerline, after the floor, measured
-the way `build_manifest.py` measures it: `1 − min ICA radius / distal ICA radius`.
+The grade is `1 − min ICA radius / distal ICA radius` on the shipped route
+centerline (`Centerline curve - RCCA`). The ICA window is [host_cut + cca_mm,
++ ica_mm] from `provenance.json`. With the distal radius taken the way
+`build_manifest.py` takes it (median of the last third of that ICA), v2/v3 reach
+60.4 %, with 24 of 223 at ≥ 50 % and 35 at ≥ 40 %. With the donor's manifest
+distal radius instead, they reach 56.0 %, with 25 at ≥ 50 % and 33 at ≥ 40 %.
+Donor grades computed on paper from `lower_manifest.json` (30 at ≥ 50 %, 47 at
+≥ 40 %) overcount, because they include ICA-tip crop-face minima that the 25 mm
+seam-2 ramp overwrites.
 Constants and guards: `V2_BUILD_PLAN.md`. Results: `MESHING_PIPELINE_ANALYSIS.md`
-§7–8, and `BUILD_v2.json` / `BUILD_v3.json` in each folder.
+§7–8, `BUILD_v2.json` / `BUILD_v3.json` in each set's `anatomies_v2/` and
+`anatomies_v3/` folder (method and flags; only Set B's `BUILD_v2.json` records
+build counts), and per anatomy in `mesh_v2.json` / `mesh_v3.json`.
 
 ---
 
@@ -269,12 +290,17 @@ half the erosion is `decimate(0.99)` rather than the smoothing, so baking the af
 at a finer decimation would let the floor drop and keep more grade, at the cost of SOFA
 collision performance. Do not claim lesion realism for this set as it stands.
 
-**In v2/v3 this is largely recovered.** At a 1.0 mm floor the shipped grade
-reaches 56 %: 30 of 223 anatomies are at or above the NASCET 50 % threshold,
-and 47 are at or above 40 %. Donor grades above 56 % (the database goes to 74 %)
-are still capped, so the most severe lesions remain absent. The v3 union does
-not change this: where the real lumen pinches below the floor, the floored tube
-wins by construction.
+**In v2/v3 this is largely recovered.** At a 1.0 mm floor the shipped ICA grade
+reaches 56–60 % (donor-distal / own-distal reference). 24–25 of 223 anatomies are
+at or above the NASCET 50 % threshold, from five lowers (`k_011_left`,
+`m_022_left`, `m_030_right`, `w_025_right`, `w_052_left`), and 33–35 are at or
+above 40 %. v1 has none at either. The floor is an absolute 1.0 mm radius, so each
+donor is capped at its own `1 − 1.0/distal`, not at a common 56 %: `w_052_left`
+falls from 73.6 % to about 55 %, and `w_047_left` from 63.8 % to 44–59 %. Among
+the 48 paired lowers the donor maximum is 73.6 %. The full 138-model
+`lower_manifest.json` reaches 86.3 %, but its eight grades above 73.6 % are all
+ICA-tip crop-face minima. The v3 union does not change the declared grade,
+because v3 centerlines are identical to v2's; it can only widen the meshed lumen.
 
 ## Rebuilding
 
@@ -289,7 +315,9 @@ wins by construction.
     # v2: same pairing, the v2 constants, the signed-distance baker
     bash carotid_tools/run_container.sh python3 carotid_tools/graft_three.py --out carotid_data/anatomies_v2 --route-min-r 1.0 --eca-mesh-r 1.0 --distal-trim 0 --fuse-band 0.35 --siphon-min-r 1.0 --only LO:HI
     bash carotid_tools/run_container.sh python3 topbrain_tools/bake_meshes_v2.py --anatomies carotid_data/anatomies_v2 --shard i/n
-    # v3: graft into anatomies_v3 with the same flags (that run records provenance.json["xform"]), then
+    # v3: graft into anatomies_v3 with the same flags (graft_three.py records provenance.json["xform"]
+    # on every run since 033009a), then bake. The bake needs the Zenodo *_lumen.stl files at the
+    # paths in xform and topbrain_data/surfaces*.
     bash carotid_tools/run_container.sh python3 topbrain_tools/bake_meshes_v3.py --anatomies carotid_data/anatomies_v3 --shard i/n
     bash carotid_tools/run_container.sh python3 topbrain_tools/check_anatomies.py --anatomies carotid_data/anatomies_v3
 

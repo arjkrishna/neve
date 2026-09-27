@@ -9,8 +9,9 @@ and fixed along the way. The fixes are the point. Most of them were invisible to
 the check that was in place when they were introduced, and several were only
 caught because a later, stricter check was written.
 
-**Result (v1):** 49 anatomies at `topbrain_data/anatomies/`, of which **47 are usable**.
-Exclude `topcow_mr_015` and `topcow_mr_003_L` (see [Known failures](#known-failures-v1-only)).
+**Result (v1):** 49 anatomies at `topbrain_data/anatomies/`. Two (`topcow_mr_015`,
+`topcow_mr_003_L`) leave the mesh and must be excluded. Under the current checker, which
+adds the meshed-lumen test, only 22 of 49 are navigable (see [Known failures](#known-failures-v1-only)).
 The v2 and v3 rebuilds need no exclusions — see [Current state](#current-state-v2--v3).
 
 The set is built from BOTH internal carotids of each patient: 25 from the right
@@ -22,9 +23,12 @@ being a truncated mask. See [Both sides](#both-sides-doubling-the-set).
 ## Current state (v2 / v3)
 
 This document is the build record of the **v1** set. The same 49 anatomies have
-since been rebuilt twice. Both rebuilds keep every graft fix recorded below; what
-changes is the collision mesher, plus the constants that existed only to
-compensate for it.
+since been rebuilt twice. Both rebuilds keep every graft fix recorded below. v2 was
+also grafted with the RVA per-point-baseline fix (`a898eb2`), which the v1 set
+predates, so four RVA repairs are smaller in v2 (`mr_002_L` 4.00→2.25 mm,
+`mr_012_L` 4.50→3.00, `mr_018` 4.00→2.25, `mr_026` 4.00→1.50; the Fix C4 table is
+v1). Otherwise what changes is the mesher, the distal trim (4 mm → none), and a
+new 1.0 mm siphon floor.
 
 | | v1 (this document) | v2 | v3 |
 |---|---|---|---|
@@ -36,8 +40,11 @@ compensate for it.
 | navigable (meshed lumen − 0.3 mm contact ≥ 0.35 mm catheter) | 22 / 49 | **49 / 49** | **49 / 49** |
 | exclusions needed | `mr_015`, `mr_003_L` | none | none |
 
-v3's centerlines are identical to v2's, so only the mesh differs. The rise,
-kink and junction statistics are unchanged from v1. Each v3 folder also carries
+v3's centerlines are identical to v2's, so only the mesh differs. Against v1,
+every v2/v3 route is the v1 route plus 4–5 mm at the terminus (no distal trim),
+and six siphons are lifted by the floor. Route length is 206–268 mm, rise
+156–188 mm, worst bend 21–45° and minimum diameter 2.00–3.84 mm. Junction bends
+(7–38°, 1/49 over the host) are unchanged. Each v3 folder also carries
 `graft_xform.json`, the rotation and anchor the graft applied, which the union
 uses to carry the label surface into place.
 
@@ -484,7 +491,7 @@ unmodified host. Runs outside the container (numpy only).
 | fit | catheter OD (0.7 mm) fits the narrowest lumen |
 | `--sofa` | SOFA loads the mesh and steps without diverging |
 | route connectivity *(added with set B)* | the route lies in ONE mesh component, the one holding the insertion point; enclosure alone scores a severed tube as ~100 % enclosed |
-| meshed lumen *(added for v2)* | narrowest meshed lumen along the route − 0.3 mm contact ≥ 0.35 mm catheter radius; `fit` reads the *declared* radius and passed v1 anatomies whose mesh was sealed |
+| meshed lumen *(added for v2)* | narrowest meshed lumen along the route − 0.3 mm contact ≥ 0.35 mm catheter radius; `fit` reads the *declared* radius and passed v1 anatomies whose meshed lumen was effectively sealed (0.01–0.06 mm at the worst RCCA point) |
 
 Two **controls** are run through the identical code path: the shipped tree as it
 ships, and the shipped tree with the same cranial stubs dropped. Both score
@@ -498,7 +505,7 @@ if a point is **> 1.5 mm** beyond the wall **and** the run is **> 3** consecutiv
 points. Depth is measured, not just membership, precisely so this distinction
 can be made.
 
-### Current numbers *(v1; geometry unchanged in v2/v3)*
+### Current numbers *(v1; v2/v3 differ, see Current state)*
 
 ```
 49 anatomies (25 right ICA + 24 mirrored left ICA)
@@ -519,11 +526,16 @@ than the shared trunk. Both devices advance 190 mm; tips move 121–163 mm.
 
 ### Known failures *(v1 only)*
 
-Both failures below pass in v2 and v3. Each is a *label neck*: a stretch where
-the segmentation is one or two voxels thin (`label_necks.py`: 5th-percentile
-radius 0.84 mm for `mr_015`, 0.73 mm for `mr_003_L`). The v1 mesher sealed it
-shut; the 1.0 mm siphon floor keeps it open. The train/test rule at the end of
-this section still applies to every version.
+Both failures below pass in v2 and v3. Both vessels contain label-neck voxels
+(`label_necks.py`, skeleton EDT < 0.6 mm: 4 in `mr_015_rICA`, 8 in `mr_003_lICA`;
+whole-vessel 5th-percentile radius 0.84 and 0.73 mm). So do 18 other vessels,
+some of which pass v1, and `label_necks.json` records no locations, so the neck
+is not shown to be the failure site. The v1 blur mesher sealed or severed both.
+In v2 the signed-distance mesher keeps both open even without the floor. The
+1.0 mm siphon floor lifts `mr_015`'s narrowest meshed lumen from 0.61 to 0.74 mm,
+which makes it navigable, and changes `mr_003_L` only marginally. The train/test
+rule in this section (keep both ICAs of a patient together) applies to every
+version. The borderline paragraph after it is v1 only.
 
 **`topcow_mr_015` should be excluded from v1.** Its distal 22 mm pinches shut: 23
 centerline points outside the mesh, 22 of them consecutive, up to **7.19 mm**
@@ -558,7 +570,7 @@ from eve_bench.dualdevicenavtopbrain import DualDeviceNavTopBrain
 train = DualDeviceNavTopBrain(anatomy_dir="topbrain_data/anatomies",
                               seed=base_seed + worker_id,
                               episodes_between_change=10,
-                              exclude=["topcow_mr_015"] + HELD_OUT)
+                              exclude=["topcow_mr_015", "topcow_mr_003_L"] + HELD_OUT)
 test  = DualDeviceNavTopBrain(only=HELD_OUT)
 ```
 
@@ -575,9 +587,13 @@ can warm-start on this.
 `topbrain_data/anatomies/` is self-contained and sufficient — 59 MB on disk for
 the 49, 1.2 MB per anatomy, holding 16 centerlines plus the baked `.obj`. The v2
 and v3 sets are 96 MB each, about 2 MB per anatomy, because the `.obj` is 20 k
-triangles. Their folders also hold a `collision_full.vtp` (60 k triangles) that
-`recut_obj.py --tris N` uses to change the budget. It is gitignored and not
-needed to train. Verified by
+triangles. The v2 and v3 bakers also write a `collision_full.vtp`
+(≈60 k triangles) into each folder. It is gitignored, so a checkout does not have
+it, and nothing loads it to train. `recut_obj.py --anatomies <dir> --tris N`
+re-cuts every `.obj` from those files, so it only works after a local re-bake; on
+a checkout it re-cuts 0 meshes. It writes `mesh_v2.json` only and skips the v3
+navigability step-up, so use it on v2 folders only. Re-bake v3 with
+`bake_meshes_v3.py --force` instead. Verified by
 copying two anatomies to an empty directory, mounting only that, and running
 SOFA from it.
 
@@ -616,7 +632,8 @@ marked, which is what made Fix C1 visible in the first place.
 - **`BenchEnv5` untested** on these. The intervention layer is verified; the
   reward/observation wrapper on top is not.
 - **Target distribution.** `target_min_arclength_mm` (a constructor argument of
-  `DualDeviceNavTopBrain`) defaults to 40 mm, so roughly 45%
+  `DualDeviceNavTopBrain`, passed to eve's `CenterlineRandom` as
+  `min_arclength_from_start`) defaults to 40 mm, so roughly 45%
   of targets land in the 130 mm of host trunk every anatomy shares rather than
   in the graft. Same as the procedural env, but it dilutes the inter-patient
   signal. Raising it to ~130 mm would force every target into the real siphon.
@@ -660,8 +677,11 @@ python topbrain_tools/label_necks.py <mask_dir>
 python topbrain_tools/graft_siphon.py --out topbrain_data/anatomies_v2 --distal-trim 0 --route-min-r 1.0
 python topbrain_tools/graft_siphon.py --out topbrain_data/anatomies_v2 --distal-trim 0 --route-min-r 1.0 --centerlines topbrain_data/centerlines_left --mirror --name-suffix _L
 
-# stage D + E (container). For v3, graft into anatomies_v3 with the same flags --
-# that run writes graft_xform.json -- then bake with bake_meshes_v3.py.
+# stage D + E (container). For v3, graft into anatomies_v3 with the same flags,
+# then bake with bake_meshes_v3.py, which reads the graft_xform.json that
+# graft_siphon.py writes on every run (shipped v2 lacks it only because it
+# predates 033009a). Both bakers skip folders that already have a report unless
+# --force is given.
 python3 topbrain_tools/bake_meshes_v2.py --anatomies <dir> --shard i/n
 python3 topbrain_tools/check_anatomies.py --anatomies <dir> --host <shipped Centrelines_comb> --sofa 4
 ```

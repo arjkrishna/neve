@@ -309,7 +309,8 @@ Not in VMTK but the same category: `scipy.ndimage.binary_fill_holes`,
    fusing band toward one voxel — re-derive `FUSE_BAND_MM` on the new mesher
    rather than carrying 0.35 forward.
 6. **Lower the floors.** With (1) a 1.0 mm tube meshes at 0.97. `ROUTE_MIN_R`
-   1.60 → ≈ 1.0 mm restores stenosis grades to ~60 % (NASCET-significant), and
+   1.60 → ≈ 1.0 mm restores stenosis grades to ~60 % (`build_manifest` formula on the shipped ICA;
+   NASCET-significant), and
    `ECA_MESH_R_MM` can follow. Re-run the ring/re-entry gates when it drops.
 7. **Drop `DISTAL_TRIM_MM`; extend instead.** SDF caps are full-radius
    hemispheres; a 2–3 mm `vmtkflowextensions`-style overshoot puts terminal
@@ -351,12 +352,15 @@ Meshed lumen along the RCCA route, every anatomy (`saved/mesher_probe/compare_v1
 | per-anatomy min-lumen change v2 − v1 | | **+0.74 mm median, none worse** | | **+0.78 mm median, none worse** |
 
 Set B built 223 of 237 pairs against v1's 215. Of the eight gained, five are the
-anatomies v1 excluded as severed at the siphon terminus, now open, and three are
-`case_w_014_right` pairs v1 rejected for fusing; the 14 not built are fusing
-rejections. Set A's centerlines are identical to v1's on the shared prefix
+anatomies v1 excluded as severed at the siphon terminus (now open; four also carry
+the siphon floor, `case_w_040_left__topcow_mr_023_L` does not). The other three are
+`case_w_014_right` pairs that v1 rejected at the ECA re-entry gate, which the
+1.0 mm ECA floor removes. The 14 not built failed the final clearance gate, mostly
+as true overlaps with the LVA or LCCA (reconstructed; no grafter log). Set A's centerlines are identical to v1's on the shared prefix
 (49/49), +5 mm at the terminus (no trim), and six siphons have radii lifted to
-1.0 mm at their label necks (`mr_001, 003_L, 007_L, 010_L, 013, 015`); rise, kink
-and junction statistics are unchanged (`validate_anatomies.py`).
+1.0 mm at their label necks (`mr_001, 003_L, 007_L, 010_L, 013, 015`); junction
+statistics are unchanged; route length, rise, worst bend and minimum diameter change
+(no trim, siphon floor) (`validate_anatomies.py`).
 
 The shipped host tree through the v2 mesher (`topbrain_data/host_v2_control`):
 0.99 mm minimum lumen, 0.14 mm deficit, navigable — the test anatomy meshed the

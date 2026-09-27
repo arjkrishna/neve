@@ -292,9 +292,14 @@ Four workflows, **64 agents**, across the fix cycle.
 
 **v2 and v3** (`anatomies_v2/`, `anatomies_v3/`, built 2026-09-03) replaced the
 mesher and lowered the floors to 1.0 mm, with the fusing band kept at 0.35 mm.
-Both sets hold **223** anatomies and pass **223 / 223** — every check above,
-plus the meshed-lumen check below. SOFA rollouts ran 9/9 on v2 (targets 140–177 mm
-along the route) and 10/10 on v3, all with targets past the seam. The record is in
+Both sets hold **223** anatomies and pass `check_anatomies.py`'s static checks
+223 / 223, including the meshed-lumen check below. The checker has no topology
+(genus) test. The v3 union adds handles in about 65 anatomies that v2 lacks, one of
+them a device-passable RCCA–RVA merge in `case_w_047_left__topcow_mr_018_L`. SOFA
+was run on samples only: 9/9 on v2 (targets 140–177 mm along the route) and 10/10
+on v3 (targets 136–206 mm). Each rollout inserts about 64 mm and the tip moves
+39–56 mm, so this shows the scene loads and steps. It does not show that a device
+reaches the 130 mm seam. The record is in
 `CAROTID_THREE_SOURCE.md` (*Current state*), `V2_BUILD_PLAN.md` and
 `MESHING_PIPELINE_ANALYSIS.md` §7–8.
 
@@ -311,9 +316,12 @@ along the route) and 10/10 on v3, all with targets past the seam. The record is 
 - **SOFA rollout** — the only check that exercises the simulator rather than the geometry.
 - **meshed lumen** *(added for v2)* — the narrowest meshed lumen along the route minus
   SOFA's 0.3 mm contact distance, against the catheter's 0.35 mm radius. `fit` reads the
-  *declared* radius, so it passed v1 anatomies whose mesh was 0.00 mm at the worst point;
-  only 71 of the 215 v1 anatomies clear this. On the first v2 bake it caught 13 anatomies
-  whose TopBrain siphons had been left unfloored, which added `--siphon-min-r`.
+  *declared* radius, so it passed v1 anatomies whose meshed lumen was as low as 0.01 mm
+  (`case_w_008_right__topcow_mr_023_L`; the host control through the v1 mesher reads 0.00 mm);
+  only 71 of the 215 v1 anatomies clear this. On the first v2 bake it flagged anatomies
+  whose TopBrain siphons had been left unfloored (`BUILD_v2.json` records 13). The 22
+  pairs on `mr_001`, `mr_003_L`, `mr_007_L` and `mr_010_L` were regrafted with
+  `--siphon-min-r 1.0`.
 
 ## What remains known and open
 
@@ -324,10 +332,11 @@ along the route) and 10/10 on v3, all with targets past the seam. The record is 
   Reversible: about half the erosion is `decimate(0.99)`, so baking the affected subset at a
   finer decimation would recover grade at the cost of SOFA collision speed. **Do not claim
   lesion realism for this set as it stands.** *In v2/v3, at a 1.0 mm floor, the shipped
-  grade reaches 56 % and 30 of 223 anatomies are at or above 50 %. Grades above 56 % are
-  still capped.*
-- **Five anatomies excluded** *(v1; all five are back in v2/v3, where the signed-distance
-  mesher and the 1.0 mm siphon floor keep the terminus open)* as severed at the TopBrain siphon terminus — a defect set A
+  grade reaches 56–60 % and 24–25 of 223 anatomies are at or above 50 %. Each donor is
+  still capped at its own `1 − 1.0 mm / distal radius`.*
+- **Five anatomies excluded** *(v1; all five are back and navigable in v2/v3. Four
+  were regrafted with the 1.0 mm siphon floor. `case_w_040_left__topcow_mr_023_L` was
+  not, and the signed-distance mesher alone keeps its terminus open.)* as severed at the TopBrain siphon terminus — a defect set A
   shares, so it is excluded rather than repaired in B alone.
 - **Set B's z-rise floor sits below set A's.** Structural, not a defect: real donor
   bifurcations consume arclength against the pinned 130 mm seam, and set A's range is not a
