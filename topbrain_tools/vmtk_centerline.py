@@ -81,6 +81,10 @@ def main():
     ap.add_argument("surface_dir")
     ap.add_argument("--out", default="topbrain_data/centerlines")
     ap.add_argument("--suffix", default="rICA")
+    # Output filename tag. Defaults to "ica" so the right/left ICA runs write the
+    # {stem}_ica.json every consumer expects; v4 uses it for the other vessels
+    # (--tag va, --tag eca) so their centerlines cannot be mistaken for siphons.
+    ap.add_argument("--tag", default="ica")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
 
@@ -100,7 +104,7 @@ def main():
             print("  SKIP %-40s %s" % (stem[:40], err))
         else:
             ok += 1
-            with open(os.path.join(a.out, stem + "_ica.json"), "w") as f:
+            with open(os.path.join(a.out, "%s_%s.json" % (stem, a.tag)), "w") as f:
                 json.dump(res, f)
             print("  OK   %-40s %6.1f mm  %4d pts  diam %.1f -> %.1f mm"
                   % (stem[:40], res["length_mm"], res["n"],

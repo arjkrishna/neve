@@ -1,0 +1,190 @@
+{
+ "spacing_mm": 0.45,
+ "seconds": 108.3,
+ "union": "owned (sdf_union_v4)",
+ "sections_tube_only": [],
+ "suppressed_stretches_mm": {},
+ "sections_tube_in_effect": [],
+ "localise_margin_mm": null,
+ "far_clamp": {
+  "used": false,
+  "why": null
+ },
+ "right_route_detail": {
+  "fork": {
+   "frac_0.3mm": 0.234,
+   "frac_0.5mm": 0.16
+  },
+  "siphon": {
+   "frac_0.3mm": 0.2667,
+   "frac_0.5mm": 0.1018
+  }
+ },
+ "margin_mm": 0.5,
+ "attempts": [
+  {
+   "margin_mm": 0.5,
+   "genus": 0.0,
+   "nonmanifold_edges": 0,
+   "components_before_keep": 14,
+   "dropped_fragments": [
+    120,
+    24,
+    16,
+    16,
+    16,
+    8,
+    8,
+    8,
+    8,
+    8
+   ],
+   "dropped_volume_mm3": 0.46
+  }
+ ],
+ "sections": {
+  "lower_R": {
+   "voxels": 151908,
+   "voxels_widened": 139047,
+   "voxels_refused": 2610,
+   "surface_tris": 71616
+  },
+  "eca_R": {
+   "voxels": 58857,
+   "voxels_widened": 8175,
+   "voxels_refused": 277,
+   "surface_tris": 71616
+  },
+  "siphon_R": {
+   "voxels": 210906,
+   "voxels_widened": 203903,
+   "voxels_refused": 2857,
+   "surface_tris": 47422
+  },
+  "lower_L": {
+   "voxels": 200517,
+   "voxels_widened": 173987,
+   "voxels_refused": 5603,
+   "surface_tris": 91712
+  },
+  "eca_L": {
+   "voxels": 42188,
+   "voxels_widened": 5424,
+   "voxels_refused": 4,
+   "surface_tris": 91712
+  },
+  "ecaext_L": {
+   "voxels": 20889,
+   "voxels_widened": 17641,
+   "voxels_refused": 344,
+   "surface_tris": 4292
+  },
+  "siphon_L": {
+   "voxels": 246555,
+   "voxels_widened": 225270,
+   "voxels_refused": 10165,
+   "surface_tris": 53024
+  },
+  "va_R": {
+   "voxels": 72605,
+   "voxels_widened": 69980,
+   "voxels_refused": 0,
+   "surface_tris": 23068
+  }
+ },
+ "spans": {
+  "lower_R": [
+   "RCCA",
+   54.60059278523636,
+   127.5693295429142
+  ],
+  "eca_R": [
+   "RECA",
+   0.0,
+   29.08034529050533
+  ],
+  "siphon_R": [
+   "RCCA",
+   130.0,
+   260.2223141338679
+  ],
+  "lower_L": [
+   "LCCA",
+   71.18976110848065,
+   157.56286587981097
+  ],
+  "eca_L": [
+   "LECA",
+   0.0,
+   22.76782203124145
+  ],
+  "ecaext_L": [
+   "LECA",
+   22.76782203124145,
+   36.56292372475462
+  ],
+  "siphon_L": [
+   "LCCA",
+   157.56286587981097,
+   282.78189072276274
+  ],
+  "va_R": [
+   "RVA",
+   181.45385290545983,
+   236.58945040177755
+  ],
+  "va_L": "tube only (VA deflected 6.0 mm after grafting)"
+ },
+ "full": {
+  "tris": 60000,
+  "comps": 1,
+  "open_edges": 0,
+  "genus": [
+   {
+    "cells": 60000,
+    "genus": 0.0,
+    "boundary_loops": 0
+   }
+  ]
+ },
+ "obj": {
+  "tris": 23498,
+  "comps": 1,
+  "open_edges": 0,
+  "genus": [
+   {
+    "cells": 23498,
+    "genus": 0.0,
+    "boundary_loops": 0
+   }
+  ]
+ },
+ "obj_tris_budget": 23500,
+ "routes": {
+  "RCCA": {
+   "lumen_min_mm": 1.608,
+   "lumen_min_at_mm": 237.3,
+   "declared_there_mm": 1.704,
+   "median_deficit_mm": 0.06,
+   "route_pts_outside": 0,
+   "navigable": true
+  },
+  "LCCA": {
+   "lumen_min_mm": 1.747,
+   "lumen_min_at_mm": 44.0,
+   "declared_there_mm": 1.891,
+   "median_deficit_mm": 0.073,
+   "route_pts_outside": 0,
+   "navigable": true
+  }
+ },
+ "decimation": {
+  "full": "vcg_mc_collapse+quadric_preserve_topology",
+  "full_budget": 60000,
+  "obj": "vtk_quadric",
+  "obj_budgets_rejected": []
+ },
+ "centerline_pts_outside": 0,
+ "centerline_pts_checked": 1827,
+ "pass": true
+}

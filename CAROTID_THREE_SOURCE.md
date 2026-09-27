@@ -33,6 +33,10 @@ that those anatomies cannot represent.
 
 ## Current state (v2 / v3)
 
+> **v4** (`carotid_data/anatomies_v4/`, 223) completes the neck of every v3
+> anatomy: left carotid, both vertebrals, ECA tips, a merge-free union and
+> topology-gated collision meshes. See `CAROTID_V4.md`.
+
 This document is the build record of the **v1** set, `carotid_data/anatomies/`
 (215). The set has since been rebuilt twice from the same 237-pair plan. Both
 rebuilds keep every graft fix recorded below; what changes is the mesher, plus

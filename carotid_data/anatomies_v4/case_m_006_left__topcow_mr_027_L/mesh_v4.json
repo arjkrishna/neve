@@ -1,0 +1,188 @@
+{
+ "spacing_mm": 0.45,
+ "seconds": 100.2,
+ "union": "owned (sdf_union_v4)",
+ "sections_tube_only": [],
+ "suppressed_stretches_mm": {},
+ "sections_tube_in_effect": [],
+ "localise_margin_mm": null,
+ "far_clamp": {
+  "used": false,
+  "why": null
+ },
+ "right_route_detail": {
+  "fork": {
+   "frac_0.3mm": 0.0937,
+   "frac_0.5mm": 0.036
+  },
+  "siphon": {
+   "frac_0.3mm": 0.363,
+   "frac_0.5mm": 0.217
+  }
+ },
+ "margin_mm": 0.5,
+ "attempts": [
+  {
+   "margin_mm": 0.5,
+   "genus": 0.0,
+   "nonmanifold_edges": 0,
+   "components_before_keep": 10,
+   "dropped_fragments": [
+    2280,
+    720,
+    472,
+    234,
+    8,
+    8,
+    8,
+    8,
+    8
+   ],
+   "dropped_volume_mm3": 88.26
+  }
+ ],
+ "sections": {
+  "lower_R": {
+   "voxels": 225811,
+   "voxels_widened": 212386,
+   "voxels_refused": 0,
+   "surface_tris": 98796
+  },
+  "eca_R": {
+   "voxels": 66445,
+   "voxels_widened": 22541,
+   "voxels_refused": 0,
+   "surface_tris": 98796
+  },
+  "siphon_R": {
+   "voxels": 173575,
+   "voxels_widened": 169437,
+   "voxels_refused": 1023,
+   "surface_tris": 45108
+  },
+  "lower_L": {
+   "voxels": 111118,
+   "voxels_widened": 97444,
+   "voxels_refused": 45,
+   "surface_tris": 102120
+  },
+  "eca_L": {
+   "voxels": 50206,
+   "voxels_widened": 24011,
+   "voxels_refused": 0,
+   "surface_tris": 102120
+  },
+  "siphon_L": {
+   "voxels": 158518,
+   "voxels_widened": 153828,
+   "voxels_refused": 554,
+   "surface_tris": 38962
+  },
+  "va_R": {
+   "voxels": 57778,
+   "voxels_widened": 53887,
+   "voxels_refused": 0,
+   "surface_tris": 10834
+  },
+  "va_L": {
+   "voxels": 37791,
+   "voxels_widened": 35603,
+   "voxels_refused": 0,
+   "surface_tris": 7770
+  }
+ },
+ "spans": {
+  "lower_R": [
+   "RCCA",
+   15.0,
+   129.9889908480555
+  ],
+  "eca_R": [
+   "RECA",
+   0.0,
+   29.05186146992053
+  ],
+  "siphon_R": [
+   "RCCA",
+   129.9889908480555,
+   233.53444873506803
+  ],
+  "lower_L": [
+   "LCCA",
+   100.36875770993352,
+   157.56286587981097
+  ],
+  "eca_L": [
+   "LECA",
+   0.0,
+   27.84389674171747
+  ],
+  "siphon_L": [
+   "LCCA",
+   157.56286587981097,
+   256.64789030839137
+  ],
+  "va_R": [
+   "RVA",
+   192.873348693434,
+   235.26451065077606
+  ],
+  "va_L": [
+   "LVA",
+   174.3054660158034,
+   207.99258961646788
+  ]
+ },
+ "full": {
+  "tris": 60000,
+  "comps": 1,
+  "open_edges": 0,
+  "genus": [
+   {
+    "cells": 60000,
+    "genus": 0.0,
+    "boundary_loops": 0
+   }
+  ]
+ },
+ "obj": {
+  "tris": 23498,
+  "comps": 1,
+  "open_edges": 0,
+  "genus": [
+   {
+    "cells": 23498,
+    "genus": 0.0,
+    "boundary_loops": 0
+   }
+  ]
+ },
+ "obj_tris_budget": 23500,
+ "routes": {
+  "RCCA": {
+   "lumen_min_mm": 1.277,
+   "lumen_min_at_mm": 200.6,
+   "declared_there_mm": 1.279,
+   "median_deficit_mm": 0.052,
+   "route_pts_outside": 0,
+   "navigable": true
+  },
+  "LCCA": {
+   "lumen_min_mm": 1.268,
+   "lumen_min_at_mm": 226.7,
+   "declared_there_mm": 1.384,
+   "median_deficit_mm": 0.072,
+   "route_pts_outside": 0,
+   "navigable": true
+  }
+ },
+ "decimation": {
+  "full": "vtk_quadric",
+  "full_budget": 60000,
+  "obj": "vtk_quadric",
+  "obj_budgets_rejected": []
+ },
+ "centerline_pts_outside": 0,
+ "centerline_pts_checked": 1760,
+ "pass": true
+}

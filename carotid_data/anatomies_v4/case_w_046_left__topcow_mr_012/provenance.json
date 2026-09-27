@@ -1,0 +1,418 @@
+{
+ "lower": "case_w_046_left",
+ "siphon": "topcow_mr_012",
+ "mismatch_mm": 2.128161570436109,
+ "repairs": "RVA deflected 6.5 mm",
+ "host_cut_mm": 47.6361667683278,
+ "cca_mm": 24.348793771891824,
+ "ica_mm": 58.01503945978038,
+ "trim_cca_mm": 0.0,
+ "inlet_trim_mm": 1.0033037361834392,
+ "blend_mm": 25.0,
+ "join_r_mm": 2.980620404698099,
+ "cca_face_r_mm": 2.466241009900355,
+ "total_mm": 243.17613378652186,
+ "max_kink": 39.9026000077394,
+ "seam1_kink": 22.66004823591595,
+ "eca_mm": 29.045209920615033,
+ "eca_floored_frac": 0.0,
+ "route_min_r_raw": 1.3426864704689137,
+ "route_floor_mm": 1.0,
+ "route_floored_frac": 0.0,
+ "siphon_min_r_raw": 1.7318393755779335,
+ "siphon_floor_mm": 1.0,
+ "siphon_floored_frac": 0.0,
+ "v3_clearance_mm": 0.8786183463892343,
+ "v4": true,
+ "new_graft_clearance_mm": 0.6,
+ "v3_name": "case_w_046_left__topcow_mr_012",
+ "handedness": "native",
+ "patient": "topcow_mr_012",
+ "left": {
+  "lower": "case_k_012_left",
+  "lower_side": "left",
+  "lower_fallback": "own other side failed its gates",
+  "lower_extended": false,
+  "siphon": "topcow_mr_012_L",
+  "siphon_fallback": null,
+  "seam_target_mm": 157.56286587981097,
+  "clearance_mm": 1.3714321612314475,
+  "clearance_at_gate_mm": 1.3535855137830384,
+  "repairs": null,
+  "rejected_candidates": [
+   "case_w_046_right: clearance -3.33 mm with cc - RECA",
+   "case_m_006_left: LECA clear for only 0 mm"
+  ],
+  "host_cut_mm": 81.85826088013755,
+  "cca_mm": 33.23123588160057,
+  "ica_mm": 42.47336911807285,
+  "trim_cca_mm": 0.0,
+  "inlet_trim_mm": 0.0,
+  "blend_mm": 25.0,
+  "join_r_mm": 3.1874163581648656,
+  "cca_face_r_mm": 2.7374349181078164,
+  "total_mm": 253.32286244920616,
+  "max_kink": 25.42542227625031,
+  "seam1_kink": 16.694109531226786,
+  "eca_mm": 29.887769253038986,
+  "eca_floored_frac": 0.0,
+  "route_min_r_raw": 2.869472049711597,
+  "route_floor_mm": 1.0,
+  "route_floored_frac": 0.0,
+  "siphon_min_r_raw": 1.6430439303526834,
+  "siphon_floor_mm": 1.0,
+  "siphon_floored_frac": 0.0,
+  "eca_fused_mm": 9.945740939033978
+ },
+ "vertebrals": {
+  "right": {
+   "patient_side": "right",
+   "donor_len_mm": 56.90814232273928,
+   "host_len_mm": 236.42555534560654,
+   "cut_mm": 179.76801686093742,
+   "total_mm": 236.2849744343781,
+   "repair": null,
+   "clearance_mm": 1.9318209764572032,
+   "clearance_at_gate_mm": 1.9318209764572032,
+   "join_kink_deg": 15.46067472041924,
+   "donor_start_trim_mm": 0.0,
+   "seed_trim_pts": [
+    0,
+    0
+   ]
+  },
+  "left": {
+   "patient_side": "left",
+   "donor_len_mm": 39.96059625855489,
+   "host_len_mm": 208.19116399611036,
+   "cut_mm": 168.328699387287,
+   "total_mm": 207.77582392483328,
+   "repair": null,
+   "clearance_mm": 1.6587231544454277,
+   "clearance_at_gate_mm": 1.6587231544454277,
+   "join_kink_deg": 27.082347909655926,
+   "donor_start_trim_mm": 0.0,
+   "seed_trim_pts": [
+    0,
+    0
+   ]
+  }
+ },
+ "eca_extension": {
+  "right": {
+   "extended": false,
+   "why": "TopBrain ECA piece 7.1 mm < 10",
+   "kind": "eca",
+   "patient": "topcow_mr_012",
+   "patient_side": "right",
+   "centerline_src": "./topbrain_data/centerlines_reca/topcow_mr_012_eca.json",
+   "surface": "./topbrain_data/surfaces_eca/topcow_mr_012_rECA.vtp",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "seed_trim_pts": [
+    2,
+    0
+   ],
+   "anchor_trim_idx": 0,
+   "len_mm": 7.112360685310995
+  },
+  "left": {
+   "extended": true,
+   "join_at_mm": 29.887769253038986,
+   "join_kink_deg": 11.4887155129255,
+   "added_mm": 11.24802351531272,
+   "kind": "eca",
+   "patient": "topcow_mr_012",
+   "patient_side": "left",
+   "centerline_src": "./topbrain_data/centerlines_leca/topcow_mr_012_eca.json",
+   "surface": "./topbrain_data/surfaces_eca/topcow_mr_012_lECA.vtp",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "seed_trim_pts": [
+    3,
+    0
+   ],
+   "anchor_trim_idx": 0,
+   "len_mm": 11.565616028218292
+  }
+ },
+ "notes": [
+  "left lower fallback"
+ ],
+ "xform": {
+  "lower": {
+   "R": [
+    [
+     -0.0002664308877575769,
+     0.9998655143460913,
+     -0.016397628975202687
+    ],
+    [
+     -0.9980291284232153,
+     -0.0012948507775667605,
+     -0.06273900047228473
+    ],
+    [
+     -0.06275179545940979,
+     0.016348595746736038,
+     0.9978952528115013
+    ]
+   ],
+   "origin": [
+    -17.553549373056246,
+    5.970330167805549,
+    -105.39761402108611
+   ],
+   "anchor": [
+    -8.917560063980648,
+    25.207445743610805,
+    457.72674975039473
+   ],
+   "kind": "zenodo",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "/opt/eve_training/carotid_data/v2/carotid_bifurcation_database/case_w_046/case_w_046_left_lumen.stl",
+   "ica_real_mm": 55.67468804877536,
+   "extend_mm": 2.4975723675644517,
+   "ica_extended": true
+  },
+  "siphon": {
+   "R": [
+    [
+     -0.005664582977167432,
+     -0.9995299916661017,
+     0.03012819708608284
+    ],
+    [
+     0.9999571940827519,
+     -0.005441437712816906,
+     0.007483365403834172
+    ],
+    [
+     -0.007315907451885293,
+     0.030169297565249657,
+     0.9995180293434304
+    ]
+   ],
+   "origin": [
+    32.77732321675195,
+    17.085386598608288,
+    -86.55063989443568
+   ],
+   "anchor": [
+    5.420742999798744,
+    26.66396670325545,
+    534.0807022220266
+   ],
+   "kind": "topbrain",
+   "centerline_src": "topbrain_data/centerlines/topcow_mr_012_ica.json",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "topbrain_data/surfaces/topcow_mr_012_rICA.vtp"
+  },
+  "lower_L": {
+   "R": [
+    [
+     -0.896396073095433,
+     0.43999026141343633,
+     0.05369031570425985
+    ],
+    [
+     -0.4424926382039111,
+     -0.8811712479683534,
+     -0.16654578016040297
+    ],
+    [
+     -0.025968158857142983,
+     -0.1730485527683801,
+     0.9845708979602937
+    ]
+   ],
+   "origin": [
+    47.092098236083984,
+    -22.975650787353516,
+    -132.08204650878906
+   ],
+   "anchor": [
+    45.91543907367301,
+    15.810242714170029,
+    459.5568031585194
+   ],
+   "kind": "zenodo",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "/opt/eve_training/carotid_data/v2/carotid_bifurcation_database/case_k_012/case_k_012_left_lumen.stl",
+   "ica_real_mm": 42.533815062864406,
+   "extend_mm": 0.0
+  },
+  "siphon_L": {
+   "R": [
+    [
+     -0.8465305294581978,
+     -0.26396153257906574,
+     -0.46228819151448597
+    ],
+    [
+     0.33198477358898343,
+     -0.9406211379841489,
+     -0.07083773628847954
+    ],
+    [
+     -0.4161396073438513,
+     -0.21343894699870408,
+     0.8838957195867562
+    ]
+   ],
+   "origin": [
+    -11.945225192327634,
+    26.889261109714834,
+    -85.01088799727142
+   ],
+   "anchor": [
+    45.759182677190054,
+    1.8891187457656162,
+    530.9552509507519
+   ],
+   "kind": "topbrain",
+   "centerline_src": "./topbrain_data/centerlines_left/topcow_mr_012_ica.json",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "./topbrain_data/surfaces_left/topcow_mr_012_lICA.vtp"
+  },
+  "va_R": {
+   "R": [
+    [
+     -0.2908699191834417,
+     0.9567533342162321,
+     0.004212787716152199
+    ],
+    [
+     -0.7901236224078085,
+     -0.2377238562151363,
+     -0.5649708218123906
+    ],
+    [
+     -0.5395362373625899,
+     -0.167661640372294,
+     0.8251001290269506
+    ]
+   ],
+   "origin": [
+    33.82610329346111,
+    -6.005420446935557,
+    -96.969817279954
+   ],
+   "anchor": [
+    -13.495581612946305,
+    37.18545390569623,
+    555.8405392390665
+   ],
+   "donor_start_trim_mm": 0.0,
+   "kind": "topbrain",
+   "centerline_src": "./topbrain_data/centerlines_rva/topcow_mr_012_va.json",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "./topbrain_data/surfaces_va/topcow_mr_012_rVA.vtp",
+   "cut_mm": 179.76801686093742
+  },
+  "va_L": {
+   "R": [
+    [
+     -0.9915820002081949,
+     0.016606545181233768,
+     -0.12841090109589395
+    ],
+    [
+     -0.015510947711291755,
+     -0.9998343062186168,
+     -0.009527361095036295
+    ],
+    [
+     -0.12854784076060327,
+     -0.007455384998863563,
+     0.9916752844909998
+    ]
+   ],
+   "origin": [
+    -15.715007860767882,
+    -2.8641608752558594,
+    -96.54265863263097
+   ],
+   "anchor": [
+    36.33655186955627,
+    35.08158583015846,
+    552.399591222375
+   ],
+   "donor_start_trim_mm": 0.0,
+   "kind": "topbrain",
+   "centerline_src": "./topbrain_data/centerlines_lva/topcow_mr_012_va.json",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "./topbrain_data/surfaces_va/topcow_mr_012_lVA.vtp",
+   "cut_mm": 168.328699387287
+  },
+  "ecaext_L": {
+   "R": [
+    [
+     -0.08121879781620157,
+     -0.9159239146382009,
+     -0.39304820248300915
+    ],
+    [
+     0.6261046499211708,
+     -0.35371729256521345,
+     0.6948935488889095
+    ],
+    [
+     -0.775497565585076,
+     -0.1896508885667788,
+     0.6021927151979273
+    ]
+   ],
+   "origin": [
+    -31.98708788307669,
+    26.18316658771527,
+    -90.50206921781034
+   ],
+   "anchor": [
+    44.88769942872971,
+    9.785576308806881,
+    520.5575801563925
+   ],
+   "donor_start_trim_mm": 0.0,
+   "kind": "topbrain",
+   "centerline_src": "./topbrain_data/centerlines_leca/topcow_mr_012_eca.json",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "./topbrain_data/surfaces_eca/topcow_mr_012_lECA.vtp",
+   "join_at_mm": 29.887769253038986
+  }
+ }
+}

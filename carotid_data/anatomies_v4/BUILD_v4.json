@@ -1,0 +1,191 @@
+{
+ "set": "B (three-source, completed): one v4 anatomy per v3 anatomy",
+ "v3_anatomies": 223,
+ "v4_anatomies": 223,
+ "dropped": [],
+ "grafter": "carotid_tools/graft_v4.py",
+ "mesher": "topbrain_tools/bake_meshes_v4.py: v2 SDF tubes (0.45 mm) + OWNED union of every real surface (sdf_union_v4.py) + topology gate (one closed genus-0 component; margins, localised suppression, window search, pruning) + clean decimation (one closed genus-0 two-manifold component with no self-intersecting face: VTK quadric, else vcg topology-preserving collapse); 60000 tris collision_full.vtp, 20000 tris obj",
+ "build_images": {
+  "graft": "eve-training-fixed",
+  "bake": "neve-build-meshlab = eve-training-fixed + pip pymeshlab==2023.12.post2",
+  "topbrain_centerlines": "neve-build-vmtk (micromamba python 3.10, vmtk 1.5.0, libitk 5.3)"
+ },
+ "what_v4_adds": "v3's right side (RCCA byte-identical, RECA identical unless extended) plus: left carotid (LCCA route + LECA) from the same patient's other Zenodo carotid where usable, TopBrain left siphon; both vertebrals' distal segments from TopBrain; ECA tips extended with TopBrain ECA where the calibres already agree. Each distal segment grafted independently; no circle of Willis.",
+ "handedness": "mirrored anatomies (v3 siphon *_L, the patient's LEFT ICA mirrored to the right) take every other TopBrain part from the patient's opposite side, x-mirrored; native ones from the same side",
+ "flags": {
+  "v2_v3_flags": {
+   "ROUTE_MIN_R": 1.0,
+   "ECA_MESH_R_MM": 1.0,
+   "DISTAL_TRIM_MM": 0.0,
+   "FUSE_BAND_MM": 0.35,
+   "SIPHON_MIN_R": 1.0
+  },
+  "new_graft_clearance_mm": 0.6,
+  "left": {
+   "seam": "host LCCA level of the RCCA seam (computed, ~157.6 mm)",
+   "blend_anchor_mm": 30.0,
+   "host_cut_mm": [
+    35.0,
+    110.0
+   ]
+  },
+  "vertebral": {
+   "min_r": 1.0,
+   "min_len_mm": 15.0,
+   "cut_min_mm": 80.0,
+   "tail_mm": 10.0,
+   "blend_mm": 25.0,
+   "cut_steps_mm": [
+    0,
+    -5,
+    5,
+    -10,
+    10,
+    -15,
+    15,
+    -20,
+    20,
+    -25,
+    25,
+    -30,
+    30
+   ],
+   "max_shorten_mm": 30.0
+  },
+  "eca_extension": {
+   "min_mm": 10.0,
+   "max_calibre_mismatch_mm": 1.0,
+   "anchor_mm": 4.0,
+   "blend_mm": 10.0
+  },
+  "union": {
+   "ownership_margins_mm": [
+    0.5,
+    1.0
+   ],
+   "self_contact_window_mm": 12.0,
+   "localise": {
+    "bin_mm": 10.0,
+    "stride_mm": 5.0,
+    "pad_mm": 3.0,
+    "rounds": 5
+   }
+  }
+ },
+ "sources": {
+  "zenodo_carotid": "CarotidAnalyzer, Zenodo 10695923 v2.0.0 (lumen STL + centerlines)",
+  "topbrain": "TopBrain MR labels, Zenodo 16878417 (labelsTr_topbrain_mr): ICA 4/6, VA 23/24, ECA 35/36",
+  "centerline_fallbacks": "VMTK failed on 2 TopBrain VA labels (topcow_mr_004 and topcow_mr_020 right VA); their centerlines come from topbrain_tools/skeleton_centerline.py (skeleton + EDT radii)"
+ },
+ "graft": {
+  "eca_extended_left": 53,
+  "eca_extended_right": 52,
+  "leca_trimmed_or_reentry_cut": 4,
+  "left_fork_extended_ica": 0,
+  "left_fork_own_other_side": 168,
+  "left_fork_substitute": 55,
+  "left_siphon_fallback": 2,
+  "lva_deflected_for_left_carotid": 64,
+  "mirrored": 120,
+  "native": 103
+ },
+ "left_fork_substitute_reasons": {
+  "absent from the database": 30,
+  "CCA+ICA N mm < N mm needed to reach the left seam": 15,
+  "own other side failed its gates": 10
+ },
+ "vertebral_repairs": {
+  "none": 304,
+  "cut moved": 90,
+  "host LVA deflected": 64,
+  "deflected": 4,
+  "donor start trimmed": 2
+ },
+ "eca_not_extended_reasons": {
+  "no eca centerline for topcow_mr_N right": 128,
+  "TopBrain ECA piece N mm < N": 104,
+  "no eca centerline for topcow_mr_N left": 62,
+  "extension collides within N mm": 44,
+  "calibre mismatch N mm at the join (fork N, TopBrain N)": 3
+ },
+ "ranges": {
+  "dropped_fragment_volume_mm3": [
+   0.0,
+   169.08
+  ],
+  "eca_added_mm_left": [
+   9.923,
+   35.757
+  ],
+  "eca_added_mm_right": [
+   10.042,
+   35.734
+  ],
+  "left_carotid": [
+   0.651,
+   5.661
+  ],
+  "left_max_kink_deg": [
+   17.774,
+   48.121
+  ],
+  "route_lumen_min_mm": [
+   0.725,
+   1.738
+  ],
+  "va_left": [
+   0.632,
+   9.202
+  ],
+  "va_right": [
+   0.604,
+   6.616
+  ]
+ },
+ "bake": {
+  "anatomies with a window fix": 30,
+  "anatomies_with_suppressed_stretches": 82,
+  "decimation full: vcg_mc_collapse+quadric_preserve_topology": 56,
+  "decimation full: vcg_quadric_preserve_topology_area_weighted": 7,
+  "decimation full: vtk_quadric": 160,
+  "decimation obj: vcg_quadric_preserve_topology": 1,
+  "decimation obj: vcg_quadric_preserve_topology_area_weighted": 52,
+  "decimation obj: vtk_quadric": 170,
+  "localise margin 0.5": 73,
+  "localise margin 1.0": 10,
+  "localise margin None": 140,
+  "margin 0.5": 201,
+  "margin 1.0": 22,
+  "obj budget 23500": 223,
+  "pass": 223,
+  "prune unions": 143,
+  "single-section probe unions": 154,
+  "tubes-only check attempts": 83,
+  "union: owned": 219,
+  "union: owned, one section as tube": 4,
+  "window-search unions": 363
+ },
+ "bake_failing": [],
+ "suppressed_stretches": {
+  "section_instances_by_kind": {
+   "siphon": 55,
+   "lower": 45,
+   "va": 3,
+   "eca": 21,
+   "ecaext": 1
+  },
+  "mean_mm_per_section_instance": {
+   "siphon": 3.7,
+   "lower": 2.1,
+   "va": 2.0,
+   "eca": 2.7,
+   "ecaext": 22.8
+  }
+ },
+ "sections_tube_only": {
+  "ecaext_R": 2,
+  "va_L (graft-time tube)": 4,
+  "ecaext_L (>=90% suppressed)": 1,
+  "eca_L": 2
+ }
+}
