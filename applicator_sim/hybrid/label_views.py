@@ -17,7 +17,8 @@ Canal and os (fix plan S3, "landmark display"): by default the canal is the PHYS
 s >= 0 of inputs/tandem_path.npz (from the external os O_true = the labelled canal's vaginal end, to the fundal
 end), and the external / internal os are its O_true and i_internal_os.  Each point is carried by the tissue it
 lies in at rest: barycentrically in the cervix tets (the frame's nodal displacement), rigidly with the corpus
-(Kabsch fit of the frame's corpus surface: the corpus is rigid).  The nodal displacement is EXACT wherever the run
+(Kabsch fit of the frame's corpus surface: the corpus is rigid; an elastic corpus, cfg corpus_model "fem", is carried
+barycentrically in its own tets when its nodes are exact).  The nodal displacement is EXACT wherever the run
 saved it -- final/<body>_u.npy for the last frame, else the frame's own u_npy (index.json; TF0c saves the cervix's
 every frame) -- if it reproduces the frame's surface to U_MATCH_MM; otherwise the interior is filled from the surface
 by inverse distance (an approximation: TF0c step 192 lower canal in tube 0.76 that way, 0.619 exact, the value
@@ -182,7 +183,10 @@ class State:
                 self.X[b] = self.X0[b] + idw(self.X0[b][s2n], self.surf[b][0] - self.X0[b][s2n], self.X0[b])
                 self.X_src[b] = "surface IDW"
         # the corpus's rigid motion: Kabsch of its nodes when they are exact, else of its SURFACE (exact for a rigid
-        # body; the IDW-filled interior is not rigid), as tf_metrics fits it
+        # body; the IDW-filled interior is not rigid), as tf_metrics fits it.  S9 (cfg corpus_model "fem"): the corpus
+        # is elastic, so this is only its gross motion; carry() then moves corpus points barycentrically when the
+        # corpus's nodes are exact (final/corpus_u.npy, or frame_u_bodies "corpus")
+        self.corpus_fem = self.cfg.get("corpus_model", "rigid") == "fem"
         if self.X_src["corpus"].startswith("exact"):
             self.Rk, self.tk = kabsch(self.X0["corpus"], self.X["corpus"])
         else:
@@ -250,16 +254,25 @@ class State:
         """Rest points Q moved with the tissue they lie in: inside a corpus tet -> the corpus's rigid motion (Kabsch of
         its nodes; the corpus is rigid); inside a cervix tet -> barycentric interpolation of the cervix nodal
         displacement; outside both -> the nearer body (corpus rigidly, cervix by inverse distance).  Returns the
-        carried points and, per point, 'corpus' | 'cervix' | 'cervix~' (outside the tets)."""
+        carried points and, per point, 'corpus' | 'cervix' | 'cervix~' (outside the tets).  An ELASTIC corpus (cfg
+        corpus_model "fem", S9) with exact nodes: inside a corpus tet barycentrically ('corpus'), outside both but
+        nearer the corpus by inverse distance ('corpus~'); without exact nodes it falls back to the Kabsch motion."""
         Q = np.atleast_2d(np.asarray(Q, float))
         Rk, tk = self.Rk, self.tk
-        ik, _ = tet_locate(self.X0["corpus"], self.tets["corpus"][1], Q)
+        ik, Wk = tet_locate(self.X0["corpus"], self.tets["corpus"][1], Q)
         ic, Wc = tet_locate(self.X0["cervix"], self.tets["cervix"][1], Q)
         Uc = self.X["cervix"] - self.X0["cervix"]
+        fem_k = bool(getattr(self, "corpus_fem", False)) and self.X_src["corpus"].startswith("exact")
+        Uk = self.X["corpus"] - self.X0["corpus"]
         out, by = np.zeros_like(Q), []
         for i, q in enumerate(Q):
-            if ik[i] >= 0 or (ic[i] < 0 and np.linalg.norm(self.X0["corpus"] - q, axis=1).min()
-                              < np.linalg.norm(self.X0["cervix"] - q, axis=1).min()):
+            if fem_k and ik[i] >= 0:
+                out[i], b = q + Wk[i] @ Uk[self.tets["corpus"][1][ik[i]]], "corpus"
+            elif fem_k and ic[i] < 0 and np.linalg.norm(self.X0["corpus"] - q, axis=1).min() \
+                    < np.linalg.norm(self.X0["cervix"] - q, axis=1).min():
+                out[i], b = q + idw(self.X0["corpus"], Uk, q[None])[0], "corpus~"
+            elif ik[i] >= 0 or (ic[i] < 0 and np.linalg.norm(self.X0["corpus"] - q, axis=1).min()
+                                < np.linalg.norm(self.X0["cervix"] - q, axis=1).min()):
                 out[i], b = q @ Rk.T + tk, "corpus"
             elif ic[i] >= 0:
                 out[i], b = q + Wc[i] @ Uc[self.tets["cervix"][1][ic[i]]], "cervix"
@@ -334,10 +347,13 @@ class State:
         if self.shaft_cl_app is not None:                  # v4: the swept shaft's overall lean off the tube line
             ch = self.shaft_cl_app[-1] - self.shaft_cl_app[1]
             f["shaft_lean"] = float(np.degrees(np.arccos(np.clip(geom.unit(ch) @ np.array([0.0, 0.0, -1.0]), -1, 1))))
-        if self.is_last:
+        if self.is_last and not self.corpus_fem:
             f["corpus_rot"] = float(AH.load_json(P["applicator"] + "/pose.json")["corpus"]["rotation_deg"])
-        else:                                              # this frame's corpus rotation (it turns during insertion)
+        else:                                              # this frame's corpus rotation (it turns during insertion; an
             f["corpus_rot"] = float(np.degrees(np.arccos(np.clip(0.5 * (np.trace(self.Rk) - 1.0), -1.0, 1.0))))
+        if self.corpus_fem:                                # elastic corpus: its gross rotation, the Kabsch fit)
+            e = np.linalg.norm(self.X0["corpus"] @ self.Rk.T + self.tk - self.X["corpus"], axis=1)
+            f["corpus_nonrigid"] = float(e.max())          # how far it is from rigid (nodes; approximate if not exact)
         if "packing" in self.parts:
             q = self.parts["packing"][0] - self.Fo
             dr = self.d_rod_app @ self.R_o
@@ -715,7 +731,9 @@ def labels_for(st, view, info):
         cx = ("drawn up %.0f mm onto the tandem" % ol) if ol >= 0 else ("os pushed %.0f mm down the vagina" % -ol)
     else:
         cx = "displaced up to %.0f mm" % um.get("cervix", float("nan"))
-    organ_desc = dict(corpus="rigid; rotated %.0f° with the tandem" % f["corpus_rot"],
+    organ_desc = dict(corpus=("rigid; rotated %.0f° with the tandem" % f["corpus_rot"]) if not st.corpus_fem else
+                      ("elastic; rotated %.0f° with the tandem,\n%.1f mm off rigid at most" % (f["corpus_rot"],
+                                                                                          f.get("corpus_nonrigid", 0.0))),
                       cervix=cx,
                       bladder="displaced up to %.0f mm" % um.get("bladder", float("nan")),
                       rectum="displaced up to %.0f mm" % um.get("rectum", float("nan")),

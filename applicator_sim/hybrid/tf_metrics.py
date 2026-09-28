@@ -39,7 +39,13 @@ cervix surface to U_MATCH_MM.  Otherwise (runs whose frames hold surfaces only, 
 extension (edge weights 1/length) of the frame's surface displacement (the audit's vcm/v4_frames.py; its error against
 final/cervix_u.npy is reported under carry_validation).  Every frame records its source under "carry".  Points in the
 corpus (and canal points outside both meshes) by the Kabsch fit of the frame's corpus surface (the corpus is rigid);
-vaginal-side points outside the tissue stay at rest.
+vaginal-side points outside the tissue stay at rest.  ELASTIC CORPUS (cfg corpus_model "fem", S9): points inside a rest
+corpus tet are carried barycentrically ("k") by the frame's corpus nodal displacement -- frames/step_<k>_corpus_u.npy
+(cfg frame_u_bodies), else final/corpus_u.npy for the last saved frame, each only if it reproduces the frame's corpus
+surface to U_MATCH_MM, else the Kabsch fit of the frame's corpus surface flagged approximate (carry.corpus); points
+outside both meshes still take the Kabsch fit, and tip_in_corpus_rest the Kabsch fit of the serosa (surface minus the
+cervix interface).  A rigid run is carried exactly as before.  Every frame and the final state carry a "corpus" block
+(pose vs the schedule's target, non-rigid part, volume, span along the tube, carried canal by band, best-line max).
 
 TANDEM-FIRST PLAN (tip_to_plan).  p(d) = carried tau(d) + w_r(d) delta.  tau and delta come from the run's
 <applicator_dir>/pose.json "insertion_path_tandem_first" (S5); tau defaults to the S3 path: the labelled canal for
@@ -400,11 +406,19 @@ class Wall:
 
 # ============================================================================================ carrying the canal
 class Carrier:
-    """Moves rest-frame points with the tissue of one frame (see CARRIED CANAL in the module docstring)."""
+    """Moves rest-frame points with the tissue of one frame (see CARRIED CANAL in the module docstring).  corpus =
+    (Pk, Tk), the corpus tets, only for an ELASTIC corpus: points inside them are then located as ("k", tet, bary) and
+    carried barycentrically; a rigid corpus's run leaves it None, so its points stay "u" (Kabsch) exactly as before."""
 
-    def __init__(self, Pc, Tc, s2n_c):
+    def __init__(self, Pc, Tc, s2n_c, corpus=None):
         self.Pc, self.Tc = Pc, Tc
         self.s2n = s2n_c
+        self.Pk = self.Tk = None
+        if corpus is not None:
+            self.Pk, self.Tk = np.asarray(corpus[0], float), np.asarray(corpus[1], int)
+            self.kd_k = cKDTree(self.Pk[self.Tk].mean(1))
+            Ak = self.Pk[self.Tk[:, 1:]] - self.Pk[self.Tk[:, :1]]
+            self.Minv_k = np.linalg.inv(np.transpose(Ak, (0, 2, 1)))
         self.Vc0 = Pc[s2n_c]
         self.kd = cKDTree(Pc[Tc].mean(1))
         A = Pc[Tc[:, 1:]] - Pc[Tc[:, :1]]
@@ -464,8 +478,9 @@ class Carrier:
                                        **({"rejected": tried} if tried else {}))
 
     def locate(self, X, vaginal=None, k=40):
-        """Per point: ("c", tet, bary) inside a rest cervix tet; ("u",) corpus-carried; ("v",) vaginal side outside
-        the cervix (stays at rest).  `vaginal` marks points of the vaginal side (path s < 0)."""
+        """Per point: ("c", tet, bary) inside a rest cervix tet; ("k", tet, bary) inside a rest corpus tet (elastic
+        corpus only); ("u",) corpus-carried; ("v",) vaginal side outside the cervix (stays at rest).  `vaginal` marks
+        points of the vaginal side (path s < 0)."""
         X = np.atleast_2d(np.asarray(X, float))
         vaginal = np.zeros(len(X), bool) if vaginal is None else np.asarray(vaginal, bool)
         out = []
@@ -477,16 +492,27 @@ class Carrier:
                 if b.min() >= -1e-9:
                     hit = ("c", int(c), b)
                     break
+            if hit is None and self.Pk is not None:
+                for c in np.atleast_1d(self.kd_k.query(p, k=min(k, len(self.Tk)))[1]):
+                    l = self.Minv_k[c] @ (p - self.Pk[self.Tk[c, 0]])
+                    b = np.r_[1.0 - l.sum(), l]
+                    if b.min() >= -1e-9:
+                        hit = ("k", int(c), b)
+                        break
             out.append(hit if hit else (("v",) if vaginal[i] else ("u",)))
         return out
 
-    def carry(self, loc, X, U, R, t):
+    def carry(self, loc, X, U, R, t, Uk=None):
+        """Carried points: "c" by the cervix displacement U, "k" by the corpus displacement Uk (barycentric; without Uk
+        the corpus's Kabsch fit R, t), "u" by R, t, "v" at rest."""
         X = np.atleast_2d(np.asarray(X, float))
         Y = np.empty_like(X)
         for i, L in enumerate(loc):
             if L[0] == "c":
                 Y[i] = L[2] @ (self.Pc[self.Tc[L[1]]] + U[self.Tc[L[1]]])
-            elif L[0] == "u":
+            elif L[0] == "k" and Uk is not None:
+                Y[i] = L[2] @ (self.Pk[self.Tk[L[1]]] + Uk[self.Tk[L[1]]])
+            elif L[0] in ("u", "k"):
                 Y[i] = R @ X[i] + t
             else:
                 Y[i] = X[i]
@@ -548,7 +574,18 @@ class Run:
         self.canal_s = s[self.ic]
         Pc, Tc = read_vtk_legacy(self.md["cervix"] + "/tets.vtk")
         self.Pc, self.Tc = Pc, Tc
-        self.carrier = Carrier(Pc, Tc, np.asarray(self.meta["cervix"]["surface_obj_vertex_to_tet_node"], int))
+        # S9: the corpus as the run modelled it (cfg corpus_model; "rigid" for every run before it) and its tets
+        self.corpus_fem = self.cfg.get("corpus_model", "rigid") == "fem"
+        Pk, Tk = read_vtk_legacy(self.md["corpus"] + "/tets.vtk")
+        self.Pk, self.Tk = np.asarray(Pk, float), np.asarray(Tk, int)
+        self.s2n_k = np.asarray(self.meta["corpus"]["surface_obj_vertex_to_tet_node"], int)
+        nsk = self.meta["corpus"]["node_sets"]
+        self.serosa_nodes = np.setdiff1d(np.asarray(nsk["surface_nodes"], int), np.asarray(nsk["interface_cervix"], int))
+        self.serosa_v = np.isin(self.s2n_k, self.serosa_nodes)       # the frame surface's vertices on the serosa
+        pk = self.rd + "/final/corpus_u.npy"
+        self.final_uk_path = pk if os.path.exists(pk) else None
+        self.carrier = Carrier(Pc, Tc, np.asarray(self.meta["cervix"]["surface_obj_vertex_to_tet_node"], int),
+                               corpus=(self.Pk, self.Tk) if self.corpus_fem else None)
         self.loc_path = self.carrier.locate(self.T["pts"], vaginal=s < 0)
         self.path_kinds = "".join(L[0] for L in self.loc_path)
         # canal ties: the set the run used and the depth-engagement arclengths (S3 canal_path_s)
@@ -607,6 +644,40 @@ class Run:
         if self.final_u_path and self.frames and int(fr["step"]) == int(self.frames[-1]["step"]):
             cand.append(("final/cervix_u.npy (last saved frame)", lambda: np.load(self.final_u_path)))
         return self.carrier.frame_U(Vs, cand)
+
+    def frame_Uk(self, fr, Vk):
+        """S9: (Uk, carry record) of one saved frame's CORPUS: its u_npy (cfg frame_u_bodies), else final/corpus_u.npy
+        when it is the last saved frame, each only if it reproduces the frame's corpus surface to U_MATCH_MM; else the
+        Kabsch fit of the frame's corpus surface (exact for a rigid corpus, an approximation for an elastic one)."""
+        fd = self.rd + "/frames"
+        cand = []
+        un = (fr.get("u_npy") or {}).get("corpus")
+        if un:
+            cand.append(("frames/%s" % un, lambda: np.load("%s/%s" % (fd, un))))
+        if self.final_uk_path and self.frames and int(fr["step"]) == int(self.frames[-1]["step"]):
+            cand.append(("final/corpus_u.npy (last saved frame)", lambda: np.load(self.final_uk_path)))
+        V0 = self.Pk[self.s2n_k]
+        Vk = np.asarray(Vk, float)
+        tried = []
+        for name, ld in cand:
+            try:
+                U = np.asarray(ld(), float)
+            except (OSError, ValueError) as e:
+                tried.append(dict(source=name, rejected=str(e)))
+                continue
+            if U.shape != self.Pk.shape:
+                tried.append(dict(source=name, rejected="shape"))
+                continue
+            err = float(np.abs(V0 + U[self.s2n_k] - Vk).max())
+            if err <= U_MATCH_MM:
+                return U, dict(source=name, exact=True, surface_mismatch_mm=rnd(err, 5),
+                               **({"rejected": tried} if tried else {}))
+            tried.append(dict(source=name, rejected="surface mismatch %.4f mm > %g" % (err, U_MATCH_MM)))
+        R, t = geom.kabsch(V0, Vk)
+        e = float(np.abs(V0 @ R.T + t - Vk).max())
+        return self.Pk @ R.T + t - self.Pk, dict(source="Kabsch fit of the frame's corpus surface", exact=False,
+                                                 approx=bool(self.corpus_fem), surface_residual_mm=rnd(e, 4),
+                                                 **({"rejected": tried} if tried else {}))
 
     # ---- the tandem-first plan
     def _tau(self, rec):
@@ -708,9 +779,13 @@ class Run:
 
 
 # ============================================================================================ per-frame blocks
-def insertion_block(run, dev, step, path_c, tau_c, U, Rk, tk, sol, parts, st, lumen, outer, lumen_open=None):
+def insertion_block(run, dev, step, path_c, tau_c, U, Rk, tk, sol, parts, st, lumen, outer, lumen_open=None,
+                    Uk=None, Rr=None, tr=None):
     """Tip vs the carried canal / plan, canal-in-tube, ties, containment, the ovoid body (model frame).  lumen /
-    outer: the closed sheets; lumen_open: the open inner sheet (containment; the closed lumen if None)."""
+    outer: the closed sheets; lumen_open: the open inner sheet (containment; the closed lumen if None).  S9 (elastic
+    corpus): Uk carries the plan's corpus points; Rr, tr (the serosa's Kabsch fit) map the tip into the corpus's rest
+    frame (default Rk, tk: the corpus surface's, exact for a rigid corpus)."""
+    Rr, tr = (Rk, tk) if Rr is None else (Rr, tr)
     T = run.T
     F = np.asarray(first(dev, ("flange_mm", "flange")), float)
     a = unit(dev["tube_axis"])
@@ -730,14 +805,14 @@ def insertion_block(run, dev, step, path_c, tau_c, U, Rk, tk, sol, parts, st, lu
                tip_to_tau_mm=rnd(d_tau[0]), tip_tau_d_mm=rnd(s_tau[0], 1),
                d_measured_mm=rnd(d_meas, 2), O_true_carried=rnd(O, 2),
                # the tip and the flange in the corpus's REST frame: constant while tandem and corpus move as one body
-               tip_in_corpus_rest=rnd(Rk.T @ (tip - tk), 3), flange_in_corpus_rest=rnd(Rk.T @ (F - tk), 3))
+               tip_in_corpus_rest=rnd(Rr.T @ (tip - tr), 3), flange_in_corpus_rest=rnd(Rr.T @ (F - tr), 3))
     # ---- the plan
     plan = run.plan_at(dev, step)
     if plan is not None:
         tf = run.tf
         tau = TP.interp_path(tf["tau"], tf["tau_s"], plan["d"])
         loc = run.carrier.locate(tau, vaginal=np.array([plan["d"] < 0]))
-        p = run.carrier.carry(loc, tau, U, Rk, tk)[0] + plan["w_r"] * tf["delta"]
+        p = run.carrier.carry(loc, tau, U, Rk, tk, Uk)[0] + plan["w_r"] * tf["delta"]
         out["plan"] = dict(d_mm=rnd(plan["d"], 2), w_r=rnd(plan["w_r"], 4), w_r_known=plan["w_r_known"],
                            source=plan["source"], tau_carried_by=loc[0][0], p_mm=rnd(p, 2))
         out["tip_to_plan_mm"] = rnd(np.linalg.norm(tip - p))
@@ -920,6 +995,67 @@ def oar_block(run, S, parts, outer):
     return out
 
 
+CORPUS_BAND_EDGES = (0.0, 20.0, 30.0, 35.0, 40.0)   # lower edges of the canal_s bands (S9 design); see corpus_bands
+SPAN_R_MM = 5.0               # corpus span along the tube: tet nodes within this of the tube LINE (the audit's 44.1 / 50.1)
+
+
+def _tet_vol(X, T):
+    A = X[T]
+    return np.einsum("ij,ij->i", np.cross(A[:, 1] - A[:, 0], A[:, 2] - A[:, 0]), A[:, 3] - A[:, 0]) / 6.0
+
+
+def corpus_bands(canal_s_max):
+    """The canal_s bands of corpus_block's canal_to_tube_by_band_mm: CORPUS_BAND_EDGES below the canal's end, the last
+    band ending at the labelled canal's own end (its largest canal_s) rounded UP to a whole mm, so it holds the canal's
+    last point.  Derived from the run's canal, not a constant (the key of the last band therefore names that end)."""
+    top = float(np.ceil(float(canal_s_max)))
+    e = [x for x in CORPUS_BAND_EDGES if x < top] + [top]
+    return tuple(zip(e[:-1], e[1:]))
+
+
+def corpus_block(run, dev, Xk, path_c, exact):
+    """S9: the corpus of one state (model frame).  Xk = its nodes (exact: from a saved nodal displacement, or rigid);
+    dev = the state's device json (flange_mm, tube_axis, and T_corpus = the schedule's rigid target when the corpus is
+    elastic).  pose_vs_target: every node vs X0 @ T_corpus; nonrigid_serosa: the serosa nodes vs their best rigid fit to
+    rest (0 for a rigid corpus); volume: total and per-tet ratios; span_along_tube: h (above the flange along the tube)
+    of the tet nodes within SPAN_R_MM of the tube line, [min, max, max - min] (max = the fundus top on the tube);
+    canal_to_tube_by_band: the carried labelled canal's max distance to the tube segment per canal_s band;
+    canal_best_line_max: the carried canal's max distance from its own best-fit line (straightness)."""
+    Pk, Tk = run.Pk, run.Tk
+    Xk = np.asarray(Xk, float)
+    F = np.asarray(first(dev, ("flange_mm", "flange")), float)
+    a = unit(dev["tube_axis"])
+    out = dict(model="fem" if run.corpus_fem else "rigid", nodes_exact=bool(exact))
+    T = dev.get("T_corpus") or dev.get("corpus_T_preBT_to_final")
+    if T is not None:
+        T = np.asarray(T, float)
+        e = np.linalg.norm(Pk @ T[:3, :3].T + T[:3, 3] - Xk, axis=1)
+        out["pose_vs_target_mm"] = dict(rms=rnd(np.sqrt((e ** 2).mean()), 4), max=rnd(e.max(), 4))
+    ser = run.serosa_nodes
+    R, t = geom.kabsch(Pk[ser], Xk[ser])
+    e = np.linalg.norm(Pk[ser] @ R.T + t - Xk[ser], axis=1)
+    out["nonrigid_serosa_mm"] = dict(rms=rnd(np.sqrt((e ** 2).mean()), 4), p95=rnd(np.percentile(e, 95), 4),
+                                     max=rnd(e.max(), 4))
+    v0, v = _tet_vol(Pk, Tk), _tet_vol(Xk, Tk)
+    r = v / v0
+    out["volume"] = dict(ratio_total=rnd(v.sum() / v0.sum(), 5), min_tet_ratio=rnd(r.min(), 4),
+                         n_tets_lt_0p6=int((r < 0.6).sum()), n_inverted=int((r <= 0).sum()))
+    q = Xk - F
+    h = q @ a
+    near = np.linalg.norm(q - np.outer(h, a), axis=1) <= SPAN_R_MM
+    out["span_along_tube_mm"] = [rnd(h[near].min(), 2), rnd(h[near].max(), 2), rnd(h[near].max() - h[near].min(), 2)] \
+        if near.any() else None
+    canal, cs = path_c[run.ic], run.canal_s
+    dseg, _ = seg_dist(canal, F, a, run.L_iu)
+    out["canal_to_tube_by_band_mm"] = {"%g-%g" % (lo, hi): (rnd(dseg[(cs >= lo) & (cs <= hi)].max(), 3)
+                                                            if ((cs >= lo) & (cs <= hi)).any() else None)
+                                       for lo, hi in corpus_bands(cs.max())}
+    c, ax = line_fit(canal)
+    w = canal - c
+    out["canal_best_line_max_mm"] = rnd(np.linalg.norm(w - np.outer(w @ ax, ax), axis=1).max(), 3)
+    return out
+
+
 def score_frame(run, fr):
     fd = run.rd + "/frames"
     step = int(fr["step"])
@@ -937,17 +1073,27 @@ def score_frame(run, fr):
         lumen_open = run.wall.lumen_sheet(*S["vagina"], st=st)
     U, carry = run.frame_U(fr, S["cervix"][0])
     Rk, tk = geom.kabsch(run.rest["corpus"][0], S["corpus"][0])
-    path_c = run.carrier.carry(run.loc_path, run.T["pts"], U, Rk, tk)
-    tau_c = run.carrier.carry(run.loc_tau, run.tau, U, Rk, tk)
+    Uk = Rr = tr = None
+    if run.corpus_fem:                                  # S9: the elastic corpus's own nodal displacement
+        Uk, ck = run.frame_Uk(fr, S["corpus"][0])
+        carry = dict(carry, corpus=ck)
+        sv = run.serosa_v
+        Rr, tr = geom.kabsch(run.rest["corpus"][0][sv], S["corpus"][0][sv])
+        Xk, xk_exact = run.Pk + Uk, bool(ck.get("exact"))
+    else:                                               # rigid: the surface's Kabsch fit IS the corpus's motion
+        Xk, xk_exact = run.Pk @ Rk.T + tk, True
+    path_c = run.carrier.carry(run.loc_path, run.T["pts"], U, Rk, tk, Uk)
+    tau_c = run.carrier.carry(run.loc_tau, run.tau, U, Rk, tk, Uk)
     phase = dev.get("phase", fr.get("phase"))
     return dict(step=step, phase=phase, u=rnd(dev.get("u"), 4),
                 disp_umax_mm={b: (dev.get("disp") or {}).get(b, {}).get("umax_mm") for b in EH.BODIES},
                 n_contacts=dev.get("n_contacts"), carry=carry,
                 insertion=insertion_block(run, dev, step, path_c, tau_c, U, Rk, tk, sol, parts, st, lumen, outer,
-                                          lumen_open),
+                                          lumen_open, Uk=Uk, Rr=Rr, tr=tr),
                 penetration=penetration_block(run, S, sol, parts, lumen, outer, phase),
                 wall=wall_block(run, step, st, sol),
-                oar=oar_block(run, S, parts, outer))
+                oar=oar_block(run, S, parts, outer),
+                corpus=corpus_block(run, dev, Xk, path_c, xk_exact))
 
 
 # ============================================================================================ final-state blocks
@@ -1348,14 +1494,15 @@ def run_status(run):
     cervix still moves faster step on step."""
     steps = sorted(run.log)[-10:]
     out = {}
-    for b in ("cervix", "bladder", "rectum", "sigmoid", "vagina"):
+    for b in ("cervix", "bladder", "rectum", "sigmoid", "vagina") + (("corpus",) if run.corpus_fem else ()):
         dx = np.array([((run.log[k].get("disp") or {}).get(b) or {}).get("dx", np.nan) for k in steps], float)
         ok = np.isfinite(dx)
         if ok.sum() >= 3:
             slope = float(np.polyfit(np.arange(len(dx))[ok], dx[ok], 1)[0])
             out[b] = dict(dx_last_mm=rnd(dx[ok][-1], 4), slope_mm_per_step=rnd(slope, 5),
                           rising=bool(slope > 0 and dx[ok][-1] > float(run.cfg.get("conv_dx_mm", 0.02))))
-    tissue = [b for b in ("cervix", "bladder", "rectum", "sigmoid") if out.get(b, {}).get("rising")]
+    tissue = [b for b in ("cervix", "bladder", "rectum", "sigmoid") + (("corpus",) if run.corpus_fem else ())
+              if out.get(b, {}).get("rising")]
     # cost and element health per phase (S6: <= 12 s/step, cervix min volume ratio >= 0.6, no inverted tets)
     per_phase = {}
     for k in sorted(run.log):
@@ -1396,8 +1543,9 @@ def carry_validation(run):
     ei = e[run.carrier.inn]
     Rk, tk = geom.kabsch(run.rest["corpus"][0], geom.read_obj(run.rd + "/final/corpus.obj")[0])
     X = run.T["pts"]
-    ep = np.linalg.norm(run.carrier.carry(run.loc_path, X, Uh, Rk, tk) - run.carrier.carry(run.loc_path, X, Uf, Rk, tk),
-                        axis=1)
+    Uk = np.load(run.final_uk_path) if (run.corpus_fem and run.final_uk_path) else None     # S9: the same in both carries
+    ep = np.linalg.norm(run.carrier.carry(run.loc_path, X, Uh, Rk, tk, Uk) -
+                        run.carrier.carry(run.loc_path, X, Uf, Rk, tk, Uk), axis=1)
     cerv = np.array([L[0] == "c" for L in run.loc_path])
     st = lambda v: dict(median=rnd(np.median(v)), max=rnd(v.max()), n=int(len(v))) if len(v) else None  # noqa: E731
     ties = run.tie_nodes
@@ -1407,7 +1555,8 @@ def carry_validation(run):
                 canal_path_nodes_mm=st(e[run.cp_nodes]) if len(run.cp_nodes) else None,
                 path_carried_by=run.path_kinds,
                 note="harmonic extension of final/cervix.obj vs the exact final/cervix_u.npy; corpus-carried points "
-                     "are exact (rigid); 'v' points (vaginal side, outside the cervix) stay at rest",
+                     "are exact (rigid; 'k' points of an elastic corpus: final/corpus_u.npy barycentrically); 'v' points "
+                     "(vaginal side, outside the cervix) stay at rest",
                 audit_reference="vcm/v4_frames.py: median 0.56, max 0.94 mm")
 
 
@@ -1450,7 +1599,8 @@ def score_final(run, cx):
     # the exact final carried canal (final/cervix_u.npy) beside the per-frame harmonic one
     Uf = np.load(run.rd + "/final/cervix_u.npy")
     Rk, tk = geom.kabsch(run.rest["corpus"][0], run.rest_final["corpus"][0])
-    pc = run.carrier.carry(run.loc_path, run.T["pts"], Uf, Rk, tk)
+    Ukf = np.load(run.final_uk_path) if run.final_uk_path else None           # every run writes final/corpus_u.npy
+    pc = run.carrier.carry(run.loc_path, run.T["pts"], Uf, Rk, tk, Ukf if run.corpus_fem else None)
     F = np.asarray(first(df, ("flange_mm", "flange")), float)
     a = unit(df["tube_axis"])
     tip = np.asarray(first(df, ("tip_mm", "tip"), F + run.L_iu * a), float)
@@ -1470,6 +1620,11 @@ def score_final(run, cx):
         tube_pose_vs_target=_pose_vs_target(run, F, a),
         definition="final/cervix_u.npy (exact) instead of the harmonic extension; S6 final gate: the path from s_F "
                    "to O_true + 20 mm within 3.2 mm of the tube")
+    # S9: the final corpus (final/corpus_u.npy: exact for both models) against the schedule's target, its non-rigid part,
+    # volume, span along the tube, the carried canal by band and its straightness (see corpus_block)
+    Xk = run.Pk + Ukf if Ukf is not None else run.Pk @ Rk.T + tk
+    out["corpus"] = corpus_block(run, df, Xk, pc, Ukf is not None)
+    out["corpus"]["uterus_dice_PELVIS"] = out["canal_final_exact"]["uterus_dice_PELVIS"]
     return out
 
 
@@ -1569,6 +1724,23 @@ def summarize(run, rows):
     s["ties"] = dict(first_engaged_step=eng[0][0] if eng else None, first_engaged_u=eng[0][2] if eng else None,
                      final_n=ties[-1][1] if ties else None, set=run.tie_set, per_node=_tie_lag(run))
     s["upper_canal_residual_final_mm"] = g(rows[-1], "insertion", "upper_canal_residual_mm")
+    cb = [(r["step"], r.get("corpus") or {}) for r in rows]
+    if any(c for _, c in cb):                           # S9: the corpus over the run (every run; "fem" is the new model)
+        nr = [(k, (c.get("nonrigid_serosa_mm") or {}).get("max")) for k, c in cb]
+        nr = [x for x in nr if x[1] is not None]
+        pv = [(k, (c.get("pose_vs_target_mm") or {}).get("max")) for k, c in cb]
+        pv = [x for x in pv if x[1] is not None]
+        mv = [(k, (c.get("volume") or {}).get("min_tet_ratio")) for k, c in cb]
+        mv = [x for x in mv if x[1] is not None]
+        s["corpus"] = dict(model=cb[-1][1].get("model"),
+                           n_frames_nodes_exact=sum(1 for _, c in cb if c.get("nodes_exact")),
+                           nonrigid_serosa_max_mm=dict(max=max(x[1] for x in nr), at_step=max(nr, key=lambda x: x[1])[0])
+                           if nr else None,
+                           pose_vs_target_max_mm=dict(max=max(x[1] for x in pv), at_step=max(pv, key=lambda x: x[1])[0])
+                           if pv else None,
+                           min_tet_ratio=dict(min=min(x[1] for x in mv), at_step=min(mv, key=lambda x: x[1])[0])
+                           if mv else None,
+                           final_frame=cb[-1][1])
     last = rows[-1]
     s["final_frame"] = dict(step=last["step"], organs_in_wall=g(last, "penetration", "organs_in_wall"),
                             wall_in_cervix=g(last, "penetration", "wall_in_cervix"),
@@ -1764,7 +1936,8 @@ def cmd_score(tag, every=1, steps=None, final=True, rd=None, out=None):
                         plan_record=run.tf["source"] if run.tf else None,
                         plan_rows_by_step=run.tf["rows_step"] if run.tf else None,
                         final_cervix_u=bool(run.final_u_path),
-                        path_carried_by=run.path_kinds),
+                        path_carried_by=run.path_kinds,
+                        corpus_model=("fem" if run.corpus_fem else "rigid")),
                status=run_status(run),
                definitions=DEFINITIONS, frames=rows, summary=summarize(run, rows))
     if final:
@@ -1799,7 +1972,18 @@ DEFINITIONS = dict(
            "tube axis",
     carry="per frame: the source of the cervix nodal displacement that carries the canal / tau (frames/"
           "step_<k>_cervix_u.npy or final/cervix_u.npy = exact, each only if it reproduces the frame's cervix surface "
-          "to U_MATCH_MM = 0.005 mm; else the harmonic extension of the surface) and the surface mismatch",
+          "to U_MATCH_MM = 0.005 mm; else the harmonic extension of the surface) and the surface mismatch; an elastic "
+          "corpus (cfg corpus_model fem) adds carry.corpus, the same for the corpus (frames/step_<k>_corpus_u.npy, "
+          "final/corpus_u.npy, else its surface's Kabsch fit, flagged approx)",
+    corpus="S9, per frame and final: model (rigid / fem); nodes_exact; pose_vs_target_mm = every corpus node vs X0 @ "
+           "T_corpus (the schedule's rigid target: device json T_corpus, device_final corpus_T_preBT_to_final); "
+           "nonrigid_serosa_mm = the serosa nodes vs their best rigid (Kabsch) fit to rest; volume = total / minimum tet "
+           "ratio, tets below 0.6, inverted; span_along_tube_mm = [min, max, max - min] of h above the flange along the "
+           "tube of the tet nodes within 5 mm of the tube line (max = the fundus top on the tube); "
+           "canal_to_tube_by_band_mm = max distance of the carried labelled canal to the tube segment per canal_s band "
+           "0-20 / 20-30 / 30-35 / 35-40 / 40-<end> (end = the labelled canal's largest canal_s rounded up to a whole mm, "
+           "corpus_bands); canal_best_line_max_mm = max distance of the carried canal from its "
+           "own best-fit line (straightness; S9 accept <= 2 mm)",
     lower_canal_in_tube_frac="fraction of carried labelled-canal points with 0 <= canal_s <= min(d, 20) within "
                              "r_tube + 1 mm of the tube segment flange..tip (gated in S5 / S6 on the C frames with "
                              "d > 5 mm: lower_canal_gated; lower_canal_worst_mm = the farthest of those points)",

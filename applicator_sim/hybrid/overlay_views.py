@@ -117,6 +117,7 @@ def findings(stats, canal_div, cfg=None):
     hs = M["hrctv_lr_split_cc"]
     ro = float(np.linalg.norm(M["ring_offset_mm"])) if M.get("ring_offset_mm") is not None else None
     ref = "physician's path" if hs.get("reference") == "tandem_path" else "canal line"
+    ut = "elastic" if cfg.get("corpus_model", "rigid") == "fem" else "rigid"     # S9: cfg corpus_model
     if cfg.get("canal_tie_set", "canal") == "canal_path":
         lift = "lifted %.0f mm up (scan %.0f); the tandem's ties follow" % (S["cervix"]["model_displacement_mm"][2],
                                                                             S["cervix"]["true_displacement_mm"][2])
@@ -129,7 +130,7 @@ def findings(stats, canal_div, cfg=None):
                "lower %.0f mm of canal is extrapolated; scan halves" % M["canal_label_starts_above_os_mm"]]
     f = dict(
         corpus=["Dice %s; model within %.0f mm of the scan" % (dice("corpus"), S["corpus"]["residual_len"]),
-                "aligned: the pose rule places the rigid uterus"],
+                "aligned: the pose rule places the %s uterus" % ut],
         cervix=["Dice %s; model %s of the scan" % (dice("cervix"), dirw(res["cervix"])), lift] + why +
                ["right %.0f→%.0f cc, left %.0f→%.0f cc (not just shrinkage)" % (hs["pre_right"], hs["bt_right"],
                                                                                  hs["pre_left"], hs["bt_left"])],
@@ -157,7 +158,7 @@ def findings(stats, canal_div, cfg=None):
                     fmt(pe.get("axis_angle_deg"), "%.1f"), fmt((pe.get("flange_offset_mm") or {}).get("total"), "%.1f")),
                  "no ring in this run (tandem only)"]),
         canal=["scan canal within %.1f mm of the real tandem;" % M["bt_canal_vs_real_tandem_max_mm"],
-               "model's rigid uterus keeps its curve: %.0f mm off" % canal_div])
+               "model's %s uterus keeps its curve: %.0f mm off" % (ut, canal_div)])
     return f
 
 
@@ -585,9 +586,13 @@ def canal_view(st, out, size=1040):
         ax.text(xp, ty + 50 + 22 * n_, "%3d    %6.1f    %6.1f mm      %s" % (n_ + 1, cs[i], dseg[i],
                                                                            dirw(C[i] - near[i], 1.0)),
                 fontsize=10.5, family="monospace", color=(0.15, 0.15, 0.15))
-    by = {b: st.canal_by.count(b) for b in ("cervix", "corpus", "cervix~")}
-    ax.text(xp, ty + 60 + 22 * len(mi), "carried: %d points in cervix tets (barycentric), %d with the rigid corpus, "
-            "%d outside both (nearest-node)" % (by["cervix"], by["corpus"], by["cervix~"]), fontsize=9.5,
+    by = {b: st.canal_by.count(b) for b in ("cervix", "corpus", "cervix~", "corpus~")}
+    kc = "the rigid corpus"                    # S9: an elastic corpus is carried barycentrically when its nodes are exact
+    if getattr(st, "corpus_fem", False):
+        kc = "the elastic corpus (%s)" % ("barycentric" if st.X_src["corpus"].startswith("exact") else "Kabsch, approx.")
+    ax.text(xp, ty + 60 + 22 * len(mi), "carried: %d points in cervix tets (barycentric), %d with %s, "
+            "%d outside both (nearest-node)" % (by["cervix"], by["corpus"], kc, by["cervix~"] + by["corpus~"]),
+            fontsize=9.5,
             color=(0.35, 0.35, 0.38))
     ax.text(xp, ty + 80 + 22 * len(mi), "cervix nodal displacement: %s" % st.X_src["cervix"], fontsize=9.5,
             color=(0.35, 0.35, 0.38))

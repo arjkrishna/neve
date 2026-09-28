@@ -19,6 +19,10 @@ Graph (FreeMotionAnimationLoop + GenericConstraintSolver; gravity 0; dt 0.02 s):
     /corpus                      RIGID, kinematic (pose rule v2); MechanicalObject template=Rigid3d
         /surf   corpus surface.obj  + RigidMapping -> collision + visual
         /iface  rigid-mapped copy of the cervix `interface_corpus` nodes (AttachConstraint target)
+      cfg corpus_model "fem" (S9): /corpus is a deformable body as above, FIRST in the graph, without collision models;
+        /iface is a BarycentricMapping of its tets (same path); RestShapeSprings "pose" hold corpus_pose_set to the
+        kinematic target (controller-written /targets/corpus_pose_tgt); "canal_tie" drives its canal nodes onto the
+        tube; /corpus_follow (solver-less) is the surface the OARs collide with (corpus_oar_contact "follow")
     /tandem                      RIGID, kinematic: tube.obj + shaft.obj  + RigidMapping -> collision + visual
     /ovoids                      RIGID, kinematic: ovoid_L.obj + ovoid_R.obj (seating phase; cfg ovoid_mode)
     /targets                     solver-less Vec3d MOs written by the controller each step
@@ -226,8 +230,9 @@ CFG = dict(
     material="corotational",        # "corotational" -> TetrahedralCorotationalFEMForceField (default)
                                     # "neohookean"   -> TetrahedronHyperelasticityFEMForceField (ParameterSet mu, k)
     hyper_material="NeoHookean",
-    E_kPa=dict(cervix=30.0, vagina=15.0, bladder=8.0, rectum=8.0, sigmoid=8.0),
-    nu=dict(cervix=0.45, vagina=0.45, bladder=0.49, rectum=0.45, sigmoid=0.45),
+    E_kPa=dict(cervix=30.0, vagina=15.0, bladder=8.0, rectum=8.0, sigmoid=8.0,
+               corpus=40.0),        # corpus: read only when corpus_model="fem" (see there for the value's source)
+    nu=dict(cervix=0.45, vagina=0.45, bladder=0.49, rectum=0.45, sigmoid=0.45, corpus=0.45),
     density_kg_per_mm3=1.05e-6,
     lumped_mass=True,               # MeshMatrixMass lumping (diagonal mass: cheaper and steadier)
     # --- time integration (NUMERICAL)
@@ -327,6 +332,35 @@ CFG = dict(
     # --- couplings (CONTRACT 4)
     attach_impl="attach",           # cervix.interface_corpus <-> rigid-mapped corpus copies:
                                     # "attach" = AttachConstraint | "springs" = stiff RestShapeSprings to the copies
+                                    # "bilateral" (corpus_model "fem" only): a root-level BilateralInteractionConstraint
+                                    #   between the corpus-mapped copies and the cervix nodes -- TWO-WAY: the corpus
+                                    #   then also carries the cervix's load (cardinal cables, canal ties, contacts).
+                                    #   "attach" / "springs" stay one-way with an elastic corpus as with a rigid one.
+    attach_target="mapped",         # what "attach" / "springs" hold the cervix interface nodes to:
+                                    # "mapped" (DEFAULT, every run so far): the scene's mapped copy /corpus/iface/mo
+                                    #   (RigidMapping of the kinematic corpus; BarycentricMapping of an elastic one).
+                                    #   MEASURED (2026-09-27, frames with exact nodal u; scratchpad eu_implement/
+                                    #   lagcheck*.py): the constraint reads that copy TWO STEPS STALE -- in TF0c and
+                                    #   EUISO_R0 the cervix interface sits on the corpus pose of row k-2 to 0.000 mm
+                                    #   through L and 1.0-1.5 mm off the current pose (EUISO_B, elastic: the same, the
+                                    #   residual vs the k-2 state 0.00-0.05 mm).  The settle removes it (the target stops),
+                                    #   so final states are unaffected; during C / L the corpus-cervix junction is torn by
+                                    #   ~2 rows of corpus motion.
+                                    # "predicted": a solver-less /targets/corpus_iface_tgt written at the start of each
+                                    #   step with where the interface will be at its END: rigid = X0 @ T_corpus(row), exact;
+                                    #   elastic = the corpus nodes now + this step's change of the pose target, mapped by
+                                    #   the same barycentric weights SOFA's mapper uses (bary_weights).  Not with
+                                    #   attach_impl "bilateral" (a constraint on the corpus itself, no copy involved).
+                                    # MEASURED in the isolated scene (EUISO_*, TF0c's rows, cervix + corpus alone; residual
+                                    #   = cervix interface vs the corpus points it belongs to, median over L / cervix min
+                                    #   volume ratio in C): rigid attach mapped ~0.98 mm (2 steps) / 0.398, predicted 0.49
+                                    #   (the AttachConstraint still applies the target ONE step late; writing free_position
+                                    #   as well changed nothing, bit for bit) / 0.398; attach_impl "springs" mapped ~0.31 /
+                                    #   0.561, springs predicted 0.30 / 0.527 (what is left is the springs' compliance under
+                                    #   load).  Elastic: attach mapped 0.90 / 0.548, predicted 0.43 / 0.486, springs mapped
+                                    #   0.57 / 0.597, springs predicted 0.22 / 0.565, "bilateral" 0.006 / 0.620 (3.6x the
+                                    #   step cost, and two-way).  Defaults unchanged ("attach" / "mapped"); TF1v and TF1n
+                                    #   pin "springs" + "predicted", the combination canal_tie_follow requires.
     k_attach_mN_per_mm=2000.0,      # only for attach_impl="springs"
     canal_tie=True,
     canal_tie_below_mm=0.0,         # "centre" only: canal nodes up to this far BELOW the flange (s < 0, the os
@@ -353,7 +387,8 @@ CFG = dict(
                                     #   the tube line and the portio ends 6-7 mm anterior of it, which drags the
                                     #   vault 9-12 mm off the rod line, and the ring crosses the posterior vault
                                     #   wall.  The tube passes through the external os by definition; "centre"
-                                    #   is that fact as a boundary condition.                 # cervix.canal nodes dilated onto the tube (sliding along the axis)
+                                    #   is that fact as a boundary condition.                 # cervix.canal nodes dilated onto the tube
+                                    #   (the correction is lateral, but the spring is not: see canal_tie_follow)
     k_canal_mN_per_mm=200.0,
     canal_slack_mm=0.0,             # tie radius = r_tandem + slack
     canal_max_offset_mm=0.5,        # the tie target is at most this far from the node's CURRENT position, so the tie
@@ -361,6 +396,75 @@ CFG = dict(
                                     # over several steps).  Without the bound the target ratchets out to the full
                                     # tube radius and the force reaches k * 2.18 mm, which collapsed the cervix
                                     # elements around the canal (MEASURED, run H1: min volume ratio 0.92 -> 0.06).
+    canal_tie_follow=False,         # eu2 (review HIGH-2).  False (DEFAULT, every run up to TF1u): the target is the node's
+                                    #   START-OF-STEP position + the capped lateral correction.  The RestShapeSpring is
+                                    #   isotropic, so that target also holds the node against its own carried motion in
+                                    #   the step, axial included: the tie is "lateral, sliding freely along the tube" only
+                                    #   while the tissue is at rest.  "corpus": the node is first carried by this step's
+                                    #   rigid corpus increment (T_corpus row k-1 -> k at the node, rigid_step_increment;
+                                    #   exactly 0 while the corpus is at rest, so B/P/V and the settle rows, which repeat
+                                    #   the last row, are unchanged), then the capped lateral correction is computed there
+                                    #   (canal_tie_step carry=): the cap bounds the misfit only, and a canal carried with
+                                    #   the uterus feels no force.  "tube": the tandem's rigid motion row k-1 -> k with its
+                                    #   slide along the ROW's tube axis removed (tube_lateral_increment; also under
+                                    #   canal_tie_axis "final") + the corpus increment's part along that axis: the tube's
+                                    #   sideways motion is imposed uncapped (force per node up to k (|carry| + cap)).
+                                    #   REQUIRES (a build error otherwise, eu3 / review HIGH-1): canal_tie true, and
+                                    #   attach_impl "springs" with attach_target "predicted".  The carry puts the tie nodes
+                                    #   on row k's corpus pose, while a lagged attach holds the cervix interface on row k-2
+                                    #   ("mapped", the default: read two steps stale) or k-1 ("attach" + "predicted": the
+                                    #   AttachConstraint applies its target one step late); on TF0c's rows that offset
+                                    #   reaches 1.47 mm in C and 0.98 mm through L, and the carry differs from the lagged
+                                    #   tissue motion by > 0.3 mm in 12 of the 39 moving C rows (0.85 mm at the C -> L
+                                    #   boundary): the corpus-cervix junction is sheared.  "tube" is also refused with
+                                    #   below-flange ties (canal_tie_mode "centre" + canal_tie_below_mm > 0): those nodes
+                                    #   sit on the rod line, which the tube's lateral increment does not describe.
+                                    #   MEASURED on TF0c's exact frames (scratch eu2_fix/m1_predict.py; 3-step motion of the
+                                    #   engaged canal_path tie nodes, |actual - predicted| median mm, off / "corpus" /
+                                    #   "tube"): V 0.33 / 0.33 (identical: T_corpus is bit-constant through B, P, V) / 0.57;
+                                    #   C 0.236 / 0.232 / 0.314 (canal_s 0-12, near the internal os: 0.250 / 0.178 / 0.250);
+                                    #   L 1.09 / 0.34 / 0.34.  The 149 untied neighbours 1.5-5 mm away agree.  So "corpus"
+                                    #   matches the tissue best (L: the old target holds back the 0.43 mm/step axial lift),
+                                    #   and TF0c's tissue did NOT follow the tube's lateral motion in V / C (partly the old
+                                    #   cap itself).  But the C-ramp cap binding is RELATIVE tube-vs-uterus motion: largest
+                                    #   one-step change of a tie node's lateral offset to the tube line in C 0.75 mm (off,
+                                    #   steps 236-237) / 0.69 (corpus, 228-237) / 0.08 (tube); only "tube" removes it.
+                                    #   MEASURED in SOFA, isolated scene (cervix + corpus, TF0c's rows, on the mapped attach:
+                                    #   cfgs now refused), vs its control: rigid corpus, "corpus" (EU2ISO_R0F vs EUISO_R0):
+                                    #   bit-identical frames through step 120 (C, until T_corpus first moves); C
+                                    #   lower_canal_in_tube_frac min 0.952 (0.810), no C frame < 0.9 (2); cervix min volume
+                                    #   C 0.392 (0.398), L 0.425 (0.433), H 0.660 (0.544); tie force C net <= 2.34 N, <= 0.39
+                                    #   N per node.  "tube" (EU2ISO_FT vs EU2ISO_F, elastic corpus): V cervix min volume
+                                    #   0.671 (0.770), V net tie force 0.62 N (0.32).
+                                    #   MEASURED in the full scene (tf_metrics; "lower canal" = the C-ramp frames failing
+                                    #   lower_canal_in_tube, of 30):
+                                    #     TF1v and TF1n (= TF1v with corpus tie stiffness 0: a rigid-equivalent corpus),
+                                    #     "corpus" + springs / predicted: 0/30, worst 2.25 / 2.67 mm (TF0c and TF1u, follow
+                                    #     off: 5/30, worst 3.86 / 3.92 mm); cervix min volume in C 0.519 / 0.524 (TF0c 0.400).
+                                    #     TF1n_noB (springs / predicted, follow off): 3/30, worst 3.61 mm -- the follow, not
+                                    #     the attach, cures the lower-canal slip.
+                                    #     TF1n_noC ("corpus" on the default mapped attach): ABORTED at step 241 (L,
+                                    #     abort_inverted_tets: junction tets 1437 -> 0.30, 2101 -> 0.14; TF1n 0.57-0.62
+                                    #     there); cervix tie net force 2.79 / 2.91 N at the C rate jumps (steps 218 / 225;
+                                    #     TF1n 2.03 / 2.13), attach residual 1.25-1.48 mm (0.13-0.15).
+                                    #     TF1n_attP ("corpus" + attach_impl "attach" / "predicted", one step late): 0/30
+                                    #     (worst 2.93 mm), but TF0c's C squeeze is back (tet 9449 0.397) and the settle
+                                    #     chatters in part.
+                                    #   OPEN with the allowed combination (TF1v, TF1n, TF1p): a period-2 settle chatter of
+                                    #   the LEFT portio (the 40 largest-flip cervix nodes sit 12-17 mm to the patient's
+                                    #   left, ~0.65 mm swing) against the vaginal fornix (cervix 1.3 mm/step in the settle;
+                                    #   TF0c / TF1u 0.25-0.28), not the carry (exactly 0 there).  It seeds, but does not
+                                    #   cause, the separate late-settle instability of every run (G32 / TF0c / TF1u
+                                    #   included): a period-2 flip of the lower-mid vaginal wall growing 1.09-1.22x per
+                                    #   step, because apex_lift_fix holds the mid-wall at stretch 1.36-1.43 and the
+                                    #   corotational step has no geometric stiffness for that tension (host eigenvalue
+                                    #   -1.20 to -1.28; threshold ~1.22).  Proposed, NOT implemented: a settle-phase
+                                    #   Rayleigh stiffness on the wall.  Until then score final organ numbers with the
+                                    #   README's M121@k* convention (a 1-2-1 average of frames k-6, k-3, k at k*, the last
+                                    #   frame before OAR vertices get behind the flipping wall), not the final frame.
+    log_canal_tie_force=False,      # eu2: log row["canal_tie_force"] (net / max-node / summed spring force of the cervix
+                                    #   ties at the END of the step, N, and the largest carry) also with canal_tie_follow
+                                    #   off, so the old and new targets can be compared; always logged when follow is on.
     tie_ramp_steps=3,
     # --- S1 of the G32 fix plan (logs/audit_G32/fix_plan_G32_audit.md): which line the tie aims at, which nodes it
     #     drives and when they engage.  All three defaults are the G16-G32 behaviour, bit for bit (hybrid/test_ties.py
@@ -552,6 +656,146 @@ CFG = dict(
                                     #   radius_mm of the rest vaginal wall are split 1-to-4 `levels` times and the copy is
                                     #   carried by a BarycentricMapping of the cervix tets.  No re-meshing: the FEM mesh,
                                     #   its 792 surface nodes and every node set are unchanged.  None = off (DEFAULT).
+    # --- S9 of the G32 fix plan (2026-09-27): an ELASTIC corpus.  The user: "the uterus is not a rigid body; it stretches
+    #     a bit as the tandem is inserted".  Every default below keeps the corpus RIGID and kinematic, exactly as G32 and
+    #     TF0c ran (host replay of both scenes against b3745b1: identical graph, schedule, summary and controller Data).
+    #     MEASURED (scratchpad eu_evidence / eu_design and the two eu reviews, patient-derived, local): the BT uterus is
+    #     explained by rigid motion to Dice 0.883 (TF0c pose; best rigid 0.892); what is left is organ-scale and small --
+    #     mean surface residual ~2 mm.  Along the tandem BT stretches only 1.9-2.7 % by the volume-consistent label affine
+    #     (sub-voxel; the design's "~5 %" was an in-sample Dice fit that does not survive in the device frame, see
+    #     corpus_pose_stretch_lam).  Across it the BT uterus is REALLY narrower left-right, by 3.2-5.9 mm (8-15 %) 40-55 mm
+    #     above the flange, with ~9 % front-back thickening: no tie mechanism reproduces that (models 0.1-1.1 mm), and
+    #     neither does organ contact (TF1c, corpus_oar_contact "two_way": 0.076 N settled, all sigmoid at the fundus, no
+    #     load at 40-55 mm; no labelled organ lies within 2 mm of the BT uterus there).  The BT uterus does NOT bend where
+    #     the labelled canal's top would have to go (0.2-0.4 mm at h 51-57 mm), and forcing the whole canal onto the tube
+    #     in a solid mesh inverts tets and drops Dice to ~0.81.  So the gross motion stays the pose rule's (springs to the
+    #     kinematic target), and the elastic part is what the tandem, the cervix and the OARs add on top of it.
+    #     OUTCOME (full scene, TF1v against TF1n = the same graph with corpus tie stiffness 0, i.e. a rigid-equivalent
+    #     corpus; noise floor TF1p = stiffness 4): the elastic corpus pulls the labelled canal inside it 2-3.6 mm closer
+    #     to the tandem (upper residual 17.3 -> 14.5 mm) but does not bring the uterus SHAPE closer to BT (Dice 0.883
+    #     either way); scored with M121@k*, the only organ changes above the floor (<= 0.0003 Dice) are small and away from
+    #     BT (sigmoid -0.0012, cervix -0.0006).  The BT scan also shows the uterine cavity (T2-bright slit) still reaching
+    #     10-15 mm to the patient's left of the real tandem 28-40 mm up, i.e. the canal label's left-curving top is cavity
+    #     the tandem does not fill; pulling it onto the tube (ties above s ~25) is therefore not supported by BT
+    #     (corpus_canal_s_max).
+    corpus_model="rigid",           # "rigid" (DEFAULT): the kinematic Rigid3d corpus, placed each step at X0 @ T_corpus(row)
+                                    #   (every run up to TF0c).
+                                    # "fem": a TetrahedralCorotational FEM body on meshes/corpus/tets.vtk (1779 nodes,
+                                    #   9001 tets, true min dihedral 6.3 deg), solved BEFORE the cervix; its gross pose is
+                                    #   held by soft springs from corpus_pose_set to the SAME kinematic target (target
+                                    #   positions rewritten each step), /corpus/iface/mo becomes a BarycentricMapping of
+                                    #   the corpus tets (same path, so attach_impl "attach" / "springs" work unchanged; 64
+                                    #   of the 127 cervix interface nodes lie up to 2.1 mm outside the corpus tets and are
+                                    #   extrapolated), corpus canal ties (below) drive the corpus's own canal nodes onto
+                                    #   the tube, and the OARs meet it through corpus_oar_contact.  E / nu: E_kPa.corpus,
+                                    #   nu.corpus (material / material_by_body as for the other bodies).
+                                    #   E_kPa.corpus = 40: in vivo (MRE, Jiang 2014) the corpus is ~1.3x the cervix (|G*|
+                                    #   2.58 vs 2.00 kPa), and the model's cervix is 30 kPa; the literature range of E is
+                                    #   ~6-40 kPa (MRE, transabdominal / transvaginal SWE) -- S9's ">= 50" is above it.
+                                    #   E is NOT shape-neutral, and 40 is chosen for stability, not from tissue data.
+                                    #   MEASURED (probe P7, isolated scene, pose k 20, corpus ties without
+                                    #   corpus_tie_follow): upper canal residual 12.65 / 13.28 / 13.75 / 14.39 / 15.13 mm at
+                                    #   E 20 / 25 / 30 / 40 / 60; E 15 aborts in L (the 36 corpus tets whose four nodes are
+                                    #   all tie nodes collapse), E 20 reaches a min tet ratio of 0.27, and at E <= 30 more
+                                    #   than 1 % of the tets end above 30 % strain (T4).  With corpus_tie_follow E 25 still
+                                    #   fails T4 (EU3_E25: p95 24.1 %, 3.0 % of tets above 30 %).  E 40 is the softest value
+                                    #   that passes.
+    corpus_pose_set="serosa",       # fem: the nodes held to the pose target.  "serosa" = surface_nodes minus
+                                    #   interface_cervix (463); "surface" = all 592 surface nodes; "all" = 1779 (a stiff
+                                    #   control: the corpus ~rigid); "shell" = the serosa at k_fixed_mN_per_mm (a rigid
+                                    #   shell around a deformable core, by springs rather than FixedConstraint).
+    k_corpus_pose_mN_per_mm=5.0,    # fem: pose spring per node (463 x 5 = 2.3 N/mm on the serosa; the net tie force of
+                                    #   2.5-3.5 N then drifts the corpus ~1.1-1.9 mm rigidly, host estimate).  This default
+                                    #   FAILS the S9 uterus Dice gate (>= 0.87): isolated EUISO_B 0.859, probe P7 k 5 at E
+                                    #   15-60: 0.859-0.862 (pose drift 2 mm mean).  k 20 passes (0.878-0.882; rigid 0.883)
+                                    #   and TF1u pins 20 in its cfg; the default stays 5 because the EU* cfgs rely on it.
+    k_corpus_bottom_mN_per_mm=None, # fem: extra springs on the 129 interface_cervix nodes to the same target (None = none):
+                                    #   the anchor any stretch along the tandem needs (probe 5 / 50).
+    corpus_pose_exclude_canal_mm=0.0,   # fem: drop pose-set nodes within this distance of the REST labelled canal
+                                    #   (inputs/tandem_path.npz, s >= 0) so the pose springs do not fight the canal ties
+                                    #   locally (serosal nodes within 8 / 10 / 12 mm: 33 / 57 / 107).  0 = keep all.
+    corpus_pose_stretch_lam=1.0,    # fem, CALIBRATED / SCENARIO: the pose target becomes a volume-preserving stretch
+                                    #   along the row's tube axis applied after T_row, anchored at the corpus bottom (h0 =
+                                    #   0.5 percentile of the posed nodes' h about their centroid): h' = h0 + lam_row (h -
+                                    #   h0), lateral / sqrt(lam_row), lam_row = 1 + (lam - 1) w (w = the row's w_r in
+                                    #   tandem-first, else its s).  1.0 = the rigid target, bit for bit.  MEASURED in-sample
+                                    #   optimum of the PELVIS-frame Dice 1.05 (0.883 -> 0.893 on the TF0c pose; 1.10 back
+                                    #   to 0.883, 1.15 0.863): fitted to THIS patient's BT label, so tagged CALIBRATED in the
+                                    #   summary.  It is NOT evidence of stretch: aligned on the BT tandem (device frame)
+                                    #   the 1.05 run scores LOWER than no stretch (EU3_D3 0.882 vs EU2ISO_F 0.887); the
+                                    #   pelvis-frame gain is within the device-placement error along the tandem (~1.1 mm),
+                                    #   and the label affine gives BT only 1.9-2.7 % axial stretch.  A scenario knob only.
+    corpus_oar_contact="follow",    # fem: how the OARs meet the corpus.  "follow" (DEFAULT) = a solver-less copy of the
+                                    #   corpus surface (surface.obj faces, identical to the rigid collision surface at rest,
+                                    #   same groups) rewritten each step from the corpus nodes, predicted forward by this
+                                    #   step's change of the pose target: exactly the rigid corpus's contact when the
+                                    #   corpus follows its target, one-way (the OARs feel the corpus, not vice versa).
+                                    #   "two_way" = collision models on the FEM corpus itself; "off" = none.  MEASURED in
+                                    #   the full scene (TF1c = TF1v + "two_way", floors TF1cp / TF1cn): settled contact on
+                                    #   the corpus 0.076 N (sigmoid at the fundus), no squeeze at 40-55 mm, uterus Dice
+                                    #   -0.00002 (floor 0.0001), +8 % runtime; it keeps the bladder out of the corpus
+                                    #   through C (one-way: 72-73 bladder vertices up to 8.7 mm inside at step 237) but not
+                                    #   through L; flange drift in L 0.04 -> 0.38 mm.  Not adopted as the default.
+    corpus_canal_tie=True,          # fem: tie the corpus's own canal nodes onto the tube (as canal_tie_mode "centre" does
+                                    #   for the cervix: lateral, bounded per step, depth engagement, the row's tube axis).
+                                    #   Needs schedule rows with tip_s (insertion_path "tandem_first").
+    corpus_canal_tie_set="canal_path",  # fem: the corpus node set (meshes/corpus/meta.json, written by
+                                    #   `python -P hybrid/tandem_path.py corpus_nodesets`): corpus nodes within 3 mm of the
+                                    #   labelled canal (s >= 0), 39 nodes, canal_s 9.6-46.6 in "canal_path_s".
+    k_corpus_canal_mN_per_mm=400.0, # fem: tie stiffness (as TF0c's cervix ties).  The force per node is bounded by k x
+                                    #   max_offset ONLY with corpus_tie_follow true (see there and below).
+    corpus_canal_max_offset_mm=0.5, # fem: per-step bound on the target's offset from the node: with corpus_tie_follow true
+                                    #   the spring force per node is about 400 x 0.5 = 0.2 N (TF1v: exactly 0.200 N per node
+                                    #   in the settle; the end-of-step force exceeds it while a node lags its carried
+                                    #   target, up to 0.2355 N at step 228, 75 of 304 steps), the upper end of what the
+                                    #   evidence allows ("cap
+                                    #   the tie force at ~0.1-0.2 N per node, or do not tie above s ~20-25 mm"): above that
+                                    #   the ties straighten the canal beyond the BT evidence.  With the DEFAULT
+                                    #   corpus_tie_follow false the bound does NOT hold: the start-of-step target adds k x
+                                    #   the node's own motion in the step (unit test 0.39 N per node; TF1u net 7.35 N in L).
+                                    #   The summary's force_bound_per_node_mN is k x max_offset in either case.
+    corpus_canal_s_max=None,        # fem: drop tie nodes with canal_s above this (e.g. 25 or 33); None = all 39 (as
+                                    #   TF1u / TF1v ran).  The BT scan supports ~25: above it the labelled canal is the
+                                    #   left part of the cavity, still beside the real tandem at BT (see the S9 header).
+    corpus_canal_engage_clip=True,  # fem: engage at min(canal_s, max schedule tip_s - 0.05).  MEASURED: TF0c's tip_s
+                                    #   ends at 44.30 mm, so the 5 nodes with canal_s 44.8-46.6 would never engage.
+    corpus_canal_axial="none",      # fem: "none" = no axial DRIVE: the target is the node's position (start of step, or
+                                    #   carried: corpus_tie_follow) + the capped LATERAL correction.  It does NOT mean the
+                                    #   node slides freely along the tube: the spring is isotropic and pulls toward that
+                                    #   target in every direction (review HIGH-2: with corpus_tie_follow false the target
+                                    #   sits at the start-of-step node, so the ties hold back the corpus's own motion --
+                                    #   TF1u L: 7.35 N net, ~ 39 x 0.4 N/mm x 0.49 mm/step = 7.67 N, a rate artifact).
+                                    #   "arclength" = also drive it along the tube to h* = L_iu - (tip_s - canal_s) (the
+                                    #   straightened canal keeps its length; bounded by the same max offset per step).
+                                    #   Host estimate: this stretches the corpus little (fundus +0.6 mm with the bottom
+                                    #   held); corpus_pose_stretch_lam is the calibrated route to the BT stretch.
+    corpus_tie_follow=False,        # eu2 (review HIGH-2), fem ONLY (a bool; refused with corpus_model "rigid", where there
+                                    #   are no corpus ties).  False (DEFAULT, TF1u and the EUISO / EUP7 runs): the tie target
+                                    #   is the START-OF-STEP node + the capped lateral correction (canal_tie_step as the
+                                    #   cervix).  True: the node is first carried by this step's change of its pose target
+                                    #   (corpus_pose_targets row k minus row k-1 at the node, as follow_surface), and the
+                                    #   capped lateral correction is computed from that carried position: a canal riding
+                                    #   with the uterus gets zero tie force, the cap acts only on the misfit.  The AXIAL
+                                    #   part of the carry is kept (not projected out): the spring is isotropic, so dropping
+                                    #   it IS the defect (0.433 of TF1u's 0.492 mm/step L lift is along the tube); with it
+                                    #   the tie resists only the node's deviation from the carried motion within one step,
+                                    #   re-anchored every step -- an elongation of the corpus along the tube of 1-2.5 mm
+                                    #   over the ~135 C + L steps (the BT evidence) costs < 0.02 mm/step, < 10 mN per node.
+                                    #   MEASURED in SOFA, isolated scene (EU2ISO_F = TF1u's corpus + this + canal_tie_follow
+                                    #   "corpus" on the mapped attach -- a combination canal_tie_follow now refuses; the
+                                    #   corpus is one-way coupled, so it is the same with the springs / predicted attach,
+                                    #   EU3_C, to 0.0002 mm -- vs EUP7_E40_K20_H25, whose corpus equals TF1u's to 0.0 mm):
+                                    #   bit-identical frames through step 120; corpus tie net force C 2.57 N (5.44), L 3.37
+                                    #   (7.35), H 3.37
+                                    #   (6.69); L pose max 1.57 mm (2.78), non-rigid serosa max 1.24 (2.06); L one body: tip /
+                                    #   flange-in-corpus drift 0.06 / 0.04 mm (0.48 / 1.04), canal spread 0.17 (2.34);
+                                    #   worst-frame strain p95 16.7 % (27.5), tets > 30 % 0.44 % (3.8); corpus min tet 0.783
+                                    #   (0.735); C lower_canal_in_tube_frac min 1.0 (0.476).  Unchanged: uterus Dice 0.883
+                                    #   (0.882), canal bands, upper residual 14.52 (14.46), best line 6.25 (6.27) -- the fix
+                                    #   removes the artifact; it does not make the corpus stretch.  Full scene (TF1v, with
+                                    #   canal_tie_follow "corpus" + springs / predicted attach, vs TF1u): the corpus equals
+                                    #   the isolated EU3_C to 3e-9 mm; L tie force 7.35 -> 3.37 N net; L one body spread 2.34
+                                    #   -> 0.17 mm, flange drift 1.04 -> 0.04 mm; strain p95 27.5 -> 16.7 %.
     # --- bookkeeping
     log_every=1,
 )
@@ -975,12 +1219,13 @@ def build_schedule(cfg, tgt):
 
 
 # ----------------------------------------------------------------------------- scene
-def add_deformable(root, b, inp, cfg, X0, static=False):
+def add_deformable(root, b, inp, cfg, X0, static=False, collide=True):
     """One body.  `static=True` (cfg `static_bodies`) builds it as a NON-DEFORMABLE collision obstacle: the tet
     topology, the full-node `dofs` MechanicalObject and the surface collision models are kept exactly as for a
     deformable body -- so ctrl.X(b), run_hybrid.write_outputs and frame_cache see identical shapes and simply read
     u = 0 -- but there is no ODE solver, no mass, no FEM and (see build_scene) no constraint correction, so nothing
-    integrates the body and it stays at its rest pose."""
+    integrates the body and it stays at its rest pose.  `collide=False` leaves out the surface's collision models
+    (the elastic corpus with corpus_oar_contact "follow" / "off": its contact surface is a separate copy, or none)."""
     P = inp["P"]
     wall = bool(b == "vagina" and cfg.get("vagina_model", "solid") == "wall")
     n = root.addChild(b)
@@ -1042,9 +1287,10 @@ def add_deformable(root, b, inp, cfg, X0, static=False):
         cn = s
         if b == "cervix" and cfg.get("cervix_collision_refine") and not static:
             cn = _add_refined_collision_surface(n, inp, cfg, X0)      # S2 P5b: the models go on the refined copy
-        cn.addObject("TriangleCollisionModel", name="tri", group=g, **kw)
-        cn.addObject("LineCollisionModel", name="lin", group=g, **kw)
-        cn.addObject("PointCollisionModel", name="pnt", group=g, **kw)
+        if collide:
+            cn.addObject("TriangleCollisionModel", name="tri", group=g, **kw)
+            cn.addObject("LineCollisionModel", name="lin", group=g, **kw)
+            cn.addObject("PointCollisionModel", name="pnt", group=g, **kw)
     v = s.addChild("vis")
     col = list(inp["bodies"]["bodies"][b]["color"]) + [1.0]
     v.addObject("OglModel", name="ogl", color=col)
@@ -1125,6 +1371,7 @@ def add_rigid_parts(root, name, files, groups, colors, pose0):
 
 def build_scene(root, cfg=None, inp=None):
     cfg = cfg if cfg is not None else load_cfg(os.environ.get("APPSIM_CFG"))
+    check_follow_cfg(cfg)                               # eu3: refuse lagged / silent-no-op follow cfgs before building
     inp = inp or load_inputs(cfg)
     P = inp["P"]
     tgt = corpus_target(inp, cfg)
@@ -1156,17 +1403,38 @@ def build_scene(root, cfg=None, inp=None):
     stat = [b for b in DEFORMABLE if b in cfg.get("static_bodies", [])]
     defo = [b for b in DEFORMABLE if b not in stat]
     nodes = {}
+    corpus_fem = corpus_model(cfg) == "fem"
+    if corpus_fem:
+        # the ELASTIC corpus (cfg corpus_model "fem"), FIRST in the graph (its free motion is solved before the
+        # cervix's).  That does NOT make the mapped attach target current: MEASURED (EUISO_B), the cervix reads
+        # /corpus/iface/mo two steps stale, as with the rigid corpus (CFG attach_target; the log's attach_residual_mm /
+        # iface_mo_stale_mm measure it); attach_target "predicted" is the fix
+        nodes["corpus"] = add_deformable(root, "corpus", inp, cfg, X0["corpus"],
+                                         collide=(cfg.get("corpus_oar_contact", "follow") == "two_way"))
     for b in DEFORMABLE:
         nodes[b] = add_deformable(root, b, inp, cfg, X0[b], static=(b in stat))
 
-    # ---- rigid corpus (pose rule) + its rigid-mapped copy of the cervix interface nodes
-    cdev = dict(corpus=list(inp["bodies"]["bodies"]["corpus"]["color"]) + [1.0])
-    corp = add_rigid_parts(root, "corpus", [("surf", "%s/corpus/surface.obj" % P["meshes"])],
-                           dict(surf=grp["corpus"]), dict(surf=cdev["corpus"]), rigid_pose(np.eye(3), np.zeros(3)))
     iface = np.asarray(inp["meta"]["cervix"]["node_sets"]["interface_corpus"], int)
-    ifn = corp.addChild("iface")                       # local coords == preBT world (the corpus rigid starts at identity)
-    ifn.addObject("MechanicalObject", name="mo", template="Vec3d", position=X0["cervix"][iface].tolist())
-    ifn.addObject("RigidMapping", name="rm", input="@../rig", output="@mo")
+    if corpus_fem:
+        # the cervix interface nodes carried by the corpus TETS (BarycentricMapping; 64 of 127 lie up to 2.1 mm outside
+        # the corpus mesh and are extrapolated from the nearest tet -- exact at rest either way).  Same path
+        # /corpus/iface/mo as the rigid copy, so _add_couplings "attach" / "springs" are unchanged.
+        corp = None
+        ifn = nodes["corpus"].addChild("iface")
+        ifmo = ifn.addObject("MechanicalObject", name="mo", template="Vec3d", position=X0["cervix"][iface].tolist())
+        ifn.addObject("BarycentricMapping", name="bm", input="@../dofs", output="@mo")
+        defo = defo + ["corpus"]                        # solved, logged, checked; constraint correction last (below)
+        # the same mapping on the host (SOFA's rule): the true attach residual and the "predicted" attach target
+        corpus_bary = bary_weights(X0["corpus"], read_vtk_tets("%s/corpus/tets.vtk" % P["meshes"])[1],
+                                   X0["cervix"][iface])
+    else:
+        # ---- rigid corpus (pose rule) + its rigid-mapped copy of the cervix interface nodes
+        cdev = dict(corpus=list(inp["bodies"]["bodies"]["corpus"]["color"]) + [1.0])
+        corp = add_rigid_parts(root, "corpus", [("surf", "%s/corpus/surface.obj" % P["meshes"])],
+                               dict(surf=grp["corpus"]), dict(surf=cdev["corpus"]), rigid_pose(np.eye(3), np.zeros(3)))
+        ifn = corp.addChild("iface")                   # local coords == preBT world (the corpus rigid starts at identity)
+        ifmo = ifn.addObject("MechanicalObject", name="mo", template="Vec3d", position=X0["cervix"][iface].tolist())
+        ifn.addObject("RigidMapping", name="rm", input="@../rig", output="@mo")
 
     # ---- rigid device: tandem (tube + shaft) and ovoids (seated separately, cfg ovoid_mode)
     dcol = dict(tube=[0.15, 0.15, 0.20, 1.0], shaft=[0.15, 0.15, 0.20, 1.0],
@@ -1215,7 +1483,9 @@ def build_scene(root, cfg=None, inp=None):
     # ---- couplings and supports
     ctx = dict(root=root, cfg=cfg, inp=inp, tgt=tgt, sched=sched, X0=X0, nodes=nodes, corpus=corp,
                tandem=tandem, ovoids=ovoids, iface=iface, Rdev=Rdev, targets=tg, supports=sup,
-               extra=dict(inp.get("probe_info") or {}), deformable=defo, static=stat)
+               extra=dict(inp.get("probe_info") or {}), deformable=defo, static=stat,
+               corpus_fem=(nodes["corpus"] if corpus_fem else None), corpus_iface_mo=ifmo,
+               corpus_iface_bary=(corpus_bary if corpus_fem else None))
     if no_ov:
         ctx["extra"]["ovoid_body"] = False
     if cfg.get("insertion_path", "rule") == "tandem_first":
@@ -1226,6 +1496,9 @@ def build_scene(root, cfg=None, inp=None):
             wall=rec.get("wall"), lift_in_C=rec.get("lift_in_C"), fallback=rec.get("fallback"))
     _add_couplings(ctx)
     _add_supports(ctx)
+    if corpus_fem:
+        _add_corpus_pose(ctx)                           # the elastic corpus's pose springs to the kinematic target
+        _add_corpus_follow(ctx)                         # ... and the surface the OARs meet (corpus_oar_contact)
     _wall_diag_setup(ctx)                               # read-only per-step lumen diagnostics (wall runs only)
     _add_balloon(ctx)                                   # Stage 2b OAR pre-relaxation (cfg n_balloon > 0, wall runs)
     _add_sheet_penalty(ctx)                             # S2: OAR-vs-sheet monitor / P4 penalty (off by default)
@@ -1244,15 +1517,40 @@ def _add_couplings(ctx):
     iface = ctx["iface"]
     # (a) cervix.interface_corpus  <->  rigid-mapped corpus copies (CONTRACT 4).  The copies are initialised AT the
     #     cervix rest positions, so the constraint is a no-op at rest and the corpus then carries those nodes.
+    #     cfg attach_target "predicted": a controller-written copy instead of the mapped one (see CFG: the mapped copy is
+    #     read two steps stale).  "mapped" (default) adds nothing here: the G32 / TF0c graph.
+    obj1 = "@/corpus/iface/mo"
+    at_mode = cfg.get("attach_target", "mapped")
+    if at_mode not in ("mapped", "predicted"):
+        raise ValueError("attach_target must be 'mapped' or 'predicted' (got %r)" % at_mode)
+    if at_mode == "predicted":
+        if cfg["attach_impl"] == "bilateral":
+            raise ValueError("attach_target 'predicted' is for attach_impl 'attach' / 'springs' (bilateral constrains "
+                             "the corpus itself)")
+        ctx["corpus_iface_tgt"] = ctx["targets"].addObject("MechanicalObject", name="corpus_iface_tgt", template="Vec3d",
+                                                           position=X0["cervix"][iface].tolist())
+        obj1 = "@/targets/corpus_iface_tgt"
+        ctx["extra"]["attach_target"] = "predicted (/targets/corpus_iface_tgt, written each step)"
     if cfg["attach_impl"] == "attach":
-        cvx.addObject("AttachConstraint", name="attach_corpus", object1="@/corpus/iface/mo", object2="@/cervix/dofs",
+        cvx.addObject("AttachConstraint", name="attach_corpus", object1=obj1, object2="@/cervix/dofs",
                       indices1=list(range(len(iface))), indices2=[int(i) for i in iface], twoWay=False)
+    elif cfg["attach_impl"] == "bilateral":
+        # two-way (elastic corpus only): a Lagrangian constraint solved by the GenericConstraintSolver with both bodies'
+        # compliances (each has a LinearSolverConstraintCorrection); zero violation at rest
+        if ctx.get("corpus_fem") is None:
+            raise ValueError("attach_impl 'bilateral' needs corpus_model 'fem' (a kinematic corpus has no compliance)")
+        ctx["root"].addObject("BilateralInteractionConstraint", name="attach_corpus", template="Vec3d",
+                              object1="@/corpus/iface/mo", object2="@/cervix/dofs",
+                              first_point=list(range(len(iface))), second_point=[int(i) for i in iface])
     else:
         cvx.addObject("RestShapeSpringsForceField", name="attach_corpus", points=[int(i) for i in iface],
                       stiffness=[float(cfg["k_attach_mN_per_mm"])] * len(iface),
-                      external_rest_shape="@/corpus/iface/mo", external_points=list(range(len(iface))))
-    # (b) cervix.canal: dilation ties onto the tube (lateral only; free sliding along the axis), written per step.
-    #     The set is cfg canal_tie_set (S1b); "canal_path" also carries each node's path arclength canal_s.
+                      external_rest_shape=obj1, external_points=list(range(len(iface))))
+    # (b) cervix.canal: dilation ties onto the tube, written per step.  The CORRECTION is lateral; the spring is
+    #     isotropic, so without cfg canal_tie_follow the start-of-step target also holds the node against its own
+    #     carried motion (review HIGH-2).  The set is cfg canal_tie_set (S1b); "canal_path" also carries each node's
+    #     path arclength canal_s.
+    tie_follow = canal_tie_follow_mode(cfg)             # validated at build time (a bad value fails here, not mid-run)
     ns_c = inp["meta"]["cervix"]["node_sets"]
     tie_set = cfg.get("canal_tie_set", "canal")
     if tie_set not in ns_c:
@@ -1281,6 +1579,8 @@ def _add_couplings(ctx):
                                              canal_s_range=(None if ctx["canal_s"] is None else
                                                             [round(float(ctx["canal_s"].min()), 3),
                                                              round(float(ctx["canal_s"].max()), 3)]))
+    if tie_follow:                                      # eu2: only when set, so the default summary is unchanged
+        ctx["extra"].setdefault("canal_tie_cfg", {})["follow"] = tie_follow
     if cfg["canal_tie"] and len(canal):
         ctx["canal_tgt"] = ctx["targets"].addObject("MechanicalObject", name="canal_tgt", template="Vec3d",
                                                     position=X0["cervix"][canal].tolist())
@@ -1288,6 +1588,9 @@ def _add_couplings(ctx):
                                         points=[int(i) for i in canal], stiffness=[0.0] * len(canal),
                                         external_rest_shape="@/targets/canal_tgt",
                                         external_points=list(range(len(canal))))
+    # (b2) the elastic corpus's own canal nodes (corpus_model "fem", corpus_canal_tie)
+    if ctx.get("corpus_fem") is not None:
+        _add_corpus_ties(ctx)
     # (c) vagina.apex follows the nearest cervix surface node (one-way: no reaction on the cervix, so the two
     #     solvers stay decoupled and the thin vagina cannot destabilise the cervix)
     apex = np.asarray(inp["meta"]["vagina"]["node_sets"]["apex"], int)
@@ -1399,6 +1702,131 @@ def _add_supports(ctx):
                         k_rectum_ends=cfg.get("k_rectum_ends_mN_per_mm"), k_sigmoid_ends=cfg.get("k_sigmoid_ends_mN_per_mm"),
                         n_rectum_ends=int(len(ns["rectum"]["fixed_ends"])),
                         n_sigmoid_ends=int(len(ns["sigmoid"]["fixed_ends"])), fixed_impl=cfg["fixed_impl"])
+
+
+def _add_corpus_ties(ctx):
+    """(b2) corpus_model "fem": the corpus's own canal nodes (meta corpus node set cfg corpus_canal_tie_set, with their
+    arclengths in "<set>_s") tied onto the tube exactly as canal_tie_mode "centre" ties the cervix's -- a lateral
+    correction, the target at most corpus_canal_max_offset_mm from the node's start-of-step position (or, cfg
+    corpus_tie_follow, from its position carried by this step's pose-target change), depth engagement, about the ROW's tube axis (the S1a
+    fix; the corpus ties are new, so they never take the pre-S1 "final" axis).  Same pattern as (b): a solver-less target
+    MO /targets/corpus_canal_tgt written by the controller + a RestShapeSpringsForceField in the corpus node with zero
+    stiffness until a node engages.  The build fails, not the run, when the set or the rows' tip_s are missing."""
+    cfg, inp, X0 = ctx["cfg"], ctx["inp"], ctx["X0"]
+    ctx["corpus_canal"] = np.zeros(0, int)
+    if not cfg.get("corpus_canal_tie", True):
+        ctx["extra"].setdefault("corpus_fem", {})["canal_tie"] = dict(on=False)
+        return
+    ns_k = inp["meta"]["corpus"]["node_sets"]
+    name = cfg.get("corpus_canal_tie_set", "canal_path")
+    if name not in ns_k or (name + "_s") not in ns_k:
+        raise ValueError("corpus_canal_tie_set %r (and %r_s) is not a corpus node set (have %s); it is written by "
+                         "`python -P hybrid/tandem_path.py corpus_nodesets` (or set corpus_canal_tie false)"
+                         % (name, name, sorted(ns_k)))
+    idx = np.asarray(ns_k[name], int)
+    cs = np.asarray(ns_k[name + "_s"], float)
+    if len(cs) != len(idx):
+        raise ValueError("corpus node sets %r (%d) and %r_s (%d) differ in length" % (name, len(idx), name, len(cs)))
+    n_all = len(idx)
+    smax = cfg.get("corpus_canal_s_max")
+    if smax is not None:
+        keep = cs <= float(smax)
+        idx, cs = idx[keep], cs[keep]
+    miss = [i for i, r in enumerate(ctx["sched"]) if r["phase"] not in ("B", "P") and r.get("tip_s") is None]
+    if miss:
+        raise ValueError("the corpus canal ties engage by depth and need schedule rows carrying tip_s (insertion_path "
+                         "'tandem_first'); %d rows lack it, first %d (phase %s).  Set corpus_canal_tie false otherwise."
+                         % (len(miss), miss[0], ctx["sched"][miss[0]]["phase"]))
+    tips = [float(r["tip_s"]) for r in ctx["sched"] if r.get("tip_s") is not None]
+    tmax = max(tips) if tips else float("nan")
+    cs_eng = clip_canal_s(cs, tmax) if (cfg.get("corpus_canal_engage_clip", True) and tips) else cs.copy()
+    axial = cfg.get("corpus_canal_axial", "none")
+    if axial not in ("none", "arclength"):
+        raise ValueError("corpus_canal_axial must be 'none' or 'arclength' (got %r)" % axial)
+    ctx["corpus_canal"], ctx["corpus_canal_s"], ctx["corpus_canal_s_eng"] = idx, cs, cs_eng
+    ctx["extra"].setdefault("corpus_fem", {})["canal_tie"] = dict(
+        on=True, set=name, n=int(len(idx)), n_in_set=int(n_all), s_max=smax,
+        canal_s_range=[round(float(cs.min()), 3), round(float(cs.max()), 3)] if len(cs) else None,
+        schedule_tip_s_max=round(tmax, 3) if tips else None,
+        n_clipped=int(np.sum(cs_eng < cs)), k_mN_per_mm=float(cfg["k_corpus_canal_mN_per_mm"]),
+        max_offset_mm=float(cfg["corpus_canal_max_offset_mm"]), axial=axial,
+        force_bound_per_node_mN=round(float(cfg["k_corpus_canal_mN_per_mm"]) * float(cfg["corpus_canal_max_offset_mm"]), 3))
+    if corpus_tie_follow_on(cfg):                       # eu2: only when set, so TF1u's summary is unchanged
+        ctx["extra"]["corpus_fem"]["canal_tie"]["follow"] = "pose_target_increment"
+    if not len(idx):
+        return
+    ctx["corpus_canal_tgt"] = ctx["targets"].addObject("MechanicalObject", name="corpus_canal_tgt", template="Vec3d",
+                                                       position=X0["corpus"][idx].tolist())
+    ctx["corpus_canal_ff"] = ctx["corpus_fem"].addObject("RestShapeSpringsForceField", name="canal_tie",
+                                                         points=[int(i) for i in idx], stiffness=[0.0] * len(idx),
+                                                         external_rest_shape="@/targets/corpus_canal_tgt",
+                                                         external_points=list(range(len(idx))))
+
+
+def _add_corpus_pose(ctx):
+    """corpus_model "fem": the gross pose.  Springs (RestShapeSpringsForceField "pose", per-node stiffness) from the
+    cfg corpus_pose_set nodes (+ the interface_cervix bottom at k_corpus_bottom_mN_per_mm) to a solver-less target MO
+    /targets/corpus_pose_tgt that the controller rewrites each step to corpus_pose_targets(X0, T_corpus(row), stretch):
+    the same kinematic target the rigid corpus is placed on, so a stiff enough pose set reproduces the rigid corpus.
+    Zero force at rest (the target starts at the rest positions)."""
+    cfg, inp, X0 = ctx["cfg"], ctx["inp"], ctx["X0"]
+    canal_pts = None
+    if float(cfg.get("corpus_pose_exclude_canal_mm") or 0.0) > 0.0:
+        import tandem_path as TP                        # numpy-only at import (py3.8-safe); reads inputs/tandem_path.npz
+        T = TP.load()
+        canal_pts = np.asarray(T["pts"], float)[np.asarray(T["s"], float) >= 0.0]
+    sel = corpus_pose_nodes(inp["meta"]["corpus"], cfg, len(X0["corpus"]), X0["corpus"], canal_pts)
+    idx, k = sel["idx"], sel["k"]
+    tmo = ctx["targets"].addObject("MechanicalObject", name="corpus_pose_tgt", template="Vec3d",
+                                   position=X0["corpus"][idx].tolist())
+    ff = ctx["corpus_fem"].addObject("RestShapeSpringsForceField", name="pose", points=[int(i) for i in idx],
+                                     stiffness=[float(v) for v in k], external_rest_shape="@/targets/corpus_pose_tgt",
+                                     external_points=list(range(len(idx))))
+    lam = float(cfg.get("corpus_pose_stretch_lam", 1.0))
+    ctx["corpus_pose"] = dict(idx=idx, k=k, serosa=sel["serosa"], bottom=sel["bottom"], tgt_mo=tmo, ff=ff, lam=lam)
+    e = ctx["extra"].setdefault("corpus_fem", {})
+    e["pose"] = dict(sel["info"], stretch_lam=lam, total_k_N_per_mm=round(float(k.sum()) / 1000.0, 4),
+                     tag=("CALIBRATED (stretch fitted to this patient's BT uterus)" if lam != 1.0 else "rigid target"))
+    ff_ = int(cfg.get("frame_every") or 0)
+    if ff_ > 0 and "corpus" not in (cfg.get("frame_u_bodies") or []):
+        w = "frame_every %d without 'corpus' in frame_u_bodies: tf_metrics / label_views carry the canal through the " \
+            "corpus by an approximate (Kabsch) fit per frame; set frame_u_bodies [\"cervix\", \"corpus\"]" % ff_
+        e.setdefault("warnings", []).append(w)
+        print("[scene_hybrid] WARNING " + w, flush=True)
+
+
+def _add_corpus_follow(ctx):
+    """corpus_model "fem", corpus_oar_contact "follow": a solver-less copy of the corpus surface that the OARs collide
+    with -- surface.obj's faces over the corpus's surface nodes (s2n), the same collision groups, moving=True,
+    simulated=False as the rigid corpus's surface.  At rest it IS the rigid collision surface (max |V - X0[s2n]| is
+    recorded).  The controller rewrites it each step (follow_surface): the corpus's surface nodes at the start of the
+    step plus this step's change of the pose target, so a corpus that follows its target is met exactly where the rigid
+    one was.  One-way: nothing acts back on the corpus."""
+    cfg = ctx["cfg"]
+    mode = cfg.get("corpus_oar_contact", "follow")
+    if mode not in ("follow", "two_way", "off"):
+        raise ValueError("corpus_oar_contact must be 'follow', 'two_way' or 'off' (got %r)" % mode)
+    ctx["corpus_follow"] = None
+    ctx["extra"].setdefault("corpus_fem", {})["oar_contact"] = dict(mode=mode)
+    if mode != "follow":
+        return
+    P = ctx["inp"]["P"]
+    V, Fs = geom.read_obj("%s/corpus/surface.obj" % P["meshes"])
+    s2n = np.asarray(ctx["inp"]["meta"]["corpus"]["surface_obj_vertex_to_tet_node"], int)
+    Xs = ctx["X0"]["corpus"][s2n]
+    nd = ctx["root"].addChild("corpus_follow")
+    mo = nd.addObject("MechanicalObject", name="mo", template="Vec3d", position=Xs.tolist())
+    nd.addObject("MeshTopology", name="mt", position=Xs.tolist(), triangles=np.asarray(Fs, int).tolist())
+    g = list(groups_for(cfg)["corpus"])
+    kw = dict(moving=True, simulated=False)
+    kw.update(_prox_kw(cfg, "corpus"))
+    nd.addObject("TriangleCollisionModel", name="tri", group=g, **kw)
+    nd.addObject("LineCollisionModel", name="lin", group=g, **kw)
+    nd.addObject("PointCollisionModel", name="pnt", group=g, **kw)
+    ctx["corpus_follow"] = dict(node=nd, mo=mo, s2n=s2n)
+    ctx["extra"]["corpus_fem"]["oar_contact"].update(
+        n_vertices=int(len(s2n)), n_triangles=int(len(Fs)), groups=g,
+        rest_vs_surface_obj_max_mm=round(float(np.abs(np.asarray(V, float) - Xs).max()), 6))
 
 
 def _ring_perim(R):
@@ -1705,7 +2133,20 @@ def scene_summary(ctx):
     s.update(ctx["extra"])
     for b in DEFORMABLE:
         s["bodies"][b] = dict(nodes=int(len(ctx["X0"][b])), E_kPa=cfg["E_kPa"][b], nu=cfg["nu"][b])
-    s["bodies"]["corpus"] = dict(nodes=int(len(ctx["X0"]["corpus"])), role="rigid kinematic")
+    if ctx.get("corpus_fem") is None:
+        s["bodies"]["corpus"] = dict(nodes=int(len(ctx["X0"]["corpus"])), role="rigid kinematic")
+    else:
+        e = ctx["extra"].get("corpus_fem", {})
+        lam = float(cfg.get("corpus_pose_stretch_lam", 1.0))
+        s["bodies"]["corpus"] = dict(
+            nodes=int(len(ctx["X0"]["corpus"])), role="fem (elastic; gross pose by springs to the pose-rule target)",
+            E_kPa=cfg["E_kPa"]["corpus"], nu=cfg["nu"]["corpus"],
+            material=cfg.get("material_by_body", {}).get("corpus", cfg["material"]),
+            pose=e.get("pose"), canal_tie=e.get("canal_tie"), oar_contact=e.get("oar_contact"),
+            coupling=cfg["attach_impl"] + (" (two-way)" if cfg["attach_impl"] == "bilateral" else " (one-way)"),
+            attach_target=cfg.get("attach_target", "mapped"),
+            stretch_lam=lam, tags=(["CALIBRATED"] if lam != 1.0 else []) + ["S9 elastic corpus"])
+        s["corpus_model"] = "fem"
     return s
 
 
@@ -1744,7 +2185,7 @@ def tie_axes(cfg, tgt, row, rod_app):
     return at, geom.unit(np.asarray(rod_app, float) @ np.asarray(row["R_rows"], float))   # rows convention
 
 
-def canal_tie_step(X, F, at, ar, eng_step, k, p, tip_s=None, canal_s=None):
+def canal_tie_step(X, F, at, ar, eng_step, k, p, tip_s=None, canal_s=None, carry=None):
     """One step of the canal tie: which nodes are engaged / active, their spring targets and stiffnesses.
 
     X (n, 3) the tie nodes' current positions; F the current flange; at, ar the unit tube and rod lines (tie_axes);
@@ -1754,7 +2195,15 @@ def canal_tie_step(X, F, at, ar, eng_step, k, p, tip_s=None, canal_s=None):
 
     With p engage "radius" this is, operation for operation, the block HybridController._begin ran before S1 (so the
     default path is bit-identical; hybrid/test_ties.py compares the two): target = the node moved radially to the
-    tube surface at its own axial level, at most `cap` from where it is; "centre" drives both ways, "dilate" only out."""
+    tube surface at its own axial level, at most `cap` from where it is; "centre" drives both ways, "dilate" only out.
+
+    carry (n, 3) or None (eu2, cfg canal_tie_follow / corpus_tie_follow): this step's carried motion of the nodes
+    (canal_tie_carry / the pose-target change).  Everything above is then evaluated at the CARRIED position X + carry:
+    the target is where the node is carried to plus the capped lateral correction from there, so `cap` bounds the misfit
+    only, and a node carried rigidly with the tube keeps zero spring force (inside / d / canal_d are measured there as
+    well).  carry None = the arithmetic above, untouched (X is not even copied)."""
+    if carry is not None:
+        X = np.asarray(X, float) + np.asarray(carry, float)
     q = X - F
     s = q @ at
     lat = q - np.outer(s, at)
@@ -1794,6 +2243,308 @@ def canal_tie_step(X, F, at, ar, eng_step, k, p, tip_s=None, canal_s=None):
                     median=round(float(np.median(d[inside])), 3), max=round(float(d[inside].max()), 3))
                if inside.any() else dict(n_in_span=0))
     return dict(tgt=tgt, k=kk, act=act, inside=inside, d=d, canal_d=canal_d)
+
+
+# ---- eu2 (review HIGH-2): the tie target carried with the tissue.  Pure, unit-tested in test_ties.py / test_corpus.py.
+CANAL_TIE_FOLLOW = ("corpus", "tube")
+CANAL_TIE_FOLLOW_ATTACH = ("springs", "predicted")      # (attach_impl, attach_target): the only lag-free attach (eu3)
+
+
+def cfg_flag(cfg, key, default=False):
+    """A boolean cfg key, checked: true / false (null = the default).  0 / 1, strings etc. are refused, so a typo is a
+    build error rather than a silently different run."""
+    m = cfg.get(key, default)
+    if m is None:
+        return bool(default)
+    if not isinstance(m, bool):
+        raise ValueError("%s must be true or false (got %r)" % (key, m))
+    return m
+
+
+def canal_tie_follow_mode(cfg):
+    """cfg canal_tie_follow, checked: None (off: false / null / "off", the default) or one of CANAL_TIE_FOLLOW.
+
+    A follow mode is REFUSED (ValueError, at build time and in the controller) unless
+      - canal_tie is true (otherwise there are no cervix ties to carry: a silent no-op), and
+      - the attach is lag-free: attach_impl "springs" with attach_target "predicted" (CANAL_TIE_FOLLOW_ATTACH).  The
+        carry puts the tie nodes on row k's corpus pose, while "mapped" holds the cervix interface on row k-2 and
+        AttachConstraint + "predicted" on row k-1 (see CFG attach_target); the junction between them is sheared
+        (review eu2 HIGH-1: TF1n_noC, "corpus" on the mapped attach, aborted with inverted junction tets);
+    and "tube" is refused with below-flange ties (canal_tie_mode "centre" + canal_tie_below_mm > 0): those nodes lie
+    on the rod line, whose motion tube_lateral_increment does not describe."""
+    m = cfg.get("canal_tie_follow", False)
+    if m is None or m is False or (isinstance(m, str) and m == "off"):
+        return None
+    if not isinstance(m, str) or m not in CANAL_TIE_FOLLOW:
+        raise ValueError("canal_tie_follow must be false, 'corpus' or 'tube' (got %r)" % (m,))
+    if not cfg.get("canal_tie", True):
+        raise ValueError("canal_tie_follow %r carries the cervix canal ties, but canal_tie is false (it would do nothing): "
+                         "drop canal_tie_follow or set canal_tie true" % m)
+    att = (cfg.get("attach_impl", "attach"), cfg.get("attach_target", "mapped"))
+    if att != CANAL_TIE_FOLLOW_ATTACH:
+        raise ValueError("canal_tie_follow %r needs the lag-free attach: attach_impl %r with attach_target %r (got %r / "
+                         "%r).  The carry moves the canal ties with this row's corpus pose while a lagged attach holds "
+                         "the cervix interface one or two rows behind, which shears the junction (TF1n_noC: 'corpus' "
+                         "on the mapped attach aborted at step 241 with inverted junction tets)."
+                         % ((m,) + CANAL_TIE_FOLLOW_ATTACH + att))
+    if m == "tube" and cfg.get("canal_tie_mode", "dilate") == "centre" and \
+            float(cfg.get("canal_tie_below_mm", 0.0) or 0.0) > 0.0:
+        raise ValueError("canal_tie_follow 'tube' is not defined for below-flange ties (canal_tie_below_mm %r > 0: those "
+                         "nodes are tied to the rod line, not the tube); use 'corpus' or canal_tie_below_mm 0"
+                         % cfg.get("canal_tie_below_mm"))
+    return m
+
+
+def check_follow_cfg(cfg):
+    """Build-time check of the eu2 keys (no graph object, no summary entry): canal_tie_follow_mode, corpus_tie_follow_on
+    and log_canal_tie_force (a bool; refused with canal_tie false, where there is no tie force to log).  Returns
+    (canal_tie_follow mode or None, corpus_tie_follow bool)."""
+    mode = canal_tie_follow_mode(cfg)
+    kf = corpus_tie_follow_on(cfg)
+    if cfg_flag(cfg, "log_canal_tie_force") and not cfg.get("canal_tie", True):
+        raise ValueError("log_canal_tie_force is true but canal_tie is false (no cervix tie force to log)")
+    return mode, kf
+
+
+def corpus_tie_follow_on(cfg):
+    """cfg corpus_tie_follow, checked: a bool (default False).  True is refused where it would do nothing: with a rigid
+    corpus (corpus_model "rigid" has no corpus canal ties) or with corpus_canal_tie false."""
+    m = cfg_flag(cfg, "corpus_tie_follow")
+    if m and corpus_model(cfg) != "fem":
+        raise ValueError("corpus_tie_follow carries the elastic corpus's canal ties; corpus_model is %r, which has none "
+                         "(drop corpus_tie_follow or set corpus_model 'fem')" % corpus_model(cfg))
+    if m and not cfg.get("corpus_canal_tie", True):
+        raise ValueError("corpus_tie_follow is true but corpus_canal_tie is false (no corpus ties to carry)")
+    return m
+
+
+def rigid_step_increment(X, T_prev, T_now):
+    """This step's rigid motion at the points X: X carried by T_now o T_prev^-1, minus X.  T_prev / T_now = 4x4
+    placements in the convention of corpus_pose_targets (x = X0 @ T[:3, :3]^T + T[:3, 3]).  Exactly zero when the two
+    are equal (the corpus at rest: phases B, P, V and every settle row)."""
+    X = np.asarray(X, float)
+    Ta, Tb = np.asarray(T_prev, float), np.asarray(T_now, float)
+    if np.array_equal(Ta, Tb):
+        return np.zeros_like(X)
+    return (X - Ta[:3, 3]) @ Ta[:3, :3] @ Tb[:3, :3].T + Tb[:3, 3] - X
+
+
+def tube_lateral_increment(X, R_prev, F_prev, R_now, F_now, a):
+    """The tandem's rigid motion (R_rows ROWS = applicator axes in world, F = flange; x = x_app @ R + F) from the
+    previous row to this one at the points X, with its component along the unit line `a` (the tie line) removed: how the
+    tube moves sideways at X.  The axial part is the tube sliding along the canal (the insertion itself), which tissue
+    around a frictionless tube does not follow.  Exactly zero when the device pose is unchanged."""
+    X = np.asarray(X, float)
+    Ra, Rb = np.asarray(R_prev, float), np.asarray(R_now, float)
+    Fa, Fb = np.asarray(F_prev, float), np.asarray(F_now, float)
+    if np.array_equal(Ra, Rb) and np.array_equal(Fa, Fb):
+        return np.zeros_like(X)
+    D = (X - Fa) @ Ra.T @ Rb + Fb - X
+    a = np.asarray(a, float)
+    return D - np.outer(D @ a, a)
+
+
+def canal_tie_carry(mode, X, r_prev, r_now):
+    """The cervix tie nodes' carried motion this step (cfg canal_tie_follow `mode`, as canal_tie_follow_mode returns
+    it), for canal_tie_step(carry=).  "corpus": rigid_step_increment of T_corpus row k-1 -> k at the nodes.  "tube":
+    tube_lateral_increment about the ROW's tube axis (r_now tube_axis: the line the tube actually slides along,
+    whatever line the tie aims at -- canal_tie_axis "final" included) + the part of that corpus increment along the
+    same axis.  r_prev None (the first step): zero.  Every schedule row carries T_corpus, R_rows, F and tube_axis."""
+    X = np.asarray(X, float)
+    if mode is None:
+        return None
+    if r_prev is None:
+        return np.zeros_like(X)
+    Dc = rigid_step_increment(X, r_prev["T_corpus"], r_now["T_corpus"])
+    if mode == "corpus":
+        return Dc
+    if mode == "tube":
+        a = geom.unit(np.asarray(r_now["tube_axis"], float))
+        Dt = tube_lateral_increment(X, r_prev["R_rows"], r_prev["F"], r_now["R_rows"], r_now["F"], a)
+        return Dt + np.outer(Dc @ a, a)
+    raise ValueError("canal_tie_follow must be false, 'corpus' or 'tube' (got %r)" % (mode,))
+
+
+def tie_force_log(tgt, k, X_end, carry=None):
+    """The spring force of a tie set at the END of a step, N (k mN/mm, target and node positions mm): the magnitude of
+    the net force, the largest per-node force, the summed per-node magnitudes, and the largest carry (mm)."""
+    f = np.asarray(k, float)[:, None] * (np.asarray(tgt, float) - np.asarray(X_end, float))
+    fn = np.linalg.norm(f, axis=1)
+    out = dict(net_N=round(float(np.linalg.norm(f.sum(0))) / 1000.0, 4),
+               max_node_N=round(float(fn.max()) / 1000.0 if len(fn) else 0.0, 4),
+               sum_abs_N=round(float(fn.sum()) / 1000.0, 4), n_loaded=int((np.asarray(k) > 0).sum()))
+    if carry is not None:
+        cn = np.linalg.norm(np.asarray(carry, float), axis=1)
+        out["carry_max_mm"] = round(float(cn.max()) if len(cn) else 0.0, 4)
+    return out
+
+
+# ---- S9: the elastic corpus (corpus_model "fem").  Pure arithmetic, unit-tested in hybrid/test_corpus.py.
+def corpus_model(cfg):
+    """The cfg's corpus model, checked: "rigid" (default, the kinematic Rigid3d corpus) or "fem"."""
+    m = cfg.get("corpus_model", "rigid")
+    if m not in ("rigid", "fem"):
+        raise ValueError("corpus_model must be 'rigid' or 'fem' (got %r)" % m)
+    return m
+
+
+def read_vtk_tets(path):
+    """(points, tets) of a legacy ASCII VTK tet grid written by mesh_bodies (vagina_wall.read_vtk_legacy, numpy only)."""
+    with open(path) as fh:
+        tok = fh.read().split()
+    i = tok.index("POINTS")
+    n = int(tok[i + 1])
+    P = np.array(tok[i + 3:i + 3 + 3 * n], float).reshape(n, 3)
+    j = tok.index("CELLS", i)
+    m = int(tok[j + 1])
+    return P, np.array(tok[j + 3:j + 3 + 5 * m], int).reshape(m, 5)[:, 1:]
+
+
+def bary_weights(P, T, Q):
+    """Barycentric weights of the points Q in the tets (P, T) by SOFA v22.12's BarycentricMapperTetrahedronSetTopology
+    rule: v = the tet's local coordinates, d = max(-v0, -v1, -v2, v0 + v1 + v2 - 1) (<= 0 inside); outside every tet
+    (d > 0) the tet with the nearest centroid, extrapolated; the smallest d wins.  Returns (tet node indices (m, 4),
+    weights (m, 4)).  MEASURED: reproduces SOFA's mapped /corpus/iface/mo of run EUISO_B to 1e-5 mm (the logged
+    attach residual), and the rest points exactly (1e-14 mm)."""
+    P, T = np.asarray(P, float), np.asarray(T, int)
+    A = P[T]
+    B = np.linalg.inv(np.transpose(A[:, 1:] - A[:, :1], (0, 2, 1)))
+    C = A.mean(1)
+    Q = np.atleast_2d(np.asarray(Q, float))
+    idx, W = np.zeros((len(Q), 4), int), np.zeros((len(Q), 4))
+    for i, q in enumerate(Q):
+        v = np.einsum("tij,tj->ti", B, q - A[:, 0])
+        d = np.maximum(np.maximum(-v[:, 0], -v[:, 1]), np.maximum(-v[:, 2], v.sum(1) - 1.0))
+        d = np.where(d > 0.0, ((q - C) ** 2).sum(1), d)
+        t = int(np.argmin(d))
+        idx[i], W[i] = T[t], np.r_[1.0 - v[t].sum(), v[t]]
+    return idx, W
+
+
+def bary_apply(X, idx, W):
+    """Points carried by bary_weights (idx, W) from the node positions X."""
+    return np.einsum("ij,ijk->ik", np.asarray(W, float), np.asarray(X, float)[np.asarray(idx, int)])
+
+
+def _polyline_dist(X, pts):
+    """Distance of each X to the polyline pts (segment by segment; tandem_path.project without the arclength)."""
+    X = np.atleast_2d(np.asarray(X, float))
+    pts = np.asarray(pts, float)
+    best = np.full(len(X), np.inf)
+    for a, b in zip(pts[:-1], pts[1:]):
+        ab = b - a
+        l2 = float(ab @ ab)
+        t = np.clip(((X - a) @ ab) / l2, 0.0, 1.0) if l2 > 0 else np.zeros(len(X))
+        best = np.minimum(best, np.linalg.norm(X - (a + t[:, None] * ab), axis=1))
+    return best
+
+
+def corpus_pose_nodes(meta, cfg, n_nodes, X0=None, canal_pts=None):
+    """The elastic corpus's pose springs: node indices (sorted) and per-node stiffness (mN/mm) from cfg
+    corpus_pose_set / k_corpus_pose_mN_per_mm / k_corpus_bottom_mN_per_mm / corpus_pose_exclude_canal_mm (see CFG).
+    meta = the corpus meta.json (node_sets surface_nodes, interface_cervix); X0 (n, 3) rest nodes and canal_pts (the
+    rest labelled canal polyline) are needed only for the canal exclusion.  Returns dict(idx, k, serosa, bottom, info)."""
+    ns = meta["node_sets"]
+    surf = np.unique(np.asarray(ns["surface_nodes"], int))
+    bot = np.unique(np.asarray(ns["interface_cervix"], int))
+    serosa = np.setdiff1d(surf, bot)
+    mode = cfg.get("corpus_pose_set", "serosa")
+    if mode in ("serosa", "shell"):
+        P = serosa.copy()
+    elif mode == "surface":
+        P = surf.copy()
+    elif mode == "all":
+        P = np.arange(int(n_nodes))
+    else:
+        raise ValueError("corpus_pose_set must be 'serosa', 'surface', 'all' or 'shell' (got %r)" % mode)
+    k = float(cfg["k_fixed_mN_per_mm"]) if mode == "shell" else float(cfg["k_corpus_pose_mN_per_mm"])
+    R = float(cfg.get("corpus_pose_exclude_canal_mm") or 0.0)
+    n_excl = 0
+    if R > 0.0:
+        if X0 is None or canal_pts is None:
+            raise ValueError("corpus_pose_exclude_canal_mm > 0 needs the rest nodes and the rest labelled canal")
+        drop = _polyline_dist(np.asarray(X0, float)[P], canal_pts) <= R
+        n_excl = int(drop.sum())
+        P = P[~drop]
+    kk = np.full(len(P), k)
+    kb = cfg.get("k_corpus_bottom_mN_per_mm")
+    n_bot = 0
+    if kb is not None:
+        kb = float(kb)
+        kk[np.isin(P, bot)] = kb                        # a bottom node already in the set takes the bottom stiffness
+        extra = np.setdiff1d(bot, P)
+        P = np.r_[P, extra]
+        kk = np.r_[kk, np.full(len(extra), kb)]
+        n_bot = int(len(bot))
+    o = np.argsort(P, kind="stable")
+    P, kk = P[o], kk[o]
+    info = dict(set=mode, n=int(len(P)), n_serosa=int(len(serosa)), n_surface=int(len(surf)), n_bottom_nodes=int(len(bot)),
+                n_bottom_springs=n_bot, k_mN_per_mm=k, k_bottom_mN_per_mm=kb, exclude_canal_mm=R, n_excluded_near_canal=n_excl)
+    return dict(idx=P, k=kk, serosa=serosa, bottom=bot, info=info)
+
+
+def corpus_stretch_at(lam, row):
+    """The row's stretch for corpus_pose_targets, or None when there is none (lam 1: the rigid target, bit for bit).
+    lam_row = 1 + (lam - 1) w, w = the row's w_r (tandem-first: 0 through V, the rotation weight through C, 1 in L / H),
+    else its screw fraction s; the axis is the row's tube axis."""
+    lam = float(lam)
+    if lam == 1.0:
+        return None
+    w = row.get("w_r")
+    w = float(row["s"]) if w is None else float(w)
+    return dict(lam=1.0 + (lam - 1.0) * w, axis=np.asarray(row["tube_axis"], float), w=w)
+
+
+def corpus_pose_targets(X0, T, stretch=None, idx=None):
+    """The pose target of the corpus nodes: X0 moved by the 4x4 T (x T[:3, :3]^T + T[:3, 3], exactly the rigid corpus's
+    placement in run_hybrid / write_frame), then -- stretch = corpus_stretch_at(...) not None -- a volume-preserving
+    stretch along stretch["axis"] about the axis-parallel line through the posed nodes' centroid c, anchored at h0 = the
+    0.5 percentile of their axial coordinate h (the corpus bottom): h' = h0 + lam (h - h0), lateral offsets / sqrt(lam)
+    (det = lam / sqrt(lam)^2 = 1).  The eu_design m5 construction.  idx: return only those nodes (the stretch is always
+    computed on ALL nodes, so the anchor and centroid do not depend on the subset)."""
+    T = np.asarray(T, float)
+    X = np.asarray(X0, float) @ T[:3, :3].T + T[:3, 3]
+    if stretch is not None and float(stretch["lam"]) != 1.0:
+        lam = float(stretch["lam"])
+        a = geom.unit(np.asarray(stretch["axis"], float))
+        c = X.mean(0)
+        h = (X - c) @ a
+        h0 = float(np.percentile(h, 0.5))
+        lat = (X - c) - np.outer(h, a)
+        X = c + np.outer(h0 + lam * (h - h0), a) + lat / np.sqrt(lam)
+    return X if idx is None else X[np.asarray(idx, int)]
+
+
+def follow_surface(Xs_now, tgt_now, tgt_prev):
+    """corpus_oar_contact "follow": where the OARs meet the corpus this step = its surface nodes now (end of the last
+    step) plus this step's change of their pose target.  A corpus exactly on its target gives the target itself, i.e.
+    the rigid corpus's collision surface."""
+    return np.asarray(Xs_now, float) + (np.asarray(tgt_now, float) - np.asarray(tgt_prev, float))
+
+
+def clip_canal_s(canal_s, tip_s_max, margin=0.05):
+    """Depth engagement for nodes the schedule's tip never reaches: engage at min(canal_s, tip_s_max - margin)."""
+    return np.minimum(np.asarray(canal_s, float), float(tip_s_max) - float(margin))
+
+
+def corpus_tie_params(cfg, r_tube, L_iu):
+    """canal_tie_params for the corpus canal ties: always "centre" (both ways onto the tube surface), depth engagement,
+    no below-flange part, the corpus's own stiffness and per-step bound; radius / ramp shared with the cervix ties."""
+    return dict(rad=float(r_tube) + float(cfg["canal_slack_mm"]), L_iu=float(L_iu), centre=True, below=0.0,
+                engage="depth", engage_mm=float(cfg.get("canal_engage_mm", 3.0)),
+                cap=float(cfg["corpus_canal_max_offset_mm"]), ramp=float(cfg["tie_ramp_steps"]),
+                k=float(cfg["k_corpus_canal_mN_per_mm"]))
+
+
+def axial_tie_targets(res, X, F, at, tip_s, canal_s, L_iu, cap):
+    """corpus_canal_axial "arclength": the ACTIVE tie targets of canal_tie_step (res) also moved along the tube axis at
+    towards h* = L_iu - (tip_s - canal_s) above the flange F (a straightened canal keeps its arclength behind the tip),
+    at most `cap` per step.  Returns (targets, axial offsets); inactive nodes keep res["tgt"]."""
+    X = np.asarray(X, float)
+    h = (X - np.asarray(F, float)) @ np.asarray(at, float)
+    dh = np.clip(float(L_iu) - (float(tip_s) - np.asarray(canal_s, float)) - h, -float(cap), float(cap))
+    dh = np.where(res["act"], dh, 0.0)
+    return res["tgt"] + dh[:, None] * np.asarray(at, float)[None, :], dh
 
 
 def subdivide_tris(tri, levels, n_vertices=None):
@@ -1887,6 +2638,22 @@ class HybridController(Sofa.Core.Controller):
         self.rod_app = rod_dir_app(c["inp"]["app"])
         self.tie_log = (self.cfg.get("canal_tie_set", "canal"), self.cfg.get("canal_engage", "radius"),
                         self.cfg.get("canal_tie_axis", "final")) != ("canal", "radius", "final")
+        # eu2 (review HIGH-2): the cervix tie target carried with the tissue (cfg canal_tie_follow; None = off)
+        self.tie_follow = canal_tie_follow_mode(self.cfg)
+        self.tie_force_on = bool(self.tie_follow or cfg_flag(self.cfg, "log_canal_tie_force"))
+        self.row_prev = None                            # the row of the previous step (the carry's start)
+        self.canal_tie_last = None
+        # S9: the elastic corpus (corpus_model "fem"); a rigid corpus leaves every line below inert
+        self.corpus_fem = c.get("corpus_fem") is not None
+        self.body_order = DEFORMABLE + (["corpus"] if self.corpus_fem else [])
+        if self.corpus_fem:
+            self.eng_step_k = np.full(len(c.get("corpus_canal", [])), -1, int)
+            self.tie_p_k = corpus_tie_params(self.cfg, self.r_tube, self.L_iu)
+            self.corpus_tgt_prev = c["X0"]["corpus"].copy()     # the pose target of the previous step (rest at k = 0)
+            self.corpus_tgt = self.corpus_tgt_prev
+            self.corpus_tgt_before = self.corpus_tgt_prev       # eu2: the target BEFORE this step's update
+            self.corpus_tie_follow = corpus_tie_follow_on(self.cfg)
+            self.corpus_tie = None
         self.dx_hist = []
         self.ok_hist = []
         self.lig_ext_max = 0.0
@@ -1900,6 +2667,14 @@ class HybridController(Sofa.Core.Controller):
     def X(self, b):
         return np.array(self.ctx["nodes"][b].dofs.position.value, dtype=float, copy=True)
 
+    def _canal_tie_force_row(self, Xc_end):
+        """log row["canal_tie_force"] (cfg canal_tie_follow / log_canal_tie_force): the cervix ties' spring force at the
+        END of the step -- tie_force_log of the targets and stiffnesses _begin wrote (canal_tie_last) against the
+        cervix nodes Xc_end (all nodes; the tie nodes are picked here) -- and the follow mode."""
+        ct = self.canal_tie_last
+        return dict(tie_force_log(ct["tgt"], ct["k"], np.asarray(Xc_end, float)[self.ctx["canal"]], ct["carry"]),
+                    follow=self.tie_follow or "off")
+
     def row_now(self):
         if self.k < len(self.sched):
             return self.sched[self.k]
@@ -1909,6 +2684,95 @@ class HybridController(Sofa.Core.Controller):
 
     def _set_rigid(self, node, R, t):
         node.rig.position.value = rigid_pose(R, t)
+
+    # ---------------------------------------------------------------- S9: the elastic corpus (corpus_model "fem")
+    def _corpus_pose(self, r, Tc):
+        """This row's pose target (corpus_pose_targets: T_corpus, plus the calibrated stretch when cfg
+        corpus_pose_stretch_lam != 1) into the pose springs' target MO; corpus_oar_contact "follow": the OARs' copy of
+        the surface = the corpus now + this step's change of the target (follow_surface)."""
+        c = self.ctx
+        cp = c["corpus_pose"]
+        tg = corpus_pose_targets(c["X0"]["corpus"], Tc, corpus_stretch_at(cp["lam"], r))
+        cp["tgt_mo"].position.value = tg[cp["idx"]].tolist()
+        fo = c.get("corpus_follow")
+        if fo is not None or c.get("corpus_iface_tgt") is not None:
+            Xk = self.X("corpus")
+            if fo is not None:
+                s2n = fo["s2n"]
+                fo["mo"].position.value = follow_surface(Xk[s2n], tg[s2n], self.corpus_tgt_prev[s2n]).tolist()
+            if c.get("corpus_iface_tgt") is not None:   # attach_target "predicted": the corpus now + this step's move
+                c["corpus_iface_tgt"].position.value = bary_apply(follow_surface(Xk, tg, self.corpus_tgt_prev),
+                                                                  *c["corpus_iface_bary"]).tolist()
+        self.corpus_tgt_before = self.corpus_tgt_prev   # eu2: kept for corpus_tie_follow (this step's target change)
+        self.corpus_tgt_prev = self.corpus_tgt = tg
+
+    def _corpus_ties(self, r):
+        """The corpus canal ties for this row: canal_tie_step about the row's tube axis (no below-flange part), depth
+        engagement on the clipped canal_s, optionally the arclength axial drive (corpus_canal_axial).  cfg
+        corpus_tie_follow (eu2): the nodes are first carried by this step's pose-target change (corpus_tgt minus
+        corpus_tgt_before at the tie nodes, what follow_surface adds), and the lateral correction / axial drive start
+        from there."""
+        c = self.ctx
+        X = self.X("corpus")[c["corpus_canal"]]
+        at = geom.unit(np.asarray(r["tube_axis"], float))
+        F = np.asarray(r["F"], float)
+        carry = None
+        if self.corpus_tie_follow:
+            ii = c["corpus_canal"]
+            carry = np.asarray(self.corpus_tgt, float)[ii] - np.asarray(self.corpus_tgt_before, float)[ii]
+        res = canal_tie_step(X, F, at, at, self.eng_step_k, self.k, self.tie_p_k, tip_s=r.get("tip_s"),
+                             canal_s=c["corpus_canal_s_eng"], carry=carry)
+        tgt = res["tgt"]
+        if self.cfg.get("corpus_canal_axial", "none") == "arclength" and r.get("tip_s") is not None:
+            Xa = X if carry is None else X + carry
+            tgt, _ = axial_tie_targets(res, Xa, F, at, r["tip_s"], c["corpus_canal_s"], self.L_iu, self.tie_p_k["cap"])
+        c["corpus_canal_tgt"].position.value = tgt.tolist()
+        c["corpus_canal_ff"].stiffness.value = res["k"].tolist()
+        self.corpus_tie = dict(n_active=int(res["act"].sum()), n_engaged=int((self.eng_step_k >= 0).sum()),
+                               canal_d=res["canal_d"], tgt=np.asarray(tgt, float), k=np.asarray(res["k"], float))
+        if carry is not None:
+            self.corpus_tie["carry"] = carry
+
+    def _corpus_log(self, X):
+        """log.jsonl row["corpus_fem"]: how far the corpus is from its pose target (pose springs), how non-rigid it is
+        (serosa residual after the best rigid fit to rest), its total volume ratio, the attach residual (cervix
+        interface nodes vs their corpus-mapped copies: > 0 means the attach lags or is soft), the ties and the net forces
+        of the pose springs and the ties on the corpus (spring force k (target - x) at the END of the step, N)."""
+        c = self.ctx
+        X0 = c["X0"]["corpus"]
+        cp = c["corpus_pose"]
+        P = cp["idx"]
+        dP = X[P] - self.corpus_tgt[P]
+        nP = np.linalg.norm(dP, axis=1)
+        ser = cp["serosa"]
+        R, t = geom.kabsch(X0[ser], X[ser])
+        e = np.linalg.norm(X0[ser] @ R.T + t - X[ser], axis=1)
+        out = dict(pose_rms_mm=round(float(np.sqrt((nP ** 2).mean())), 4), pose_max_mm=round(float(nP.max()), 4),
+                   pose_net_force_N=round(float(np.linalg.norm((-cp["k"][:, None] * dP).sum(0))) / 1000.0, 4),
+                   nonrigid_serosa_rms_mm=round(float(np.sqrt((e ** 2).mean())), 4),
+                   nonrigid_serosa_max_mm=round(float(e.max()), 4),
+                   kabsch_rotation_deg=round(float(geom.rot_angle_deg(R)), 3))
+        if c["tets"].get("corpus") is not None:
+            out["vol_ratio_total"] = round(float(_tet_vol(X, c["tets"]["corpus"]).sum() / c["vol0"]["corpus"].sum()), 5)
+        # attach: the cervix interface nodes against the corpus points they belong to NOW (host barycentric map of the
+        # corpus nodes, SOFA's weights) -- and how stale SOFA's mapped copy /corpus/iface/mo reads (see attach_target)
+        Xm = bary_apply(X, *c["corpus_iface_bary"])
+        out["attach_residual_mm"] = round(float(np.linalg.norm(Xm - self.X("cervix")[c["iface"]], axis=1).max()), 5)
+        try:
+            Xi = np.asarray(c["corpus_iface_mo"].position.value, float)
+            out["iface_mo_stale_mm"] = round(float(np.linalg.norm(Xi - Xm, axis=1).max()), 5)
+        except Exception as ex:                         # a read-out: never let it stop the run
+            out["iface_mo_stale_mm"] = "n/a (%s)" % type(ex).__name__
+        ti = self.corpus_tie
+        if ti is not None:
+            Xt = X[c["corpus_canal"]]
+            out.update(n_ties_active=ti["n_active"], n_ties_engaged=ti["n_engaged"], canal_d_mm=ti["canal_d"],
+                       tie_net_force_N=round(float(np.linalg.norm((ti["k"][:, None] * (ti["tgt"] - Xt)).sum(0))) / 1000.0, 4))
+            if ti.get("carry") is not None:             # eu2 corpus_tie_follow: the per-node force and the carry
+                f = tie_force_log(ti["tgt"], ti["k"], Xt, ti["carry"])
+                out.update(tie_follow=True, tie_max_node_force_N=f["max_node_N"], tie_sum_abs_force_N=f["sum_abs_N"],
+                           tie_carry_max_mm=f["carry_max_mm"])
+        return out
 
     # ---------------------------------------------------------------- step begin
     def onAnimateBeginEvent(self, ev):
@@ -1935,7 +2799,12 @@ class HybridController(Sofa.Core.Controller):
         a = self.tgt["axis"]
         # (1) kinematic bodies
         Tc = np.asarray(r["T_corpus"], float)
-        self._set_rigid(c["corpus"], Tc[:3, :3], Tc[:3, 3])
+        if not self.corpus_fem:
+            self._set_rigid(c["corpus"], Tc[:3, :3], Tc[:3, 3])
+            if c.get("corpus_iface_tgt") is not None:   # attach_target "predicted": this row's pose, exactly
+                c["corpus_iface_tgt"].position.value = (c["X0"]["cervix"][c["iface"]] @ Tc[:3, :3].T + Tc[:3, 3]).tolist()
+        else:                                           # elastic corpus: its pose target (and the OARs' copy of it)
+            self._corpus_pose(r, Tc)
         Rr = np.asarray(r["R_rows"], float)             # PER-STEP orientation (constant when rotation is "off")
         self._set_rigid(c["tandem"], Rr.T, r["F"])      # rigid_pose wants columns = applicator axes, hence .T
         if c.get("ovoids") is not None:                 # (ovoid_mode "none": no ovoid body)
@@ -1955,16 +2824,25 @@ class HybridController(Sofa.Core.Controller):
         #     canal_max_offset_mm from where it is now (bounded tie force; the full move is reached over several
         #     steps).  "dilate" moves outward only; "centre" also pulls a node beyond the tube radius back onto it.
         #     The arithmetic is canal_tie_step (pure, unit-tested); tie_axes picks the line (cfg canal_tie_axis, S1a).
+        #     cfg canal_tie_follow (eu2): the nodes are first carried by this step's rigid motion (canal_tie_carry), so
+        #     the cap bounds the misfit only; off (default) = the node's start-of-step position, bit for bit.
         self.n_canal_active = 0
         if c.get("canal_ff") is not None and len(c["canal"]):
             at, ar = tie_axes(cfg, self.tgt, r, self.rod_app)
             X = self.X("cervix")[c["canal"]]
+            carry = canal_tie_carry(self.tie_follow, X, self.row_prev, r) if self.tie_follow else None
             res = canal_tie_step(X, np.asarray(r["F"], float), at, ar, self.eng_step, self.k, self.tie_p,
-                                 tip_s=r.get("tip_s"), canal_s=c.get("canal_s"))
+                                 tip_s=r.get("tip_s"), canal_s=c.get("canal_s"), carry=carry)
             c["canal_tgt"].position.value = res["tgt"].tolist()
             c["canal_ff"].stiffness.value = res["k"].tolist()
             self.n_canal_active = int(res["act"].sum())
             self.canal_d = res["canal_d"]
+            if self.tie_force_on:                       # eu2: read back at the end of the step (_end)
+                self.canal_tie_last = dict(tgt=np.asarray(res["tgt"], float), k=np.asarray(res["k"], float), carry=carry)
+        self.row_prev = r                               # eu2: the next step's carry starts from this row
+        # (3a) S9: the elastic corpus's own canal ties (same arithmetic, the row's tube axis, depth engagement)
+        if self.corpus_fem and c.get("corpus_canal_ff") is not None:
+            self._corpus_ties(r)
         # (3b) cardinal ligaments: cable of natural length cardinal_len_mm to the static lateral anchors
         if c.get("lig_ff") is not None:
             Xl = self.X("cervix")[c["lig_idx"]]
@@ -2119,7 +2997,7 @@ class HybridController(Sofa.Core.Controller):
         wall = 1000.0 * (time.perf_counter() - self.t_step)
         disp, dx, finite, minvol = {}, 0.0, True, 1.0
         Xv, vrv = None, None
-        for b in DEFORMABLE:
+        for b in self.body_order:                       # DEFORMABLE, + "corpus" when it is elastic (S9)
             # A cfg `static_bodies` obstacle is never integrated, so it contributes nothing to dx or min_vol_ratio --
             # but it MUST keep its key here: run_hybrid.py (which this module may not edit) prints
             # row["disp"]["bladder"]["umax"] and friends for all five bodies every step, and eval reads the same
@@ -2243,6 +3121,15 @@ class HybridController(Sofa.Core.Controller):
             ts = r.get("tip_s")
             row["canal_tie"] = dict(n_engaged=int((self.eng_step >= 0).sum()), n_nodes=int(len(self.eng_step)),
                                     tip_s=(None if ts is None else round(float(ts), 3)))
+        if self.canal_tie_last is not None and finite:  # eu2 (canal_tie_follow / log_canal_tie_force): end-of-step force
+            row["canal_tie_force"] = self._canal_tie_force_row(self.X_prev["cervix"])
+        if self.corpus_fem and finite:                  # S9: the elastic corpus against its target, and its ties
+            row["corpus_fem"] = self._corpus_log(self.X_prev["corpus"])
+        elif c.get("corpus_iface_tgt") is not None and finite:     # rigid + attach_target "predicted": the residual
+            Tc = np.asarray(r["T_corpus"], float)
+            Xm = c["X0"]["cervix"][c["iface"]] @ Tc[:3, :3].T + Tc[:3, 3]
+            row["attach"] = dict(target="predicted", residual_mm=round(float(np.linalg.norm(
+                Xm - self.X_prev["cervix"][c["iface"]], axis=1).max()), 5))
         if c.get("sheet_pen") is not None and finite:   # S2 monitor: OAR surface nodes vs the sheet, post-solve
             row["oar_sheet"] = self._sheet_monitor()
         if c.get("balloon") is not None:

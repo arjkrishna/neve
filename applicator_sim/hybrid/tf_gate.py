@@ -15,7 +15,8 @@ against the wall's lumen, the canal and the step limits.  Units mm, deg.  Frame:
         "Reported" quantities -> hybrid/logs/tf_gate_<tag>.json.
     python -P hybrid/tf_gate.py replay --cfg <runs/_cfg/TF0.json> [--tag TF0]
         The whole scene built on a fake SOFA node API and the controller stepped through every row (+ settle rows) on
-        synthetic states (the cervix carried rigidly by the row's corpus transform): proves the graph builds without
+        synthetic states (the cervix -- and a corpus_model "fem" corpus -- carried rigidly by the row's corpus
+        transform): proves the graph builds without
         the ovoid body, the depth engagement fires as the tip passes each canal_path node, and every log row is written.
 
 DEFINITIONS (the plan's S5 wording; where a choice was needed it is stated and why).
@@ -1003,7 +1004,11 @@ def cmd_replay(a):
     root = _Node("", log)
     inp = S.load_inputs(cfg)
     ctx = S.build_scene(root, cfg, inp)
-    for b in S.DEFORMABLE:
+    # every body the controller solves or reads: the five DEFORMABLE ones (static obstacles included, as before) plus
+    # ctx["deformable"]'s extras -- the elastic corpus of corpus_model "fem", whose topology post_init reads (review
+    # LOW-6: stubbing S.DEFORMABLE alone raised AttributeError in post_init on every fem cfg)
+    bodies = list(S.DEFORMABLE) + [b for b in ctx.get("deformable", []) if b not in S.DEFORMABLE]
+    for b in bodies:
         nd = ctx["nodes"][b]
         nd.dofs.position = _D(ctx["X0"][b].tolist())
         nd.dofs.velocity = _D(np.zeros_like(ctx["X0"][b]).tolist())
@@ -1020,9 +1025,9 @@ def cmd_replay(a):
     while not ctrl.done and ctrl.k < n_max:
         r = sched[min(ctrl.k, len(sched) - 1)]
         Tc = np.asarray(r["T_corpus"], float)
-        for b in S.DEFORMABLE:
+        for b in bodies:                                # the cervix (and an elastic corpus) carried by the row's pose
             X0 = ctx["X0"][b]
-            X = X0 @ Tc[:3, :3].T + Tc[:3, 3] if b == "cervix" else X0.copy()
+            X = X0 @ Tc[:3, :3].T + Tc[:3, 3] if b in ("cervix", "corpus") else X0.copy()
             ctx["nodes"][b].dofs.position.value = X.tolist()
         ctrl._begin()
         ctrl._end()

@@ -6,7 +6,8 @@ Writes `<out>/hybrid/runs/<tag>/`:
     cfg.json          the full resolved configuration + provenance (code hashes, image id, versions)
     log.jsonl         one row per step: u, phase, per-body max/mean displacement + dx, contact count,
                       constraint residual/iterations, min tet volume ratio, step wall time
-    final/<body>.obj  deformed surfaces, preBT world RAS mm (corpus: the rigid pose-rule placement)
+    final/<body>.obj  deformed surfaces, preBT world RAS mm (corpus: the rigid pose-rule placement; with cfg
+                      corpus_model "fem" (S9) the elastic corpus's own nodes, and device_final.json adds its Kabsch pose)
     final/<body>_u.npy  per-node displacement (mm), SAME point order as meshes/<body>/tets.vtk
     device_final.json flange, tube axis, ovoid pose, Delta (preBT world RAS mm)
     summary.json      steps, ms/step, convergence per CONTRACT 5, forces, gate flags
@@ -74,12 +75,13 @@ def write_outputs(ctx, ctrl, out, summary):
     tgt = ctx["tgt"]
     r = ctrl.rows[-1] if ctrl.rows else dict(phase="P", s=0.0)
     disp = {}
+    fem = ctx.get("corpus_fem") is not None                 # S9: the corpus is an elastic body with its own nodes
     for b in S.BODIES:
         meta = ctx["inp"]["meta"][b]
         V0, F = geom.read_obj("%s/%s/surface.obj" % (P["meshes"], b))
         s2n = np.asarray(meta["surface_obj_vertex_to_tet_node"], int)
         X0 = ctx["X0"][b]
-        if b == "corpus":                                   # rigid: the pose-rule placement reached at the last step
+        if b == "corpus" and not fem:                       # rigid: the pose-rule placement reached at the last step
             T = np.asarray(ctx["sched"][min(ctrl.k, len(ctx["sched"])) - 1]["T_corpus"], float) \
                 if ctrl.k else np.eye(4)
             X = X0 @ T[:3, :3].T + T[:3, 3]
@@ -99,7 +101,29 @@ def write_outputs(ctx, ctrl, out, summary):
     Ft, qt = rig(ctx["tandem"])
     ovb = ctx.get("ovoids") is not None                 # ovoid_mode "none" (tandem body alone, TF0): no ovoid body
     Fo, qo = rig(ctx["ovoids"]) if ovb else (None, None)
-    Fc, qc = rig(ctx["corpus"])
+    T_sched = np.asarray(ctx["sched"][min(ctrl.k, len(ctx["sched"])) - 1]["T_corpus"] if ctrl.k else np.eye(4), float)
+    fem_dev = {}
+    if not fem:
+        Fc, qc = rig(ctx["corpus"])
+    else:
+        # the elastic corpus has no rigid pose: report its best rigid fit (Kabsch of every node to rest) and how far it is
+        # from that fit and from the schedule's target (the rigid corpus would sit exactly on the target)
+        X0c, Xc = ctx["X0"]["corpus"], ctrl.X("corpus")
+        Rk, tk = geom.kabsch(X0c, Xc)
+        Fc, qc = np.asarray(tk, float), S.quat_from_R(Rk)
+        Tk = np.eye(4)
+        Tk[:3, :3], Tk[:3, 3] = Rk, tk
+        e_k = np.linalg.norm(X0c @ Rk.T + tk - Xc, axis=1)
+        e_t = np.linalg.norm(X0c @ T_sched[:3, :3].T + T_sched[:3, 3] - Xc, axis=1)
+        fem_dev = dict(corpus_model="fem", corpus_T_kabsch_final=Tk.round(6).tolist(),
+                       corpus_nonrigid_residual_mm=dict(rms=round(float(np.sqrt((e_k ** 2).mean())), 4),
+                                                        max=round(float(e_k.max()), 4)),
+                       corpus_pose_residual_mm=dict(rms=round(float(np.sqrt((e_t ** 2).mean())), 4),
+                                                    max=round(float(e_t.max()), 4)),
+                       corpus_note="fem: corpus_translation_mm / corpus_quat_xyzw = the Kabsch fit of the final corpus "
+                                   "nodes to rest (corpus_T_kabsch_final); corpus_T_preBT_to_final = the schedule's rigid "
+                                   "TARGET; corpus_pose_residual_mm = every node vs that target, "
+                                   "corpus_nonrigid_residual_mm = vs the Kabsch fit")
     Rl = np.asarray(r.get("R_rows", tgt["R_rows"]), float)     # the LAST row's frame (an aborted run stops mid-swing)
     R_ov = S.ovoid_R_rows(r) if "R_rows" in r else Rl
     a = Rl[2]
@@ -122,6 +146,7 @@ def write_outputs(ctx, ctrl, out, summary):
                path_final_u=round(float(r.get("u", 0.0)), 5), corpus_s=round(float(r.get("corpus_s", 0.0)), 5),
                pose_rule="v2 (pose.json): shaft axis = vagina principal axis, flange = base + Delta, "
                          "corpus a0 -> tube axis with L_end d_F above the flange")
+    dev.update(fem_dev)                                 # {} for a rigid corpus: the file is as before
     with open(os.path.join(out, "device_final.json"), "w") as fh:
         json.dump(dev, fh, indent=1, default=_json)
     return disp, dev
@@ -191,10 +216,11 @@ def write_frame(ctx, ctrl, out, row, fc):
     ovb = ctx.get("ovoids") is not None                      # ovoid_mode "none": the tandem body alone (TF0)
     Fo = S.ovoid_origin(r, a_path) if ovb else None
     tip = F + L_iu * a_tube
-    # ---- corpus: rigid, placed by the pose rule (it has no mechanical DOFs to read)
+    # ---- corpus: rigid, placed by the pose rule (it has no mechanical DOFs to read); S9 elastic: its own nodes
+    fem = ctx.get("corpus_fem") is not None
     Tc = np.asarray(r["T_corpus"], float)
     X0c = ctx["X0"]["corpus"]
-    Xc = X0c @ Tc[:3, :3].T + Tc[:3, 3]
+    Xc = ctrl.X("corpus") if fem else X0c @ Tc[:3, :3].T + Tc[:3, 3]
     duc = np.linalg.norm(Xc - X0c, axis=1)
     disp = {b: dict(umax_mm=d["umax"], umean_mm=d["umean"]) for b, d in row["disp"].items()}
     disp["corpus"] = dict(umax_mm=round(float(duc.max()), 4), umean_mm=round(float(duc.mean()), 4))
@@ -211,9 +237,10 @@ def write_frame(ctx, ctrl, out, row, fc):
     #      (the canal the tie drives); the surfaces above are the boundary only
     files_u = {}
     for b in ctx["cfg"].get("frame_u_bodies") or []:
-        if b in fc["bodies"] and b != "corpus":
+        if b in fc["bodies"] and (b != "corpus" or fem):    # a rigid corpus has no nodal state (its motion is T_corpus)
             fn = "step_%04d_%s_u.npy" % (k, b)
-            np.save(os.path.join(fd, fn), (np.asarray(ctrl.X(b), float) - ctx["X0"][b]).astype(np.float32))
+            np.save(os.path.join(fd, fn), (np.asarray(Xc if b == "corpus" else ctrl.X(b), float)
+                                            - ctx["X0"][b]).astype(np.float32))
             files_u[b] = fn
     # ---- device state (every coordinate read from pose.json / applicator.json, none hard-coded)
     ins = ctx["inp"]["pose"]["inputs"]
@@ -245,6 +272,10 @@ def write_frame(ctx, ctrl, out, row, fc):
                settle_step=row.get("settle_step"))
     if not ovb:
         dev["ovoid_body"] = False
+    if fem:
+        # S9: the step's rigid corpus TARGET (the elastic corpus is held towards it) and its own log block; a rigid run's
+        # device json is unchanged (its corpus IS X0 @ T_corpus)
+        dev.update(corpus_model="fem", T_corpus=Tc.round(6).tolist(), corpus_fem=row.get("corpus_fem"))
     if r.get("w_r") is not None:
         # tandem-first rows (S5): the planned tip = carried tau(d) + w_r delta (tf_metrics.plan_at reads tip_s / w_r);
         # tip_s = the tip's arclength along the planned path from O_true (negative in the vagina, = d in C, S1b)
@@ -319,12 +350,17 @@ def run_one(cfg, tag):
         if fe > 0 and r.get("finite", False) and (r["step"] % fe == 0 or ctrl.done):
             write_frame(ctx, ctrl, out, r, fc)
         if r["step"] % int(cfg["log_every"]) == 0 or ctrl.done:
+            cf = r.get("corpus_fem")                        # S9 elastic corpus: its pose error, non-rigid part, ties
             print("STEP %3d %s u=%.3f s=%.3f lag=%5.1f wall=%5.0fms dx=%.4f cont=%4d err=%.2e it=%3d minV=%.3f "
-                  "umax(cvx/vag/bld/rec/sig)=%.2f/%.2f/%.2f/%.2f/%.2f"
+                  "umax(cvx/vag/bld/rec/sig)=%.2f/%.2f/%.2f/%.2f/%.2f%s"
                   % (r["step"], r["phase"], r["u"], r["corpus_s"], r["ov_lag_mm"], r["wall_ms"], r["dx_max_mm"],
                      r["n_contacts"], r["constraint_err"], r["constraint_it"], r["min_vol_ratio"],
                      r["disp"]["cervix"]["umax"], r["disp"]["vagina"]["umax"], r["disp"]["bladder"]["umax"],
-                     r["disp"]["rectum"]["umax"], r["disp"]["sigmoid"]["umax"]), flush=True)
+                     r["disp"]["rectum"]["umax"], r["disp"]["sigmoid"]["umax"],
+                     "" if cf is None else " corpus: minV=%s pose=%.3f/%.3f nonrigid=%.3f attach=%s ties=%s"
+                     % (r["disp"]["corpus"].get("min_vol_ratio"), cf["pose_rms_mm"], cf["pose_max_mm"],
+                        cf["nonrigid_serosa_max_mm"], cf.get("attach_residual_mm"), cf.get("n_ties_active"))),
+                  flush=True)
     if not ctrl.done and ctrl.status == "running":
         ctrl.status = "max_steps"
     if fe > 0 and ctrl.rows and ctrl.rows[-1].get("finite", False) and fc["last_step"] != ctrl.rows[-1]["step"]:

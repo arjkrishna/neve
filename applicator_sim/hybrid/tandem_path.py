@@ -43,6 +43,8 @@ Commands
     python -P hybrid/tandem_path.py build      # -> inputs/tandem_path.npz + inputs/tandem_path.json; prints the S3 checks
     python -P hybrid/tandem_path.py nodesets   # adds canal_path / canal_path_s (and the alias apex_pair_g32) to
                                                # meshes/cervix/meta.json and to its copy in meshes/_scene_<wall>/cervix/
+    python -P hybrid/tandem_path.py corpus_nodesets   # S9: adds canal_path / canal_path_s to meshes/corpus/meta.json
+                                               # (the elastic corpus's canal ties) and to meshes/_scene_<wall>/corpus/
 Nothing is re-meshed; the existing node sets (in particular "canal", which G32 and the apex lift use) are untouched.
 Frame: model = preBT world RAS mm (x=R, y=A, z=S).  Signed distances are negative inside.  The module imports only
 numpy at load time (py3.8-safe: the container may import load() / project()); nibabel, scipy, skimage and vtk are
@@ -76,6 +78,8 @@ CFG = dict(
     a_lc_chords_mm=(15.0, 16.0, 17.0, 18.0, 19.0, 20.0),
     tangent_mm=6.0,                   # the local tangent the plan says NOT to use (reported only)
     pose_json="hybrid/applicator_v3/pose.json",       # d_F source (relative to APPSIM_OUT); fallback d_F_default_mm
+    tf_pose_json="hybrid/applicator_v4/pose.json",    # S9a: the tandem-first record (rows with tip_s) the corpus
+                                                      # canal set must cover (corpus_nodesets --pose overrides it)
     d_F_default_mm=17.5,
     set_radius_mm=3.0, set_radius_fallback_mm=4.0,    # canal_path: cervix nodes within 3 mm (4 mm if < set_min_nodes)
     set_min_nodes=15,
@@ -85,7 +89,9 @@ CFG = dict(
 # S3 "Accept" limits (fix plan section 2, S3)
 ACCEPT = dict(O_true_to_iu_voxel_mm=1.5, O_true_to_L_end_mm=1.5, junction_gap_mm=2.0, vag_centroid_dev_mm=1.5,
               canal_len_mm=(45.0, 47.0), total_len_mm=(121.0, 127.0), internal_os_above_O_mm=(7.5, 11.5),
-              set_min_nodes=15, set_frac_within_3mm=0.90)
+              set_min_nodes=15, set_frac_within_3mm=0.90,
+              corpus_set_reach_tol_mm=0.5)        # S9a: the corpus set's largest canal_s must reach the deepest tip_s of
+                                                  # the tandem-first schedule (tip_s_reach) to within this
 
 
 def paths():
@@ -713,6 +719,142 @@ def nodesets(args):
     return rows
 
 
+# ============================================================================ node sets (corpus meta.json, S9)
+def _surface_depth(V, F, X):
+    """Depth of the points X below the closed surface (V, F): minus the signed distance (vtkImplicitPolyDataDistance on
+    consistently auto-oriented normals; > 0 inside)."""
+    import vtk
+    from vtk.util import numpy_support as ns
+    pts = vtk.vtkPoints()
+    pts.SetData(ns.numpy_to_vtk(np.ascontiguousarray(V, float), deep=1))
+    cells = vtk.vtkCellArray()
+    F = np.asarray(F, np.int64)
+    cells.SetData(ns.numpy_to_vtkIdTypeArray(np.arange(0, 3 * len(F) + 1, 3, dtype=np.int64), deep=1),
+                  ns.numpy_to_vtkIdTypeArray(np.ascontiguousarray(F.ravel()), deep=1))
+    poly = vtk.vtkPolyData()
+    poly.SetPoints(pts)
+    poly.SetPolys(cells)
+    nrm = vtk.vtkPolyDataNormals()
+    nrm.SetInputData(poly)
+    nrm.ConsistencyOn()
+    nrm.AutoOrientNormalsOn()
+    nrm.SplittingOff()
+    nrm.ComputeCellNormalsOn()
+    nrm.Update()
+    imp = vtk.vtkImplicitPolyDataDistance()
+    imp.SetInput(nrm.GetOutput())
+    return -np.array([imp.EvaluateFunction([float(v) for v in p]) for p in np.atleast_2d(X)])
+
+
+def tip_s_reach(pose_json=None):
+    """The deepest canal arclength the tandem tip reaches in the tandem-first schedule: the largest tip_s of the
+    pose.json insertion_path_tandem_first rows (the rows scene_hybrid.build_schedule regenerates; written by
+    hybrid/tf_gate.py search --write), default CFG tf_pose_json.  Returns (tip_s_max or None, source text)."""
+    p = pose_json or (paths()["out"] + "/" + CFG["tf_pose_json"])
+    try:
+        rows = json.load(open(p))["insertion_path_tandem_first"]["rows"]
+        ts = [float(r["tip_s"]) for r in rows if r.get("tip_s") is not None]
+    except (OSError, KeyError, TypeError, ValueError) as e:
+        return None, "%s: no tandem-first rows (%s)" % (p, type(e).__name__)
+    if not ts:
+        return None, "%s: no tip_s in the tandem-first rows" % p
+    return max(ts), "%s insertion_path_tandem_first rows (largest tip_s)" % p
+
+
+def corpus_nodesets(args):
+    """S9a of the G32 fix plan: the corpus's canal node set for the elastic corpus's canal ties (scene_hybrid
+    corpus_canal_tie_set "canal_path").  The corpus nodes within set_radius_mm (3 mm; 4 mm if fewer than set_min_nodes)
+    of the LABELLED canal (the path's s >= 0 part, O_true -> fundal end), ordered by canal_s = the arclength of their
+    nearest canal point; canal_path_s holds it (mm from O_true, NOT node indices).  Additive: surface_nodes and
+    interface_cervix are untouched and nothing is re-meshed.  Recorded per node in node_set_extra.canal_path: the
+    distance to the canal and the depth below the corpus surface (meshes/corpus/surface.obj, signed distance).  Accept:
+    >= set_min_nodes nodes, >= 90 % within 3 mm, canal_s max >= the deepest tip_s of the tandem-first schedule (the
+    canal depth the tandem tip reaches, tip_s_reach) - corpus_set_reach_tol_mm; without a tandem-first record the reach
+    is only reported."""
+    import geom
+    PT = paths()
+    T = load()
+    pts, s = T["pts"], T["s"]
+    up = s >= 0
+    canal, cs_all = pts[up], s[up]
+    src_dir = PT["meshes"] + "/corpus"
+    X = _read_vtk_points(src_dir + "/tets.vtk")
+    d, sp, _ = project(X, canal, cs_all)
+    rad = CFG["set_radius_mm"]
+    sel = np.nonzero(d <= rad)[0]
+    if len(sel) < CFG["set_min_nodes"]:
+        rad = CFG["set_radius_fallback_mm"]
+        sel = np.nonzero(d <= rad)[0]
+    sel = sel[np.argsort(sp[sel], kind="stable")]              # ordered from the os upward
+    cs = np.round(sp[sel], 3)
+    V, F = geom.read_obj(src_dir + "/surface.obj")
+    depth = _surface_depth(V, F, X[sel])
+    meta_src = src_dir + "/meta.json"
+    m = json.load(open(meta_src))
+    ns = m["node_sets"]
+    on_surf = np.isin(sel, np.asarray(ns["surface_nodes"], int))
+    on_ifc = np.isin(sel, np.asarray(ns["interface_cervix"], int))
+    rows = []
+    print("[tandem_path] corpus canal_path node set (corpus, %d nodes in the mesh)" % len(X), flush=True)
+    _chk(rows, "corpus canal_path nodes", int(len(sel)), len(sel) >= ACCEPT["set_min_nodes"],
+         ">= %d" % ACCEPT["set_min_nodes"], "", note="radius %g mm of the labelled canal (s >= 0)" % rad)
+    f3 = float(np.mean(d[sel] <= 3.0)) if len(sel) else 0.0
+    _chk(rows, "fraction within 3 mm of the canal", round(f3, 3), f3 >= ACCEPT["set_frac_within_3mm"],
+         ">= %g" % ACCEPT["set_frac_within_3mm"], "", note="max distance %.2f mm" % (d[sel].max() if len(sel) else np.nan))
+    smax = float(cs.max()) if len(cs) else float("nan")
+    reach, reach_src = tip_s_reach(getattr(args, "pose", None))
+    note = "canal_s range %.2f..%.2f; canal end s %.2f; tip reach from %s" % (float(cs.min()), smax,
+                                                                             float(cs_all.max()), reach_src)
+    if reach is None:
+        _chk(rows, "canal_s max", round(smax, 2), None, "reported (no tandem-first tip_s)", note=note)
+    else:
+        need = reach - ACCEPT["corpus_set_reach_tol_mm"]
+        _chk(rows, "canal_s max", round(smax, 2), smax >= need, ">= %.2f (largest tip_s %.2f - %g)"
+             % (need, reach, ACCEPT["corpus_set_reach_tol_mm"]), note=note)
+    _chk(rows, "on the surface / on interface_cervix", [int(on_surf.sum()), int(on_ifc.sum())], None, "reported", "",
+         note="depth below the corpus surface: min %.2f, median %.2f mm; depth of the 5 highest-s nodes %s"
+         % (float(depth.min()), float(np.median(depth)), np.round(depth[-5:], 2).tolist()))
+    ok = all(r["ok"] for r in rows if r["ok"] is not None)
+    if not ok and not args.force:
+        raise SystemExit("corpus canal_path acceptance failed: meta.json NOT written (use --force to write anyway)")
+    defs = m.setdefault("node_set_defs", {})
+    ns["canal_path"] = [int(i) for i in sel]
+    ns["canal_path_s"] = [float(v) for v in cs]
+    defs["canal_path"] = ("corpus nodes within %g mm (%g mm if fewer than %d) of the physician's LABELLED canal "
+                          "(inputs/tandem_path.npz, s >= 0: O_true -> fundal end); ordered by canal_s.  The elastic "
+                          "corpus's canal ties (scene_hybrid corpus_canal_tie_set, S9)"
+                          % (CFG["set_radius_mm"], CFG["set_radius_fallback_mm"], CFG["set_min_nodes"]))
+    defs["canal_path_s"] = ("per canal_path node (same order): canal_s = arclength (mm) of the nearest labelled-canal point "
+                            "from O_true, positive toward the fundus (NOT node indices)")
+    m.setdefault("node_set_sizes", {}).update(canal_path=len(sel), canal_path_s=len(sel))
+    m.setdefault("node_set_extra", {})["canal_path"] = dict(
+        source="inputs/tandem_path.npz (hybrid/tandem_path.py build), s >= 0", radius_mm=rad,
+        O_true_mm=r3(T["O_true"]), n=int(len(sel)), canal_s_range=[round(float(cs.min()), 3), round(smax, 3)],
+        n_on_surface=int(on_surf.sum()), n_on_interface_cervix=int(on_ifc.sum()),
+        dist_to_canal_mm=np.round(d[sel], 3).tolist(), depth_below_surface_mm=np.round(depth, 3).tolist(),
+        written=time.strftime("%Y-%m-%d %H:%M:%S"), code="hybrid/tandem_path.py corpus_nodesets")
+    _write_json_atomic(m, meta_src)
+    print("[tandem_path] wrote %s: canal_path %d, canal_path_s %d (surface_nodes %d, interface_cervix %d unchanged)"
+          % (meta_src, len(sel), len(cs), len(ns["surface_nodes"]), len(ns["interface_cervix"])), flush=True)
+    for wd in args.wall:                             # the scene root's copy, as `nodesets` keeps the cervix's
+        dst_dir = "%s/_scene_%s/corpus" % (PT["meshes"], wd)
+        if not os.path.exists(dst_dir + "/meta.json"):
+            print("[tandem_path] no scene copy at %s (created from meshes/corpus on the next run)" % dst_dir, flush=True)
+            continue
+        Xd = _read_vtk_points(dst_dir + "/tets.vtk")
+        if Xd.shape != X.shape or np.abs(Xd - X).max() > 1e-6:
+            print("[tandem_path] SKIP %s: its tets.vtk is not the source mesh" % dst_dir, flush=True)
+            continue
+        tmp = "%s/meta.json.tmp.%d" % (dst_dir, os.getpid())
+        shutil.copy2(meta_src, tmp)
+        os.replace(tmp, dst_dir + "/meta.json")
+        st = os.stat(meta_src)
+        os.utime(dst_dir + "/meta.json", (st.st_atime, st.st_mtime + 1.0))
+        same = open(meta_src, "rb").read() == open(dst_dir + "/meta.json", "rb").read()
+        print("[tandem_path] updated %s/meta.json (identical %s; mtime source + 1 s)" % (dst_dir, same), flush=True)
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -720,9 +862,16 @@ def main():
     p = sub.add_parser("nodesets", help="canal_path / canal_path_s / apex_pair_g32 in meshes/cervix/meta.json")
     p.add_argument("--wall", nargs="*", default=[CFG["wall_dir"]], help="scene roots whose cervix copy is updated too")
     p.add_argument("--force", action="store_true", help="write even if a node-set check fails")
+    p = sub.add_parser("corpus_nodesets", help="S9: canal_path / canal_path_s in meshes/corpus/meta.json")
+    p.add_argument("--wall", nargs="*", default=[CFG["wall_dir"]], help="scene roots whose corpus copy is updated too")
+    p.add_argument("--force", action="store_true", help="write even if a node-set check fails")
+    p.add_argument("--pose", help="pose.json holding insertion_path_tandem_first (default APPSIM_OUT/%s)"
+                   % CFG["tf_pose_json"])
     args = ap.parse_args()
     if args.cmd == "build":
         build(args)
+    elif args.cmd == "corpus_nodesets":
+        corpus_nodesets(args)
     else:
         nodesets(args)
 

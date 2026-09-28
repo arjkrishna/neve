@@ -2449,6 +2449,172 @@ wall (fallback 3); the ring size (40 mm from the label or 26 mm), which blocks S
 checkpoint questions (is the upper vaginal slit inside the HR-CTV open lumen; should the tandem straighten the top 15
 mm of the canal, which curves 55 deg left; is this the travel path meant).
 
+## STAGE 3c -- ELASTIC UTERUS (S9, TF1, 2026-09-27)
+
+**Why.** The user: the uterus is not rigid, it stretches a bit as the tandem goes in.  Plan step S9 asked the same of
+the upper canal (span 50 +/- 2 mm, upper canal <= 3 mm off the tube, best-line <= 2 mm, Dice >= 0.87, volume <= 1 %,
+no inverted tets).  Built, probed, run against a noise floor, reviewed and re-measured (the reviewer's number is given
+where they differ) and fixed; then the late settle was diagnosed and organ contact probed.  Raw results stay local.
+
+**What the BT labels say** (preBT uterus onto BT):
+- Rigid motion explains most of it: Dice 0.883 at the TF0c / G32 pose, 0.892 for the best rigid fit (6.1 deg, 1.85 mm
+  mean away); similarity scale 0.9995, volume +0.4 %.  An unbounded Dice pose search finds a 178 deg roll at 0.899.
+- The organ is not bent (slab centroids straight within 1.3-1.6 mm); the labelled canal bends 52 deg to the left, its
+  top 8-11 mm under the left serosa, the left cornual region.  Forcing the whole canal onto the tube (host FEM) gives
+  Dice 0.81 and 27-34 inverted tets; Dice >= 0.87 allows ~40 % of the straightening.
+- The volume-consistent label affine (det 1.012) stretches 1.019-1.027 along the tandem (0.8-1.2 mm: sub-voxel, partly
+  label boundary), 0.915 left-right, 1.092 front-back.  The narrowing is real: label widths 3.2-5.9 mm (8-15 %) less
+  at 40-55 mm above the flange, ~2.5 voxels per side: a sideways squeeze, not the Poisson side of an axial stretch.
+- The span surplus is label boundary: sampled alike BT is 6.8-7.7 mm longer, 5-6 mm of it at the bottom, where the
+  uterus / HR-CTV boundary moved down as the HR-CTV shrank 57 -> 47 cc; the column on the tandem line is SHORTER at
+  BT (70.75 mm) than preBT (73.0).  So S9's span / upper / best-line gates give way to the evidence's tests T1-T9.
+
+**What was built** (new cfg keys, old defaults; G32, TF0c, TF1u and TF1v replay bit-identically after the fixes):
+- `corpus_model` `"rigid"` (DEFAULT) | `"fem"`: a TetrahedralCorotational corpus (1779 nodes, 9001 tets) solved
+  before the cervix, `E_kPa.corpus` 40, `nu.corpus` 0.45, held to the SAME kinematic target by springs on
+  `corpus_pose_set` (`"serosa"`, 463 nodes | `"surface"` | `"all"` | `"shell"`), `k_corpus_pose_mN_per_mm` 5;
+  `/corpus/iface/mo` becomes a BarycentricMapping of its tets, so `attach_impl` works unchanged.
+- Canal ties `corpus_canal_tie` (true, fem) on `"canal_path"` (39 nodes within 3 mm of the labelled canal, checked
+  against the deepest tip_s of the tandem-first record, CFG `tf_pose_json`), `k_corpus_canal_mN_per_mm` 400,
+  `corpus_canal_max_offset_mm` 0.5, `corpus_canal_s_max` None, `corpus_canal_axial` `"none"` | `"arclength"`.
+- Off by default: `k_corpus_bottom_mN_per_mm`, `corpus_pose_exclude_canal_mm`, `corpus_pose_stretch_lam` (1.05 is an
+  in-sample fit to this label, CALIBRATED).  `corpus_oar_contact` `"follow"` (DEFAULT, a one-way surface copy the
+  OARs meet) | `"two_way"` | `"off"`.  `attach_impl` gains `"bilateral"`; `attach_target` `"mapped"` (DEFAULT: two
+  steps stale, up to 1.47 mm off in C and 0.98 in L) | `"predicted"` (springs on it leave 0.2-0.3 mm).
+- Tie fixes (A) `corpus_tie_follow`, (B) `canal_tie_follow` `"corpus"` | `"tube"`, `log_canal_tie_force`, all false.
+  Build errors: B without `canal_tie` or without `attach_impl "springs"` + `attach_target "predicted"`; `"tube"`
+  with below-flange ties; A on a rigid corpus or without corpus ties; flags that are not booleans.
+- run_hybrid writes the corpus u and a Kabsch pose; tf_metrics carries the canal through the corpus tets and adds a
+  corpus block (pose, non-rigid residual, volume, span, best-line, canal bands 0-20 / 20-30 / 30-35 / 35-40 / 40-end,
+  the canal's end rounded up: 47 here); the renderers draw the elastic corpus; `tf_gate.py replay` runs fem cfgs.
+  `hybrid/test_corpus.py` 17/17, `hybrid/test_ties.py` 18/18 (synthetic constants; 7 of 7 planted defects caught).
+
+**Choices and fixes** (isolated scene, cfgs `EU*`: cervix + corpus on TF0c's rows, 3-4 min; the corpus is one-way
+coupled, so it equals the full scene's, TF1v against EU3_C 3e-9 mm):
+- E 40 kPa is the softest corpus inside the strain limit: 15 aborts (all-tied tets collapse), 20-30 leave 2.3-6.7 %
+  of tets above 30 % strain.  The shape depends on E (upper residual 12.65-15.13 mm over 20-60), so E is set by
+  numerics, not tissue data (40 is the top of the literature range).  k_pose 20: 5 lets the pose drift, Dice 0.859.
+- (A) The old tie aimed at the node's start-of-step position, so the isotropic spring resisted the node's own motion,
+  axial included.  Carried first by its pose-target change, a node feels about k x cap = 0.2 N (up to 0.24 N while
+  it lags its target; exactly 0.200 N in the settle).  TF1u -> TF1v: lift
+  force 7.35 -> 3.37 N, one-body spread 2.34 -> 0.17 mm (reviewer's Kabsch 3.86 -> 0.72), strain p95 27.5 -> 16.7 %.
+- (B) `"corpus"`: carrying the cervix ties by the rigid T_corpus increment matches TF0c's tissue best (median 3-step
+  residual in L 1.09 old / 0.34 corpus / 0.34 tube).  Full scene: lower canal in the C ramps 5/30 failing frames
+  (TF0c, TF1u) -> 0/30 (TF1v, TF1n); C alone (TF1n_noB) 3/30; B on the default attach (TF1n_noC) aborts at step 241
+  with inverted junction tets, and on an AttachConstraint (TF1n_attP) brings back TF0c's C squeeze.  Hence the guard.
+- (C) springs + `"predicted"`, k_attach 2000: attach residual 1.45 -> 0.28 mm in C, 0.99 -> 0.28 in L.  The elastic
+  build's attach path alone lifts the C cervix minimum 0.398 -> 0.494 (EU3_N, inert ties): not an elastic effect.
+
+**Stretch mechanisms** (isolated, on A + B; run on the mapped attach, now refused, which the one-way corpus never
+sees; "explained" = share of the BT residual in the volume-lossy field: not a physical magnitude, the ranking holds):
+
+| run | Dice pelvis / device | stretch along tandem | width % | explained | strain p95 / > 30 % | tie N |
+|---|---|---|---|---|---|---|
+| B | 0.883 / 0.887 | 1.005 | -0.69 | 0.104 | 16.7 / 0.44 | 3.37 |
+| D1 `"arclength"` + bottom springs 50 | 0.888 / 0.886 | 1.012 | -0.56 | 0.022 | 19.4 / 1.00 | 4.42 |
+| D2k k_pose 10 | 0.881 / 0.887 | 1.006 | -0.97 | 0.136 | 16.8 / 0.43 | 3.14 |
+| D12 D1 + k_pose 10 | 0.888 / 0.886 | 1.017 | -0.92 | 0.049 | 19.3 / 0.88 | 4.15 |
+| E25 (25 kPa) | 0.883 / 0.888 | 1.006 | -0.86 | 0.101 | 24.1 / 3.0 fail | 3.13 |
+| D3 stretch_lam 1.05, CALIBRATED | 0.893 / 0.882 | 1.028 | -1.81 | 0.216 | 16.8 / 0.5 | 3.35 |
+| BT | | 1.019-1.027 | -8 to -15 (40-55 mm) | 1 | | |
+
+- Axial: too small in BT to confirm or reject a mechanism (D12 reaches 1.7 %, mostly a 0.4-0.6 mm lift).  Narrowing:
+  0.1-1.1 mm at 40-55 mm against BT's 3.2-5.9.  Every tie load is capped by construction (each tie at k x cap, the
+  serosa sprung to the rigid pose) and ends as ~0.5 mm of mostly rigid drift.  Device-frame differences of 0.001-0.005
+  are below a sub-voxel shift (0.1 / 0.25 mm: 0.0012 / 0.003) and depend on the BT tandem; only D3's drop is clear.
+
+**Full scene: TF1v against TF1n and TF1p.**  TF1u (TF0c + fem corpus, old ties) gave Dice 0.882 and surface distance
+to BT 1.494 against TF0c's 1.491 mm.  TF1v = TF1u + A + B + C; TF1n = TF1v with `k_corpus_canal_mN_per_mm` 0 (same
+graph, rigid-equivalent uterus); TF1p = k 4 (1 %), the perturbation floor.  304 steps, ~61 min each; logs identical
+through step 156.  Organ numbers at M121@k* (see the settle below):
+
+| measure | TF1n -> TF1v | floor TF1p - TF1n |
+|---|---|---|
+| uterus off rigid, mean / max mm | 0.70 / 3.86 | 0.008 / 0.04 |
+| canal bands 0-20 / 20-30 / 30-35 / 35-40 / 40-47 mm | 1.19 / 5.04 / 7.45 / 11.71 / 17.34 -> 0.92 / 2.96 / 4.16 / 8.06 / 14.52 | <= 0.04 |
+| uterus Dice pelvis / device frame; MSD mm | 0.8832 -> 0.8829 / 0.8833 -> 0.8875; 1.439 -> 1.427 | 0 / 0.00015; -0.001 |
+| HR-CTV offset overall / at 35-40 mm / lowest 10 mm | 4.07 -> 3.95 / 11.49 -> 10.29 / 2.24 -> 2.22 | -0.01 / +0.01 / -0.03 |
+| lower-canal worst point in the C ramps mm; cervix min volume in L | 2.67 -> 2.25; 0.542 -> 0.484 | -0.01; -0.028 |
+| node change mm (M121@288): cervix / vagina / bladder / rectum / sigmoid | 0.23 / 0.06 / 0.01 / 0.02 / 0.18 | 0.04 / 0.01 / 0.004 / 0.01 / 0.003 |
+| organ Dice change: cervix / vagina_filled / bladder / rectum / sigmoid | -0.0006 / +0.0003 / 0 / +0.0002 / -0.0012 | <= 0.0003 |
+
+The elastic uterus pulls the canal 2.1-3.6 mm closer to the tube above 20 mm but does not bring the uterus shape
+closer to BT.  What clears the floor is built in, sub-voxel or away from BT: the bands are the ties pulling at their
+cap; HR-CTV overall, device-frame Dice and MSD are sub-voxel (the non-rigid part adds 0.0015-0.0025 device-frame
+Dice); HR-CTV at 35-40 mm moves away (BT +12.41: error 0.92 -> 2.12 mm); sigmoid (-0.0012) and cervix (-0.0006)
+Dice move away, both small; the L-phase cervix minimum regresses.  And the BT scan argues against the pull itself:
+there the T2-bright uterine cavity still reaches 10-15 mm to the patient's left of the real tandem 28-40 mm up
+(local figure `figs/q2/Q2_cavity_levels_labelled.png`), so the canal label's left-curving top is cavity the tandem
+does not fill; ties above s ~25 (`corpus_canal_s_max`) pull tissue BT shows unmoved.
+
+**The late settle.**  In every run (G32, TF0c, TF1u, TF1v, TF1n, TF1p) the lower-mid vaginal wall (8-20 mm above
+the introitus) flips with period 2 in one radial patch, growing 1.09-1.22x per step: the log's growing vagina dx.
+`apex_lift_fix` holds the vault 19-21 mm up, stretching the mid-wall 1.36-1.43, and the corotational force field has
+no geometric stiffness for that tension: a host rebuild of the step gives eigenvalue -1.20 to -1.28 (stable below a
+stretch of ~1.22; G28, unlifted, -0.005).  It is not the constraint solver or the contact count.  With B + C the
+wall is at full stretch from the first settle step, seeded by the abrupt end of the lift and by a separate, steady
+~0.65 mm period-2 chatter of the left lateral portio.  The balloon that carries the OAR contacts copies the wall a
+step late, so bladder / rectum vertices end up behind it, irreversibly: that, not elasticity, was the final-frame
+bladder "effect" (1.51 mm; floor 0.49-1.20).  Proposed, NOT implemented: `settle_rayleigh_stiffness` (default None)
+on the vagina from the first settle row (host model: eigenvalue -0.50 at {"vagina": 0.01}); runs TF0c_rs, TF1v_rs.
+
+**Evaluation convention until then: M121@k*** = (X[k-6] + 2 X[k-3] + X[k]) / 4 at k*, the last frame before new OAR
+vertices enter the wall's outer solid (else the final frame); on 3-step frames it leaves ~10 % of the flip.  k*: G32
+174, TF1n 288, TF1cn 291, TF1v / TF1p / TF1c / TF1cp 294, TF0c / TF1u 303.  Every TF1p - TF1n organ floor drops from
+up to 0.0058 Dice to <= 0.0003 (TF1n bladder 0.8577 -> 0.8719).  TF0c / TF1u still drift at the end (TF0c device-frame
+cervix 0.6421 at M121@288, 0.6358 at 303).  Earlier sections' organ scores are final-frame values.
+
+**Organ contact** (TF1c = TF1v + `corpus_oar_contact "two_way"`; TF1cp, tie k 404, its floor; TF1cn, tie k 0, contact
+alone; +8 % runtime).  It does not squeeze the uterus: settled, the organs put 0.076 N on it (host FEM equilibrium),
+all sigmoid at the fundus, 0.0003 N at 40-55 mm.  Left-right label widths at 40-45 / 45-50 / 50-55 mm: TF1c = TF1v
+37.24 / 39.43 / 40.50, TF1cn = TF1n 38.23 / 40.46 / 40.58, preBT 38.08 / 40.42 / 40.87, BT 34.88 / 35.01 / 35.01.
+In C the bladder presses 2.5 N on the front of the uterus and flattens it 0.66-0.73 mm front-back (TF1cn), the
+opposite of BT, until the lift releases it.  Fit: uterus Dice -0.00002 (floor 0.0001), bladder -0.0011, sigmoid
++0.0030.  The labels agree: at 40-55 mm no labelled organ lies within 2 mm of the BT uterus.  Two-way keeps the
+bladder out of the uterus through C (one-way: 72-73 vertices up to 8.7 mm inside), not through the lift: every
+settled run, two-way included, ends with 8-9 bladder vertices 1.4-1.9 mm inside the front of the uterus 34-42 mm
+above the flange, so the near-zero load there partly means lost contact, not a clear bladder.
+
+**What fails.**
+- The late-settle flip and the B + C chatter (above).  S9 as written: best-line 6.23 mm (rigid 5.45-5.52), span
+  44.57 mm (BT 48.9), upper residual 14.52 mm.  S6: 11 pass / 4 fail (TF0c 10 / 5): cervix minimum volume (C 0.519,
+  L 0.484; gate 0.6), HR-CTV +3.95 mm (3.5), lowest 10 mm +2.22 (0), 11.97 s/step (TF1n as slow: host load).
+- T1-T9 for TF1v: T1 shape (0.883 / MSD 1.427 / HD95 3.375), T4 strain (16.7 %, 0.44 % > 30 %, 0 inverted), T5
+  volume (-0.24 %), T7 lower canal and T8 force (3.37 N) pass.  T2 non-rigid 0.44 mm mean fails a floor set by a
+  target field that loses 1.8-2.1 % volume; T3 direction explains 0.10-0.13, width -0.69 %; T6 column 74.0-74.25 mm
+  against BT's 70.75-71.5 fails in every run, TF0c included (portio 5.75-7.75 mm below the flange, BT 3.5); no T9.
+- 16 cfgs pairing a follow with a lagged attach no longer build (runs kept, each with the code hash it ran): TF1n_noC,
+  TF1n_attP, EU2ISO_F, EU2ISO_FT, EU2ISO_R0F, EU2SMOKE_F, EU3_D1, _D12, _D1E25, _D1a, _D1b, _D2k, _D2x, _D3, _E25, _N.
+- Side finding: `mesh_bodies._dihedrals` returns 180 deg minus the dihedral (meta.json min / max swapped; not fixed).
+- Scores (TF1v, pelvis, M121@k*): cervix 0.62, vagina_filled 0.64, bladder 0.87, rectum 0.41, uterus 0.88.  Renders
+  (local): `figs/labeled/TF1{u,v}_step*.png`, `figs/anim/insertion_TF1{u,v}_{full,lumen}.mp4`.
+
+**Open decisions:**
+- Physician Q2 (is the top of the labelled canal cavity the tandem does not enter, or should the tandem follow it?)
+  is largely answered by the BT scan: the real tandem runs straight, 5-6 mm from the uterus centre, the uterus is
+  not bent, and the cavity still reaches 10-15 mm to its left (above), i.e. "does not enter".  Pending the
+  physician's confirmation: accept the 14.5-17.3 mm upper residual, retire S9's span / upper / best-line gates and
+  tie the corpus canal only to s ~25.  "Follow" would need a uterus mesh with an open cavity.
+- Physician Q1, answered 2026-09-27: the vagina label running ~27 mm up inside the HR-CTV was drawn only to connect
+  the tandem path; the vagina ends just below the HR-CTV and the tract inside it is tissue.  The model already treats
+  99.7 % of that overlap as cervix tissue, but its tet26v4 wall reaches ~27 mm above the cut; S7 will rebuild it.
+- The settle: `settle_rayleigh_stiffness`, or remove the cause (mid-wall stretch <= ~1.2, or a hyperelastic wall with
+  the geometric term); then the B + C chatter (softer k_attach, `"tube"`, or settle damping on the cervix; untested).
+- The narrowing: neither ties nor organ contact produce it; candidates lie outside the model (unsegmented bowel,
+  ligaments, label differences); tube-myometrium contact is untested.  `"two_way"` may still be adopted for contact
+  quality (+8 % runtime).  Retarget T2 / T3 to the label affine; gate T6 against BT.
+- `corpus_model` stays `"rigid"` by default: above the noise floor, nothing the elastic uterus changes moves the
+  uterus closer to BT by more than a sub-voxel amount.
+
+Reproduce (the commands give final-frame scores and overwrite `eval/<TAG>`; M121@k*, the k* values, the organ table
+and the contact force map were computed by local scratch scripts, not repo code):
+```bash
+python -P -B hybrid/test_corpus.py ; python -P -B hybrid/test_ties.py     # host: 17 + 18 tests
+APPSIM_TIMEOUT=14000 APPSIM_CPUS=4 bash run_docker_par.sh TF1v hybrid/run_hybrid.py --tag TF1v --cfg /out/hybrid/runs/_cfg/TF1v.json
+#   likewise TF1n, TF1p, TF1c, TF1cp, TF1cn (~61-66 min at 4 CPUs); isolated (3-4 min, 2 CPUs): EU3_A, EU3_C, EUISO_R0
+python -P -B hybrid/tf_metrics.py score --tag TF1v ; python -P -B hybrid/eval_hybrid.py score --tag TF1v
+```
+
 ### Commands
 
 ```bash
