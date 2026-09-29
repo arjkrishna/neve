@@ -135,6 +135,18 @@ def run_cfg(tag):
     return load_json(fn) if os.path.exists(fn) else {}
 
 
+def driven_wall_start(tag):
+    """cfg wall_drive "device" (S7b): the v5 wall's collapsed START surface (meta wall.v5.start_surface_file, same vertex
+    order as surface.obj), drawn as the vagina's reference wireframe: its surface.obj is the SEATED stress-free shape,
+    which would read as a pre-opened vagina.  None for every other run."""
+    if run_cfg(tag).get("wall_drive") != "device":
+        return None
+    m = load_json(P["meshes"] + "/vagina/meta.json")
+    fn = ((m.get("wall") or {}).get("v5") or {}).get("start_surface_file")
+    fp = "%s/vagina/%s" % (P["meshes"], fn) if fn else None
+    return geom.read_obj(fp) if fp and os.path.exists(fp) else None
+
+
 def app_json():
     return load_json(P["applicator"] + "/applicator.json")
 
@@ -159,6 +171,8 @@ def ovoid_body_on(cfg, app=None):
     "none", or a cfg device_parts list without ovoid parts.  ovoid_mode "off" is NOT tandem-only: the scene still
     loads and moves the ovoid body there, it only drops its contacts (scene_hybrid, dgrp = [])."""
     app = app if app is not None else app_json()
+    if cfg.get("ring_phases"):                          # S7f: the two ring halves, each its own body (ring_halves)
+        return True
     if bool((app.get("params", {}).get("tandem_only") or {}).get("value")):
         return False
     if cfg.get("device_ovoids") is False or cfg.get("ovoid_mode") == "none":
@@ -243,7 +257,7 @@ def phase_label(dev):
     return ph, nm
 
 
-TF_PHASES = ("V", "C", "L", "R_L", "R_R", "K1", "K2")   # fix plan S5 / S6c: phases of the tandem-first schedules
+TF_PHASES = ("V", "C", "L", "R_L", "R_R", "R_S", "K1", "K2")   # fix plan S5 / S6c: phases of the tandem-first schedules
 
 
 def is_tandem_first(tag, idx=None):
@@ -321,6 +335,16 @@ def frame_R(dev, R_default, part=None):
     if all(k in dev for k in ("x_app", "y_app", "tube_axis")):
         return np.array([dev["x_app"], dev["y_app"], dev["tube_axis"]], float)
     return np.asarray(R_default, float)
+
+
+def part_pose(dev, p, R_default):
+    """(origin, R_rows) of device part p in one frame: a ring half of cfg ring_phases (S7f) from the frame's
+    ring_halves (each half its own pose), else the ovoid body's origin / frame for OVOIDS parts and the flange / the
+    tandem frame otherwise (as every renderer placed parts before)."""
+    rh = {h.get("part"): h for h in (dev.get("ring_halves") or {}).values()}
+    if p in rh:
+        return np.asarray(rh[p]["origin_mm"], float), np.asarray(rh[p]["R_rows"], float)
+    return (ovoid_origin(dev) if p in OVOIDS else dev["flange_mm"]), frame_R(dev, R_default, p)
 
 
 def device_world(V_app, origin, R_rows):
@@ -433,6 +457,9 @@ class Scene:
         run_extra_parts(tag)                    # the run's own parts: rods / packing, or no ovoid body at all
         self.dev_app = {p: geom.read_obj(part_obj(p)) for p in TANDEM + OVOIDS}
         self.rest = {b: geom.read_obj("%s/%s/surface.obj" % (P["meshes"], b)) for b in bodies}
+        ws = driven_wall_start(tag) if "vagina" in bodies else None
+        if ws is not None:                              # S7b: the driven v5 wall's reference = its collapsed preBT
+            self.rest["vagina"] = ws                    # START, not the seated stress-free shape
         self.last = {b: geom.read_obj("%s/%s" % (self.fd, self.frames[-1]["surfaces"][b])) for b in bodies}
         # ---- the cut plane: the device's own sagittal plane (mid-point of the final tube)
         Fs = np.asarray(self.dev_last["flange_mm"], float)
@@ -553,8 +580,8 @@ class Scene:
         parts = []
         for p in TANDEM + OVOIDS:
             V, F = self.dev_app[p]
-            o = ovoid_origin(dev) if p in OVOIDS else dev["flange_mm"]
-            parts.append((p, poly(pv, device_world(V, o, frame_R(dev, self.R_rows, p)), F)))
+            o, Rp = part_pose(dev, p, self.R_rows)
+            parts.append((p, poly(pv, device_world(V, o, Rp), F)))
         for k in (0, 1):
             self.pl.subplot(0, k)
             op = OPACITY_CUT if k == 0 else OPACITY_3D
@@ -684,8 +711,9 @@ def render(tag, name=None, bodies=None, every=1, limit=None, fps=9.0, hold_last_
     sc = Scene(tag, bodies, size=size, backdrop=backdrop, zoom=zoom, clip=clip)
     n_last = idx["frames"][-1]["step"]
     sc.text(1, "oblique 3-D view from the patient's left-anterior-superior (nothing cut; bladder and sigmoid "
-               "translucent)\nrest state = faint wireframe   device = grey   Delta = %g mm%s"
-            % (idx["flange_shift_mm"], "" if OVOIDS else "   tandem only (no ring, rods or packing)"),
+               "translucent)\nrest state = faint wireframe%s   device = grey   Delta = %g mm%s"
+            % (" (vagina: its collapsed preBT start)" if driven_wall_start(tag) is not None else "",
+               idx["flange_shift_mm"], "" if OVOIDS else "   tandem only (no ring, rods or packing)"),
             "cap1", position="lower_left", font_size=8)
     pngs, fronts = [], {}
     for i, f in enumerate(fr):

@@ -302,6 +302,10 @@ def build_one(args, shared, MB):
             tcfg["tet"][k] = json.loads(v)
         else:
             cfg[k] = json.loads(v)
+    if cfg.get("lumen_profile") == "packed":         # wall v5 (fix plan S7a): its own builder; nothing below changes
+        cfg["n_theta"] = int(tcfg["profile_n_theta"])
+        cfg["_voxel_mm3"] = shared["vox"]
+        return build_one_v5(args, shared, MB, cfg, tcfg)
     cfg["n_theta"] = int(tcfg["profile_n_theta"])   # the PROFILE's theta resolution; ring node counts are chosen below
     cfg["fornix_smooth_theta"] = float(cfg["fornix_smooth_theta"]) * cfg["n_theta"] / float(tcfg["fornix_smooth_in_rays_of"])
     cfg["_voxel_mm3"] = shared["vox"]
@@ -624,6 +628,523 @@ def build_one(args, shared, MB):
     return row, meta
 
 
+# --------------------------------------------------------------------------- wall v5 (fix plan S7a): lumen_profile "packed"
+def _is_packed(args):
+    return any(kv.split("=", 1)[0] == "lumen_profile" and "packed" in kv.split("=", 1)[1] for kv in (args.set or []))
+
+
+def _v5_bt_points(PT, cfg):
+    """BT (vagina | updated applicator | ovoid) voxel centres mapped into the preBT world by validation/alignment.json
+    frames[v5_cal_frame] (y_pre = R x_BT + t: the pelvis frame).  The updated applicator label is read from
+    APPSIM_APP_LABEL, else <data>/../BT_MRI_label_applicator.nii (as applicator_venezia.py)."""
+    import nibabel as nib
+    app_lab = os.environ.get("APPSIM_APP_LABEL") or os.path.dirname(PT["data"].rstrip("/")) + "/BT_MRI_label_applicator.nii"
+    files = [PT["data"] + "/BT_MRI_label_vagina.nii", app_lab, PT["data"] + "/BT_MRI_label_ovoid.nii"]
+    m, aff = None, None
+    for fn in files:
+        im = nib.load(fn)
+        x = np.asarray(im.dataobj) > 0
+        if m is None:
+            m, aff = x, im.affine.copy()
+        else:
+            if x.shape != m.shape or not np.allclose(im.affine, aff):
+                raise SystemExit("v5 cal: %s is not on the BT vagina label's grid" % fn)
+            m |= x
+    ijk = np.argwhere(m)
+    Xbt = ijk @ aff[:3, :3].T + aff[:3, 3]
+    al = json.load(open(os.path.dirname(PT["hybrid"]) + "/validation/alignment.json"))
+    f = al["frames"][cfg["v5_cal_frame"]]
+    Rb, tb = np.asarray(f["R_BT_to_pre"], float), np.asarray(f["t_BT_to_pre"], float)
+    return Xbt @ Rb.T + tb, dict(files=files, frame=cfg["v5_cal_frame"], n_vox=int(len(ijk)),
+                                 volume_cc=round(float(len(ijk) * abs(np.linalg.det(aff[:3, :3]))) / 1000.0, 3))
+
+
+def _periodic(th_grid, vals, th):
+    n = len(th_grid)
+    x = (np.asarray(th, float) % (2.0 * np.pi)) / (2.0 * np.pi) * n
+    i0 = np.floor(x).astype(int) % n
+    f = x - np.floor(x)
+    return vals[i0] * (1.0 - f) + vals[(i0 + 1) % n] * f
+
+
+def _closed_len(P):
+    return float(np.linalg.norm(np.diff(np.r_[P, P[:1]], axis=0), axis=1).sum())
+
+
+def build_one_v5(args, shared, MB, cfg, tcfg):
+    """lumen_profile "packed": rest (seated) shape around applicator_v5 + a collapsed START shape on the same mesh
+    (start.vtk), node sets and the cervix pairing of the vault top (vagina_wall.py, WALL v5)."""
+    PT = shared["PT"]
+    cfg = VW.v5_cfg(cfg)
+    if cfg.get("fornix", False):
+        cfg["fornix"] = False                        # fix plan S7a: no ray-cast to the rest cervix (fornix_mode 'ring')
+    t0 = time.time()
+    a, c = shared["a"], shared["c"]
+    AD = PT["hybrid"] + "/" + cfg["v5_applicator_dir"]
+    appj = json.load(open(AD + "/applicator.json"))
+    pose = json.load(open(AD + "/pose.json"))
+    F = np.asarray(pose["device_final"]["flange"], float)
+    R = np.asarray(pose["device_final"]["R_rows"], float)
+    parts = list(appj.get("tandem_parts", ["tube", "shaft"])) + list(appj.get("ring_parts", []))
+    if not appj.get("ring_parts"):
+        raise SystemExit("lumen_profile 'packed' needs a ring device (applicator.json ring_parts): %s" % AD)
+    pad = max(float(cfg["v5_margin_mm"]), float(cfg["v5_margin_ant_mm"]), float(cfg["v5_vault_clear_mm"])) + 1.0
+    dev, sdf_parts = {}, []
+    for p in parts:
+        Va, Fa = geom.read_obj("%s/%s.obj" % (AD, p))
+        Va, Fa = np.asarray(Va, float), np.asarray(Fa, int)
+        Vw = F + Va @ R
+        dev[p] = (Vw, Fa, Va)
+        sdf_parts.append(VW.sdf_fast(Vw, Fa, bbox_pad=pad))
+    sdf5 = {}
+    for b in ("cervix", "bladder", "rectum", "sigmoid"):
+        Vb, Fb = geom.read_obj("%s/%s/surface.obj" % (PT["meshes"], b))
+        sdf5[b] = VW.sdf_fast(np.asarray(Vb, float), np.asarray(Fb, int))
+    # ---- START: the label below the HR-CTV, station by station; every generator ends on the cervix surface
+    tab = VW.v5_label_table(shared["X"], shared["Xf"], shared["inH"], a, c, cfg, shared["vox"])
+    tops = VW.v5_start_tops(tab, sdf5["cervix"], cfg)
+    # ---- REST: the seated shape around the device at device_final
+    ring = VW.v5_ring_geometry(appj, F, R, a, c, dev, cfg)
+    bt_pts = shared.get("bt_pts") if cfg["v5_section"] == "cal" else None
+    prof = VW.v5_rest_profile(tab, tops, dev, ring, sdf_parts, cfg, bt_pts=bt_pts)
+    W = prof["W"]
+    n_ax = int(W["n_ax"])
+    t_prof = time.time() - t0
+
+    # ---- surface + prism tets on the REST shape (the stress-free state the scene loads as tets.vtk)
+    Vs, Fs, ninfo, flab, sinfo = build_surface(W, tcfg)
+    n_open, n_nonman = VW.manifold_check(Vs, Fs)
+    surf_vol = geom.mesh_volume(Vs, Fs)
+    if n_open or n_nonman or surf_vol <= 0:
+        raise SystemExit("v5 wall surface is not a closed outward-oriented manifold: open %d nonmanifold %d volume %.1f"
+                         % (n_open, n_nonman, surf_vol))
+    if tcfg["method"] != "prism" or sinfo["prisms"] is None:
+        raise SystemExit("lumen_profile 'packed' needs method=prism (the start shape is mapped node by node)")
+    T = split_prisms(sinfo["prisms"])
+    P = Vs.copy()
+    v0 = VW.tet_volumes(P, T)
+    n_inv = int(min((v0 < 0).sum(), (v0 > 0).sum()))
+    T, nflip = MB.orient_tets(P, T)
+    q_raw = MB.tet_quality(P, T)
+    P, T, fix = MB.fix_slivers(P, T, tcfg["tet"]["sliver_target_deg"], tcfg["tet"]["sliver_max_boundary_move_mm"],
+                               tcfg["tet"]["sliver_max_passes"])
+    P, T = np.asarray(P, float), np.asarray(T, np.int64)
+    if len(P) != len(ninfo) or fix.get("dropped_nodes", 0):
+        raise SystemExit("v5: the sliver fix dropped nodes (%d of %d left); the start map needs every generated node"
+                         % (len(P), len(ninfo)))
+    info = np.array([(k, l, j) for (k, l, j, _) in ninfo], int)
+    th_node = np.array([t for (_, _, _, t) in ninfo], float)
+    st, layer = info[:, 0], info[:, 1]
+    n_in = int((layer == 0).sum())
+    partner = np.r_[np.arange(n_in) + n_in, np.arange(n_in)]
+
+    # ---- START positions: node (station k, sheet, theta) -> generator (theta, sheet) at f_k of its length
+    fk = prof["fk"]
+    top_n = np.where(layer == 0, _periodic(tops["theta"], tops["inner"], th_node),
+                     _periodic(tops["theta"], tops["outer"], th_node))
+    sig_n = fk[st] * top_n
+    Pst = np.zeros_like(P)
+    Cst = np.zeros_like(P)
+    for sh in (0, 2):
+        m = layer == sh
+        Pst[m] = VW.v5_start_points(tab, sig_n[m], th_node[m], sh)
+    Cst[:] = np.stack([np.interp(sig_n, tab["sigma"], tab["P"][:, j]) for j in range(3)], 1)
+    # ---- S7c(1) gate on the start, with the clamp (pull toward the generator axis, partner alike)
+    gate_mm, clear = float(cfg["v5_gate_mm"]), float(cfg["v5_clamp_clear_mm"])
+    gb = list(cfg["v5_gate_bodies"])
+
+    def sd_all(X):
+        return {b: sdf5[b](X) for b in gb}
+
+    d0 = sd_all(Pst)
+    gate_before = {b: dict(n_deeper_than_gate=int((d0[b] < -gate_mm).sum()), n_inside=int((d0[b] < 0).sum()),
+                           min_mm=round(float(d0[b].min()), 3)) for b in gb}
+    clamp = dict(enabled=bool(cfg["v5_clamp"]), passes=0, n_nodes=0, max_move_mm=0.0, clear_mm=clear)
+    if cfg["v5_clamp"]:
+        for _ in range(4):
+            dd = sd_all(Pst)
+            dmin = np.min(np.stack([dd[b] for b in gb]), 0)
+            bad = np.nonzero(dmin < clear)[0]
+            if not len(bad):
+                break
+            clamp["passes"] += 1
+            lam = np.ones(len(P))
+            for i in bad:
+                lo, hi = 0.0, 1.0
+                for _b in range(30):
+                    mid = 0.5 * (lo + hi)
+                    X = Cst[i] + mid * (Pst[i] - Cst[i])
+                    if min(float(sdf5[b](X[None])[0]) for b in gb) >= clear:
+                        lo = mid
+                    else:
+                        hi = mid
+                lam[i] = min(lam[i], lo)
+                lam[partner[i]] = min(lam[partner[i]], lo)
+            mv = np.nonzero(lam < 1.0)[0]
+            Pn = Cst[mv] + lam[mv, None] * (Pst[mv] - Cst[mv])
+            clamp["max_move_mm"] = max(clamp["max_move_mm"], float(np.linalg.norm(Pn - Pst[mv], axis=1).max()))
+            Pst[mv] = Pn
+            clamp["n_nodes"] += int(len(mv))
+        clamp["max_move_mm"] = round(clamp["max_move_mm"], 3)
+    d1 = sd_all(Pst)
+    gate_after = {b: dict(n_deeper_than_gate=int((d1[b] < -gate_mm).sum()), n_inside=int((d1[b] < 0).sum()),
+                          min_mm=round(float(d1[b].min()), 3)) for b in gb}
+    gate_ok = all(v["n_deeper_than_gate"] == 0 for v in gate_after.values())
+
+    # ---- quality of both shapes
+    q = MB.tet_quality(P, T)
+    vol = VW.tet_volumes(P, T)
+    dih = VW.dihedral_angles(P, T)
+    dmin = dih.min(1)
+    vol_st = VW.tet_volumes(Pst, T)
+    dih_st = VW.dihedral_angles(Pst, T)
+    start_q = dict(inverted_or_flat=int((vol_st <= 1e-9).sum()), interior_dihedral_min_deg=round(float(180.0 - dih_st.max()), 2),
+                   n_tets_interior_dihedral_lt_5deg=int(((180.0 - dih_st.max(1)) < 5.0).sum()),
+                   n_tets_interior_dihedral_lt_10deg=int(((180.0 - dih_st.max(1)) < 10.0).sum()),
+                   volume_ratio_start_over_rest=VW.stats(vol_st / np.maximum(vol, 1e-12)),
+                   wall_volume_cc=round(float(vol_st.sum()) / 1000.0, 4))
+
+    # ---- boundary faces and node sets (exact: every node is a generated ring node with its own sheet / station)
+    BF = VW.boundary_faces(T)
+    S = np.unique(BF)
+    lf = layer[BF]
+    fin, fout = np.all(lf == 0, axis=1), np.all(lf == 2, axis=1)
+    inner, outer = np.unique(BF[fin]), np.unique(BF[fout])
+    top = np.nonzero(st == n_ax - 1)[0]
+    Sk = prof["Sk"]
+    inf = np.nonzero(Sk[st] <= Sk[0] + float(cfg["fixed_inferior_mm"]))[0]
+    vault_st = np.nonzero(prof["w_vault"] >= 1.0 - 1e-9)[0]
+    vault = np.nonzero(np.isin(st, vault_st))[0]
+    sets = dict(surface_nodes=S, inner_surface=inner, outer_surface=outer, apex=top, fixed_inferior=inf,
+                vault=vault, vault_top=top, vault_top_inner=top[layer[top] == 0], vault_top_outer=top[layer[top] == 2])
+    defs = dict(
+        surface_nodes="nodes on the boundary of the tet mesh (faces used by one tet)",
+        inner_surface="nodes of the LUMEN sheet (contacts the device)",
+        outer_surface="nodes of the OUTER sheet: contacts bladder / rectum / cervix",
+        apex="= vault_top (the vagina-cervix junction ring); kept under this name for the scene's apex options",
+        fixed_inferior="nodes of the rest stations within %g mm (rest centreline arclength) of the introitus station"
+                       % cfg["fixed_inferior_mm"],
+        vault="nodes of the rest stations inside the ring span (station centre at or above the ring's bottom face along "
+              "the ring axis): lumen = ring outline + v5_vault_clear_mm",
+        vault_top="both sheets of the TOP station: at rest on the ring's top face, at the START on the cervix surface "
+                  "(signed distance v5_start_top_gap_mm); paired with the cervix in wall.v5.pairing",
+        vault_top_inner="vault_top, lumen sheet", vault_top_outer="vault_top, outer sheet")
+
+    # ---- the vault-top <-> cervix pairing (START shape vs the preBT cervix mesh)
+    from scipy.spatial import cKDTree
+    import vtk
+    cm = json.load(open("%s/cervix/meta.json" % PT["meshes"]))
+    s2n_c = np.asarray(cm["surface_obj_vertex_to_tet_node"], int)
+    Vc, Fc = geom.read_obj("%s/cervix/surface.obj" % PT["meshes"])
+    Vc, Fc = np.asarray(Vc, float), np.asarray(Fc, int)
+    dn, jn = cKDTree(Vc).query(Pst[top])
+    loc = vtk.vtkCellLocator()
+    loc.SetDataSet(MB.polydata(Vc, Fc))
+    loc.BuildLocator()
+    tri_n, bary, cp = [], [], []
+    ref = getattr(vtk, "reference", None) or vtk.mutable
+    for x in Pst[top]:
+        cpt, cid, sid, d2 = [0.0, 0.0, 0.0], ref(0), ref(0), ref(0.0)
+        loc.FindClosestPoint([float(v) for v in x], cpt, cid, sid, d2)
+        f = Fc[int(cid)]
+        M = np.c_[Vc[f[0]] - Vc[f[2]], Vc[f[1]] - Vc[f[2]]]
+        l12 = np.linalg.lstsq(M, np.asarray(cpt) - Vc[f[2]], rcond=None)[0]
+        tri_n.append(s2n_c[f].tolist())
+        bary.append([float(l12[0]), float(l12[1]), float(1.0 - l12.sum())])
+        cp.append(cpt)
+    cp = np.asarray(cp, float)
+    sd_top = sdf5["cervix"](Pst[top])
+    pairing = dict(
+        vault_top=top.tolist(), cervix_node=s2n_c[jn].tolist(), cervix_node_dist_mm=np.round(dn, 4).tolist(),
+        cervix_tri_nodes=tri_n, cervix_tri_bary=np.round(bary, 6).tolist(),
+        offset_start_mm=np.round(Pst[top] - cp, 4).tolist(), sdf_start_mm=np.round(sd_top, 4).tolist(),
+        rest_app_mm=np.round((P[top] - F) @ R.T, 4).tolist(),
+        note="per vault_top node (wall tets.vtk index): its nearest cervix SURFACE node (cervix tets.vtk index) and the "
+             "closest point on the cervix surface as a triangle of cervix tets.vtk nodes + barycentric weights, "
+             "measured at the START shape (start.vtk) against the preBT cervix (meshes/cervix); offset_start_mm = "
+             "wall node - closest point (zero-force offset of a tie at the start).  rest_app_mm = the node's REST "
+             "(seated) position in the %s applicator frame: world = flange + p_app @ R_rows of the current device pose."
+             % cfg["v5_applicator_dir"])
+
+    # ---- lengths, stretch and the vault-to-portio geometry
+    th_p = prof["th"]
+    Rin, C_r, U_r, V_r = W["r_in"], W["C"], W["U"], W["V"]
+    gen_rest = np.array([np.linalg.norm(np.diff(C_r + Rin[:, j:j + 1] * (np.cos(t) * U_r + np.sin(t) * V_r), axis=0),
+                                        axis=1).sum() for j, t in enumerate(th_p)])
+    tops_in = _periodic(tops["theta"], tops["inner"], th_p)
+    gen_start = np.array([np.linalg.norm(np.diff(VW.v5_start_points(tab, fk * tops_in[j], np.full(n_ax, t), 0), axis=0),
+                                         axis=1).sum() for j, t in enumerate(th_p)])
+    centre_rest = float(np.linalg.norm(np.diff(C_r, axis=0), axis=1).sum())
+    stretch = gen_rest / gen_start
+    zr = ring["axis"]
+    Ptop_r = P[top]
+    h_top = (Ptop_r - (F + np.array([0.0, 0.0, ring["z_top_app"] - float(cfg["v5_top_dz_mm"])]) @ R)) @ zr
+    q_rad = Ptop_r - ring["centre_w"]
+    rad_top = np.linalg.norm(q_rad - np.outer(q_rad @ zr, zr), axis=1)
+    ti, to_ = top[layer[top] == 0], top[layer[top] == 2]
+    oi = ti[np.argsort(th_node[ti])]
+    oo = to_[np.argsort(th_node[to_])]
+    per = dict(rest_inner=_closed_len(P[oi]), rest_outer=_closed_len(P[oo]), start_inner=_closed_len(Pst[oi]),
+               start_outer=_closed_len(Pst[oo]))
+    pc = np.asarray(MB.read_vtk_legacy("%s/cervix/tets.vtk" % PT["meshes"])[0], float)[s2n_c[jn]]
+    trav = P[top] - pc
+    report = dict(
+        lengths_mm=dict(rest_centreline=round(centre_rest, 2), start_centre_column=round(float(tops["centre"]), 2),
+                        centre_stretch=round(centre_rest / float(tops["centre"]), 4),
+                        rest_inner_generators=VW.stats(gen_rest, 2), start_inner_generators=VW.stats(gen_start, 2),
+                        generator_stretch=VW.stats(stretch, 4),
+                        start_top_s_mm=VW.stats(np.interp(tops["inner"], tab["sigma"], tab["s"]), 2),
+                        label_below_hrctv_s_mm=[round(float(tab["raw"]["s"][0]), 2), round(float(tab["s_clean_top"]), 2),
+                                                round(float(tab["s_below_top"]), 2)],
+                        label_below_hrctv_note="[introitus, last slab fully below the HR-CTV, highest label voxel outside "
+                                               "the HR-CTV] along the vaginal axis",
+                        start_section=tab["start_section"],
+                        rest_top_s_mm=round(ring["s_top"], 2),
+                        plan_reference="fix plan S7a: rest 77.5 mm (introitus -> seated ring top along the preBT "
+                                       "axis) vs the label outside the HR-CTV 53.8 mm: implied stretch 1.44",
+                        note="generator = one polar angle of the lumen sheet, introitus -> top station; rest length "
+                             "follows the lumen round the ring (meridian), start length along the collapsed label"),
+        volumes_cc=dict(rest_wall=round(float(vol.sum()) / 1000.0, 4), start_wall=start_q["wall_volume_cc"],
+                        start_over_rest=round(float(vol_st.sum() / vol.sum()), 4),
+                        label_below_hrctv=shared["label_cc"]),
+        vault_to_portio=dict(
+            start_top_sdf_cervix_mm=VW.stats(sd_top, 3),
+            start_top_nearest_cervix_node_mm=VW.stats(dn, 3),
+            rest_top_height_above_ring_top_face_mm=VW.stats(h_top, 3),
+            rest_top_radius_about_ring_axis_mm=VW.stats(rad_top, 3),
+            top_ring_perimeter_mm={k: round(v, 2) for k, v in per.items()},
+            top_ring_circumferential_stretch=dict(inner=round(per["rest_inner"] / per["start_inner"], 4),
+                                                  outer=round(per["rest_outer"] / per["start_outer"], 4)),
+            paired_cervix_node_to_rest_top_mm=VW.stats(np.linalg.norm(trav, axis=1), 3),
+            paired_cervix_node_to_rest_top_mean_vec_mm=np.round(trav.mean(0), 3).tolist(),
+            paired_cervix_node_to_rest_top_along_ring_axis_mm=VW.stats(trav @ zr, 3),
+            note="start: the top ring lies on the preBT cervix surface; rest: on the ring's top face at device_final. "
+                 "paired_cervix_node_to_rest_top = how far each paired preBT cervix surface node is from its wall node's "
+                 "seated position: the lift + spread the drive / ring must give the portio for the junction to stay "
+                 "closed at hand-over"),
+        curvature=dict(max_r_in_over_R_planes=round(float(prof["curv_ratio"].max()), 4),
+                       max_r_in_over_R_centreline=round(float(prof["centre_curv_ratio"].max()), 4),
+                       limit=float(cfg["v5_curv_ratio_max"]),
+                       ok=bool(prof["curv_ratio"].max() < float(cfg["v5_curv_ratio_max"])
+                               and prof["fold"]["n_pairs_crossing"] == 0),
+                       stations_over_limit_planes=[int(k) for k in np.nonzero(prof["curv_ratio"] >= float(cfg["v5_curv_ratio_max"]))[0]],
+                       stations_over_limit_centreline=[int(k) for k in np.nonzero(prof["centre_curv_ratio"]
+                                                                                  >= float(cfg["v5_curv_ratio_max"]))[0]],
+                       fold=prof["fold"], sweep=prof["sweep"],
+                       note="the G15 fold is two station planes meeting inside the wall.  R_planes = distance from a "
+                            "station centre to the line where its plane meets the next (the fold radius of the sweep; "
+                            "the verdict uses it and the direct crossing test `fold`).  R_centreline = circumradius of "
+                            "consecutive station CENTRES: where the planes are parallel (the ring span and "
+                            "v5_parallel_below_mm below it) a small value is an in-plane shift of the lumen centre "
+                            "(shear), which cannot fold the mesh; reported for the plan's r_in < 0.8 R wording"),
+        gate_S7c1=dict(ok=gate_ok, gate_mm=gate_mm, bodies=gb, before_clamp=gate_before, after_clamp=gate_after,
+                       clamp=clamp))
+    t_all = time.time() - t0
+
+    # ---- write
+    lab_cc = shared["label_cc"]
+    wall_cc = float(vol.sum()) / 1000.0
+    d = "%s/vagina_wall_%s" % (PT["meshes"], args.variant)
+    os.makedirs(d, exist_ok=True)
+    remap = -np.ones(len(P), np.int64)
+    remap[S] = np.arange(len(S))
+    Vb, Fb = P[S], remap[BF]
+    bvol = geom.mesh_volume(Vb, Fb)
+    if bvol < 0:
+        Fb = Fb[:, ::-1]
+        bvol = -bvol
+    b_open, b_nonman = VW.manifold_check(Vb, Fb)
+    VW.write_obj(d + "/surface.obj", Vb, Fb,
+                 "vagina WALL v5 surface (REST = seated around %s at device_final): boundary of tets.vtk; vertex k == "
+                 "tets.vtk point meta.surface_obj_vertex_to_tet_node[k]\n%s\nunits mm; derived from labels (local only)"
+                 % (cfg["v5_applicator_dir"], VW.FRAME))
+    VW.write_vtk_legacy(d + "/tets.vtk", P, T, "vagina wall v5 tetrahedra, REST (seated), %s" % VW.FRAME)
+    VW.write_vtk_legacy(d + "/start.vtk", Pst, T, "vagina wall v5 tetrahedra, START (collapsed label), %s" % VW.FRAME)
+    VW.write_obj(d + "/start_surface.obj", Pst[S], Fb,
+                 "vagina WALL v5 START surface (collapsed, from the label below the HR-CTV): same vertices / faces as "
+                 "surface.obj\n%s\nunits mm; derived from labels (local only)" % VW.FRAME)
+    nrm = np.cross(P[BF[fin, 1]] - P[BF[fin, 0]], P[BF[fin, 2]] - P[BF[fin, 0]])
+    radial = P[BF[fin]].mean(1) - C_r[st[BF[fin, 0]]]
+    radial -= np.einsum("ij,ij->i", radial, W["Tg"][st[BF[fin, 0]]])[:, None] * W["Tg"][st[BF[fin, 0]]]
+    inward_frac = float((np.einsum("ij,ij->i", nrm, radial) < 0).mean())
+    if inward_frac < 0.5:
+        inward_frac = 1.0 - inward_frac
+    gidx = np.c_[st, layer, info[:, 2]]
+    thick = (W["r_out"] - W["r_in"]).ravel()
+    extra = dict(inner_triangles=BF[fin].tolist(), outer_triangles=BF[fout].tolist(), n_inner_triangles=int(fin.sum()),
+                 n_outer_triangles=int(fout.sum()), n_cap_triangles=int((~fin & ~fout).sum()),
+                 apex_rings=1, inferior_rings=int(len(np.unique(st[inf]))))
+    for nm in ("cervix", "bladder", "rectum", "sigmoid"):
+        dd = sdf5[nm](P[outer])
+        extra["outer_signed_dist_to_%s_mm" % nm] = dict(min=round(float(dd.min()), 3), n_inside=int((dd < 0).sum()),
+                                                        note="REST (seated) shape vs the preBT organs: overlaps by design "
+                                                             "(fix plan S7c(1) gates the START only)")
+    gate_tets = bool(180.0 - dih.max() > float(tcfg["quality_gate_deg"]) and (vol <= 1e-9).sum() == 0)
+    r_in_st = np.array([np.linalg.norm(P[(st == k) & (layer == 0)] - P[(st == k) & (layer == 0)].mean(0), axis=1).mean()
+                        for k in range(n_ax)])
+    r_out_st = np.array([np.linalg.norm(P[(st == k) & (layer == 2)] - P[(st == k) & (layer == 0)].mean(0), axis=1).mean()
+                         for k in range(n_ax)])
+    n_th_in = np.array([int(((st == k) & (layer == 0)).sum()) for k in range(n_ax)])
+    n_th_out = np.array([int(((st == k) & (layer == 2)).sum()) for k in range(n_ax)])
+    tagv = "CALIBRATED (in-sample: mid / lower sections from this patient's BT vagina label)" if cfg["v5_section"] == "cal" \
+        else "PREDICTED / SCENARIO (device hull + margins; no BT information; packing volume 0)"
+    sta = dict(
+        rest=dict(sigma_mm=np.round(Sk, 4).tolist(), f=np.round(fk, 6).tolist(), centre=np.round(C_r, 4).tolist(),
+                  normal=np.round(W["Tg"], 6).tolist(), w_vault=np.round(prof["w_vault"], 4).tolist(),
+                  area_mm2=np.round(prof["A"], 4).tolist(), n_device_hits=prof["n_hit"].tolist(),
+                  r_device_mm=np.round(prof["r_dev"], 3).tolist(),
+                  r_bt_inner_mm=(np.round(np.nan_to_num(prof["r_bt_in"], nan=-1.0), 3).tolist()
+                                 if cfg["v5_section"] == "cal" else None),
+                  radius_planes_mm=np.round(np.minimum(prof["R_planes"], 1e6), 3).tolist(),
+                  radius_centreline_mm=np.round(np.minimum(prof["R_centre"], 1e6), 3).tolist(),
+                  r_in_max_over_R_planes=np.round(prof["curv_ratio"], 4).tolist(),
+                  r_in_max_over_R_centreline=np.round(prof["centre_curv_ratio"], 4).tolist(),
+                  below_ring=prof["below_ring"].astype(int).tolist(),
+                  kind=prof["kind"].tolist(), sweep=prof["sweep"],
+                  vault_stations=vault_st.tolist(),
+                  note="stations at uniform inner-sheet meridian length (axial_step_mm) along the rest centreline; "
+                       "station k's plane: centre, normal (= 'tangent'), basis frame_u (patient right projected) / "
+                       "frame_v = normal x frame_u; lumen r_in_theta_mm about the centre"),
+        start=dict(sigma_top_inner=np.round(tops["inner"], 4).tolist(), sigma_top_outer=np.round(tops["outer"], 4).tolist(),
+                   theta=np.round(tops["theta"], 6).tolist(), sigma_top_centre=round(float(tops["centre"]), 4),
+                   label_s_mm=np.round(tab["s"], 3).tolist(), label_sigma_mm=np.round(tab["sigma"], 4).tolist(),
+                   label_centre=np.round(tab["P"], 4).tolist(), ellipse_a_outer=np.round(tab["a_o"], 4).tolist(),
+                   ellipse_b_outer=np.round(tab["b_o"], 4).tolist(), ellipse_a_inner=np.round(tab["a_i"], 4).tolist(),
+                   ellipse_b_inner=np.round(tab["b_i"], 4).tolist(), ellipse_psi_rad=np.round(tab["psi"], 6).tolist(),
+                   area_mm2=np.round(tab["A"], 4).tolist(), n_clean_slabs=int(tab["n_clean"]),
+                   slab_basis_u=np.round(tab["U0"], 6).tolist(), slab_basis_v=np.round(tab["V0"], 6).tolist(),
+                   raw=dict((k, np.round(v, 4).tolist()) for k, v in tab["raw"].items()),
+                   note="start node (station k, sheet, theta) = generator (theta, sheet) at start arclength f_k x its "
+                        "top; generator point = label_centre(sigma) + a cos(theta - psi) e_psi + b sin(theta - psi) "
+                        "e_psi_perp in the slab plane (basis slab_basis_u / _v), sheet 0 = (a_inner, b_inner), 2 = "
+                        "(a_outer, b_outer); the top = the first contact with the cervix surface (sigma_top_*)"))
+    v5 = dict(
+        version="S7a wall v5 (lumen_profile packed)", section=cfg["v5_section"], tag=tagv,
+        applicator_dir=cfg["v5_applicator_dir"], device_final=dict(flange=F.tolist(), R_rows=R.tolist()),
+        ring=dict((k, (np.round(v, 5).tolist() if isinstance(v, np.ndarray) else v)) for k, v in ring.items()),
+        start_file="start.vtk", start_surface_file="start_surface.obj",
+        start_note="start.vtk = the same tets at the collapsed START positions; the drive (S7b) moves every node from "
+                   "start to rest (tets.vtk), which is stress-free: at hand-over the wall is at rest",
+        node_station=st.tolist(), node_sheet=layer.tolist(), node_theta_rad=np.round(th_node, 6).tolist(),
+        node_f=np.round(fk[st], 6).tolist(), node_start_sigma_mm=np.round(sig_n, 4).tolist(),
+        stations=sta, pairing=pairing, report=report, start_quality=start_q,
+        bt=shared.get("bt_info") if cfg["v5_section"] == "cal" else None,
+        profile_s=round(t_prof, 2))
+    meta = dict(
+        body=VW.BODY, priority=3, source_label="vagina", frame=VW.FRAME, units="mm; volumes cc; angles deg",
+        role="deformable HOLLOW WALL v5 (fix plan S7a): stress-free = seated around the ring device; start = the "
+             "collapsed label below the HR-CTV (start.vtk); the top ring is the vagina-cervix junction",
+        voxel_mm=shared["voxel_mm"],
+        files=dict(surface="surface.obj", tets="tets.vtk", meta="meta.json", start="start.vtk",
+                   start_surface="start_surface.obj"),
+        volumes_cc=dict(label_raw=shared["label_raw_cc"], after_priority=shared["after_priority_cc"],
+                        after_largest_component=lab_cc, surface_mesh=round(bvol / 1000.0, 4), tet_mesh=round(wall_cc, 4),
+                        start_tet_mesh=start_q["wall_volume_cc"],
+                        surface_vs_label_pct=round(100 * (bvol / 1000.0 - lab_cc) / lab_cc, 2),
+                        tet_vs_label_pct=round(100 * (wall_cc - lab_cc) / lab_cc, 2),
+                        note="rest wall area per station = the label's (at the mapped start station) with the thickness "
+                             "floor; the rest is ~1.5x longer than the start, so its volume is larger (start_over_rest)"),
+        surface=dict(tris=int(len(Fb)), verts=int(len(Vb)), open_edges=b_open, nonmanifold_edges=b_nonman,
+                     nonmanifold_vertices=0, target_edge_mm=tcfg["edge_mm"], edge_mm=VW.stats(VW.tri_edge_lengths(Vb, Fb)),
+                     area_mm2=round(float(VW.tri_areas(Vb, Fb).sum()), 1),
+                     gate_ok=bool(b_open == 0 and b_nonman == 0 and bvol > 0),
+                     inner_normals_point_into_lumen_frac=round(inward_frac, 4),
+                     input_surface=dict(verts=int(len(Vs)), tris=int(len(Fs)), open_edges=n_open, nonmanifold_edges=n_nonman,
+                                        volume_cc=round(surf_vol / 1000.0, 4),
+                                        patch_orientation_agreement=sinfo["patch_orientation_agreement"]),
+                     method="v5 analytic rest profile (vagina_wall.v5_rest_profile) sampled per ring at a uniform edge, "
+                            "rings zipped by angle, outer sheet along the lumen normal; boundary of tets.vtk"),
+        tets=dict(nodes=int(len(P)), tets=int(len(T)), surface_nodes=int(len(S)), target_edge_mm=tcfg["edge_mm"],
+                  min_dihedral_deg=round(float(dmin.min()), 2), max_dihedral_deg=round(float(dih.max()), 2),
+                  dihedral_convention="min_dihedral_deg / max_dihedral_deg use the mesh_bodies.py formula (the "
+                                      "SUPPLEMENT of the interior dihedral); the TRUE interior angles are "
+                                      "interior_dihedral_{min,max}_deg and the gate uses them.",
+                  interior_dihedral_min_deg=round(float(180.0 - dih.max()), 2),
+                  interior_dihedral_max_deg=round(float(180.0 - dmin.min()), 2),
+                  n_tets_interior_dihedral_lt_10deg=int(((180.0 - dih.max(1)) < 10.0).sum()),
+                  n_tets_interior_dihedral_lt_20deg=int(((180.0 - dih.max(1)) < 20.0).sum()),
+                  sliver_frac_min_dihedral_lt_10deg=round(float((dmin < 10.0).mean()), 5),
+                  frac_min_dihedral_lt_15deg=round(float((dmin < 15.0).mean()), 5),
+                  n_tets_min_dihedral_lt_10deg=int((dmin < 10.0).sum()),
+                  edge_mm=VW.stats(VW.tet_edge_lengths(P, T)), tet_volume_mm3=VW.stats(vol),
+                  inverted_or_flat=int((vol <= 1e-9).sum()), flipped=int(nflip), gate_ok=gate_tets,
+                  mesh_bodies_quality=q,
+                  tetgen=dict(route="prism split (Dompierre) + mesh_bodies.fix_slivers", input_surface_preserved=True,
+                              flipped=int(nflip), n_prisms=int(len(sinfo["prisms"])), n_inverted_before_orient=n_inv,
+                              offset=sinfo["offset"], normal_offset=sinfo["normal_offset"],
+                              tetgen_raw=dict(nodes=q_raw["nodes"], tets=q_raw["tets"],
+                                              min_dihedral_deg=q_raw["min_dihedral_deg"],
+                                              n_tets_min_dihedral_lt_10deg=q_raw["n_tets_min_dihedral_lt_10deg"],
+                                              note="raw = the prism split before the sliver fix"),
+                              sliver_fix=fix),
+                  start=start_q,
+                  route="v5 profile + prism split (vagina_wall_tet.py, python %s)" % sys.version.split()[0]),
+        axis=dict(centroid=np.round(c, 3).tolist(), axis=np.round(a, 5).tolist(),
+                  proj_min=round(float(tab["raw"]["s"][0]), 3), proj_max=round(float(tab["s_clean_top"]), 3),
+                  source="pose.json device_final.shaft_axis (= the vagina body's principal axis, rule v2); s range = "
+                         "the label slabs below the HR-CTV"),
+        node_set_defs=defs, node_set_extra=extra, node_set_sizes={k: int(len(v)) for k, v in sets.items()},
+        surface_obj_vertex_to_tet_node=S.tolist(), node_sets={k: np.asarray(v, int).tolist() for k, v in sets.items()},
+        wall=dict(
+            reference_state="MODELLING CHOICE: the stress-free state is the SEATED shape around the applicator (fix plan "
+                            "S7a); the start is the collapsed label.  The real wall reaches the seated shape by "
+                            "unfolding its rugae and stretching; the drive (S7b) carries it there kinematically, so axial "
+                            "wall tension is not modelled (implied stretch in v5.report.lengths_mm).",
+            mesh="prism (Dompierre) mesh of the v5 profile; grid_index = (station, sheet 0 lumen / 2 outer, rank in angle)",
+            cfg={k: v for k, v in cfg.items() if not k.startswith("_")}, tet_cfg=tcfg,
+            n_axial=n_ax, n_theta=int(max(n_th_in.max(), n_th_out.max())), n_radial=2,
+            n_theta_per_station=dict(inner=n_th_in.tolist(), outer=n_th_out.tolist()),
+            axial_step_mm=round(float(np.mean(np.diff(Sk))), 4), lumen_r0_mm=cfg["lumen_r0_mm"],
+            E_vagina_kPa=cfg["E_vagina_kPa"], nu_vagina=cfg["nu_vagina"],
+            s=np.round(Sk, 4).tolist(), s_note="v5: s = rest centreline arclength of each station from the introitus",
+            area_mm2=np.round(prof["A"], 4).tolist(), area_raw_mm2=np.round(prof["A"], 4).tolist(),
+            n_vox_per_station=[0] * n_ax,
+            r_in_mm=np.round(r_in_st, 4).tolist(), r_out_mm=np.round(r_out_st, 4).tolist(),
+            thickness_mm=np.round(r_out_st - r_in_st, 4).tolist(), thickness_stats=VW.stats(thick),
+            centreline=np.round(C_r, 4).tolist(), profile_theta_deg=np.round(np.degrees(th_p), 3).tolist(),
+            r_in_theta_mm=np.round(W["r_in"], 4).tolist(), r_out_theta_mm=np.round(W["r_out"], 4).tolist(),
+            r_in_note="r_in_mm / r_out_mm = per-station mean radii of the mesh rings; r_in_theta_mm / r_out_theta_mm = the "
+                      "analytic rest profile at profile_theta_deg (theta from patient right toward frame_v)",
+            fornix=dict(enabled=False, mode="ring", note="v5: no ray-cast to the rest cervix; the vault is the ring outline"),
+            apex_extension=dict(stations=0),
+            lumen_profile=dict(enabled=True, profile="packed", lr_angle_in_frame_deg=[0.0] * n_ax,
+                               note="frame_u IS patient right projected into each station plane, so the LR angle is 0"),
+            frame_u=np.round(U_r, 6).tolist(), frame_v=np.round(V_r, 6).tolist(), tangent=np.round(W["Tg"], 6).tolist(),
+            grid_index=gidx.tolist(),
+            grid_index_note="per node (station, sheet: 0 = lumen, 2 = outer, rank in angle within the station ring); "
+                            "every node is a generated ring node (no interior nodes)",
+            grid_index_check=dict(generated_nodes=int(len(ninfo)), same_station=int(len(ninfo)), same_layer=int(len(ninfo))),
+            centre_deviation=dict(note="v5: the rest centreline follows the device (see v5.stations.rest)"),
+            min_thickness=dict(min_thickness_mm=float(cfg["v5_min_thickness_mm"])),
+            ref_inner_perimeter_mm=round(2.0 * np.pi * cfg["lumen_r0_mm"], 4),
+            collision_note="the closed boundary is oriented OUTWARD from the tissue (positive enclosed volume), which on "
+                           "the lumen sheet points INTO the lumen -- what SOFA's TriangleCollisionModel expects.",
+            v5=v5))
+    json.dump(meta, open(d + "/meta.json", "w"), indent=1, default=VW.json_default)
+    root = VW.scene_mesh_root(PT["meshes"], "vagina_wall_%s" % args.variant)
+    row = dict(variant=args.variant, dir=os.path.basename(d), section=cfg["v5_section"], nodes=int(len(P)), tets=int(len(T)),
+               surface_nodes=int(len(S)), n_axial=n_ax, n_theta_per_station=meta["wall"]["n_theta_per_station"],
+               vol_cc=round(wall_cc, 3), start_vol_cc=start_q["wall_volume_cc"], label_cc=lab_cc,
+               thickness_mm=[round(float(thick.min()), 2), round(float(np.median(thick)), 2), round(float(thick.max()), 2)],
+               interior_dihedral_deg=[meta["tets"]["interior_dihedral_min_deg"], meta["tets"]["interior_dihedral_max_deg"]],
+               n_tets_lt_10deg=meta["tets"]["n_tets_interior_dihedral_lt_10deg"], inverted=meta["tets"]["inverted_or_flat"],
+               start_inverted=start_q["inverted_or_flat"], start_interior_dihedral_min_deg=start_q["interior_dihedral_min_deg"],
+               gate_S7c1_ok=gate_ok, gate_after=gate_after, clamp=clamp, open_edges=b_open, nonmanifold=b_nonman,
+               inner_normals_inward=round(inward_frac, 3), sets={k: int(len(v)) for k, v in sets.items()}, gate_ok=gate_tets,
+               lengths=report["lengths_mm"], vault_to_portio=report["vault_to_portio"], curvature=report["curvature"],
+               scene_root=root, total_s=round(t_all, 2),
+               tetgen_min_dihedral_deg=q_raw["min_dihedral_deg"], preserved=True)
+    print("[vagina_wall_tet] %-10s v5 %s  nodes %5d tets %6d  rest vol %.3f cc  start vol %.3f cc  interior dihedral "
+          "%.2f deg (start %.2f, inverted %d)  gate S7c(1) %s  stretch centre %.3f generators %.3f-%.3f  fold "
+          "r_in/R_planes max %.3f  %.1f s"
+          % (args.variant, cfg["v5_section"], len(P), len(T), wall_cc, start_q["wall_volume_cc"], 180.0 - dih.max(),
+             start_q["interior_dihedral_min_deg"], start_q["inverted_or_flat"], "PASS" if gate_ok else "FAIL",
+             report["lengths_mm"]["centre_stretch"], stretch.min(), stretch.max(),
+             prof["curv_ratio"].max(),
+             time.time() - t0), flush=True)
+    return row, meta
+
+
 def build(args):
     pk = args.pk or os.environ.get("APPSIM_PK")
     if pk and pk not in sys.path:
@@ -656,6 +1177,12 @@ def build(args):
         V, F = geom.read_obj("%s/%s/surface.obj" % (PT["meshes"], b))
         sdf[b] = MB.signed_distance_fn(V, F)
     shared["sdf"] = sdf
+    if _is_packed(args):                         # wall v5: the FULL vagina label (inside-HR-CTV flag) and the BT labels
+        ijk = np.argwhere(masks["vagina"])
+        shared["Xf"] = MB.v2w(aff, ijk)
+        shared["inH"] = masks["HR-CTV"][tuple(ijk.T)]
+        c5 = VW.v5_cfg({k: json.loads(v) for k, v in (kv.split("=", 1) for kv in (args.set or [])) if k.startswith("v5_")})
+        shared["bt_pts"], shared["bt_info"] = _v5_bt_points(PT, c5)
     row, meta = build_one(args, shared, MB)
     log = dict(when=time.strftime("%Y-%m-%d %H:%M:%S"), frame=VW.FRAME, units="mm; volumes cc; angles deg",
                interpreter=sys.version.split()[0], variant=row, cfg=meta["wall"]["cfg"],

@@ -749,12 +749,673 @@ def build(args):
     print("[vagina_wall] wrote %s/vagina_wall.json" % PT["logs"], flush=True)
 
 
+# =========================================================================== WALL v5 (fix plan S7a), host only
+# lumen_profile "packed" (built by vagina_wall_tet.py; nothing here runs for any other profile, and none of these
+# keys enters CFG, so every earlier build reproduces byte for byte).
+#
+#   * The vagina ENDS at the cervix (physician, Q1): the wall is built only from the vagina label BELOW the HR-CTV
+#     (a label slab is used while < v5_interface_frac of the FULL label slab lies inside the HR-CTV); the label drawn
+#     inside the HR-CTV (to connect the tandem path) is tissue, not vagina.  The top is ATTACHED to the portio: in the START
+#     shape every generator of the tube ends on the cervix surface (signed distance v5_start_top_gap_mm), and the
+#     top ring is paired with the cervix surface (nearest node + closest-point triangle) for the scene's tie.
+#   * STRESS-FREE (rest) shape = the SEATED shape around the applicator_v5 device at pose.json device_final: vault
+#     stations = the ring's outline in each station plane + v5_vault_clear_mm, the top station on the ring's top
+#     face (no cup above the ring); below the ring the convex hull of the device section + v5_margin_mm
+#     (v5_margin_ant_mm anteriorly), and for v5_section "cal" at least the BT vagina section (pelvis frame, minus
+#     the wall thickness; CALIBRATED, in-sample).  "pred" uses the device only (PREDICTED; packing volume 0 until
+#     the protocol volume is known).
+#   * START (collapsed) shape = the label, station by station (smoothed centroid, PCA ellipse of the label's area,
+#     angle), keeping its curve; the lumen is a slit (half-height v5_slit_b_mm) inside it.  Rest station k maps to
+#     the start at the same fraction f_k of the rest inner-sheet meridian length along each generator.
+#   * Wall area per station from the label, thickness floor v5_min_thickness_mm (the plan's "A(s) from the label,
+#     1.2 mm floor"); centreline smoothing v5_centre_smooth_mm; r_in < v5_curv_ratio_max x the local radius of
+#     curvature (checked, the lower guide is lengthened automatically when violated).
+CFG_V5 = dict(
+    v5_applicator_dir="applicator_v5",  # hybrid/<dir> holding the device the rest shape is built around (device_final)
+    v5_section="cal",                   # "cal" | "pred" (see above)
+    v5_vault_clear_mm=1.0,              # vault lumen = the ring outline + this (fix plan S7a)
+    v5_margin_mm=3.0,                   # below the ring: device hull + this all round ...
+    v5_margin_ant_mm=4.5,               # ... and this anteriorly (contact alarm 3.0 + 1.5)
+    v5_top_dz_mm=0.0,                   # top station height above the ring's top face (applicator z, mm); 0 = on the face
+    v5_vault_blend_mm=6.0,              # the margin blends from the vault clearance to the lower margins over this length
+                                        #   below the ring's bottom face (along the ring axis)
+    v5_parallel_below_mm=6.0,           # station planes are exactly parallel to the ring faces from this far below the
+                                        #   ring's bottom face upward; below, the normals turn to the vaginal axis
+    v5_drape_deg=45.0,                  # under the ring the lumen closes in at most as a cone of this half-angle
+    v5_hinge_clear_mm=8.0,              # the bend's hinge line stays this far outside every lumen (outer sheet)
+    v5_curv_ratio_max=0.8,              # r_in < this x the local radius of curvature (the G15 fold): checked, reported
+    v5_centre_smooth_mm=8.0,            # Gaussian sigma of the label centroids (start) and the device-hull centroids (rest)
+    v5_lab_step_mm=1.0,                 # label table spacing along the vaginal axis (slab = area_slab_mm)
+    v5_cov_smooth_mm=4.0,               # Gaussian sigma of the per-slab label covariance (PCA ellipse)
+    v5_area_smooth_mm=3.0,              # Gaussian sigma of the per-slab label area
+    v5_start_section="full",            # start tube sections from the FULL label, cut by the cervix surface | "below"
+    v5_interface_frac=0.05,             # a slab is below the HR-CTV while < this fraction of the FULL label slab is inside it
+    v5_extrap_fit_mm=8.0,               # above the last clean slab the centroid is extrapolated linearly (fit over this) ...
+    v5_extrap_mm=16.0,                  # ... this far, the section held at the mean of the last v5_extrap_hold_mm
+    v5_extrap_hold_mm=4.0,
+    v5_slit_b_mm=0.5,                   # start: collapsed lumen = a slit of this half-height inside the label section
+    v5_min_thickness_mm=1.2,            # rest: r_out >= r_in + this
+    v5_start_top_gap_mm=0.2,            # start: a generator ends where the cervix signed distance first reaches this
+    v5_ray_step_mm=0.25,                # ray sampling of the device signed distance (rest sections)
+    v5_ray_max_mm=40.0,
+    v5_guide_rays=24,                   # rays of the provisional sections (guide + meridian spacing)
+    v5_meridian_step_mm=1.0,            # provisional section spacing along the centreline for the meridian length
+    v5_r_smooth_theta=1.0,              # rays (of 72): circumferential Gaussian sigma of r_in, outward only
+    v5_r_smooth_axial=1.0,              # stations: axial Gaussian sigma of r_in, outward only
+    v5_r_smooth_iters=3,
+    v5_cal_slab_mm=1.6,                 # "cal": BT section = BT (vagina | applicator | ovoid) voxels within this slab
+    v5_cal_frame="BONE",                # "cal": BT labels mapped by validation/alignment.json frames[<this>] (pelvis frame)
+    v5_gate_mm=0.5,                     # S7c(1): 0 start nodes deeper than this inside v5_gate_bodies
+    v5_gate_bodies=["bladder", "rectum", "sigmoid", "cervix"],
+    v5_clamp=True,                      # start nodes inside a gate body are pulled toward their generator axis until
+    v5_clamp_clear_mm=0.1,              #   the signed distance is >= this (partner node scaled alike); reported
+    v5_pack_cc=0.0,                     # "pred": posterior packing volume (fix plan Q5 unanswered: 0 = device-only lumen)
+)
+
+
+def v5_cfg(cfg):
+    """The v5 defaults under `cfg` (explicit keys win).  Only for lumen_profile "packed"."""
+    out = json.loads(json.dumps(CFG_V5))
+    out.update(cfg)
+    if out.get("fornix_extend_stations", 0):
+        raise SystemExit("lumen_profile 'packed': fornix_extend_stations must be 0 (the vagina ends at the cervix)")
+    if out["v5_section"] not in ("cal", "pred"):
+        raise SystemExit("v5_section must be 'cal' or 'pred', not %r" % out["v5_section"])
+    if float(out["v5_pack_cc"]) != 0.0:
+        raise SystemExit("v5_pack_cc > 0 is not implemented (fix plan Q5 unanswered)")
+    return out
+
+
+def sdf_fast(V, F, bbox_pad=None):
+    """Signed distance to a closed oriented triangle surface (vtkImplicitPolyDataDistance, negative inside), evaluated
+    on arrays.  With bbox_pad, points farther than bbox_pad outside the surface's bounding box get +bbox_pad without a
+    vtk call (callers that only test `d <= m` with m < bbox_pad lose nothing)."""
+    import vtk
+    from vtk.util import numpy_support as ns
+    import mesh_bodies as MB
+    V = np.asarray(V, float)
+    ipd = vtk.vtkImplicitPolyDataDistance()
+    ipd.SetInput(MB.polydata(V, np.asarray(F, int)))
+    lo, hi = V.min(0), V.max(0)
+
+    def f(X):
+        X = np.ascontiguousarray(np.atleast_2d(np.asarray(X, float)))
+        out = np.empty(len(X))
+        sel = np.ones(len(X), bool)
+        if bbox_pad is not None:
+            sel = np.all((X >= lo - bbox_pad) & (X <= hi + bbox_pad), axis=1)
+            out[~sel] = float(bbox_pad)
+        if sel.any():
+            arr = ns.numpy_to_vtk(np.ascontiguousarray(X[sel]), deep=1)
+            res = vtk.vtkDoubleArray()
+            ipd.FunctionValue(arr, res)
+            out[sel] = ns.vtk_to_numpy(res)
+        return out
+    return f
+
+
+def _wsmooth(x, w, sig):
+    """Weighted Gaussian smoothing along axis 0 (x (n, ...), weights (n,)), reflected ends."""
+    x = np.asarray(x, float)
+    w = np.asarray(w, float)
+    sh = x.shape
+    X = x.reshape(len(x), -1)
+    den = gsmooth(w, sig)
+    out = np.stack([gsmooth(w * X[:, j], sig) for j in range(X.shape[1])], 1) / np.maximum(den, 1e-12)[:, None]
+    return out.reshape(sh)
+
+
+def _ring_smooth(r, sig):
+    """Circular Gaussian smoothing of r (..., n_theta) along the last axis."""
+    if sig <= 0:
+        return np.asarray(r, float).copy()
+    n = r.shape[-1]
+    return np.array([gsmooth(np.r_[v, v, v], sig)[n:2 * n] for v in np.atleast_2d(r)]).reshape(r.shape)
+
+
+def _slab_stats(S, L, sk, half, vox):
+    n = len(sk)
+    nv, A, cen, cov = np.zeros(n), np.zeros(n), np.zeros((n, 2)), np.zeros((n, 2, 2))
+    for k, s in enumerate(sk):
+        m = np.abs(S - s) <= half
+        nv[k] = float(m.sum())
+        A[k] = nv[k] * vox / (2.0 * half)
+        if nv[k] >= 1:
+            cen[k] = L[m].mean(0)
+            d = L[m] - cen[k]
+            cov[k] = d.T @ d / nv[k]
+    return nv, A, cen, cov
+
+
+def v5_label_table(Xb, Xf, inH, a, c, cfg, vox):
+    """The START tube from the label, per slab along the vaginal axis a (s from the label centroid c).
+
+    v5_start_section "full" (default): section centroid / PCA ellipse / area from the FULL vagina label, a continuous
+    tube through the vagina-HR-CTV interface; the cervix surface then cuts every generator (v5_start_tops), so the
+    start keeps the label's part below the HR-CTV -- an oblique interface ends each side at its own height -- and
+    ends on the portio.  "below": the label after priority (outside the
+    HR-CTV) up to the last clean slab, then extrapolated (centroid linear, section held).
+    Either way the WALL area (rest thickness) comes from the label outside the HR-CTV: slabs up to the last with
+    < v5_interface_frac of the full label slab inside the HR-CTV, held above.  Lateral coordinates are in the slab
+    plane: (U0, V0) = (patient right, a x right ~ anterior)."""
+    U0 = geom.ortho(np.array([1.0, 0.0, 0.0]), a)
+    V0 = np.cross(a, U0)
+    sb = (Xb - c) @ a
+    lb = np.c_[(Xb - c) @ U0, (Xb - c) @ V0]
+    sf = (Xf - c) @ a
+    lf = np.c_[(Xf - c) @ U0, (Xf - c) @ V0]
+    half = 0.5 * float(cfg["area_slab_mm"])
+    step = float(cfg["v5_lab_step_mm"])
+    full = cfg.get("v5_start_section", "full") == "full"
+    sk = np.arange(float(sb.min()), float((sf if full else sb).max()) + 1e-9, step)
+    n = len(sk)
+    nv, A, cen, cov = _slab_stats(sb, lb, sk, half, vox)
+    nf, Af, cenf, covf = _slab_stats(sf, lf, sk, half, vox)
+    fin = np.array([float(inH[np.abs(sf - s) <= half].mean()) if (np.abs(sf - s) <= half).any() else 0.0 for s in sk])
+    thr = float(cfg["v5_interface_frac"])
+    k_mid = int(np.argmin(np.abs(sk - 0.5 * (sk[0] + float(sb.max())))))
+    bad = np.nonzero(fin[k_mid:] >= thr)[0]
+    kc = int(k_mid + bad[0] - 1) if len(bad) else int(np.nonzero(nv > 0)[0][-1])
+    s_c = sk[:kc + 1]
+    hold = s_c >= s_c[-1] - float(cfg["v5_extrap_hold_mm"])
+    A_w = gsmooth(A[:kc + 1], float(cfg["v5_area_smooth_mm"]) / step)
+    wh = nv[:kc + 1][hold] / max(nv[:kc + 1][hold].sum(), 1e-12)
+    if full:
+        w = nf
+        cen_all = _wsmooth(cenf, w, float(cfg["v5_centre_smooth_mm"]) / step)
+        cov_all = _wsmooth(covf, w, float(cfg["v5_cov_smooth_mm"]) / step)
+        A_sec = gsmooth(Af, float(cfg["v5_area_smooth_mm"]) / step)
+        s_all = sk
+        A_all = np.r_[A_w, np.full(n - kc - 1, float((A_w[hold] * wh).sum()))]
+    else:
+        w = nv[:kc + 1]
+        cen_s = _wsmooth(cen[:kc + 1], w, float(cfg["v5_centre_smooth_mm"]) / step)
+        cov_s = _wsmooth(cov[:kc + 1], w, float(cfg["v5_cov_smooth_mm"]) / step)
+        n_ext = int(round(float(cfg["v5_extrap_mm"]) / step))
+        fit = s_c >= s_c[-1] - float(cfg["v5_extrap_fit_mm"])
+        s_e = s_c[-1] + step * np.arange(1, n_ext + 1)
+        cen_e = np.stack([np.polyval(np.polyfit(s_c[fit], cen_s[fit, j], 1, w=np.sqrt(w[fit] + 1e-9)), s_e)
+                          for j in range(2)], 1)
+        cov_e = np.tile((cov_s[hold] * wh[:, None, None]).sum(0), (n_ext, 1, 1))
+        s_all = np.r_[s_c, s_e]
+        cen_all = np.vstack([cen_s, cen_e])
+        cov_all = np.concatenate([cov_s, cov_e])
+        A_all = np.r_[A_w, np.full(n_ext, float((A_w[hold] * wh).sum()))]
+        A_sec = A_all
+    # ---- PCA ellipse of the section's area per slab; the major-axis angle unwrapped mod pi (no 180 deg flips)
+    ev, evec = np.linalg.eigh(cov_all)
+    lam1 = np.maximum(ev[:, 1], 1e-6)
+    lam2 = np.maximum(ev[:, 0], 1e-6)
+    psi = np.arctan2(evec[:, 1, 1], evec[:, 0, 1])
+    for k in range(1, len(psi)):
+        while psi[k] - psi[k - 1] > np.pi / 2:
+            psi[k] -= np.pi
+        while psi[k] - psi[k - 1] < -np.pi / 2:
+            psi[k] += np.pi
+    a0, b0 = 2.0 * np.sqrt(lam1), 2.0 * np.sqrt(lam2)
+    q = np.sqrt(np.maximum(A_sec, 1e-6) / (np.pi * a0 * b0))
+    a_o, b_o = q * a0, q * b0
+    bi = float(cfg["v5_slit_b_mm"])
+    tmin = float(cfg["v5_min_thickness_mm"])
+    b_o = np.maximum(b_o, bi + tmin)
+    a_o = np.maximum(a_o, b_o)
+    a_i = np.maximum(a_o - (b_o - bi), 1.0)
+    P = c[None, :] + s_all[:, None] * a[None, :] + cen_all[:, 0:1] * U0[None, :] + cen_all[:, 1:2] * V0[None, :]
+    sig = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(P, axis=0), axis=1))]
+    return dict(U0=U0, V0=V0, a=a, c=c, step=step, s=s_all, sigma=sig, P=P, cen=cen_all, cov=cov_all, A=A_all,
+                A_section=A_sec, a_o=a_o, b_o=b_o, a_i=a_i, b_i=np.full(len(s_all), bi), psi=psi, n_clean=kc + 1,
+                s_clean_top=float(s_c[-1]), s_below_top=float(sb.max()), start_section="full" if full else "below",
+                raw=dict(s=sk, n_vox_below_hrctv=nv, area_below_hrctv_mm2=A, n_vox_full=nf, area_full_mm2=Af,
+                         frac_full_label_in_hrctv=fin, centroid_below=cen, centroid_full=cenf))
+
+
+def v5_start_points(tab, sig, th, sheet):
+    """Start-shape points: generator (theta, sheet) at start arclength sig (arrays broadcast together).
+    Parametric ellipse per slab: p = a cos(th - psi) e_psi + b sin(th - psi) e_psi_perp in the slab plane, so a rest
+    node at polar angle th (from patient right toward anterior) keeps its angular order in the start."""
+    sig = np.asarray(sig, float)
+    th = np.asarray(th, float) + np.zeros_like(sig)
+    S = tab["sigma"]
+    pick = (lambda v: np.interp(sig, S, v))
+    C = np.stack([pick(tab["P"][:, j]) for j in range(3)], -1)
+    psi = pick(tab["psi"])
+    if sheet == 0:
+        A, B = pick(tab["a_i"]), pick(tab["b_i"])
+    else:
+        A, B = pick(tab["a_o"]), pick(tab["b_o"])
+    t = th - psi
+    ep = np.cos(psi)[..., None] * tab["U0"] + np.sin(psi)[..., None] * tab["V0"]
+    eq = -np.sin(psi)[..., None] * tab["U0"] + np.cos(psi)[..., None] * tab["V0"]
+    return C + (A * np.cos(t))[..., None] * ep + (B * np.sin(t))[..., None] * eq
+
+
+def v5_start_tops(tab, sdf_cervix, cfg, n_th=144, dsig=0.2):
+    """Start arclength at which each generator (theta grid, sheet 0/2) and the centre column first reach the cervix
+    surface (signed distance <= v5_start_top_gap_mm), marching up from the introitus; linear refinement."""
+    gap = float(cfg["v5_start_top_gap_mm"])
+    S = np.arange(0.0, float(tab["sigma"][-1]) + 1e-9, dsig)
+    th = 2.0 * np.pi * np.arange(n_th) / n_th
+    out = {}
+    for sheet in (0, 2, -1):
+        if sheet == -1:
+            pts = np.stack([np.interp(S, tab["sigma"], tab["P"][:, j]) for j in range(3)], -1)[None]
+        else:
+            pts = v5_start_points(tab, S[None, :], th[:, None], sheet)
+        d = sdf_cervix(pts.reshape(-1, 3)).reshape(pts.shape[:2]) - gap
+        top = np.full(len(d), np.nan)
+        for i, row in enumerate(d):
+            hit = np.nonzero(row <= 0.0)[0]
+            if not len(hit):
+                continue
+            j = int(hit[0])
+            top[i] = S[j] if j == 0 else S[j - 1] + dsig * row[j - 1] / max(row[j - 1] - row[j], 1e-12)
+        out[sheet] = top
+    if np.isnan(out[0]).any() or np.isnan(out[2]).any() or np.isnan(out[-1]).any():
+        raise SystemExit("v5 start: %d generators never reach the cervix within the extrapolated label (raise "
+                         "v5_extrap_mm)" % int(np.isnan(out[0]).sum() + np.isnan(out[2]).sum() + np.isnan(out[-1]).sum()))
+    return dict(theta=th, inner=out[0], outer=out[2], centre=float(out[-1][0]), dsig=dsig, gap_mm=gap)
+
+
+def _polar_hull(P2, th):
+    """Polar radius at angles th of the convex hull of 2-D points P2 about the origin (inside the hull), and the
+    hull's area centroid."""
+    from scipy.spatial import ConvexHull
+    h = ConvexHull(P2)
+    Vh = P2[h.vertices]
+    Bh = np.roll(Vh, -1, axis=0)
+    E = Bh - Vh
+    d = np.c_[np.cos(th), np.sin(th)]
+    den = d[:, 0, None] * E[None, :, 1] - d[:, 1, None] * E[None, :, 0]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = (Vh[None, :, 0] * E[None, :, 1] - Vh[None, :, 1] * E[None, :, 0]) / den
+        u = (Vh[None, :, 0] * d[:, 1, None] - Vh[None, :, 1] * d[:, 0, None]) / den
+    ok = np.isfinite(t) & (t > 0) & (u >= -1e-9) & (u <= 1 + 1e-9)
+    r = np.where(ok, t, np.inf).min(1)
+    cr = Vh[:, 0] * Bh[:, 1] - Bh[:, 0] * Vh[:, 1]
+    ar = 0.5 * cr.sum()
+    cxy = ((Vh + Bh) * cr[:, None]).sum(0) / (6.0 * ar)
+    return r, cxy
+
+
+def _polar_poly_centroid(r, th):
+    x, y = r * np.cos(th), r * np.sin(th)
+    x2, y2 = np.roll(x, -1), np.roll(y, -1)
+    cr = x * y2 - x2 * y
+    ar = 0.5 * cr.sum()
+    return np.array([((x + x2) * cr).sum(), ((y + y2) * cr).sum()]) / (6.0 * ar)
+
+
+def v5_frame(n):
+    """Station basis: U = patient right projected into the plane normal to n, V = n x U (anterior for n superior)."""
+    U = geom.ortho(np.array([1.0, 0.0, 0.0]), n)
+    return U, np.cross(n, U)
+
+
+def _device_hits(C, U, V, th, sdf_parts, margin, cfg):
+    """Along each ray (angle th in the plane (U, V) through C) the OUTERMOST point whose device signed distance is
+    <= margin(th): points of the margin-offset device surface.  Returns r (n_th,) and a hit mask."""
+    step, rmax = float(cfg["v5_ray_step_mm"]), float(cfg["v5_ray_max_mm"])
+    rs = np.arange(0.0, rmax + 1e-9, step)
+    D = np.cos(th)[:, None] * U[None, :] + np.sin(th)[:, None] * V[None, :]
+    X = (C[None, None, :] + rs[None, :, None] * D[:, None, :]).reshape(-1, 3)
+    d = np.full(len(X), np.inf)
+    for f in sdf_parts:
+        d = np.minimum(d, f(X))
+    d = d.reshape(len(th), len(rs)) - np.asarray(margin, float)[:, None]
+    idx = np.where(d <= 0.0, np.arange(len(rs))[None, :], -1).max(1)
+    has = idx >= 0
+    j = np.clip(idx, 0, len(rs) - 2)
+    d0, d1 = d[np.arange(len(th)), j], d[np.arange(len(th)), j + 1]
+    r = np.zeros(len(th))
+    r[has] = rs[j[has]] + step * np.clip(-d0[has] / np.maximum(d1[has] - d0[has], 1e-12), 0.0, 1.0)
+    return r, has
+
+
+def v5_section(C, n, sdf_parts, margin, th, cfg, bt=None, area=0.0, recentre=2, bt_weight=1.0):
+    """Lumen of one rest station: the plane through C with normal n, polar about an in-plane centre.
+
+    device: the convex hull of the margin-offset device section (_device_hits) + a 2 mm disc about the centre (so
+    the centre is always inside).  bt (optional, BT points already restricted to a slab about the plane): the polar
+    outline of the BT section minus the wall thickness, sqrt(r_BT^2 - area/pi), as a second lower bound ("cal").
+    The polar centre is moved IN-PLANE to the lumen's area centroid `recentre` times (the plane itself never moves).
+    Returns the centre, r_in, r_dev, r_bt_in (or None), the frame and the hit count."""
+    U, V = v5_frame(n)
+    C = np.asarray(C, float).copy()
+    disc = 2.0 * np.c_[np.cos(th), np.sin(th)]
+    for it in range(int(recentre) + 1):
+        r_hit, has = _device_hits(C, U, V, th, sdf_parts, margin, cfg)
+        P2 = np.c_[r_hit * np.cos(th), r_hit * np.sin(th)][has]
+        r_dev, _ = _polar_hull(np.vstack([P2, disc]), th)
+        r_in, r_bt = r_dev.copy(), None
+        if bt is not None and len(bt) >= 10:
+            q = bt - C[None, :]
+            x, y = q @ U, q @ V
+            rho, ang = np.hypot(x, y), np.arctan2(y, x) % (2.0 * np.pi)
+            nb = len(th)
+            b = (np.round(ang / (2.0 * np.pi) * nb).astype(int)) % nb
+            rb = np.full(nb, np.nan)
+            for i in range(nb):
+                m = b == i
+                if m.any():
+                    rb[i] = rho[m].max()
+            if np.isfinite(rb).sum() >= nb // 3:
+                ok = np.isfinite(rb)
+                xi = np.nonzero(ok)[0]
+                rb = np.interp(np.arange(nb), np.r_[xi - nb, xi, xi + nb], np.r_[rb[ok], rb[ok], rb[ok]])
+                rb = _ring_smooth(rb, 1.0)
+                r_bt = np.sqrt(np.maximum(rb ** 2 - float(area) / np.pi, 0.0))
+                r_in = r_dev + float(bt_weight) * np.maximum(r_bt - r_dev, 0.0)   # blends into the vault
+        cen = _polar_poly_centroid(r_in, th)
+        if it < int(recentre) and np.hypot(*cen) > 0.25:
+            C = C + cen[0] * U + cen[1] * V
+            continue
+        break
+    return dict(C=C, r_in=r_in, r_dev=r_dev, r_bt_in=r_bt, centroid=cen, n_hit=int(has.sum()), U=U, V=V)
+
+
+def v5_margin(th, w_vault, cfg):
+    """Device clearance per ray: the vault clearance where w_vault = 1, the lower margins (anterior larger) where 0."""
+    m_lo = float(cfg["v5_margin_mm"]) + (float(cfg["v5_margin_ant_mm"]) - float(cfg["v5_margin_mm"])) \
+        * np.maximum(0.0, np.sin(th)) ** 2
+    return w_vault * float(cfg["v5_vault_clear_mm"]) + (1.0 - w_vault) * m_lo
+
+
+def _repolar(r, th, dc):
+    """Polar radius at angles th, about the point dc (2-D, same plane), of the closed polygon r(th) given about the
+    origin: the OUTERMOST crossing of each new ray with the polygon (star-shaped about dc for the lumens here)."""
+    Vh = np.c_[r * np.cos(th), r * np.sin(th)] - np.asarray(dc, float)[None, :]
+    Bh = np.roll(Vh, -1, axis=0)
+    E = Bh - Vh
+    d = np.c_[np.cos(th), np.sin(th)]
+    den = d[:, 0, None] * E[None, :, 1] - d[:, 1, None] * E[None, :, 0]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = (Vh[None, :, 0] * E[None, :, 1] - Vh[None, :, 1] * E[None, :, 0]) / den
+        u = (Vh[None, :, 0] * d[:, 1, None] - Vh[None, :, 1] * d[:, 0, None]) / den
+    ok = np.isfinite(t) & (t > 0) & (u >= -1e-9) & (u <= 1 + 1e-9)
+    out = np.where(ok, t, -np.inf).max(1)
+    if not np.isfinite(out).all():
+        raise SystemExit("v5: a lumen polygon is not star-shaped about its smoothed centre")
+    return out
+
+
+def _resample(P, step):
+    sig = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(P, axis=0), axis=1))]
+    keep = np.r_[True, np.diff(sig) > 1e-9]
+    P, sig = P[keep], sig[keep]
+    S = np.linspace(0.0, sig[-1], max(2, int(np.ceil(sig[-1] / step)) + 1))
+    return np.stack([np.interp(S, sig, P[:, j]) for j in range(3)], 1), S
+
+
+def v5_ring_geometry(appj, F, R, a, c, dev_world, cfg):
+    """Ring frame at device_final from applicator.json landmarks (all in the applicator frame): centre, axis (= the
+    tube axis), top / bottom face heights, and the lowest point of the ring DISC along the vaginal axis."""
+    lm = appj["landmarks"]
+    rc_app = np.asarray(lm["ring_centre"], float)
+    z_top = float(lm["ring_top_face_z"]) + float(cfg["v5_top_dz_mm"])
+    z_bot = float(lm["ring_bottom_face_z"])
+    zr = geom.unit(R[2])
+    rc = F + rc_app @ R
+    top = F + np.array([rc_app[0], rc_app[1], z_top]) @ R
+    disc = []
+    for p in ("ovoid_L", "ovoid_R"):
+        Vw, Va = dev_world[p][0], dev_world[p][2]
+        disc.append(Vw[Va[:, 2] >= z_bot - 0.5])
+    disc = np.vstack(disc)
+    return dict(centre_app=rc_app, centre_w=rc, top_w=top, axis=zr, z_top_app=z_top, z_bot_app=z_bot,
+                z_centre_app=float(rc_app[2]), outer_r_mm=float(lm.get("ring_outer_r", np.nan)),
+                s_disc_min=float(((disc - c) @ a).min()), s_top=float((top - c) @ a))
+
+
+def v5_rest_sweep(tab, ring, sdf_parts, cfg, bt_pts=None):
+    """The rest station planes as ONE parameter u (mm):
+      lower   u in [0, L1]          planes normal to the vaginal axis a at s = s_lo + u (introitus = the start's plane);
+      bend    u in [L1, L1 + L2]    planes rotating about ONE hinge line H (direction a x z_ring), from normal a to
+                                    normal z_ring; H lies on the concave (anterior) side OUTSIDE every lumen by
+                                    v5_hinge_clear_mm, so two planes can only meet on H, never inside the wall;
+      upper   u in [.., L1+L2+L3]   planes parallel to the ring's faces (normal z_ring) from v5_parallel_below_mm
+                                    below the ring's bottom face up to the top station on its top face.
+    H is fixed by the two joins (it lies in the last lower plane and the first upper plane); its clearance from the
+    lumen sets how low the bend starts.  Each plane carries a reference point (lumen centroid below, the arc of
+    radius R_c about H in the bend, the ring axis above); the section is re-centred in-plane from there."""
+    a, c, U0, V0 = tab["a"], tab["c"], tab["U0"], tab["V0"]
+    zr, P_rc = ring["axis"], ring["centre_w"]
+    k = geom.unit(np.cross(a, zr))
+    b = np.cross(k, a)                                          # in the bend plane, normal to a, toward z_ring's lean
+    al_max = float(np.arccos(np.clip(a @ zr, -1.0, 1.0)))
+    h_par = (ring["z_bot_app"] - ring["z_centre_app"]) - float(cfg["v5_parallel_below_mm"])
+    h_top = ring["z_top_app"] - ring["z_centre_app"]
+    P_par = P_rc + h_par * zr
+    s_par = float((P_par - c) @ a)
+    s_lo = float(tab["raw"]["s"][0])
+    # ---- lower pass: lumen centroid and anterior (b) reach in planes normal to a, introitus -> s_par
+    ss = np.arange(s_lo, s_par + 1e-9, 1.0)
+    thg = 2.0 * np.pi * np.arange(int(cfg["v5_guide_rays"])) / int(cfg["v5_guide_rays"])
+    marg = v5_margin(thg, 0.0, cfg)
+    cal = cfg["v5_section"] == "cal" and bt_pts is not None
+    lat = np.zeros((len(ss), 2))
+    reach_b = np.zeros(len(ss))
+    for i, s in enumerate(ss):
+        C0 = c + s * a + np.interp(s, tab["s"], tab["cen"][:, 0]) * U0 + np.interp(s, tab["s"], tab["cen"][:, 1]) * V0
+        bt = bt_pts[np.abs((bt_pts - C0) @ a) <= 0.5 * float(cfg["v5_cal_slab_mm"])] if cal else None
+        A = float(np.interp(s, tab["s"], tab["A"]))
+        sec = v5_section(C0, a, sdf_parts, marg, thg, cfg, bt=bt, area=A)
+        q = sec["C"] - c
+        lat[i] = [q @ U0, q @ V0]
+        r_o = np.sqrt(sec["r_in"] ** 2 + A / np.pi) + float(cfg["v5_min_thickness_mm"])
+        X = sec["C"][None, :] + r_o[:, None] * (np.cos(thg)[:, None] * sec["U"] + np.sin(thg)[:, None] * sec["V"])
+        reach_b[i] = float(((X - c) @ b).max())
+    lat = np.stack([gsmooth(lat[:, j], float(cfg["v5_centre_smooth_mm"])) for j in range(2)], 1)
+    # ---- the hinge: H = P_par + p a + q b with p = s1 - s_par, q = -p cot(al_max); lower s1 until H clears the lumen
+    clear = float(cfg["v5_hinge_clear_mm"])
+    s1 = s_par - 2.0
+    while True:
+        p = s1 - s_par
+        qh = -p / np.tan(al_max)
+        H = P_par + p * a + qh * b
+        need = float(reach_b[ss >= s1 - 1e-9].max() - (H - c) @ b) + clear
+        if need <= 0.0 or s1 - 1.0 < s_lo + 4.0:
+            break
+        s1 -= 1.0
+    C1 = c + s1 * a + np.interp(s1, ss, lat[:, 0]) * U0 + np.interp(s1, ss, lat[:, 1]) * V0
+    e0 = C1 - H
+    e0 -= (e0 @ k) * k + (e0 @ a) * a
+    R_c = float(np.linalg.norm(e0))
+    e0 /= R_c
+    kx = float((C1 - H) @ k)
+    L1, L2, L3 = s1 - s_lo, al_max * R_c, h_top - h_par
+
+    def plane(u):
+        if u <= L1:
+            s = s_lo + u
+            return c + s * a + np.interp(s, ss, lat[:, 0]) * U0 + np.interp(s, ss, lat[:, 1]) * V0, a.copy(), "lower"
+        if u <= L1 + L2:
+            al = (u - L1) / R_c
+            Rk = geom.rodrigues(k, np.degrees(al))
+            return H + kx * k + R_c * (Rk @ e0), geom.unit(Rk @ a), "bend"
+        h = h_par + (u - L1 - L2)
+        return P_rc + h * zr, zr.copy(), "upper"
+
+    return dict(plane=plane, L=L1 + L2 + L3, L1=L1, L2=L2, L3=L3, H=H, k=k, e0=e0, R_c=R_c, s1=float(s1),
+                s_par=s_par, h_par=h_par, h_top=h_top, alpha_max_deg=float(np.degrees(al_max)),
+                hinge_clear_needed_mm=float(need), lower_s=ss, lower_lat=lat, reach_b=reach_b)
+
+
+def _drape(r, C, n, below, slope):
+    """Top-down: a station below the ring may close in by at most slope x (plane spacing) per station (a cone of
+    half-angle atan(slope) hanging from the ring's underside instead of a horizontal shelf).  Outward only."""
+    r = r.copy()
+    for k in range(len(r) - 2, -1, -1):
+        if not below[k]:
+            continue
+        dh = max(float((C[k + 1] - C[k]) @ n[k + 1]), 0.0)
+        r[k] = np.maximum(r[k], r[k + 1] - slope * dh)
+    return r
+
+
+def _smooth_out(r, cfg, axial_scale, fixed=None):
+    """Outward-only smoothing of r (n_st, n_th): circular (v5_r_smooth_theta rays of 72) and axial (v5_r_smooth_axial
+    x axial_scale stations), re-imposing r >= the input each pass -- never into the device.  Stations flagged in
+    `fixed` (the ring span: lumen = ring outline + clearance exactly) are smoothed circumferentially only."""
+    bound = r.copy()
+    fixed = np.zeros(len(r), bool) if fixed is None else np.asarray(fixed, bool)
+    for _ in range(int(cfg["v5_r_smooth_iters"])):
+        sm = _ring_smooth(r, float(cfg["v5_r_smooth_theta"]) * r.shape[1] / 72.0)
+        if float(cfg["v5_r_smooth_axial"]) > 0:
+            ax = np.array([gsmooth(v, float(cfg["v5_r_smooth_axial"]) * axial_scale) for v in sm.T]).T
+            sm = np.where(fixed[:, None], sm, ax)
+        r = np.maximum(sm, bound)
+    return r
+
+
+def v5_rest_profile(tab, tops, dev, ring, sdf_parts, cfg, bt_pts=None):
+    """Rest stations and the analytic rest lumen.
+
+    Planes: v5_rest_sweep -- normal to the vaginal axis from the introitus (the start's plane there), rotating about
+    one hinge line outside the lumen, and EXACTLY parallel to the ring's faces from v5_parallel_below_mm below the
+    ring upward (no plane slices the ring's flat faces obliquely).  Stations at uniform inner-sheet meridian distance
+    (axial_step_mm).  Lumen per station = v5_section with the vault clearance inside the ring span, blending to the
+    lower margins below it; under the ring the lumen may close in only as a v5_drape_deg cone; outward-only smoothing.
+    Returns the W dict vagina_wall_tet.build_surface consumes plus the v5 tables and the fold checks."""
+    n_th = int(cfg["n_theta"])
+    th = 2.0 * np.pi * np.arange(n_th) / n_th
+    thg = 2.0 * np.pi * np.arange(int(cfg["v5_guide_rays"])) / int(cfg["v5_guide_rays"])
+    a, zr, P_rc = tab["a"], ring["axis"], ring["centre_w"]
+    z_bot_rel = ring["z_bot_app"] - ring["z_centre_app"]
+    blend = float(cfg["v5_vault_blend_mm"])
+    slope = 1.0 / np.tan(np.radians(float(cfg["v5_drape_deg"])))
+    cal = cfg["v5_section"] == "cal" and bt_pts is not None
+    sp = v5_rest_sweep(tab, ring, sdf_parts, cfg, bt_pts)
+    S = np.array([0.0, sp["L"]])
+
+    def normal(sv):
+        return sp["plane"](sv)[1]
+
+    def point(sv):
+        return sp["plane"](sv)[0]
+
+    def w_vault(C):
+        h = float((C - P_rc) @ zr)
+        return float(np.clip((h - (z_bot_rel - blend)) / blend, 0.0, 1.0))
+
+    def sections(Svals, thv, recentre):
+        out = []
+        for sv in Svals:
+            C0, n = point(sv), normal(sv)
+            wv = w_vault(C0)
+            f = float(np.clip(sv / S[-1], 0.0, 1.0))
+            A = float(np.interp(f * tops["centre"], tab["sigma"], tab["A"]))
+            bt = None
+            if cal and wv < 1.0:
+                bt = bt_pts[np.abs((bt_pts - C0) @ n) <= 0.5 * float(cfg["v5_cal_slab_mm"])]
+            sec = v5_section(C0, n, sdf_parts, v5_margin(thv, wv, cfg), thv, cfg, bt=bt, area=A, recentre=recentre,
+                             bt_weight=1.0 - wv)
+            sec.update(n=n, w_vault=wv, area=A, below=bool(float((C0 - P_rc) @ zr) < z_bot_rel))
+            out.append(sec)
+        return out
+
+    # ---- provisional sections -> meridian distance -> stations
+    Sp = np.arange(0.0, S[-1] + 1e-9, float(cfg["v5_meridian_step_mm"]))
+    if Sp[-1] < S[-1] - 1e-6:
+        Sp = np.r_[Sp, S[-1]]
+    pv = sections(Sp, thg, 2)
+    Cp, Np = np.array([q["C"] for q in pv]), np.array([q["n"] for q in pv])
+    rp = _smooth_out(_drape(np.array([q["r_in"] for q in pv]), Cp, Np, np.array([q["below"] for q in pv]), slope), cfg,
+                     float(cfg["axial_step_mm"]) / float(cfg["v5_meridian_step_mm"]),
+                     fixed=np.array([not q["below"] for q in pv]))
+    # meridian distance between provisional sections: plane gap (along the upper normal) and mean-radius change --
+    # blind to the in-plane re-centring, whose jitter would otherwise bunch the stations
+    dhp = np.array([max(float((Cp[k + 1] - Cp[k]) @ Np[k + 1]), 0.0) for k in range(len(pv) - 1)])
+    dm = np.hypot(dhp, np.diff(rp.mean(1)))
+    Sm = np.r_[0.0, np.cumsum(dm)]
+    n_ax = max(8, int(round(Sm[-1] / float(cfg["axial_step_mm"]))) + 1)
+    Sk = np.interp(np.linspace(0.0, Sm[-1], n_ax), Sm, Sp)
+    fk = np.linspace(0.0, 1.0, n_ax)                        # fraction of the inner meridian (rest -> start map)
+    # ---- final sections
+    fs = sections(Sk, th, 2)
+    C = np.array([q["C"] for q in fs])
+    Tn = np.array([q["n"] for q in fs])
+    U = np.array([q["U"] for q in fs])
+    V = np.array([q["V"] for q in fs])
+    r_dev = np.array([q["r_dev"] for q in fs])
+    r_bt = np.array([q["r_bt_in"] if q["r_bt_in"] is not None else np.full(n_th, np.nan) for q in fs])
+    below = np.array([q["below"] for q in fs])
+    wv_k = np.array([q["w_vault"] for q in fs])
+    A_k = np.array([float(np.interp(fk[k] * tops["centre"], tab["sigma"], tab["A"])) for k in range(n_ax)])
+    r_in = np.array([q["r_in"] for q in fs])
+    # ---- smooth centre curve: ring axis inside the ring span, lumen centroids below; Gaussian over the stations'
+    #      meridian spacing (v5_centre_smooth_mm), each point put back INTO its own plane, r re-sampled about it
+    tgt = C.copy()
+    hk = (C - P_rc) @ zr
+    inring = hk >= z_bot_rel
+    tgt[inring] = P_rc[None, :] + hk[inring, None] * zr[None, :]
+    sig_st = float(cfg["v5_centre_smooth_mm"]) / float(np.mean(np.diff(np.linspace(0.0, Sm[-1], n_ax))))
+    sm = np.stack([gsmooth(tgt[:, j], sig_st) for j in range(3)], 1)
+    wp = np.clip((hk - z_bot_rel) / max(-z_bot_rel, 1e-9), 0.0, 1.0)
+    wp = (wp * wp * (3.0 - 2.0 * wp))[:, None]                    # 0 at the ring's bottom face, 1 from its centre up:
+    sm = wp * tgt + (1.0 - wp) * sm                               # the upper vault stays exactly coaxial with the ring
+    for k in range(n_ax):
+        q = sm[k] - C[k]
+        q -= (q @ Tn[k]) * Tn[k]
+        dc = np.array([q @ U[k], q @ V[k]])
+        if np.hypot(*dc) > 1e-9:
+            r_in[k] = _repolar(r_in[k], th, dc)
+            r_dev[k] = _repolar(r_dev[k], th, dc)
+            if np.isfinite(r_bt[k]).all():
+                r_bt[k] = _repolar(r_bt[k], th, dc)
+            C[k] = C[k] + q
+    r_in = _smooth_out(_drape(r_in, C, Tn, below, slope), cfg, 1.0, fixed=~below)
+    tmin = float(cfg["v5_min_thickness_mm"])
+    r_out = np.maximum(np.sqrt(r_in ** 2 + (A_k / np.pi)[:, None]), r_in + tmin)
+    # ---- fold checks: adjacent station planes must not meet inside the wall
+    Xi = C[:, None, :] + r_in[:, :, None] * (np.cos(th)[None, :, None] * U[:, None, :] + np.sin(th)[None, :, None] * V[:, None, :])
+    Xo = C[:, None, :] + r_out[:, :, None] * (np.cos(th)[None, :, None] * U[:, None, :] + np.sin(th)[None, :, None] * V[:, None, :])
+    up = np.array([min(float(((Xi[k + 1] - C[k]) @ Tn[k]).min()), float(((Xo[k + 1] - C[k]) @ Tn[k]).min()))
+                   for k in range(n_ax - 1)])
+    dn = np.array([max(float(((Xi[k] - C[k + 1]) @ Tn[k + 1]).max()), float(((Xo[k] - C[k + 1]) @ Tn[k + 1]).max()))
+                   for k in range(n_ax - 1)])
+    kind = np.array([sp["plane"](v)[2] for v in Sk])
+    hinge_clear = np.inf
+    for kk in np.nonzero(kind == "bend")[0]:
+        e = C[kk] - sp["H"]
+        e -= (e @ sp["k"]) * sp["k"]
+        e /= np.linalg.norm(e)
+        hinge_clear = min(hinge_clear, float(((Xi[kk] - sp["H"]) @ e).min()), float(((Xo[kk] - sp["H"]) @ e).min()))
+    dal = np.array([np.arccos(np.clip(Tn[k] @ Tn[k + 1], -1.0, 1.0)) for k in range(n_ax - 1)])
+    dh = np.array([float((C[k + 1] - C[k]) @ Tn[k + 1]) for k in range(n_ax - 1)])
+    R_pl = np.where(dal > 1e-9, np.abs(dh) / np.maximum(np.tan(dal), 1e-12), np.inf)
+    R_pl = np.r_[R_pl, np.inf]
+    ratio = r_in.max(1) / R_pl
+    # centreline curvature (station centres, the plan's r_in < 0.8 R): circumradius of consecutive triples
+    Rc = np.full(n_ax, np.inf)
+    for k in range(1, n_ax - 1):
+        p0, p1, p2 = C[k - 1], C[k], C[k + 1]
+        a_, b_, c_ = np.linalg.norm(p1 - p0), np.linalg.norm(p2 - p1), np.linalg.norm(p2 - p0)
+        ar2 = np.linalg.norm(np.cross(p1 - p0, p2 - p0))
+        if ar2 > 1e-9:
+            Rc[k] = a_ * b_ * c_ / (2.0 * ar2)
+    return dict(W=dict(C=C, U=U, V=V, Tg=Tn, r_in=r_in, r_out=r_out, n_ax=n_ax, n_th=n_th),
+                th=th, Sk=Sk, Sm=Sm, Sp=Sp, fk=fk, A=A_k, w_vault=wv_k, below_ring=below, r_dev=r_dev, r_bt_in=r_bt,
+                n_hit=np.array([q["n_hit"] for q in fs]), R_planes=R_pl, curv_ratio=ratio, R_centre=Rc,
+                centre_curv_ratio=r_in.max(1) / Rc, fold=dict(min_next_above_plane_mm=round(float(up.min()), 4),
+                                                              max_prev_above_next_plane_mm=round(float(dn.max()), 4),
+                                                              n_pairs_crossing=int(((up <= 0) | (dn >= 0)).sum())),
+                sweep=dict(L_lower_mm=round(sp["L1"], 3), L_bend_mm=round(sp["L2"], 3), L_upper_mm=round(sp["L3"], 3),
+                           s_bend_start_mm=round(sp["s1"], 3), s_bend_end_mm=round(sp["s_par"], 3),
+                           bend_deg=round(sp["alpha_max_deg"], 3), R_centre_mm=round(sp["R_c"], 3),
+                           hinge_point=np.round(sp["H"], 4).tolist(), hinge_dir=np.round(sp["k"], 6).tolist(),
+                           hinge_clear_min_mm=round(hinge_clear, 3), stations_bend=[int(v) for v in np.nonzero(kind == "bend")[0]]),
+                kind=kind)
+
+
 # --------------------------------------------------------------------------- scene support (container, py3.8)
 # Several containers of one batch (run_docker_par.sh) build the SAME shadow root at the same instant when they
 # share a wall variant, and a plain open(path, "w") is visible to the others as an EMPTY file: MEASURED (run
 # WB_a5) as `JSONDecodeError: Expecting value: line 1 column 1 (char 0)` on bodies.json while its three siblings
 # proceeded normally.  Every file here is therefore written to a private temp name and os.replace()d into place,
 # which is atomic.
+WALL_V5_EXTRA_FILES = ("start.vtk", "start_surface.obj")
+
+
 def _atomic_copy(src, dst):
     tmp = "%s.tmp.%d" % (dst, os.getpid())
     shutil.copy2(src, tmp)
@@ -783,7 +1444,10 @@ def scene_mesh_root(meshes_dir, wall_dir):
         src = src_wall if b == "vagina" else "%s/%s" % (meshes_dir, b)
         dst = "%s/%s" % (root, b)
         os.makedirs(dst, exist_ok=True)
-        for fn in ("surface.obj", "tets.vtk", "meta.json"):
+        fns = ["surface.obj", "tets.vtk", "meta.json"]
+        if b == "vagina":                         # wall v5 also carries its START shape (absent for every older wall)
+            fns += [fn for fn in WALL_V5_EXTRA_FILES if os.path.exists(src + "/" + fn)]
+        for fn in fns:
             s, d = src + "/" + fn, dst + "/" + fn
             if (not os.path.exists(d)) or os.path.getmtime(s) > os.path.getmtime(d):
                 _atomic_copy(s, d)

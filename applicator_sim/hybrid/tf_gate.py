@@ -13,6 +13,15 @@ against the wall's lumen, the canal and the step limits.  Units mm, deg.  Frame:
         HOST REPLAY of the run's schedule: scene_hybrid imported with SOFA stubbed, the run's inputs loaded exactly as
         the container loads them, build_schedule(cfg) -> every row checked against the S5 "Accept (pass 1)" list and the
         "Reported" quantities -> hybrid/logs/tf_gate_<tag>.json.
+    python -P hybrid/tf_gate.py drive --cfg <runs/_cfg/TF1a.json> [--tag TF1a] [--cervix-run TF1a] [--ring] [--n-k2 60]
+                                      [--drive-params '{"k2_blend_mm": 60}'] [--every 8]
+        S7c(2)-(5) HOST GATES of the device-driven v5 wall (cfg wall_drive "device"): hybrid/wall_drive.py stepped over
+        the run's schedule rows (--ring: the S7f schedule with the ring phases and --n-k2 K2 rows) with the cervix of
+        a reference run's frames (--cervix-run; by record row, the end-of-C frame for the R rows, its L frames for K1,
+        its last frame for K2; else the rest cervix carried rigidly by the row's corpus transform): containment of the
+        tandem body in the driven lumen, the slot closed at the end of C, device-device clearance and the ring
+        footprint on the R rows, the vault gate at the unlifted seat, the drive's end state against the rest shape and
+        its per-step speed.  -> hybrid/logs/tf_gate_drive_<tag>.json.
     python -P hybrid/tf_gate.py replay --cfg <runs/_cfg/TF0.json> [--tag TF0]
         The whole scene built on a fake SOFA node API and the controller stepped through every row (+ settle rows) on
         synthetic states (the cervix -- and a corpus_model "fem" corpus -- carried rigidly by the row's corpus
@@ -1070,9 +1079,220 @@ def cmd_replay(a):
     print("[replay] %s: %s -> %s" % (a.tag, "PASS" if ok else "FAIL", fn), flush=True)
 
 
+def cmd_drive(a):
+    """S7c(2)-(5): the drive replayed on the host (see the module doc).  Nothing is simulated but the drive."""
+    import wall_drive as WD
+    import tf_metrics as TM
+    t0 = time.time()
+    over = {}
+    if a.ring:
+        over.update(ring_phases=True, n_k2=int(a.n_k2), stop_after_phase=None)
+    if a.drive_params:
+        over["wall_drive_params"] = json.loads(a.drive_params)
+    S = stub_sofa()
+    cfg = S.load_cfg(a.cfg)
+    cfg.update(over)
+    cfg["tag"] = a.tag
+    if cfg.get("wall_drive") != "device":
+        raise SystemExit("drive: cfg wall_drive is %r, not 'device'" % cfg.get("wall_drive"))
+    inp = S.load_inputs(cfg)
+    tgt = S.corpus_target(inp, cfg)
+    sched = S.build_schedule(cfg, tgt)
+    P = inp["P"]
+    meta = inp["meta"]["vagina"]
+    Xr = S.read_vtk_points("%s/vagina/tets.vtk" % P["meshes"])
+    Xs = S.read_vtk_points("%s/vagina/%s" % (P["meshes"], meta["wall"]["v5"].get("start_file", "start.vtk")))
+    tab = WD.node_tables(meta, Xr, Xs)
+    pr = WD.drive_cfg(cfg.get("wall_drive_params") or {})
+    geo = WD.tandem_geometry(inp["app"])
+    rg = WD.ring_geometry(inp["app"])
+    Xc0 = S.read_vtk_points("%s/cervix/tets.vtk" % P["meshes"])
+    cm = inp["meta"]["cervix"]
+    s2n_c = np.asarray(cm["surface_obj_vertex_to_tet_node"], int)
+    _, Fc = geom.read_obj("%s/cervix/surface.obj" % P["meshes"])
+    drv = WD.WallDrive(tab, geo, rg, pr, cervix_tri=(s2n_c[np.asarray(Fc, int)] if pr["k2_vault"] == "live" else None))
+    Vk0, Fk = geom.read_obj("%s/corpus/surface.obj" % P["meshes"])
+    _, Fw = geom.read_obj("%s/vagina/surface.obj" % P["meshes"])
+    s2n_w = np.asarray(meta["surface_obj_vertex_to_tet_node"], int)
+    Fw = s2n_w[np.asarray(Fw, int)]
+    inner_v = np.zeros(len(Xr), bool)
+    inner_v[np.asarray(meta["node_sets"]["inner_surface"], int)] = True
+    # ---- the reference cervix: a run's exact per-frame nodal displacement, by record row
+    ref = None
+    if a.cervix_run:
+        rd = "%s/runs/%s" % (HYB, a.cervix_run)
+        rc = json.load(open(rd + "/cfg.json"))
+        idx = json.load(open(rd + "/frames/index.json"))["frames"]
+        fu = {int(f["step"]): rd + "/frames/" + f["u_npy"]["cervix"] for f in idx if (f.get("u_npy") or {}).get("cervix")}
+        off = int(rc.get("n_balloon", 0) or 0) + int(rc.get("n_presettle", 4))
+        ref = dict(tag=a.cervix_run, fu=fu, off=off, steps=sorted(fu))
+    rec_rows = [r for r in sched if r["phase"] in ("V", "C")]
+    n_V, n_C = sum(1 for r in sched if r["phase"] == "V"), sum(1 for r in sched if r["phase"] == "C")
+    n_K1 = sum(1 for r in sched if r["phase"] == "K1")
+    after_lift = bool(cfg.get("ring_after_lift"))
+
+    def cervix_at(i_row, r):
+        """The cervix nodes for schedule row i_row (index into sched) / row r.  With cfg ring_after_lift the R rows ride
+        the LIFTED pose, so they take the reference's last lift (L / K1) frame, not its end of C (review of TF2)."""
+        if ref is None:
+            T = np.asarray(r["T_corpus"], float)
+            return Xc0 @ T[:3, :3].T + T[:3, 3], "rigid carry"
+        ph = r["phase"]
+        n_pre = sum(1 for q in sched if q["phase"] in ("B", "P"))
+        if ph in ("V", "C", "L"):
+            k_rec = i_row - n_pre
+        elif ph.startswith("R") and after_lift:
+            k_rec = n_V + n_C + n_K1 - 1
+        elif ph.startswith("R"):
+            k_rec = n_V + n_C - 1
+        elif ph == "K1":
+            k_rec = n_V + n_C + sum(1 for q in sched[:i_row] if q["phase"] == "K1")
+        elif ph in ("B", "P"):
+            k_rec = -1
+        else:
+            k_rec = 10 ** 6
+        step = k_rec + ref["off"]
+        cand = [s_ for s_ in ref["steps"] if s_ <= step]
+        s_ = cand[-1] if cand else ref["steps"][0]
+        return Xc0 + np.load(ref["fu"][s_]), "%s step %d" % (ref["tag"], s_)
+    st = drv.init_state()
+    per, speeds = [], []
+    Pp = tab["X_start"].copy()
+    half_surf = {}
+    for side in ("L", "R"):
+        part = (rg["halves"].get(side) or {}).get("part") if rg else None
+        if part:
+            half_surf[side] = geom.read_obj("%s/%s.obj" % (P["applicator"], part))
+    Vt = [geom.read_obj("%s/%s.obj" % (P["applicator"], p)) for p in ("tube", "shaft")]
+    stop = cfg.get("stop_after_phase")
+    if stop:                                            # the run ends after the last row of that phase
+        last = max(i for i, r in enumerate(sched) if r["phase"] == stop)
+        sched = sched[:last + 1]
+    for i, r in enumerate(sched):
+        if r["phase"] == "B":
+            continue
+        Xc, csrc = cervix_at(i, r)
+        row = dict(F=r["F"], R_rows=r["R_rows"], tube_axis=r["tube_axis"], drive_kappa=r.get("drive_kappa", 0.0),
+                   drive_k2=r.get("drive_k2", 0.0))
+        live = list(r.get("ring_on") or [])
+        if live and rg:
+            ring, lead = {}, {}
+            for side in live:
+                h = rg["halves"][side]
+                d = float((r.get("ring_d") or {}).get(side, h["D"]))
+                ring[side] = WD.half_pose(r["F"], r["R_rows"], h, d)
+                lp = WD.lead_poses(r["F"], r["R_rows"], h, d, pr)
+                if lp:
+                    lead[side] = lp
+            row["ring"], row["ring_lead"] = ring, lead
+        Pw, st, dg = drv.step(row, Xc, st)
+        sp = float(np.linalg.norm(Pw - Pp, axis=1).max())
+        speeds.append(sp)
+        Pp = Pw
+        e = dict(i=i, phase=r["phase"], cervix=csrc, speed_mm=rnd(sp, 4), push_max_mm=rnd(dg["push_max_mm"]),
+                 over_open_mm=rnd(dg["over_open_max_mm"]), lag_mm=rnd(dg["speed_lag_mm"]), ring_push=dg["ring_push"])
+        last_of_C = r["phase"] == "C" and (i + 1 >= len(sched) or sched[i + 1]["phase"] != "C")
+        heavy = (i % int(a.every) == 0) or last_of_C or r["phase"].startswith("R") or i == len(sched) - 1
+        if heavy:
+            csurf = TM.Surf(Xc[s2n_c], Fc, "cervix")
+            Tc = np.asarray(r["T_corpus"], float)
+            ksurf = TM.Surf(np.asarray(Vk0, float) @ Tc[:3, :3].T + Tc[:3, 3], Fk, "corpus")
+            sd_top = csurf.sd(Pw[tab["top"]], 60.0)
+            sd_w = csurf.sd(Pw, 5.0)
+            e.update(vault_gap_max_mm=rnd(sd_top.max()), vault_gap_mean_mm=rnd(sd_top.mean()),
+                     wall_in_cervix_n_deeper_0p5=int((sd_w < -0.5).sum()), wall_in_cervix_min_mm=rnd(sd_w.min()))
+            # containment of the tandem body in the driven lumen (open inner sheet, restricted as S5)
+            Rr = np.asarray(r["R_rows"], float)
+            X = np.vstack([np.asarray(r["F"], float) + np.asarray(V, float) @ Rr for V, _ in Vt])
+            lum = TM.Surf(Pw, Fw[inner_v[Fw].all(1)], "lumen", closed=False)
+            stc = np.array([Pw[(tab["station"] == k) & (tab["sheet"] == 0)].mean(0) for k in np.unique(tab["station"])])
+            lum.orient(stc[2:-2])
+            a_, c0 = tab["a"], tab["c0"]
+            h_top = float(np.min((Pw[tab["top"]] - c0) @ a_))
+            h_bot = float(np.max((Pw[tab["station"] == 0] - c0) @ a_))
+            hx = (X - c0) @ a_
+            in_tis = (csurf.sd(X, 1.0) <= 0) | (ksurf.sd(X, 1.0) <= 0)
+            cons = (hx <= h_top) & (hx >= h_bot) & ~in_tis
+            if cons.any():
+                sl = lum.sd(X[cons], None)
+                e.update(contain_frac=rnd(float((sl < 0).mean()), 4), contain_min_clear_mm=rnd(-sl.max()),
+                         contain_n=int(cons.sum()))
+            for side in live:
+                if side in half_surf:
+                    org, Rh = WD.half_pose(r["F"], r["R_rows"], rg["halves"][side], float(r["ring_d"][side]))
+                    V, F_ = half_surf[side]
+                    hs_ = TM.Surf(org + np.asarray(V, float) @ Rh, F_, side)
+                    e["tandem_vs_half_%s_mm" % side] = rnd(hs_.sd(X, 5.0).min())
+        per.append(e)
+    # ---- (4) the vault gate at the unlifted seat: the seated ring on the end-of-C tandem vs the end-of-C cervix
+    iC = max(i for i, r in enumerate(sched) if r["phase"] == "C")
+    rC = sched[iC]
+    XcC, csrcC = cervix_at(iC, rC)
+    vault4 = {}
+    if rg:
+        Vs_ = XcC[s2n_c]
+        for side, (V, F_) in half_surf.items():
+            org, Rh = WD.half_pose(rC["F"], rC["R_rows"], rg["halves"][side], 0.0)
+            sd = TM.Surf(org + np.asarray(V, float) @ Rh, F_, side).sd(Vs_, 5.0)
+            vault4[side] = dict(n_cervix_vertices_deeper_0p5=int((sd < -0.5).sum()), max_depth_mm=rnd(-sd.min()),
+                                n_within_1mm=int((sd < 1.0).sum()))
+    # ---- verdicts
+    rows_vc = [e for e in per if e["phase"] in ("V", "C") and e.get("contain_frac") is not None]
+    endC = [e for e in per if e["phase"] == "C"][-1]
+    acc = []
+
+    def item(test, measured, limit, ok):
+        acc.append(dict(test=test, measured=measured, limit=limit, pass_=bool(ok)))
+    cf = min((e["contain_frac"] for e in rows_vc), default=None)
+    cc = min((e["contain_min_clear_mm"] for e in rows_vc), default=None)
+    item("S7c(2) containment (restricted) of the tandem body in the driven lumen, every V / C row checked",
+         dict(min_frac=cf, min_clearance_mm=cc, n_rows=len(rows_vc)), "frac 1, clearance >= c - 0.1",
+         cf == 1.0 and cc is not None and cc >= float(pr["clear_mm"]) - 0.1)
+    item("S7c(2) end of C: no lumen node beyond max(need + c, floor) by more than 1 mm (the slot has closed)",
+         dict(over_open_mm=endC["over_open_mm"], speed_lag_mm=endC["lag_mm"]), "<= 1 mm",
+         max(endC["over_open_mm"], endC["lag_mm"]) <= 1.0)
+    vg = [e["vault_gap_max_mm"] for e in per if e.get("vault_gap_max_mm") is not None and e["phase"] in ("V", "C", "P")]
+    item("vault-to-portio gap on the checked V / C rows (reference cervix)", dict(max_mm=max(vg) if vg else None),
+         "<= 3 mm", bool(vg) and max(vg) <= 3.0)
+    wic = [e["wall_in_cervix_n_deeper_0p5"] for e in per if e.get("wall_in_cervix_n_deeper_0p5") is not None]
+    item("wall nodes > 0.5 mm inside the (reference) cervix", dict(max_n=max(wic) if wic else None), "0",
+         bool(wic) and max(wic) == 0)
+    Rrows = [e for e in per if e["phase"].startswith("R")]
+    if Rrows:
+        dd = [v for e in Rrows for k, v in e.items() if k.startswith("tandem_vs_half_") and v is not None]
+        item("S7c(3) device-device clearance tandem vs each half on every R row (drive geometry, host)",
+             dict(min_mm=min(dd) if dd else None), ">= 0.5 mm", bool(dd) and min(dd) >= 0.5 - 0.05)
+        rp_ = max(e["push_max_mm"] for e in Rrows)
+        item("S7c(3) ring-half footprint: the largest push-out the halves need (sets the transient cap)",
+             dict(max_push_mm=rp_), "reported", True)
+    if vault4:
+        n4 = sum(v["n_cervix_vertices_deeper_0p5"] for v in vault4.values())
+        item("S7c(4) vault gate: the ring seated on the end-of-C tandem vs the end-of-C cervix (%s)" % csrcC,
+             vault4, "0 vertices deeper than 0.5 mm (else: the ring pushes the portio, rule on by design)", n4 == 0)
+    last = per[-1]
+    if cfg.get("ring_phases") and int(cfg.get("n_k2", 0) or 0) > 0:
+        endP = Pp
+        item("S7c(5) the drive's end state equals the rest shape", dict(max_mm=rnd(np.linalg.norm(endP - Xr, axis=1).max(), 4),
+                                                                      lag_mm=last["lag_mm"]), "<= 0.1 mm",
+             float(np.linalg.norm(endP - Xr, axis=1).max()) <= 0.1)
+    item("S7c(5) no driven node faster than 0.7 mm per step", dict(max_mm=rnd(max(speeds), 4)), "<= 0.7",
+         max(speeds) <= 0.7 + 1e-9)
+    out = dict(version=VERSION, written=time.strftime("%Y-%m-%d %H:%M:%S"), tag=a.tag, cfg=a.cfg, overrides=over,
+               cervix_reference=(ref["tag"] if ref else "rigid carry of the rest cervix"),
+               drive_params=pr, accept=acc, pass_all=bool(all(x["pass_"] for x in acc)),
+               phases={p: sum(1 for r in sched if r["phase"] == p) for p in ("P", "V", "C", "R_L", "R_R", "R_S", "K1", "K2")},
+               per_row=per, wall_s=round(time.time() - t0, 1))
+    fn = "%s/tf_gate_drive_%s.json" % (LOGS, a.tag)
+    json.dump(_jsonable(out), open(fn, "w"), indent=1, default=str)
+    for x in acc:
+        print("  %-4s %s\n         measured: %s" % ("PASS" if x["pass_"] else "FAIL", x["test"],
+                                                   json.dumps(_jsonable(x["measured"]), default=str)), flush=True)
+    print("[drive] %s -> %s (%.0f s)" % (a.tag, fn, time.time() - t0), flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["search", "write", "gate", "replay"])
+    ap.add_argument("cmd", choices=["search", "write", "gate", "replay", "drive"])
     ap.add_argument("--wall", default=OPT["wall"])
     ap.add_argument("--app", default=OPT["app"])
     ap.add_argument("--ref-run", default=OPT["ref_run"], help="run whose final wall is the L-phase proxy lumen (G32)")
@@ -1080,6 +1300,11 @@ def main():
     ap.add_argument("--force", action="store_true", help="write: store the schedule even if the full gate fails")
     ap.add_argument("--cfg", default=None, help="gate / replay: the run cfg (runs/_cfg/<TAG>.json)")
     ap.add_argument("--tag", default="TF0")
+    ap.add_argument("--cervix-run", default=None, help="drive: the run whose frames give the cervix (by record row)")
+    ap.add_argument("--ring", action="store_true", help="drive: the S7f schedule (ring_phases) instead of the cfg's")
+    ap.add_argument("--n-k2", default=60, type=int, help="drive --ring: K2 rows")
+    ap.add_argument("--every", default=8, type=int, help="drive: the heavy (vtk) checks on every k-th row + C end + R")
+    ap.add_argument("--drive-params", default=None, help="drive: JSON overrides of the cfg's wall_drive_params")
     a = ap.parse_args()
     if a.cmd == "search":
         cmd_search(a)
@@ -1089,6 +1314,8 @@ def main():
         raise SystemExit("%s needs --cfg" % a.cmd)
     elif a.cmd == "gate":
         cmd_gate(a)
+    elif a.cmd == "drive":
+        cmd_drive(a)
     else:
         cmd_replay(a)
 

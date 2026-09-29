@@ -82,6 +82,7 @@ import geom  # noqa: E402
 import evaluate as ev  # noqa: E402
 import eval_hybrid as EH  # noqa: E402
 import tandem_path as TP  # noqa: E402
+import wall_drive as WD  # noqa: E402
 from vagina_wall import read_vtk_legacy  # noqa: E402
 
 VERSION = "tf_metrics/1.1"      # 1.1: exact per-frame carry (u_npy), containment on the open lumen sheet, rows by 'i'
@@ -93,6 +94,7 @@ NEW_GEOM_JSON = HYB + "/logs/applicator_label_new_geometry.json"   # updated-lab
 ORGANS = ("bladder", "rectum", "sigmoid")
 OVOID_BODY = EH.OVOID_BODY                          # parts placed by the ovoid body's own origin / frame
 HALVES = dict(L=("ovoid_L", "rod_L"), R=("ovoid_R", "rod_R"))
+OVOID_PARTS_RING = ("ovoid_L", "ovoid_R")            # S7f (cfg ring_phases): each half its own body, device json ring_halves
 # scene_hybrid.CFG defaults for the keys read here (a run's cfg.json normally holds every key; these cover the rest)
 SCENE_DEFAULTS = dict(apex_attach="follow", apex_lift_fix=True, apex_lift_profile="top", vagina_inferior="fixed",
                       canal_tie_set="canal", n_balloon=0, n_presettle=4)
@@ -105,6 +107,8 @@ ROW_TIP_S_TOL_MM = 0.01       # record rows vs the log's canal_tie.tip_s (logged
 TAU_FOLLOW_MM = 20.0          # tau follows the labelled canal this far, then a_lc (plan S5)
 DEEP_MM = 0.5                 # the S2 probes' gate: vertices more than 0.5 mm inside
 REMOTE_MM = 5.0               # OAR vertices farther than this from every device part and from the wall's outer sheet
+GAP_MM = 3.0                  # S7d / S7f: vault-to-portio gap limit
+PREOPEN_TOL_MM = 0.5          # S7d: every lumen node within max(need + c, collapsed) + this
 CLEAR_MM = 1.0                # containment clearance the S5 host gate asks for
 LABEL_LINE = dict(s=(15.0, 55.0), slab=2.0, lat=6.0)     # BT label frame (see FRAMES)
 VAG_GRID = dict(h=(-80.0, 20.0), dh=1.0, uv=36.0, duv=0.75)
@@ -558,7 +562,8 @@ class Run:
         if self.cfg.get("device_parts"):
             self.devsurf = {p: v for p, v in self.devsurf.items() if p in set(self.cfg["device_parts"])}
         elif self.cfg.get("device_ovoids") is False or self.cfg.get("ovoid_mode") in ("none", "off"):
-            self.devsurf = {p: v for p, v in self.devsurf.items() if p not in OVOID_BODY}
+            keep = set(OVOID_PARTS_RING) if self.cfg.get("ring_phases") else set()     # S7f: the two ring halves
+            self.devsurf = {p: v for p, v in self.devsurf.items() if p not in OVOID_BODY or p in keep}
         self.tandem_parts = [p for p in self.devsurf if p not in OVOID_BODY]
         self.ovoid_parts = [p for p in self.devsurf if p in OVOID_BODY]
         self.appj = json.load(open(self.appd + "/applicator.json"))
@@ -617,10 +622,30 @@ class Run:
         self.loc_tau = self.carrier.locate(self.tau, vaginal=self.tau_s < 0)
         self.rest_st = self.wall.stations(self.rest["vagina"][0]) if self.wall else None
         self.rest_solid = {o: Surf(*self.rest[o], o) for o in ("bladder", "rectum")}
+        # S7b (cfg wall_drive "device"): the drive itself, to recompute each frame's allowed lumen (pre-opening test)
+        self.drive = None
+        if self.cfg.get("wall_drive") == "device" and self.wall is not None:
+            mv = self.meta["vagina"]
+            Xr, _ = read_vtk_legacy(self.md["vagina"] + "/tets.vtk")
+            Xs, _ = read_vtk_legacy(self.md["vagina"] + "/" + mv["wall"]["v5"].get("start_file", "start.vtk"))
+            tab = WD.node_tables(mv, Xr, Xs)
+            pr = WD.drive_cfg(self.cfg.get("wall_drive_params") or {})
+            pr_free = dict(pr, rate_mm=1e9, speed_mm=None)
+            cx_tri = None
+            if pr["k2_vault"] == "live":                # TF3: the live vault pairs on each frame's own cervix here
+                cx_tri = np.asarray(self.meta["cervix"]["surface_obj_vertex_to_tet_node"], int)[
+                    np.asarray(self.rest["cervix"][1], int)]
+            self.drive = dict(tab=tab, pr=pr, drv=WD.WallDrive(tab, WD.tandem_geometry(self.appj),
+                                                                WD.ring_geometry(self.appj), pr_free, cervix_tri=cx_tri),
+                              node_to_v=_inverse_map(self.wall.s2n, len(Xr)))
 
-    # ---- device placement: p_world = origin + p_app @ R_rows (ovoid body: its own origin and frame)
+    # ---- device placement: p_world = origin + p_app @ R_rows (ovoid body: its own origin and frame; S7f ring halves:
+    #      each its own, device json ring_halves)
     def place(self, part, dev):
         V, F = self.devsurf[part]
+        rh = {h.get("part"): h for h in (dev.get("ring_halves") or {}).values()}
+        if part in rh:
+            return np.asarray(rh[part]["origin_mm"], float) + np.asarray(V, float) @ np.asarray(rh[part]["R_rows"], float), F
         if part in OVOID_BODY and dev.get("ovoid_origin_mm") is not None:
             org = np.asarray(dev["ovoid_origin_mm"], float)
             R = np.array([dev["ovoid_x_app"], dev["ovoid_y_app"], dev["ovoid_axis"]], float)
@@ -1056,6 +1081,120 @@ def corpus_block(run, dev, Xk, path_c, exact):
     return out
 
 
+def _inverse_map(s2n, n):
+    """Tet node -> surface-vertex index (-1 for interior nodes)."""
+    inv = -np.ones(int(n), int)
+    inv[np.asarray(s2n, int)] = np.arange(len(s2n))
+    return inv
+
+
+def drive_block(run, dev, step, S, sol, parts, U):
+    """S7d / S7f (cfg wall_drive "device"), model frame.  vault: the top ring (node set vault_top) against the cervix
+    surface by signed distance (the gap; < 0 = inside), all nodes and those farther than r_tube + c + 1 mm from the tube
+    axis (the os, which the tube itself opens); preopen: every lumen node's radius from the drive's ray origin against
+    the drive's own UNLIMITED target at this frame (max(need + c, collapsed) incl. the leads; the rate / speed limits
+    are the only allowed excess) -- recomputed here from the frame's cervix and device pose, not read from the log;
+    straight: the lumen-ring centres of the stations the tandem has fully occupied (tip >= 20 mm above) against the
+    device line; device_device: tandem vertices vs each ring half and half vs half (signed distance, < 0 inside); log:
+    the scene's own drive record of the step."""
+    Dm = run.drive
+    tab = Dm["tab"]
+    Vw = np.asarray(S["vagina"][0], float)
+    X = Vw[np.maximum(Dm["node_to_v"], 0)]
+    top = tab["top"]
+    sd = sol["cervix"].sd(X[top], 60.0)
+    F = np.asarray(first(dev, ("flange_mm", "flange")), float)
+    Rr = np.array([dev["x_app"], dev["y_app"], dev["tube_axis"]], float)
+    at = unit(Rr[2])
+    q = X[top] - F
+    dax = np.linalg.norm(q - np.outer(q @ at, at), axis=1)
+    far = dax > run.r_tube(dev) + float(Dm["pr"]["clear_mm"]) + 1.0
+    out = dict(vault=dict(gap_max_mm=rnd(sd.max()), gap_mean_mm=rnd(sd.mean()), sd_min_mm=rnd(sd.min()),
+                          n_gap_gt_3mm=int((sd > GAP_MM).sum()), n_inside_0p5=int((sd < -DEEP_MM).sum()),
+                          gap_max_off_os_mm=rnd(sd[far].max()) if far.any() else None, n_top=int(len(top))))
+    lr = (run.log.get(int(step)) or {}).get("drive") or {}
+    out["log"] = {k: lr.get(k) for k in ("push_max_mm", "push_target_max_mm", "over_open_max_mm", "lag_open_max_mm",
+                                          "speed_lag_mm", "speed_max_mm", "kappa", "k2", "vault", "ring_push")}
+    # ---- the drive's unlimited target at this frame
+    tip_rows = [np.asarray(r["tip"], float) for k, r in sorted(((k, r) for k, r in run.tf["rows"].items()
+                                                                if k <= int(step) and r.get("tip") is not None))] \
+        if run.tf else []
+    a, c0 = tab["a"], tab["c0"]
+    tip_now = F + float(first(dev, ("L_iu_mm",), run.L_iu)) * at
+    hmax = max([float((p - c0) @ a) for p in tip_rows] + [float((tip_now - c0) @ a)])
+    row = dict(F=F, R_rows=Rr, tube_axis=at, drive_kappa=float(lr.get("kappa") or 0.0), drive_k2=float(lr.get("k2") or 0.0))
+    rh = dev.get("ring_halves") or {}
+    live = {s_: h for s_, h in rh.items() if h.get("on")}
+    if live:
+        ring, lead = {}, {}
+        drv = Dm["drv"]
+        for s_, h in live.items():
+            ring[s_] = (np.asarray(h["origin_mm"], float), np.asarray(h["R_rows"], float))
+            hh = drv.rg["halves"][s_]
+            d = float(h.get("d_mm") or 0.0)
+            lp = WD.lead_poses(F, Rr, hh, d, Dm["pr"])
+            if lp:
+                lead[s_] = lp
+        row["ring"], row["ring_lead"] = ring, lead
+    Xc = run.Pc + np.asarray(U, float)
+    st = Dm["drv"].init_state()
+    st["tip_h_max"], st["P"] = hmax, None
+    Pt, _, dg = Dm["drv"].step(row, Xc, st)
+    inn = tab["inner"]
+    CLw = WD.device_world(Dm["drv"].geo, F, Rr)
+    Dd, _, _, ok, _ = WD.device_crossing(Dm["drv"].heights(row["drive_kappa"]), CLw, Dm["drv"].geo["rad"], at, a, c0,
+                                         Dm["pr"]["clear_mm"], Dm["pr"]["lead_mm"])
+
+    stn_i = tab["station"][inn]
+
+    def rad(P):                                         # lumen SIZE: radius from the node's own ring centroid, in-plane
+        Pi = P[inn]
+        cen = np.zeros_like(Pi)
+        for k in np.unique(stn_i):
+            m = stn_i == k
+            cen[m] = Pi[m].mean(0)
+        v = Pi - cen
+        v = v - np.outer(v @ a, a)
+        return np.linalg.norm(v, axis=1)
+    ex = rad(X) - rad(Pt)
+    ex_ok = ex[ok[inn]] if ok[inn].any() else np.zeros(0)
+    out["preopen"] = dict(excess_max_mm=rnd(ex_ok.max()) if ex_ok.size else None,
+                          n_excess_gt_tol=int((ex_ok > PREOPEN_TOL_MM).sum()), tol_mm=PREOPEN_TOL_MM,
+                          node_vs_target_max_mm=rnd(np.linalg.norm(X - Pt, axis=1).max()),
+                          note="lumen SIZE: each lumen node's in-plane radius from its own station ring's centroid, "
+                               "actual minus the drive's unlimited target (nodes whose slab the device crosses); a lumen "
+                               "that lags the device by the speed limit but has the right size is not pre-opened; "
+                               "node_vs_target_max_mm is that lag")
+    # ---- straightening: stations fully occupied (tip >= 20 mm above their centre)
+    stc = tab["station"]
+    res = []
+    for k in np.unique(stc):
+        m = (stc == k) & (tab["sheet"] == 0)
+        c = X[m].mean(0)
+        h = float((c - c0) @ a)
+        if hmax - h < 20.0:
+            continue
+        Dk, _, _, okk, _ = WD.device_crossing(np.array([h]), CLw, Dm["drv"].geo["rad"], at, a, c0, 0.0, 0.0)
+        v = c - Dk[0]
+        v = v - (v @ a) * a
+        res.append(float(np.linalg.norm(v)))
+    out["straight"] = dict(n_stations=len(res), centre_to_device_max_mm=rnd(max(res)) if res else None,
+                           centre_to_device_mean_mm=rnd(float(np.mean(res))) if res else None)
+    # ---- device-device clearance (S7c(3) / S7f)
+    halves = [p for p in OVOID_PARTS_RING if p in parts and p in {h.get("part") for h in rh.values()}]
+    if halves:
+        Xt = np.vstack([parts[p].V for p in run.tandem_parts]) if run.tandem_parts else np.zeros((0, 3))
+        dd = {}
+        for p in halves:
+            s1 = parts[p].sd(Xt, 5.0) if len(Xt) else np.zeros(0)
+            dd["tandem_vs_" + p] = rnd(s1.min()) if s1.size and np.isfinite(s1.min()) else ">5"
+        if len(halves) == 2:
+            s2 = parts[halves[1]].sd(parts[halves[0]].V, 5.0)
+            dd["half_vs_half"] = rnd(s2.min()) if np.isfinite(s2.min()) else ">5"
+        out["device_device"] = dd
+    return out
+
+
 def score_frame(run, fr):
     fd = run.rd + "/frames"
     step = int(fr["step"])
@@ -1093,7 +1232,8 @@ def score_frame(run, fr):
                 penetration=penetration_block(run, S, sol, parts, lumen, outer, phase),
                 wall=wall_block(run, step, st, sol),
                 oar=oar_block(run, S, parts, outer),
-                corpus=corpus_block(run, dev, Xk, path_c, xk_exact))
+                corpus=corpus_block(run, dev, Xk, path_c, xk_exact),
+                **({"drive": drive_block(run, dev, step, S, sol, parts, U)} if run.drive is not None else {}))
 
 
 # ============================================================================================ final-state blocks
@@ -1751,7 +1891,105 @@ def summarize(run, rows):
         o = g(r, "penetration", "organs_in_wall") or {}
         wx.append((r["step"], sum((o.get(k, {}).get("outer") or {}).get("n_deeper_0p5", 0) for k in ORGANS)))
     s["organ_sheet_crossings_deeper_0p5"] = dict(max=max(x[1] for x in wx), at_step=max(wx, key=lambda x: x[1])[0])
+    if any(r.get("drive") for r in rows):
+        s["S7d"] = summarize_drive(run, rows)
     return s
+
+
+def summarize_drive(run, rows):
+    """S7d (TF1a) / S7f process acceptance from the per-frame drive, penetration and oar blocks (see DEFINITIONS.drive).
+    Each item: the measured value, the plan's limit and pass (None where the frames cannot say)."""
+    g = lambda r, *k: _dig(r, k)  # noqa: E731
+    dr = [r for r in rows if r.get("drive")]
+    out = []
+
+    def item(test, measured, limit, ok):
+        out.append(dict(test=test, measured=measured, limit=limit, **{"pass": ok}))
+    gap = [(r["step"], g(r, "drive", "vault", "gap_max_mm"), g(r, "drive", "vault", "n_gap_gt_3mm")) for r in dr]
+    gmax = max(gap, key=lambda x: x[1])
+    item("vault-to-portio gap on every frame (top ring vs the cervix surface, signed distance)",
+         dict(max_mm=gmax[1], at_step=gmax[0], max_n_gt_3mm=max(x[2] for x in gap),
+              max_off_os_mm=max([v for v in (g(r, "drive", "vault", "gap_max_off_os_mm") for r in dr) if v is not None]
+                                or [None])), "<= 3 mm",
+         bool(gmax[1] <= GAP_MM))
+    pre = [(r["step"], g(r, "drive", "preopen", "excess_max_mm"), g(r, "drive", "preopen", "n_excess_gt_tol"))
+           for r in dr if r["phase"] in ("P", "V", "C") and g(r, "drive", "preopen", "excess_max_mm") is not None]
+    if pre:
+        pm = max(pre, key=lambda x: x[1])
+        item("no pre-opening (P / V / C frames): lumen <= max(need + c, collapsed) + 0.5 mm (recomputed)",
+             dict(excess_max_mm=pm[1], at_step=pm[0], max_n_nodes_over=max(x[2] for x in pre)), "<= 0.5 mm",
+             bool(pm[1] <= PREOPEN_TOL_MM))
+    tro = [(r["step"], g(r, "drive", "preopen", "excess_max_mm")) for r in dr
+           if str(r["phase"]).startswith("R") and g(r, "drive", "preopen", "excess_max_mm") is not None]
+    if tro:                                             # the plan allows it while a half passes (the S7c(3) cap)
+        tm = max(tro, key=lambda x: x[1])
+        item("R frames: transient over-opening behind / ahead of a passing half (closing at the rate)",
+             dict(excess_max_mm=tm[1], at_step=tm[0]), "reported (S7c(3) cap)", True)
+    cip = [(r["step"], sum((v or {}).get("n_deeper_0p5", 0) for k, v in (g(r, "penetration", "cervix_in_parts") or {}).items()
+                           if k in OVOID_PARTS_RING), max([(v or {}).get("max_depth_mm", 0.0) for k, v in
+                                                           (g(r, "penetration", "cervix_in_parts") or {}).items()
+                                                           if k in OVOID_PARTS_RING] or [0.0])) for r in rows]
+    if any(x[1] for x in cip) or any(r.get("drive", {}).get("device_device") for r in dr):
+        cm_ = max(cip, key=lambda x: x[2])
+        item("cervix inside a ring half <= 0.5 mm (S7f; the ring must push the portio)",
+             dict(max_n=max(x[1] for x in cip), max_depth_mm=cm_[2], at_step=cm_[0]), "<= 0.5 mm", bool(cm_[2] <= 0.5))
+    wic = [(r["step"], g(r, "penetration", "wall_in_cervix", "all", "n_deeper_0p5") or 0,
+            g(r, "penetration", "wall_in_cervix", "all", "max_depth_mm") or 0.0) for r in rows]
+    wm = max(wic, key=lambda x: x[1])
+    item("0 wall nodes > 0.5 mm inside the cervix on every frame", dict(max_n=wm[1], at_step=wm[0],
+                                                                         max_depth_mm=max(x[2] for x in wic)),
+         "0", bool(wm[1] == 0))
+    cr = []
+    for r in rows:
+        o = g(r, "penetration", "organs_in_wall") or {}
+        cr.append((r["step"], sum((o.get(k, {}).get("outer") or {}).get("n_deeper_0p5", 0) for k in ORGANS)))
+    cm = max(cr, key=lambda x: x[1])
+    item("0 organ vertices > 0.5 mm behind the sheet on every frame", dict(max_n=cm[1], at_step=cm[0]), "0",
+         bool(cm[1] == 0))
+    stv = [(r["step"], g(r, "drive", "straight", "centre_to_device_max_mm")) for r in dr
+           if r["phase"] != "V" and g(r, "drive", "straight", "centre_to_device_max_mm") is not None]
+    if stv:
+        sm = max(stv, key=lambda x: x[1])
+        item("straightening after V: occupied station centres within 2 mm of the device line",
+             dict(max_mm=sm[1], at_step=sm[0]), "<= 2 mm", bool(sm[1] <= 2.0))
+    endC = [r for r in rows if r["phase"] == "C"]
+    if endC:
+        e = endC[-1]
+        oo = {}
+        for o in ("bladder", "rectum"):
+            b = g(e, "oar", o) or {}
+            intr = (b.get("tandem_alone_intrusion_into_preBT") or {}).get("max_depth_mm")
+            oo[o] = dict(umax_mm=b.get("umax_surface_mm"), tandem_alone_intrusion_mm=intr,
+                         limit_mm=(None if intr is None else rnd(intr + 1.0)),
+                         remote_umax_mm=b.get("remote_umax_mm"))
+        ok = all(v["umax_mm"] is not None and v["limit_mm"] is not None and v["umax_mm"] <= v["limit_mm"]
+                 for v in oo.values())
+        item("OARs at the end of C: umax <= tandem-alone intrusion + 1 mm", dict(step=e["step"], **oo),
+             "<= intrusion + 1", ok)
+        rem = [v["remote_umax_mm"] for v in oo.values() if v["remote_umax_mm"] is not None]
+        item("OAR vertices > 5 mm from device and sheet move <= 1 mm (end of C)", dict(max_mm=max(rem) if rem else None),
+             "<= 1 mm", bool(rem and max(rem) <= 1.0))
+    tpc = [g(r, "insertion", "tip_to_plan_mm") for r in rows if r["phase"] == "C"]
+    tpc = [x for x in tpc if x is not None]
+    if tpc:
+        item("tip_to_plan on every C frame", dict(max_mm=max(tpc)), "<= 2.5 mm", bool(max(tpc) <= 2.5))
+    lc = [(g(r, "insertion", "lower_canal_in_tube_frac")) for r in rows
+          if r["phase"] == "C" and g(r, "insertion", "lower_canal_gated") and
+          g(r, "insertion", "lower_canal_in_tube_frac") is not None]
+    if lc:
+        item("lower_canal_in_tube_frac on every C frame after d = 5 mm", dict(min=min(lc), n_below_0p9=sum(v < 0.9 for v in lc)),
+             ">= 0.9", bool(min(lc) >= 0.9))
+    dd = [(r["step"], g(r, "drive", "device_device")) for r in dr if g(r, "drive", "device_device")]
+    if dd:
+        vals = [(k, v2) for k, d in dd for v2 in d.values() if not isinstance(v2, str)]
+        item("device-device clearance on every ring frame", dict(min_mm=min(v for _, v in vals) if vals else None),
+             ">= 0.5 mm (plan; the slot is 0.5 by design)", bool(vals and min(v for _, v in vals) >= 0.5 - 0.05))
+    sp = [g(r, "drive", "log", "speed_max_mm") for r in dr]
+    sp = [x for x in sp if x is not None]
+    if sp:
+        item("no driven node faster than 0.7 mm/step (S7c(5), from the log)", dict(max_mm=max(sp)), "<= 0.7",
+             bool(max(sp) <= 0.7 + 1e-6))
+    return out
 
 
 def _dig(r, keys):
@@ -1960,6 +2198,13 @@ def cmd_score(tag, every=1, steps=None, final=True, rd=None, out=None):
 
 
 DEFINITIONS = dict(
+    drive="S7d / S7f (cfg wall_drive 'device'): vault = the wall's top ring (vault_top) vs the cervix surface, signed "
+          "distance (the vault-to-portio gap; < 0 inside); preopen = each lumen node's in-plane radius from its own "
+          "station ring's centroid (the lumen SIZE) minus the same for the drive's UNLIMITED target at the frame (need + c "
+          "incl. the leads, or the collapsed section), recomputed by hybrid/wall_drive.py from the frame's cervix nodes "
+          "and device pose (the speed-limit lag of the whole section is reported apart); straight = the "
+          "lumen-ring centres of the stations the tip passed by >= 20 mm vs the device line; device_device = the signed "
+          "distance of tandem vertices to each ring half and of one half's vertices to the other",
     frames="model = preBT world RAS mm; per-frame blocks from runs/<tag>/frames (surfaces + device json)",
     tip_to_labelled_canal="distance from the tip (device json tip_mm) to the carried labelled canal polyline "
                           "(tandem_path.npz pts with s >= 0, moved with the tissue: see CARRIED CANAL)",

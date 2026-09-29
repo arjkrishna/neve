@@ -161,8 +161,8 @@ class Lumen:
         parts = {}
         for p in TANDEM + OVOIDS:
             V, F = self.dev_app[p]
-            o = AH.ovoid_origin(dev) if p in OVOIDS else dev["flange_mm"]
-            Vw = device_world(V, o, AH.frame_R(dev, self.R, p))
+            o, Rp = AH.part_pose(dev, p, self.R)
+            Vw = device_world(V, o, Rp)
             F = np.asarray(F, int)
             hulls, ext = [], np.full((len(C), 2), np.nan)
             for k in range(len(C)):

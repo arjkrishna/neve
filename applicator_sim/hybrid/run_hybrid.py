@@ -40,7 +40,7 @@ import geom  # noqa: E402
 S = None
 
 CODE_FILES =("hybrid/scene_hybrid.py", "hybrid/run_hybrid.py", "hybrid/mesh_bodies.py", "hybrid/applicator_venezia.py",
-              "geom.py", "config.py")
+              "geom.py", "config.py", "hybrid/wall_drive.py")
 
 
 def _json(o):
@@ -147,6 +147,14 @@ def write_outputs(ctx, ctrl, out, summary):
                pose_rule="v2 (pose.json): shaft axis = vagina principal axis, flange = base + Delta, "
                          "corpus a0 -> tube axis with L_end d_F above the flange")
     dev.update(fem_dev)                                 # {} for a rigid corpus: the file is as before
+    if getattr(ctrl, "ring_pose", None):                # S7f: each ring half's own pose (world = origin + p_app @ R_rows)
+        dev["ring_halves"] = {s: dict(origin_mm=np.asarray(v[0], float).round(4).tolist(),
+                                      R_rows=np.asarray(v[1], float).round(6).tolist(), d_mm=round(float(v[2]), 4),
+                                      part=ctx["rings"][s]["part"]) for s, v in ctrl.ring_pose.items()}
+    if ctx.get("drive") is not None:                    # S7b: the drive's last state
+        D = ctx["drive"]
+        dev["wall_drive"] = dict(on=bool(D["on"]), handover_done=bool(D.get("handover_done")),
+                                 handover_jump_mm=D.get("handover_jump_mm"))
     with open(os.path.join(out, "device_final.json"), "w") as fh:
         json.dump(dev, fh, indent=1, default=_json)
     return disp, dev
@@ -157,7 +165,11 @@ PHASE_NAMES = dict(B="OAR pre-relaxation (balloon)", P="pre-settle", A="approach
                    D="ovoid seating", H="settle",
                    # insertion_path "tandem_first" (G32 fix plan S5 / TF0)
                    V="tandem up the vagina (tandem first)", C="tandem through the canal, uterus rotating about the os",
-                   L="lift: tandem and uterus together")
+                   L="lift: tandem and uterus together",
+                   # S7f (cfg ring_phases): the two ring halves, the lift with the ring, the packing front
+                   R_L="left ring half up the vagina onto the tandem", R_R="right ring half up the vagina onto the tandem",
+                   R_S="both ring halves together onto the seat (the assembled ring pushed onto the portio)",
+                   K1="lift: tandem, ring, portio and vault together", K2="packing front (the wall reaches its rest shape)")
 
 
 def _sched_at(ctx, k):
@@ -272,6 +284,13 @@ def write_frame(ctx, ctrl, out, row, fc):
                settle_step=row.get("settle_step"))
     if not ovb:
         dev["ovoid_body"] = False
+    if getattr(ctrl, "ring_pose", None):                # S7f: each half's own pose (renderers: origin + p_app @ R_rows)
+        dev["ring_halves"] = {s: dict(origin_mm=np.asarray(v[0], float).round(4).tolist(),
+                                      R_rows=np.asarray(v[1], float).round(6).tolist(), d_mm=round(float(v[2]), 4),
+                                      part=ctx["rings"][s]["part"], on=bool(ctx["rings"][s]["on"]))
+                              for s, v in ctrl.ring_pose.items()}
+    if row.get("drive") is not None:                    # S7b: the drive's step diagnostics (vault on the portio etc.)
+        dev["wall_drive"] = row["drive"]
     if fem:
         # S9: the step's rigid corpus TARGET (the elastic corpus is held towards it) and its own log block; a rigid run's
         # device json is unchanged (its corpus IS X0 @ T_corpus)
@@ -326,6 +345,9 @@ def run_one(cfg, tag):
     ctrl = root.addObject(S.HybridController(name="hybrid", ctx=ctx, out_dir=out))
     Sofa.Simulation.init(root)
     S.post_init(ctx)
+    if cfg.get("warm_start"):                          # S7f: start at a later phase from another run's final state
+        ws = ctrl.warm_start(P["runs"])
+        print("WARM START " + json.dumps(ws, default=_json), flush=True)
     t_init = time.perf_counter() - t0
     info = S.scene_summary(ctx)
     info.update(tag=tag, t_init_s=round(t_init, 2))
@@ -375,7 +397,8 @@ def run_one(cfg, tag):
         n_settle_steps=int(sum(1 for r in rows if r["phase"] == "H")),
         ms_per_step_median=round(float(np.median(wall)), 1), ms_per_step_mean=round(float(wall.mean()), 1),
         ms_per_step_by_phase={p: round(float(np.median([r["wall_ms"] for r in rows if r["phase"] == p])), 1)
-                              for p in "BPATDVCLH" if any(r["phase"] == p for r in rows)},
+                              for p in list("BPATDVCL") + ["R_L", "R_R", "R_S", "K1", "K2", "H"]
+                              if any(r["phase"] == p for r in rows)},
         total_s=round(time.perf_counter() - t0, 1), t_init_s=round(t_init, 2),
         convergence=dict(rule="CONTRACT 5: %d consecutive settle steps with max nodal change < %g mm AND constraint "
                               "residual per contact < %g AND the constraint solver within its iteration cap"

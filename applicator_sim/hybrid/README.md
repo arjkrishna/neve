@@ -2615,6 +2615,188 @@ APPSIM_TIMEOUT=14000 APPSIM_CPUS=4 bash run_docker_par.sh TF1v hybrid/run_hybrid
 python -P -B hybrid/tf_metrics.py score --tag TF1v ; python -P -B hybrid/eval_hybrid.py score --tag TF1v
 ```
 
+## STAGE 3d -- RING APPLICATOR, DEVICE-DRIVEN VAGINA, TF2 AND TF3 (S4b, S7, 2026-09-29)
+
+**Why.** The physician's G32 review, most important first: (1) "the ovoids shape and one rod detached away from the
+ovoids look very unrealistic"; (2) "vagina ends at cervix, and cervix ends at uterus": keep the vagina attached to the
+HR-CTV, do not expand it separately; the vagina and the IUcanal / uterus matter far more than the cervix.  Less
+important: the elastic uterus (STAGE 3c), Rigaud et al. 2019 (Phys Med Biol 64:115023) materials, a drained Poisson's
+ratio (~0.25).  Built: S4b / S4c, S7a-S7f; TF2 ran leg 1; TF3 fixes TF2's K2 junction and ring lead and runs V..H to a
+settled state.  Reviewed and re-measured independently; reviewer's numbers where they differ.
+
+**Scoring** (the physician via the user).  Order: vagina, uterus (+ tandem), OARs, then the cervix / HR-CTV (report
+only: the HR-CTV is approximate; where it overlaps the vagina label the vagina wins).  (a) = the current convention;
+(b) "vagina trumps" = the preBT vagina & HR-CTV tract (5.29 cc) carried by the cervix field counts as vagina, the
+cervix is scored as model cervix minus it against HR-CTV minus BT vagina / device (before insertion (b) adds the
+label's own tract: by construction).  After insertion: vagina_filled vs BT vagina | applicator | ovoid (103.4 cc), 14
+slabs of 5 mm.  "Trimmed" (user decision 2026-09-29: the BT vagina contour includes tissue behind the vagina; no
+packing): behind the device only label voxels within the anterior wall reach (median 10.2 mm) of the BT device are
+kept (78.1 cc).  CAL = CALIBRATED on this patient's BT (in-sample); PRED = its predictive twin.  Scores: local scratch
+scorers.
+
+**What was built** (new cfg keys, old defaults; the reviewer's host replay (rp.py): G32, TF0c, TF1u, TF1v
+bit-identical to HEAD 67423b6 in every per-step hash (181 / 304 / 304 / 304 steps), TF2c_c / TF2p_b leg 1 and TF2c_cH
+to the pre-TF3 code):
+- `applicator_venezia.py --variant v5 --ring --tandem-from v4` -> `applicator_v5/`: v4's tandem and tandem-first
+  record verbatim, plus lunar halves `ovoid_L` / `ovoid_R`, each ONE closed mesh (half-ring + socket boss + its own
+  rod).  Outer 40 mm (label area-equivalent 38.9, MRI half-way edge 40.8), bore r 4, 0.5 mm slot, rods traced plane by
+  plane; `applicator.json` `ring`: `T_seat` and per-half `approach` along the rod.  The label's tube tip is 64.5 mm
+  above the ring's top face (the vendor 70 mm is measured from inside the ovoids); the model keeps the measured 61.8
+  mm tube.  At the BT pose, own frame: Dice 0.810 vs applicator | ovoid (reviewer); rods 25-30 mm from the axis (label
+  27-31); the domed hub (<= 2 mm) is not modelled.
+- `vagina_wall_tet.py build --set 'lumen_profile="packed"'` (keys in `vagina_wall.CFG_V5`): `vagina_wall_tet26v5`
+  (CAL: rest section = BT section minus the wall) and `_tet26v5p` (PRED, `v5_section "pred"`: device hull + 3 mm, 4.5
+  anterior, `v5_pack_cc` 0).  START: the preBT label cut by the cervix surface (generators end at cervix signed
+  distance 0.2 mm), per-slab PCA ellipses round a 0.5 mm slit.  REST: seated round the device, vault = ring outline +
+  1 mm.  CAL 16518 tets, PRED 11898; kinematic only (a slit start).
+- `wall_drive.py` + `scene_hybrid` `wall_drive "device"` (default None): the wall is moved every step from START.
+  Lumen = max(need + 0.75 mm, collapsed section); need = the tandem section (7 mm nose) and each ring half's outline +
+  1 mm from `ring_lead_mm` ahead of it; the top ring is glued to the cervix points it starts on; nodes move <= 0.7 mm
+  / step; K1 raises the stations, K2 blends to the rest shape from the vault down.  Organs meet a one-way kinematic
+  copy of the outer sheet; the wall's own contacts are off.  TF3 keys in `wall_drive_params` (defaults = TF2 bit for
+  bit):
+  - `k2_vault` "rest" | "live" (`vault_band_mm` 15, `vault_reach_mm` 25, `vault_offset_mm` 0.2).  "live": at the first
+    K2 row each top-ring node's rest generator is followed up the band, and up to 25 mm beyond, until it meets the
+    live cervix; that material point (triangle + barycentric weights, 0.2 mm off) becomes its junction and the band is
+    re-spaced to end there; below the band the wall still ends on the rest shape.  The wall stays driven through H;
+    the top ring is kept on the cervix surface and nodes inside the cervix are put back on it (on the target).  Needs
+    `wall_handover` false, `vault_tie_k_mN_per_mm` 0, `n_k2` > 0 (`check_drive_cfg` refuses the rest).  Logged in
+    `row.drive.vault_live` and `vault.surface_sd_*`.
+  - `ring_lead_slope` (None | s): a lead pose counts the half's exit radius minus s x the approach still to go, so the
+    lumen ahead of a half opens in a cone off its surface (TF3: s 0.8, lead 28 mm, 10 samples).
+- Scene keys (defaults = off): `ring_phases` (K1, R_L, R_R, R_S, K2), `ring_start_mm` (None = 100), `ring_seat`
+  "sequential" | "joint", `ring_after_lift`, `n_k2`, `portio_tie_k_mN_per_mm`, `wall_handover`,
+  `vault_tie_k_mN_per_mm`, `settle_rayleigh_stiffness`, `warm_start` with `stop_after_phase`.  `cervix_probe.py run |
+  score | selftest` (cervix, corpus, device only).  Tests: `test_wall_drive.py` 26/26 (gitignored by `test*`: `git add
+  -f`), `test_ties` 18/18, `test_corpus` 17/17, `cervix_probe.py selftest` 37/37.
+
+**Materials.**  Rigaud 2019 table 2 (E kPa / nu): body 15 / 0.40, bladder 10 / 0.49, cervix 5 / 0.47, rectum 10 /
+0.45, uterus 5 / 0.47, vagina 5 / 0.43: literature-selected relative values for a registration model with prescribed
+surfaces (not yet checked against the PDF).  Drained nu: cervix 0.22 +/- 0.13 (Shi 2019), uterus 0.33 +/- 0.12 (Fang
+2021); fast drainage is plausible, not shown.  Cervix-alone probe (25 runs, 20 finish): the ring adds +0.046 HR-CTV
+Dice (0.693 vs tandem only 0.647); 8 material sets (5-30 kPa, nu 0.25-0.47) span 0.687-0.697; drained minus undrained
+-0.004 to -0.007.  Full-scene twin TF2c_nu25_b (neo-Hookean 25.9 / 0.25): cervix -0.004 (a) / -0.002 (b).
+Compressibility explains at most 14 % of BT's 11-21 % HR-CTV volume loss.  E is not identifiable here.  Kept: cervix
+30 / 0.45, corpus 40 / 0.45, bladder 8 / 0.49, sigmoid 8 / 0.45; rectum 8 -> 30 kPa from TF2 on.
+
+**Runs** (4 CPUs unless noted):
+
+| run | what | result |
+|---|---|---|
+| TF1a, TF1a_c, TF1a_d; TF1r1, TF1r2; RP1q*, RP1r, RP1s1-3 | V + C in the driven CAL wall; ring smoke; joint seat on the UNLIFTED tandem | TF1a_c completes (portio tie "carry"): the K1 warm-start source of the probes; TF1r2: left half 7.8 mm in the portio, rectum inverted; RP1*: crushed rectum / bladder tets (seat ~24 mm low) |
+| RP1L1-RP1L4 | lift first (`ring_after_lift`) | L1 / L2 crush the bladder at support 2.0; L3 seats at 0.2; L4's hand-over crushes the top stations |
+| TF2c_c, TF2p_b, TF2c_nu25_b (+ `H` legs) | leg 1, V..K2 (663 steps), lead 36, K2 "rest"; leg 2 with the vault tie | leg 1 complete, K2 detaches the junction (below); leg 2 not run and not for results (the tie pairs the nearest cervix NODE, 98 -> 34, pull-only) |
+| TF3s_k2, TF3s_k2b | "live" K2 + 8 H smoke, warm start RP1L3 | k2b: top ring <= 0.86 mm from step 507, 0 wall nodes in the cervix from 561; k2 superseded |
+| TF3r_b, TF3r_iso5, TF3r_s30; TF3rC_iso5, TF3c_i5 | rectum probes from {TF1a_c, K1}; iso5 V..C from scratch; TF3c + iso5 | r_b slides right (stopped 332); iso5 (0.5 / 0.5) crushes (tet 0.215); rC_iso5 end of C +11.0 mm right, 0.390 (TF2c_c +11.3, 0.351); c_i5 stopped at 189; s30 below |
+| **TF3c** (CAL), **TF3p** (PRED); TF3c_s30, TF3p_s30 | TF2c_c / TF2p_b + `k2_vault "live"` + lead slope 0.8 / 28 mm, one run V..H, 3 CPUs; + `ring_start_mm` 30 | converged, 668 steps (5 settle rows), 7480 / 6742 s, no NaN; s30: 475 / 476 steps, every score within 0.001 |
+
+**Scores** (pelvis frame, BT grid, the updated applicator label; G32 / TF1v / TF3 at M121@k*, TF2 at the unsettled end
+of K2).  Vagina before insertion (first frame vs the preBT vagina label, 10.78 cc):
+
+| start | model cc | (a) full label | (a) below the HR-CTV | (b) |
+|---|---|---|---|---|
+| G32 (single-ellipse start) | 2.98 | 0.412 | 0.487 | 0.805 |
+| TF0c / TF1v (v4 wall, balloon-opened before the tandem) | 98.5 | 0.162 | 0.106 | 0.194 |
+| TF2 / TF3 (v5 collapsed start) | 5.95 | 0.594 | 0.850 | 0.926 |
+
+| vagina after insertion | filled cc | (a) / (b) | trimmed (a) / (b) | MSD mm | slab centres within 4 mm (mean err) | lower-third LR mm (BT 27.8-33.0) | cervix in vagina cc (BT 0.99) |
+|---|---|---|---|---|---|---|---|
+| G32 (M121@174) | 108.7 | 0.630 / 0.629 | 0.682 / 0.681 | 6.01 | 0 / 14 (10.6) | 34.5-37.5 | 9.99 |
+| TF1v (M121@294) | 107.6 | 0.638 / 0.638 | 0.690 / 0.690 | 5.86 | 0 / 14 (9.9) | 36.0-37.5 | 9.66 |
+| TF2c_c CAL | 109.0 | 0.890 / 0.882 | 0.756 / 0.751 | 2.45 | 14 / 14 (1.6) | 31.5-33.8 | 0.81 |
+| TF2p_b PRED | 62.6 | 0.625 / 0.624 | 0.737 / 0.732 | 6.31 | 2 / 14 (9.0) | 21.0-21.8 | 0.80 |
+| TF3c CAL (M121@666) | 108.8 | 0.888 / 0.881 | 0.753 / 0.748 | 2.42 | 14 / 14 (1.7) | 31.5-33.8 | 0.47 |
+| TF3p PRED (M121@666) | 62.4 | 0.622 / 0.621 | 0.734 / 0.729 | 6.29 | 2 / 14 (9.1) | 21.0-21.8 | 0.47 |
+
+Uterus: Dice 0.883 (G32, TF1v), 0.882 (TF2, TF3; unmoved 0.262); BT IUcanal to the model tube mean 1.79 / P95 3.25 /
+max 4.19 mm; tube vs BT tandem 1.49 deg, flange 2.29 mm, tip 1.15 mm in every run.  Calibrated too: the final tandem
+pose is pose rule v2 (Delta 25 mm, the in-sample best of its sweep) and the 61.8 mm tube is measured on BT.
+
+| run | bladder | rectum | sigmoid | cervix (a) / (b) | HR-CTV offset from the tube mm (BT -2.62 / -4.68) |
+|---|---|---|---|---|---|
+| preBT meshes, unmoved | 0.791 | 0.371 | 0.189 | 0.206 | |
+| G32 ; TF1v | 0.873 ; 0.872 | 0.403 ; 0.406 | 0.183 ; 0.182 | 0.638 / 0.581 ; 0.620 / 0.574 | +4.83 ; +3.96 |
+| TF2c_c ; TF2p_b | 0.865 ; 0.865 | 0.215 ; 0.267 | 0.187 ; 0.188 | 0.691 / 0.615 ; 0.692 / 0.616 | +3.85 ; +3.84 |
+| TF3c ; TF3p | 0.866 ; 0.866 | 0.214 ; 0.267 | 0.188 ; 0.187 | 0.692 / 0.616 ; 0.691 / 0.615 | +3.84 ; +3.85 |
+
+BT offset vs the updated-label / json tandem; cervix volume ratio 0.993 (TF2c_nu25_b 1.015, 0.687 / 0.613).  Device,
+pelvis frame: 0.706 (G32 0.680), ring 0.749, 3.2 mm right of and 7.0 mm below BT's ring.
+
+**Process** (TF3c, independent per-frame re-measure; TF3p alike unless noted):
+- Vault top (98 nodes) to the cervix, max gap: V 1.46, C 1.53, K1 0.68, R_L 0.70, R_R 0.22, R_S 0.95 mm (12 nodes to
+  1.06 mm inside), K2 0.22, H 0.20; never > 3 mm (TF2c_c end of K2: 37 of 98 > 3 mm, to 9.0 mm on the posterior arc;
+  37 > 0.5 mm inside, to 4.1).  The K2 / H 0.20 mm is `vault_offset_mm` (it proves the implementation, not mechanics).
+  The end vault is a tilted ring round the portio, 3.9 mm (PRED 4.7) above BT's fornix on average; in R and early K2
+  it is a crumpled anterior patch, as in TF2.
+- The attachment is re-derived, not carried: at the first K2 row the junctions move from the start glue points by
+  median 15.2, max 23.7 mm (71 of 98 > 10 mm) and slide over the portio for ~60 rows.  One-way: the vagina follows the
+  cervix; nothing holds the cervix to the vagina.
+- Wall nodes > 0.5 mm inside the cervix (the band below the top ring): V / C <= 4, K1 65 (2.3 mm deep), R_L 233
+  (10.3), R_R 192 (9.8), R_S 187 (9.0), K2 98 (7.6), 0 from step 561 (PRED 513) and in H (TF2c_c: R_L 242, R_R 148,
+  R_S 143, K2 181, end 85).  Ring halves through the vault band at the seat and in early K2: up to 244 vertices, up to
+  6.1 mm (PRED 3.4); at the end <= 8 vertices, <= 0.37 mm.
+- Opening ahead of the device: V <= 4 of 42 stations by <= 2.1 mm, <= 3.5 mm ahead of the tip; C, K1 none.  The lumen
+  opened more than 5 mm beyond need runs 16.3 mm ahead of the left half (PRED 16.1-17.6 by two measures; TF2 41.2);
+  the right half's 79 mm is a threshold artefact.  The first R_L / R_R rows lag the drive by 7.2 / 13.7 mm.  Final
+  lumen 2.32x the device's need (CAL), 1.23x (PRED).
+- OAR vertices inside the vagina: TF3c 0 on every R..H frame; TF3p 9 rectum vertices to 2.0 mm at step 396 (TF1v up to
+  90, 7 mm).  A "bladder vertex 10-12 mm inside in early K2" was a vtkImplicitPolyDataDistance sign error (winding
+  number 0).
+- Defect G unchanged: 22 cervix vertices up to 2.0 mm inside the left half from the seat on; 21 left-half vertices end
+  up to 1.5 mm outside the lumen, all inside the cervix.  Worst tet: a single-step cervix squeeze of 0.355-0.382 at
+  the joint seat (TF2 0.361), not the rectum (TF2c_c worst 0.725).
+- Settle: TF3c / TF3p pass the rule after 5 H rows (max nodal change 0.016 -> 0.0092 mm, all rectum).  Nothing is
+  released at H: the FEM organs equilibrate against a prescribed vagina.
+
+**Rectum (not fixed).**  TF3 changes rectum Dice by <= 0.001.  BT moves the lower rectum 23-26 mm straight back
+(left-right <= 2.4 mm) and flattens it behind the device; the rest rectum moved straight back by BT's per-level
+profile would score 0.638.  Only the driven outer sheet touches the lower and mid rectum, pressing on its front-left
+face: it slides right from C on (TF2c_c lower rectum +11.3 mm right at the end of C), peaks in R_L (+28 mm), and K2's
+lower-vagina opening pushes it further right.  TF3c's lower rectum ends 22.7 mm right of and 7.4 mm anterior to BT's
+(TF3p 13.2 / 14.7).  The anti-crush supports (0.1 / 0.1, 34 mN/mm in total vs TF1v's 325; E 30) turn denting into
+sliding.  No existing key fixes it from scratch: 0.5 / 0.5 crushes (TF3r_iso5) or does not stop the C slide
+(TF3rC_iso5); TF3r_s30's 0.472 rests on TF1a_c's history and halves that start embedded in the wall (12 rectum
+vertices up to 2.6 mm inside the right half): not achievable.  Bladder (support 0.2): 0.866, anterior shift as BT (6.6
+vs 7.3 mm) but ~5 mm too inferior (the lifted corpus on the dome).
+
+**What fails or needs care** (reviewers' findings, most severe first):
+- The rectum: worse than not simulating.  Next: `k_rectum_lateral_mN_per_mm` (new key, 0 = no object): a
+  left-right-only spring to (x_rest, y_now, z_now) on rectum surface nodes below the rectosigmoid junction (the
+  cardinal-spring pattern); then V..C from scratch (gate: sideways <= 3 mm, Dice >= 0.43), then TF3c / TF3p.
+- The final vagina is prescribed: below the vault band the CAL wall equals the BT-derived rest mesh to 0.000 mm, so
+  CAL 0.888 is the calibration itself.  PRED (device hull + 3 mm) is predictive: 0.622, sections 10-14 mm off (mostly
+  anterior) and 6-12 mm too narrow in the lower third, but 0.734 on the trimmed reference, 0.02 below CAL.
+- Only the top ring is attached in every phase; the band below it crosses the cervix from K1 to early K2 and the
+  seated halves poke through it.  Use only end-of-K2 / H states as "attached" evidence.  A ring-shaped vault during R
+  needs an R-phase glue (not attempted).
+- Figures: `label_views.py` / `overlay_views.py` put both halves on the flange before R_S (the V..R_R stills in
+  `figs/labeled/` are wrong; the videos are right), and the overlays print "no ring in this run (tandem only)", an
+  unlabelled CAL "vagina Dice 0.89" and "packing behind the ring".  Use `figs/tf3_ringpose/labeled/`; fix: place
+  OVOID_BODY parts named in `d['ring_halves']` with `animate_hybrid.part_pose`.
+- Code, open: the `ring_lead_slope` comment ("the half stays inside the driven sheet") is false (first-row lag; a
+  devpen 9.4 mm reading at step 396 is not confirmed by the winding-number re-measure): reword before commit, then
+  rp.py.  The vault tie is flawed, refused under "live" (TF2*H: not for results); `settle_rayleigh_stiffness` does
+  nothing on a kinematic wall; the analytic slot plane is 0.64 mm off; `warm_start` checks are partial (a "live" start
+  at H silently re-pairs the junction); one inverted junction tet (TF3c -0.82); the TF3c / TF3p cfg notes append
+  TF2c_c's two-leg note.  Carried: C's non-clinical lateral lift (13.8 mm across the vaginal axis); rods to tandem in
+  the bundle 12.3 / 11.1 mm (plan <= 8).
+
+**Open decisions:** the rectum (lateral spring, or report the unmoved rectum); the final vagina (PRED is device-only
+and within 0.02 of CAL on the trimmed reference: confirm with the physician that no packing was used); an R-phase
+vault glue; the fornix height; the commit (user's call; `git add -f hybrid/test_wall_drive.py`; leave `user copy.md`
+and `__pycache__` out).
+
+Reproduce:
+```bash
+python -P hybrid/applicator_venezia.py --variant v5 --ring --tandem-from v4                                  # host
+python -P -B hybrid/vagina_wall_tet.py build --variant tet26v5 --set 'lumen_profile="packed"'                 # CAL
+python -P -B hybrid/vagina_wall_tet.py build --variant tet26v5p --set 'lumen_profile="packed"' --set 'v5_section="pred"'
+python -P -B hybrid/test_wall_drive.py ; python -P -B hybrid/cervix_probe.py selftest                         # 26 + 37
+APPSIM_TIMEOUT=14000 APPSIM_CPUS=4 bash run_docker_par.sh TF3c hybrid/run_hybrid.py --tag TF3c --cfg /out/hybrid/runs/_cfg/TF3c.json
+#   likewise TF3p (one run V..H, ~2 h); TF2c_c / TF2p_b / TF2c_nu25_b are leg 1 only (stop_after_phase "K2")
+python -P -B hybrid/tf_metrics.py score --tag TF3c
+```
+
 ### Commands
 
 ```bash

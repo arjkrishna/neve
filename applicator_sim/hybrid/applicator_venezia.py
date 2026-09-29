@@ -9,6 +9,11 @@
         # fix plan S4a/S4c: the tandem body alone (tube + vaginal tandem, one rigid body) measured on the UPDATED BT
         # applicator label, with v3's validated tube pose; writes applicator_v4/ (see main_tandem_only).  A rebuild
         # keeps pose.json insertion_path_tandem_first while the body is unchanged, else stops ([--force]: stale_records)
+    python -P applicator_venezia.py --variant v5 --ring [--tandem-from v4] [--ring-outer-r 20] [--app-label <label>]
+        # fix plan S4b/S4c: v4's tandem body (copied, checked) + two lunar ring halves (ring OUTER ~40 mm, each half
+        # one closed manifold with its socket boss and its own rod into the handle bundle), measured on the updated BT
+        # applicator label + the BT ovoid label; T_seat, per-half approach paths (host-checked clearance), label_check;
+        # pose.json insertion_path_tandem_first carried from v4 and verified (see main_ring)
 
 Outputs under <APPSIM_OUT>/hybrid/ (default ~/Downloads/MRI_GYN_sim/hybrid):
     applicator/{tube.obj, shaft.obj, ovoid_L.obj, ovoid_R.obj}   closed, outward-oriented surfaces in the APPLICATOR frame
@@ -2610,15 +2615,17 @@ def tandem_first_record(app_dir, params, info=None, wall=None):
     regenerated from the STORED params (so the scene's own regeneration reproduces them bit for bit) and stored too,
     rounded to 1e-9, for the audit, for tf_metrics (tau_pts / tau_s / delta_mm / w_r_table) and for the scene's
     staleness check.  info: provenance (mode, fallback, lift_in_C, gate summary, search) merged into the record.
-    Refuses a directory that is not tandem-only, and params whose final pose is not this pose.json's device_final.
+    Refuses a directory that is neither tandem-only nor a ring variant (params.ring_body: applicator_v5, whose tandem
+    body is the same tube.obj / shaft.obj), and params whose final pose is not this pose.json's device_final.
     Only this one key of pose.json is written (atomically: temp file + os.replace); every other key, and whatever a
     --tandem-only build wrote, is left as it is.  depends_on = tandem_body_depends of the dir's tube.obj / shaft.obj,
     applicator.json and pose.json as they are now (what tf_gate read): a later --tandem-only rebuild keeps the record
     verbatim only while those are unchanged (carry_path_records), so the two steps can run in either order."""
     app = json.load(open(os.path.join(app_dir, "applicator.json")))
-    if not app.get("params", {}).get("tandem_only", {}).get("value", False):
-        raise SystemExit("tandem_first_record: %s is not a tandem-only applicator (applicator.json params.tandem_only)"
-                         % app_dir)
+    prm_a = app.get("params", {})
+    if not (prm_a.get("tandem_only", {}).get("value", False) or prm_a.get("ring_body", {}).get("value", False)):
+        raise SystemExit("tandem_first_record: %s is neither a tandem-only applicator (applicator.json params.tandem_only) "
+                         "nor a ring variant (params.ring_body)" % app_dir)
     fn = os.path.join(app_dir, "pose.json")
     pose = json.load(open(fn))
     missing = [p + ".obj" for p in TANDEM_V4_PARTS if not os.path.exists(os.path.join(app_dir, p + ".obj"))]
@@ -2654,6 +2661,1426 @@ def tandem_first_record(app_dir, params, info=None, wall=None):
     return rec
 
 
+# ============================================================================ fix plan S4b / S4c: applicator_v5, the ring halves
+# What the updated label and the BT ovoid label show below and around the ring (audit R1; the physician on G32: "the
+# segmented ovoids outer diameter is about 40 mm, but your model has another ovoids rod outside the ovoids"): ONE flat
+# disc about 40 mm across and about 20 mm thick, split at the device's sagittal plane into two lunar halves that clamp
+# around the tube, a socket boss hanging under each half's anterior rim, and each half's own rod running down beside
+# the vaginal tandem into the handle bundle.  v3 hung two 26 mm caps with free rods 16 mm in front of the tandem rod
+# whose axis never entered a cap (+6.7 mm outside).  In v5 each half is ONE closed manifold (half-disc + boss + rod),
+# the zero set of a signed-distance composite meshed by flying edges, so no rod exists outside the ovoids.
+RING_V5_PARTS = ("ovoid_L", "ovoid_R")
+RING_SIDES = (("L", "ovoid_L", -1.0), ("R", "ovoid_R", 1.0))    # (side, part, sign of the outward medial normal on x_r)
+FRAME_APP_V5 = FRAME_APP_V4 + ("; the ring halves (ovoid_L.obj, ovoid_R.obj) are stored at their SEATED pose in this "
+                               "frame: the scene places them with the tandem's pose (applicator.json ring.T_seat)")
+
+
+def v5_params(prm, ring_outer_r=None):
+    """The ring-half (v5) parameters, added to a copy of the tandem variant's (v4) applicator.json params, which stay as
+    they are (the tandem body is v4's, byte for byte).  Returns the list of added keys."""
+    added = []
+
+    def add(k, v, unit, source, note=""):
+        prm[k] = dict(value=v, unit=unit, source=source, **({"note": note} if note else {}))
+        added.append(k)
+
+    add("tandem_only", False, "-", "v5 (fix plan S4b): the v4 tandem body (tube + vaginal tandem, copied unchanged) PLUS the two "
+        "lunar ring halves; the scene loads tube.obj + shaft.obj as the tandem and ovoid_L.obj + ovoid_R.obj as the ovoid body")
+    add("ring_body", True, "-", "v5: two lunar ovoid halves, each ONE closed manifold = half-disc + socket boss + its own rod "
+        "(no rod outside the ovoids; fix plan S4b, the physician's G32 comment)")
+    add("ring_outer_r_mm", 20.0 if ring_outer_r is None else float(ring_outer_r), "mm",
+        "DECISION U1 = label (user-confirmed): ring OUTER radius, the physician's 'segmented ovoids outer diameter is about "
+        "40 mm'.  MEASURED beside it (label_geometry.ring_halves.outer_radius): the ovoid label's area-equivalent radius on "
+        "its plateau, its outline circle fit and the BT MRI half-way edge (--ring-outer-r overrides)")
+    add("ring_channel_diam_mm", 30.0, "mm", "VENDOR SPEC (the physician: 'ovoids have 30 mm diameter'; Venezia literature: "
+        "22 / 26 / 30 mm = the diameter of the ring of SOURCE CHANNELS inside the lunar ovoids, not the outer diameter).  "
+        "Recorded, not used by the geometry: applicator.json vendor_vs_label explains the correspondence")
+    add("tandem_length_mm", 70.0, "mm", "VENDOR SPEC (the physician: 'the tandem used in the current case is 70 mm length').  "
+        "Recorded, not used: the model tube keeps the MEASURED L_iu_mm (the validated pose); vendor_vs_label gives the "
+        "label's tip-to-reference lengths")
+    add("ring_bore_r_mm", 4.0, "mm", "DESIGN (fix plan S4b): central bore of the ring about the TUBE axis, so the tandem body "
+        "never overlaps the ring at the seat (tube r_tandem_mm, vaginal tandem r_shaft_mm start inside it)")
+    add("ring_slot_mm", 0.5, "mm", "DESIGN (fix plan S4b): medial slot between the two halves (the device's sagittal plane "
+        "through the tube axis, azimuth measured from the rod pair)")
+    add("ring_boss_r_mm", 4.0, "mm", "fix plan S4b: radius of the socket boss that joins each half's rod to its rim; its axis is "
+        "MEASURED (rod top -> the median of the half's socket voxels)")
+    add("r_ovoid_rod_mm", 3.12, "mm", "MEASURED (fix plan S4b: MRI FWHM of the ovoid rods).  label_geometry.ovoid_rods.<side>."
+        "r_label_mm = this build's tilt-corrected section radius on the label")
+    add("ring_profile_step_mm", 0.5, "mm", "NUMERICAL: spacing of the label-frame z planes on which the ovoid label's section "
+        "(area, outline circle) is measured")
+    add("ring_plateau_frac", 0.97, "-", "NUMERICAL: planes whose area-equivalent radius is >= this x the largest form the "
+        "ring's full-size plateau (centre and radius are medians over it)")
+    add("ring_column_grid_mm", 0.5, "mm", "NUMERICAL: xy spacing of the columns along the label z axis whose top / bottom give "
+        "the ring's radial profile")
+    add("ring_column_dz_mm", 0.25, "mm", "NUMERICAL: sampling step along each column (trilinear on the 0/1 mask, >= 0.5 = inside)")
+    add("ring_face_rho_min_mm", 6.0, "mm", "NUMERICAL: the face / fillet fit uses radii from here to ring_outer_r_mm - 0.25 "
+        "(inside this radius the label has a hub around the tube: reported as hub_*, not modelled)")
+    add("ring_socket_sector_deg", 45.0, "deg", "NUMERICAL: half-width of the anterior sector (about the rod pair's azimuth) that "
+        "holds the socket bosses: left out of the disc fits, searched for the boss voxels")
+    add("ring_socket_out_mm", 1.0, "mm", "NUMERICAL: ovoid-label voxels more than this outside the fitted disc are socket "
+        "voxels (the boss axis goes through their median)")
+    add("ovoid_rod_min_off_mm", 10.0, "mm", "NUMERICAL: an ovoid-rod seed section lies at least this far from the tube axis "
+        "(the tandem and the specks under the ring are nearer)")
+    add("ovoid_rod_merge_ratio", 1.25, "-", "NUMERICAL: tracking stops when a section's r_eq exceeds this x the rod's median "
+        "(the rods merge into the handle bundle) or both rods take the same section")
+    add("ovoid_rod_full_tol", 0.15, "-", "NUMERICAL: sections within this fraction of the median r_eq are full sections (the "
+        "rod line and radius use only them)")
+    add("ring_mesh_h_mm", 0.3, "mm", "NUMERICAL: grid of the signed-distance composite each half is meshed from (flying edges)")
+    add("ring_mesh_target_tris", 5000, "-", "NUMERICAL: triangles per half after quadric decimation (the tube / shaft have 1.5-1.8k)")
+    add("ring_approach_D_mm", 100.0, "mm", "fix plan S7f: each half starts D down its own rod direction from its seat")
+    add("ring_approach_dir", "rod_sagittal", "-", "direction each half backs out along (fix plan S7f: its rod direction): "
+        "'rod_sagittal' (default) = its measured upper rod direction without the component along its medial normal, so "
+        "the lateral offset stays the offset (MEASURED on this case: one rod converges medially, and backing its half out "
+        "along it drifts the half into the vaginal tandem, so 'rod' needs about twice the offset; applicator.json "
+        "ring.approach); 'rod' = the measured direction itself; 'handle' = the bundle axis")
+    add("ring_approach_offset_min_mm", 5.0, "mm", "fix plan S4b / S7c(iii): the lateral offset along the half's outward medial "
+        "normal is at least this; the smallest offset (0.5 mm steps) that keeps ring_clearance_min_mm on every row is kept")
+    add("ring_approach_offset_max_mm", 12.0, "mm", "NUMERICAL: largest lateral offset tried")
+    add("ring_click_mm", [15.0, 20.0], "mm", "fix plan S4b: each half clicks in (its lateral offset goes to 0) over the last "
+        "15-20 mm of its approach (1 mm steps tried)")
+    add("ring_click_shapes", [1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0], "-", "NUMERICAL: click-in profiles tried, offset(d) = o "
+        "(1 - (1 - d / click)^p) for d < click (p = 1 linear; a larger p keeps the offset until the half is nearly at its "
+        "seat height, then closes it medially.  MEASURED on this case: a half's bore clears the tube and the top of the "
+        "vaginal tandem only in the last few mm of its rise, so the linear profiles fail at the minimum offset)")
+    add("ring_approach_step_mm", 0.5, "mm", "NUMERICAL: spacing of the host-checked approach rows along d")
+    add("ring_clearance_min_mm", 0.5, "mm", "fix plan S4b / S7c(iii): device-device clearance between the tandem body and each "
+        "half on every approach row")
+    add("ring_sample_density_per_mm2", 2.0, "1/mm2", "NUMERICAL: surface samples (plus the mesh vertices) per mm2 for the "
+        "approach clearance")
+    add("mri_edge_bands_mm", [[8.0, 14.0], [23.0, 32.0]], "mm", "NUMERICAL (report only): radial bands of the BT MRI whose "
+        "median (inside, the ring's signal void) and 75th percentile (outside, tissue) set the half-way edge level")
+    return added
+
+
+def _circle_fit(p):
+    """Least-squares circle through 2-D points: (cx, cy, r, rms)."""
+    p = np.asarray(p, float)
+    A = np.c_[2.0 * p[:, 0], 2.0 * p[:, 1], np.ones(len(p))]
+    c, *_ = np.linalg.lstsq(A, (p ** 2).sum(1), rcond=None)
+    r = float(np.sqrt(c[2] + c[0] ** 2 + c[1] ** 2))
+    res = np.hypot(p[:, 0] - c[0], p[:, 1] - c[1]) - r
+    return float(c[0]), float(c[1]), r, float(np.sqrt((res ** 2).mean()))
+
+
+def _azimuth_deg(x, y):
+    """Azimuth in the label-frame xy plane: 0 = anterior (+y), positive toward the patient's right (+x)."""
+    return np.degrees(np.arctan2(x, y))
+
+
+def _ang_diff(a, b):
+    return (np.asarray(a, float) - b + 180.0) % 360.0 - 180.0
+
+
+def rounded_disc_sdf(rho, z, R, z_top, z_bot, f_top, f_bot):
+    """Exact signed distance in the meridian plane (rho, z) of a disc of radius R between z_bot and z_top whose top and
+    bottom outer edges are rounded with radii f_top / f_bot (a 2-D box with per-corner radii, revolved)."""
+    zm, H = 0.5 * (z_top + z_bot), 0.5 * (z_top - z_bot)
+    pz = np.asarray(z, float) - zm
+    f = np.where(pz > 0.0, f_top, f_bot)
+    qx = np.asarray(rho, float) - R + f
+    qz = np.abs(pz) - H + f
+    return np.minimum(np.maximum(qx, qz), 0.0) + np.hypot(np.maximum(qx, 0.0), np.maximum(qz, 0.0)) - f
+
+
+def disc_profile(rho, R, z_top, z_bot, f_top, f_bot):
+    """(top, bottom) surface heights of that disc at radius rho <= R."""
+    rho = np.asarray(rho, float)
+    top = np.where(rho <= R - f_top, z_top, z_top - f_top + np.sqrt(np.maximum(0.0, f_top ** 2 - (rho - R + f_top) ** 2)))
+    bot = np.where(rho <= R - f_bot, z_bot, z_bot + f_bot - np.sqrt(np.maximum(0.0, f_bot ** 2 - (rho - R + f_bot) ** 2)))
+    return top, bot
+
+
+def _seg_dist(Q, a, b):
+    """Distance of points Q (n, 3) to the segment a-b."""
+    Q = np.atleast_2d(np.asarray(Q, float))
+    a = np.asarray(a, float)
+    ab = np.asarray(b, float) - a
+    t = np.clip((Q - a) @ ab / max(1e-12, float(ab @ ab)), 0.0, 1.0)
+    return np.linalg.norm(Q - a - t[:, None] * ab, axis=1)
+
+
+def _polyline_dist(Q, C):
+    """Distance of points Q to the polyline C (a chain of segments)."""
+    C = np.asarray(C, float)
+    out = np.full(len(np.atleast_2d(Q)), np.inf)
+    for i in range(len(C) - 1):
+        out = np.minimum(out, _seg_dist(Q, C[i], C[i + 1]))
+    return out
+
+
+def _line_z(c, d, z):
+    """Point of the line c + t d at height z (d_z != 0)."""
+    c, d = np.asarray(c, float), np.asarray(d, float)
+    return c + ((float(z) - c[2]) / d[2]) * d
+
+
+def _trace_ovoid_rods(Qa, pl, geo, prm):
+    """The two ovoid rods on the tandem's own z planes below the ring (label frame).  Seed: the first plane with two
+    sections other than the tandem, r_eq in [tandem_min_req_mm, rod_merge_req_mm], >= ovoid_rod_min_off_mm from the
+    tube axis (L = the one at smaller x); then each is tracked downward like the tandem (nearest section to the linearly
+    extrapolated position within track_max_jump_mm) until the two take the same section or a section outgrows
+    ovoid_rod_merge_ratio x its median: the handle bundle.  Returns {side: dict(stations (x, y, z, r_eq), plane index
+    list, comps)} and the plane list."""
+    st = float(val(prm, "label_station_mm"))
+    min_px, r_merge = int(val(prm, "rod_min_px")), float(val(prm, "rod_merge_req_mm"))
+    ring0 = geo["ring"]
+    z0 = -st * np.ceil(-ring0["z_bottom_on_axis_mm"] / st - 1e-9)
+    zs = np.arange(z0, float(Qa[:, 2].min()) - st, -st)
+    comps = [pl.components(float(z), min_px) for z in zs]
+    Tp = np.asarray(geo["tandem"]["stations_xyz_req"], float)
+
+    def t_comp(i):
+        k = np.nonzero(np.abs(Tp[:, 2] - zs[i]) < 1e-6)[0]
+        if not len(k):
+            return None
+        cand = [c for c in comps[i] if np.hypot(c["x"] - Tp[k[0], 0], c["y"] - Tp[k[0], 1]) < 1.0]
+        return min(cand, key=lambda c: np.hypot(c["x"] - Tp[k[0], 0], c["y"] - Tp[k[0], 1])) if cand else None
+    r_seed, r_track = float(val(prm, "tandem_min_req_mm")), float(val(prm, "track_min_req_mm"))
+    off_min, jump = float(val(prm, "ovoid_rod_min_off_mm")), float(val(prm, "track_max_jump_mm"))
+    ratio = float(val(prm, "ovoid_rod_merge_ratio"))
+
+    def track(i0, pair):
+        tracks = {"L": [(i0, pair[0])], "R": [(i0, pair[1])]}
+        alive, stop = {"L": True, "R": True}, {}
+        for i in range(i0 + 1, len(zs)):
+            tc = t_comp(i)
+            pick = {}
+            for s in ("L", "R"):
+                if not alive[s]:
+                    continue
+                tr = tracks[s]
+                p = np.array([tr[-1][1]["x"], tr[-1][1]["y"]])
+                if len(tr) >= 2:
+                    p = 2.0 * p - np.array([tr[-2][1]["x"], tr[-2][1]["y"]])
+                cand = [c for c in comps[i] if c is not tc and c["r_eq"] >= r_track
+                        and np.hypot(c["x"] - p[0], c["y"] - p[1]) <= jump]
+                if not cand:
+                    alive[s], stop[s] = False, "no section within %.1f mm at z %.1f" % (jump, zs[i])
+                    continue
+                pick[s] = min(cand, key=lambda c: np.hypot(c["x"] - p[0], c["y"] - p[1]))
+            if "L" in pick and "R" in pick and pick["L"] is pick["R"]:
+                for s in ("L", "R"):
+                    alive[s], stop[s] = False, "both rods take one section at z %.1f (the handle bundle)" % zs[i]
+                break
+            for s, c in pick.items():
+                if len(tracks[s]) >= 3 and c["r_eq"] > ratio * float(np.median([t[1]["r_eq"] for t in tracks[s]])):
+                    alive[s], stop[s] = False, "section r_eq %.2f > %.2f x the median at z %.1f (bundle)" % (c["r_eq"], ratio, zs[i])
+                    continue
+                tracks[s].append((i, c))
+            if not (alive["L"] or alive["R"]):
+                break
+        return tracks, stop
+    # seed = the first plane whose two rod-like sections off the axis are BOTH tracked over >= 4 planes (the specks
+    # under the ring's rim pass the size test in single planes but do not continue)
+    tracks, stop, seeds_tried = None, {}, []
+    for i in range(len(zs)):
+        tc = t_comp(i)
+        cand = [c for c in comps[i] if c is not tc and r_seed <= c["r_eq"] <= r_merge and np.hypot(c["x"], c["y"]) >= off_min]
+        if len(cand) < 2:
+            continue
+        cand = sorted(cand, key=lambda c: -c["r_eq"])[:2]
+        if np.hypot(cand[0]["x"] - cand[1]["x"], cand[0]["y"] - cand[1]["y"]) < 2.0 * r_seed:
+            continue
+        trk, stp = track(i, sorted(cand, key=lambda c: c["x"]))
+        seeds_tried.append(float(zs[i]))
+        if min(len(trk["L"]), len(trk["R"])) >= 4:
+            tracks, stop = trk, stp
+            break
+    if tracks is None:
+        raise ValueError("ovoid rods: no plane below the ring starts two rod tracks of >= 4 sections (seeds tried at z %s)"
+                         % seeds_tried)
+    for s in ("L", "R"):
+        stop[s] = "%s; seed planes tried at z %s" % (stop.get(s, "label end"), seeds_tried)
+    out = {}
+    for s in ("L", "R"):
+        S = np.array([[c["x"], c["y"], zs[i], c["r_eq"]] for i, c in tracks[s]])
+        if len(S) < 4:
+            raise ValueError("ovoid rod %s: only %d sections traced" % (s, len(S)))
+        out[s] = dict(stations=S, planes=[i for i, _ in tracks[s]], comps=[c for _, c in tracks[s]], stop=stop.get(s, "label end"))
+    return out, zs, comps
+
+
+def measure_ring_geometry(lab, geo, prm, C, cl):
+    """S4b/S4c: the ring halves measured on the updated BT applicator label + the BT ovoid label, in the BT label frame
+    (= the v4 part frame).  Nothing is hard-coded from an analysis script.
+      ovoid rods   traced plane by plane (_trace_ovoid_rods); line = PCA of the full sections, pointing down; r_label =
+                   median r_eq x sqrt(cos tilt); rod top = that line one plane above the first full section (where the
+                   rod leaves the ovoid label's socket); the rod runs straight along its line to the plane through the
+                   tandem shaft's end normal to the bundle axis (the handle bundle ends together)
+      slot         the device's sagittal plane: through the tube axis toward the mean midpoint of the paired rod sections
+      section      per z plane of the ovoid label (largest component): area-equivalent radius and an outline circle fit
+                   (socket sector left out); plateau = r_eq >= ring_plateau_frac x the largest; centre = plateau median
+      profile      columns along z: radial medians of the ovoid label's top / bottom outside the socket sector; the flat
+                   faces and the two edge fillets are the least-squares fit of the rounded disc to them (R =
+                   ring_outer_r_mm)
+      bosses       ovoid-label voxels > ring_socket_out_mm outside that disc in the socket sector below the equator, split
+                   at the slot: the boss axis runs from the rod top through their median, up to their 95th-percentile z
+      MRI edge     (report only) the BT MRI's half-way edge on the plateau planes
+    Returns (rg, rvox): rg is JSON-able (after jz); rvox holds label-frame voxel sets scored in S4c."""
+    from scipy import ndimage as ndi
+    from scipy.optimize import least_squares
+    O = np.asarray(geo["frame"]["origin_BT_world"], float)
+    R = np.asarray(geo["frame"]["R_rows_BT_world"], float)
+
+    def to_lf(W):
+        return (np.asarray(W, float) - O) @ R.T
+    Qa = to_lf(_vox_world(lab["app"] & ~lab["ovoid"], lab["aff"]))
+    Qo = to_lf(_vox_world(lab["ovoid"], lab["aff"]))
+    ring0 = geo["ring"]
+    st = float(val(prm, "label_station_mm"))
+    pl = LabelPlanes(lab, O, R, float(val(prm, "label_plane_px_mm")))
+    R_out = float(val(prm, "ring_outer_r_mm"))
+    # ---- (a) the ovoid rods
+    tr, zs, comps = _trace_ovoid_rods(Qa, pl, geo, prm)
+    tol, margin = float(val(prm, "ovoid_rod_full_tol")), float(val(prm, "tandem_select_margin_mm"))
+    d_b = geom.unit(np.asarray(geo["bundle"]["axis_app_down"], float))
+    S_end = np.asarray(C[-1], float)
+    rods, rvox = {}, dict(all=Qa, ovoid=Qo)
+    for s in ("L", "R"):
+        S = tr[s]["stations"]
+        med = float(np.median(S[:, 3]))
+        full = np.abs(S[:, 3] / med - 1.0) <= tol
+        if full.sum() < 3:
+            raise ValueError("ovoid rod %s: fewer than 3 full sections" % s)
+        c0 = S[full, :3].mean(0)
+        _, _, vt = np.linalg.svd(S[full, :3] - c0, full_matrices=False)
+        d = geom.unit(vt[0] if vt[0][2] < 0 else -vt[0])
+        cos_t = abs(float(d[2]))
+        r_lab = float(np.median(S[full, 3]) * np.sqrt(cos_t))
+        res = S[:, :3] - c0
+        lat = np.linalg.norm(res - np.outer(res @ d, d), axis=1)
+        top = _line_z(c0, d, S[0, 2] + st)
+        knee = _line_z(c0, d, S[-1, 2] - 0.5 * st)
+        t_end = float((S_end - knee) @ d_b)
+        end = knee + max(0.0, t_end) * d_b
+        # label voxels of this rod (scored in S4c): the tandem's selection rule on the rod's own planes
+        sel = np.zeros(len(Qa), bool)
+        zi = S[::-1, 2]
+        for i, c in zip(tr[s]["planes"], tr[s]["comps"]):
+            m = np.abs(Qa[:, 2] - zs[i]) <= 0.5 * st + 1e-9
+            if not m.any():
+                continue
+            q = Qa[m]
+            cx, cy = np.interp(q[:, 2], zi, S[::-1, 0]), np.interp(q[:, 2], zi, S[::-1, 1])
+            dT = np.hypot(q[:, 0] - cx, q[:, 1] - cy)
+            others = [cc for cc in comps[i] if cc is not c]
+            dO = (np.min([np.hypot(q[:, 0] - cc["x"], q[:, 1] - cc["y"]) for cc in others], axis=0) if others
+                  else np.full(len(q), np.inf))
+            sel[np.nonzero(m)[0][(dT <= r_lab / cos_t + margin) & (dT < dO)]] = True
+        rvox["rod_" + s] = Qa[sel]
+        rods[s] = dict(stations_xyz_req=S, full=full, n_stations=int(len(S)), n_full=int(full.sum()),
+                       z_first_mm=float(S[0, 2]), z_last_mm=float(S[-1, 2]), stop=tr[s]["stop"],
+                       line_point=c0, dir_app_down=d, tilt_to_tube_deg=geom.angle_deg(d, -EZ),
+                       line_rms_mm=float(np.sqrt((lat[full] ** 2).mean())), line_max_dev_mm=float(lat.max()),
+                       r_label_mm=r_lab, r_eq_median_mm=med, n_label_vox=int(sel.sum()),
+                       top=top, knee=knee, end=end, knee_angle_deg=geom.angle_deg(d, d_b),
+                       length_mm=float(np.linalg.norm(knee - top) + np.linalg.norm(end - knee)),
+                       top_from_tube_axis_mm=float(np.hypot(top[0], top[1])),
+                       definition="top = the rod line one plane above the first traced section (it leaves the socket "
+                                  "there); knee = the line half a plane below the last separable section (the rods enter "
+                                  "the handle bundle, where the label no longer separates them); below the knee the rod "
+                                  "runs parallel to the measured bundle axis, as the tandem does, to the plane through "
+                                  "the tandem shaft's end normal to that axis")
+    pair = [i for i in tr["L"]["planes"] if i in tr["R"]["planes"]]
+    SL = {i: p for i, p in zip(tr["L"]["planes"], tr["L"]["stations"])}
+    SR = {i: p for i, p in zip(tr["R"]["planes"], tr["R"]["stations"])}
+    mid = np.array([0.5 * (SL[i][:2] + SR[i][:2]) for i in pair])
+    sep = np.array([np.linalg.norm(SL[i][:2] - SR[i][:2]) for i in pair])
+    phi = float(_azimuth_deg(mid[:, 0].mean(), mid[:, 1].mean()))
+    y_r = np.array([np.sin(np.radians(phi)), np.cos(np.radians(phi)), 0.0])
+    x_r = np.cross(y_r, EZ)
+    sector = float(val(prm, "ring_socket_sector_deg"))
+    # ---- (b) sections of the ovoid label: area-equivalent radius and outline circle, per z plane
+    h_p = float(val(prm, "ring_profile_step_mm"))
+    prof = []
+    for z in np.arange(ring0["z_top_mm"], ring0["z_bottom_mm"] - 1e-9, -h_p):
+        m = pl._sample(pl.ov, float(z))
+        lab_, n = ndi.label(m)
+        if n == 0:
+            continue
+        k = int(np.argmax(np.bincount(lab_.ravel())[1:])) + 1
+        mk = lab_ == k
+        area = float(mk.sum()) * pl.px ** 2
+        bd = mk & ~ndi.binary_erosion(mk)
+        bx, by = pl.X[bd], pl.Y[bd]
+        keep = np.abs(_ang_diff(_azimuth_deg(bx - pl.X[mk].mean(), by - pl.Y[mk].mean()), phi)) > sector
+        fit = _circle_fit(np.c_[bx[keep], by[keep]]) if keep.sum() >= 20 else (np.nan,) * 4
+        prof.append([float(z), area, float(np.sqrt(area / np.pi)), float(n), *fit])
+    prof = np.array(prof)
+    pla = prof[:, 2] >= float(val(prm, "ring_plateau_frac")) * prof[:, 2].max()
+    pla &= np.isfinite(prof[:, 4])
+    xc, yc = float(np.median(prof[pla, 4])), float(np.median(prof[pla, 5]))
+    # ---- (c) radial profile of the label's top / bottom (columns along z), fit of the rounded disc
+    hg, dz = float(val(prm, "ring_column_grid_mm")), float(val(prm, "ring_column_dz_mm"))
+    g = np.arange(-(R_out + 3.0), R_out + 3.0 + 1e-9, hg)
+    zc = np.arange(ring0["z_bottom_mm"] - 1.0, ring0["z_top_mm"] + 1.0 + 1e-9, dz)
+    GX, GY, GZ = np.meshgrid(xc + g, yc + g, zc, indexing="ij")
+    Qg = np.stack([GX.ravel(), GY.ravel(), GZ.ravel()], 1)
+    inv = np.linalg.inv(lab["aff"])
+    vin = (ndi.map_coordinates(pl.ov, ((O + Qg @ R) @ inv[:3, :3].T + inv[:3, 3]).T, order=1, mode="constant", cval=0.0)
+           >= 0.5).reshape(GX.shape)
+    has = vin.any(2)
+    ztop = np.where(has, zc[vin.shape[2] - 1 - np.argmax(vin[:, :, ::-1], axis=2)], np.nan)
+    zbot = np.where(has, zc[np.argmax(vin, axis=2)], np.nan)
+    CX, CY = GX[:, :, 0], GY[:, :, 0]
+    rho = np.hypot(CX - xc, CY - yc)
+    free = np.abs(_ang_diff(_azimuth_deg(CX - xc, CY - yc), phi)) > sector
+    bins = np.arange(0.0, R_out + 3.0, 0.5)
+    rp = []
+    for b0 in bins:
+        m = free & (rho >= b0) & (rho < b0 + 0.5)
+        if m.sum() < 5:
+            continue
+        pres = float(has[m].mean())
+        rp.append([b0 + 0.25, float(np.nanmedian(ztop[m])) if has[m].any() else np.nan,
+                   float(np.nanmedian(zbot[m])) if has[m].any() else np.nan, pres, float(m.sum())])
+    rp = np.array(rp)
+    rho_min = float(val(prm, "ring_face_rho_min_mm"))
+    fm = (rp[:, 0] >= rho_min) & (rp[:, 0] <= R_out - 0.25) & (rp[:, 3] >= 0.5) & np.isfinite(rp[:, 1])
+    rb, tmed, bmed = rp[fm, 0], rp[fm, 1], rp[fm, 2]
+    inner = rb < R_out - 8.0
+    p0 = np.array([np.median(tmed[inner]), np.median(bmed[inner]), 4.0, 4.0])
+
+    def resid(p):
+        t_, b_ = disc_profile(rb, R_out, *p)
+        return np.r_[t_ - tmed, b_ - bmed, 10.0 * max(0.0, p[2] + p[3] - (p[0] - p[1]) + 0.5)]
+    lo = [p0[0] - 10.0, p0[1] - 10.0, 0.5, 0.5]
+    hi = [p0[0] + 10.0, p0[1] + 10.0, 12.0, 12.0]
+    sol = least_squares(resid, p0, bounds=(lo, hi))
+    z_t, z_b, f_t, f_b = [float(v) for v in sol.x]
+    r_fit = resid(sol.x)[:-1]
+    free_r = free & has
+    # ---- (d) sockets and bosses
+    ds = rounded_disc_sdf(np.hypot(Qo[:, 0] - xc, Qo[:, 1] - yc), Qo[:, 2], R_out, z_t, z_b, f_t, f_b)
+    zm = 0.5 * (z_t + z_b)
+    sock = (ds > float(val(prm, "ring_socket_out_mm"))) & (Qo[:, 2] < zm) & \
+        (np.abs(_ang_diff(_azimuth_deg(Qo[:, 0], Qo[:, 1]), phi)) <= sector)
+    r_boss = float(val(prm, "ring_boss_r_mm"))
+    halves = {}
+    for s, part, sg in RING_SIDES:
+        n_out = sg * x_r
+        Sv = Qo[sock & ((Qo[:, :2] @ n_out[:2]) > 0.0)]
+        rd = rods[s]
+        top = np.asarray(rd["top"], float)
+        if len(Sv) < 10:
+            raise ValueError("ring half %s: only %d socket voxels" % (s, len(Sv)))
+        Mv = np.median(Sv, axis=0)
+        z_hi = float(np.percentile(Sv[:, 2], 95))
+        u = Mv - top
+        u = geom.unit(u) if u[2] > 1.0 else EZ.copy()
+        B0 = top + ((z_hi - top[2]) / u[2]) * u
+        # the boss must reach into the disc (fused): walk its top up along u until the capsule overlaps the disc by 1 mm
+        n_walk = 0
+        while rounded_disc_sdf(np.hypot(B0[0] - xc, B0[1] - yc), B0[2], R_out, z_t, z_b, f_t, f_b) > r_boss - 1.0 and n_walk < 40:
+            B0 = B0 + 0.25 * u
+            n_walk += 1
+        e_rod = np.asarray(rd["dir_app_down"], float)
+        mode = val(prm, "ring_approach_dir")
+        if mode == "rod":
+            e_app = e_rod
+        elif mode == "rod_sagittal":
+            e_app = geom.unit(e_rod - (e_rod @ x_r) * x_r)
+        elif mode == "handle":
+            e_app = d_b
+        else:
+            raise ValueError("ring_approach_dir must be 'rod', 'rod_sagittal' or 'handle' (got %r)" % mode)
+        halves[s] = dict(part=part, n_out=n_out, boss_top=B0, boss_bottom=top, rod_top=top, rod_knee=rd["knee"],
+                         rod_end=rd["end"], rod_pts=[top, rd["knee"], rd["end"]], rod_dir_down=e_rod, handle_dir_down=d_b,
+                         approach_dir_down=e_app, approach_dir_mode=mode,
+                         approach_dir_to_rod_deg=geom.angle_deg(e_app, e_rod),
+                         n_socket_vox=int(len(Sv)), socket_vol_cc=float(len(Sv) * lab["vv"] / 1000.0),
+                         socket_median=Mv, socket_z_range_mm=[float(Sv[:, 2].min()), float(Sv[:, 2].max())],
+                         boss_len_mm=float(np.linalg.norm(B0 - top)), boss_tilt_to_tube_deg=geom.angle_deg(u, EZ),
+                         boss_top_from_tube_axis_mm=float(np.hypot(B0[0], B0[1])),
+                         rod_top_from_tube_axis_mm=float(np.hypot(top[0], top[1])),
+                         boss_down_mm=float(B0[2] - top[2]),
+                         boss_outward_mm=float(np.hypot(top[0], top[1]) - np.hypot(B0[0], B0[1])),
+                         boss_top_walk_mm=0.25 * n_walk)
+        rvox["socket_" + s] = Sv
+    # ---- (e) MRI edge (report only)
+    mri = _mri_ring_edge(O, R, (xc, yc), prof[pla, 0], prm)
+    zs_pla = prof[pla, 0]
+    outer = dict(value_mm=R_out, source=prm["ring_outer_r_mm"]["source"],
+                 label_req_plateau_mm=dict(median=float(np.median(prof[pla, 2])), min=float(prof[pla, 2].min()),
+                                           max=float(prof[pla, 2].max())),
+                 label_outline_circle_mm=dict(median=float(np.median(prof[pla, 6])), min=float(prof[pla, 6].min()),
+                                              max=float(prof[pla, 6].max()), rms_median=float(np.median(prof[pla, 7]))),
+                 label_column_presence_half_mm=float(np.interp(0.5, rp[::-1, 3], rp[::-1, 0])) if (rp[:, 3] < 0.5).any() else None,
+                 mri_half_way_edge_mm=mri,
+                 definition="label_req = area-equivalent radius of the ovoid label's largest section on the plateau planes; "
+                            "label_outline_circle = least-squares circle through that section's outline outside the socket "
+                            "sector; label_column_presence_half = the radius at which half of the columns (outside the "
+                            "socket sector) hold ovoid label; mri_half_way_edge = BT MRI, see _mri_ring_edge")
+    rg = dict(
+        frame="BT label frame = the v4 applicator frame (mm): origin = flange, z = label tube axis, x = BT world x "
+              "orthogonalised, y = anterior",
+        centre_xy=[xc, yc], centre_from_tube_axis_mm=float(np.hypot(xc, yc)),
+        R_out=R_out, z_top=z_t, z_bottom=z_b, fillet_top=f_t, fillet_bottom=f_b, z_mid=zm, thickness_mm=z_t - z_b,
+        r_bore=float(val(prm, "ring_bore_r_mm")), slot=float(val(prm, "ring_slot_mm")), r_boss=r_boss,
+        r_rod=float(val(prm, "r_ovoid_rod_mm")),
+        slot_azimuth_deg=phi, x_r=x_r, y_r=y_r,
+        z_last_separable_mm=float(min(rods["L"]["z_last_mm"], rods["R"]["z_last_mm"])),
+        rod_pair=dict(n_paired=int(len(pair)), separation_mm=dict(mean=float(sep.mean()), min=float(sep.min()), max=float(sep.max())),
+                      midpoint_mean_xy=mid.mean(0), slot_azimuth_deg=phi,
+                      definition="paired sections = the planes where both rods were traced; the slot plane contains the "
+                                 "tube axis and points to the mean midpoint (azimuth from +y toward +x)"),
+        halves=halves, outer_radius=outer,
+        profile_fit=dict(z_top_mm=z_t, z_bottom_mm=z_b, fillet_top_mm=f_t, fillet_bottom_mm=f_b, R_mm=R_out,
+                         rms_mm=float(np.sqrt((r_fit ** 2).mean())), n_bins=int(fm.sum()), rho_range_mm=[float(rb.min()), float(rb.max())],
+                         radial_median_table=rp,
+                         radial_median_table_columns="rho_mm, median top z, median bottom z, fraction of columns with label, n columns",
+                         hub=dict(top_median_mm=float(np.nanmedian(ztop[free_r & (rho < rho_min)])),
+                                  bottom_median_mm=float(np.nanmedian(zbot[free_r & (rho < rho_min)])),
+                                  note="inside ring_face_rho_min_mm (around the tube) the label's top rises above the "
+                                       "fitted face and its bottom sits above it: reported, not modelled"),
+                         definition="least-squares fit of the rounded disc's top / bottom heights (flat faces z_top / "
+                                    "z_bottom, circular edge fillets) to the radial medians of the ovoid label's column "
+                                    "tops / bottoms outside the socket sector, rho in [ring_face_rho_min_mm, R - 0.25]"),
+        sections=dict(table=prof, columns="z_mm, area_mm2, r_eq_mm, n_components, circle cx, cy, r, rms (socket sector left out)",
+                      plateau_z_mm=[float(zs_pla.max()), float(zs_pla.min())], n_plateau=int(pla.sum()),
+                      centre_spread_mm=[float(np.ptp(prof[pla, 4])), float(np.ptp(prof[pla, 5]))]),
+        ovoid_label=dict(z_top_mm=ring0["z_top_mm"], z_bottom_mm=ring0["z_bottom_mm"], vol_cc=ring0["vol_cc"],
+                         n_socket_vox=int(sock.sum()), socket_vol_cc=float(sock.sum() * lab["vv"] / 1000.0)))
+    return rg, rods, rvox
+
+
+def _mri_ring_edge(O, R, centre, zs, prm):
+    """BT MRI half-way edge of the ring (its signal void) on label-frame planes zs: rays every 7.5 deg from the centre;
+    level = half-way between the median of the inside band and the 75th percentile of the outside band
+    (mri_edge_bands_mm); first crossing beyond the inside band; circle fit with a 2.5 mm outlier cut, re-centred 3x.
+    Report only (ring_outer_r_mm is the U1 decision).  None when the image is missing."""
+    import nibabel as nib
+    from scipy import ndimage as ndi
+    fn = P["data"] + "/BT_MRI.nii"
+    if not os.path.exists(fn):
+        return None
+    im = nib.load(fn)
+    img = np.asarray(im.dataobj).astype(np.float32)
+    inv = np.linalg.inv(im.affine)
+    (i0, i1), (o0, o1) = [tuple(float(v) for v in b) for b in val(prm, "mri_edge_bands_mm")]
+    rs = np.arange(0.0, o1 + 3.0, 0.2)
+    out = []
+    for z in np.arange(float(max(zs)), float(min(zs)) - 1e-9, -1.0):
+        c = np.array(centre, float)
+        fit = None
+        for _ in range(3):
+            pts = []
+            for a in np.radians(np.arange(0.0, 360.0, 7.5)):
+                Pp = np.stack([c[0] + rs * np.sin(a), c[1] + rs * np.cos(a), np.full(rs.size, z)], 1)
+                v = ndi.map_coordinates(img, ((O + Pp @ R) @ inv[:3, :3].T + inv[:3, 3]).T, order=1, mode="nearest")
+                lev = 0.5 * (np.median(v[(rs > i0) & (rs < i1)]) + np.percentile(v[(rs > o0) & (rs < o1)], 75))
+                j = np.nonzero((rs > i1 - 2.0) & (v > lev))[0]
+                if len(j):
+                    pts.append(Pp[j[0], :2])
+            if len(pts) < 12:
+                break
+            pts = np.array(pts)
+            cx, cy, r, _ = _circle_fit(pts)
+            k = np.abs(np.hypot(pts[:, 0] - cx, pts[:, 1] - cy) - r) < 2.5
+            if k.sum() < 12:
+                break
+            fit = _circle_fit(pts[k])
+            c = np.array(fit[:2])
+        if fit is not None:
+            out.append([float(z), *fit])
+    if not out:
+        return None
+    out = np.array(out)
+    return dict(median=float(np.median(out[:, 3])), min=float(out[:, 3].min()), max=float(out[:, 3].max()),
+                centre_median_xy=[float(np.median(out[:, 1])), float(np.median(out[:, 2]))], n_planes=int(len(out)),
+                table=out, columns="z_mm, cx, cy, r, rms", image=fn)
+
+
+def ring_half_sdf(Q, rg, side):
+    """Signed-distance composite (negative inside; exact for the disc, capsule and rod pieces, a lower bound on the
+    distance where the bore and the slot cut it) of ONE ring half in the applicator frame:
+      disc   rounded_disc_sdf about the ring centre (flat faces z_bottom / z_top, fillets fillet_bottom / fillet_top)
+      minus  the bore (r_bore about the TUBE axis) and everything on the far side of the slot plane (half the slot
+             width from the plane through the tube axis along y_r)
+      plus   the socket boss (capsule boss_top -> boss_bottom, r_boss; also cut at the slot) and the rod (capsule
+             chain rod_top -> rod_knee -> rod_end, r_rod), so half, boss and rod are ONE solid."""
+    Q = np.atleast_2d(np.asarray(Q, float))
+    h = rg["halves"][side]
+    c = rg["centre_xy"]
+    d = rounded_disc_sdf(np.hypot(Q[:, 0] - c[0], Q[:, 1] - c[1]), Q[:, 2], rg["R_out"], rg["z_top"], rg["z_bottom"],
+                         rg["fillet_top"], rg["fillet_bottom"])
+    d = np.maximum(d, rg["r_bore"] - np.hypot(Q[:, 0], Q[:, 1]))
+    slot = 0.5 * rg["slot"] - Q[:, :2] @ np.asarray(h["n_out"], float)[:2]
+    d = np.maximum(d, slot)
+    db = np.maximum(_seg_dist(Q, h["boss_top"], h["boss_bottom"]) - rg["r_boss"], slot)
+    dr = _polyline_dist(Q, h["rod_pts"]) - rg["r_rod"]
+    return np.minimum(np.minimum(d, db), dr)
+
+
+def _half_bbox(rg, side, pad):
+    h = rg["halves"][side]
+    c, Rr = np.asarray(rg["centre_xy"], float), rg["R_out"]
+    lo = np.array([c[0] - Rr, c[1] - Rr, rg["z_bottom"]])
+    hi = np.array([c[0] + Rr, c[1] + Rr, rg["z_top"]])
+    for pts, r in (([h["boss_top"], h["boss_bottom"]], rg["r_boss"]), (h["rod_pts"], rg["r_rod"])):
+        pts = np.asarray(pts, float)
+        lo = np.minimum(lo, pts.min(0) - r)
+        hi = np.maximum(hi, pts.max(0) + r)
+    return lo - pad, hi + pad
+
+
+def sdf_grid(fn, lo, hi, h, chunk=400000):
+    """fn sampled on the regular grid lo + h * (i, j, k) covering [lo, hi]: (lo, h, A[i, j, k]) (float32)."""
+    lo = np.asarray(lo, float)
+    n = np.ceil((np.asarray(hi, float) - lo) / h).astype(int) + 1
+    xs, ys, zs = [lo[i] + h * np.arange(n[i]) for i in range(3)]
+    A = np.empty(tuple(int(v) for v in n), np.float32)
+    per = max(1, chunk // int(n[0] * n[1]))
+    X, Y = np.meshgrid(xs, ys, indexing="ij")
+    for k0 in range(0, int(n[2]), per):
+        k1 = min(int(n[2]), k0 + per)
+        m = k1 - k0
+        Q = np.stack([np.repeat(X[..., None], m, 2).ravel(), np.repeat(Y[..., None], m, 2).ravel(),
+                      np.broadcast_to(zs[k0:k1], (n[0], n[1], m)).ravel()], 1)
+        A[:, :, k0:k1] = fn(Q).reshape(n[0], n[1], m)
+    return lo, float(h), A
+
+
+def grid_eval(grid, Q, cval):
+    """Trilinear interpolation of an sdf_grid at points Q; cval outside the grid."""
+    from scipy import ndimage as ndi
+    lo, h, A = grid
+    return ndi.map_coordinates(A, ((np.atleast_2d(Q) - lo) / h).T, order=1, mode="constant", cval=float(cval))
+
+
+def _mesh_from_grid(grid, n_tris):
+    """Zero level set of an sdf_grid (vtkFlyingEdges3D) -> quadric decimation to ~n_tris -> clean.  Returns (V, F,
+    info) with outward orientation (signed volume > 0)."""
+    import vtk
+    from vtk.util import numpy_support as ns
+    lo, h, A = grid
+    img = vtk.vtkImageData()
+    img.SetDimensions(*[int(v) for v in A.shape])
+    img.SetSpacing(h, h, h)
+    img.SetOrigin(*[float(v) for v in lo])
+    img.GetPointData().SetScalars(ns.numpy_to_vtk(np.ascontiguousarray(A.ravel(order="F")), deep=True))
+    fe = vtk.vtkFlyingEdges3D()
+    fe.SetInputData(img)
+    fe.SetValue(0, 0.0)
+    fe.ComputeNormalsOff()
+    fe.ComputeGradientsOff()
+    fe.ComputeScalarsOff()
+    fe.Update()
+    n0 = fe.GetOutput().GetNumberOfCells()
+    cl = vtk.vtkCleanPolyData()
+    cl.SetInputData(fe.GetOutput())
+    cl.Update()
+    dec = vtk.vtkQuadricDecimation()
+    dec.SetInputData(cl.GetOutput())
+    dec.SetTargetReduction(max(0.0, 1.0 - float(n_tris) / max(1, cl.GetOutput().GetNumberOfCells())))
+    dec.VolumePreservationOn()
+    dec.Update()
+    tri = vtk.vtkTriangleFilter()
+    tri.SetInputData(dec.GetOutput())
+    tri.Update()
+    cl2 = vtk.vtkCleanPolyData()
+    cl2.SetInputData(tri.GetOutput())
+    cl2.Update()
+    out = cl2.GetOutput()
+    conn = vtk.vtkPolyDataConnectivityFilter()
+    conn.SetInputData(out)
+    conn.SetExtractionModeToAllRegions()
+    conn.Update()
+    V = ns.vtk_to_numpy(out.GetPoints().GetData()).astype(float)
+    F = ns.vtk_to_numpy(out.GetPolys().GetConnectivityArray()).astype(np.int64).reshape(-1, 3)
+    if geom.mesh_volume(V, F) < 0:
+        F = F[:, ::-1].copy()
+    return V, F, dict(n_components=int(conn.GetNumberOfExtractedRegions()), mc_tris=int(n0),
+                      mc_grid=[int(v) for v in A.shape], mc_h_mm=float(h))
+
+
+def build_ring_meshes(rg, prm):
+    """ovoid_L / ovoid_R (applicator frame, seated): each half's signed-distance composite (ring_half_sdf) on a
+    ring_mesh_h_mm grid, meshed at 0 (flying edges) and decimated to ring_mesh_target_tris.  Checks per half: closed,
+    oriented, ONE component; |composite sdf| at the mesh vertices (the decimation's deviation from the design).
+    Returns (stats per part, {part: (V, F)}, {side: sdf grid})."""
+    h = float(val(prm, "ring_mesh_h_mm"))
+    stats, VF, grids = {}, {}, {}
+    for s, part, _ in RING_SIDES:
+        lo, hi = _half_bbox(rg, s, 3.0 * h + 1.0)
+        grid = sdf_grid(lambda Q, s=s: ring_half_sdf(Q, rg, s), lo, hi, h)
+        V, F, info = _mesh_from_grid(grid, int(val(prm, "ring_mesh_target_tris")))
+        dv = np.abs(ring_half_sdf(V, rg, s))
+        stv = mesh_stats(V, F, float((grid[2] <= 0).sum()) * h ** 3)
+        stv.update(info)
+        stv["vertex_abs_sdf_mm"] = dict(mean=float(dv.mean()), p95=float(np.percentile(dv, 95)), max=float(dv.max()))
+        stv["reference_volume_note"] = "grid-cell count of the composite <= 0 (the design solid on the meshing grid)"
+        stv["file"] = part + ".obj"
+        stv["one_component"] = bool(info["n_components"] == 1)
+        stats[part], VF[part], grids[s] = stv, (V, F), grid
+        print("[applicator v5] %-7s tris %5d verts %5d open %d nonmanifold %d badorient %d components %d vol %8.1f mm3 "
+              "(grid %8.1f, %+.2f %%) |sdf| at vertices mean %.3f max %.3f mm closed=%s" % (
+                  part, stv["tris"], stv["verts"], stv["open_edges"], stv["nonmanifold_edges"],
+                  stv["inconsistent_orientation_edges"], info["n_components"], stv["signed_volume_mm3"],
+                  stv["reference_volume_mm3"], stv["vol_err_pct"], dv.mean(), dv.max(), stv["closed_oriented"]), flush=True)
+    return stats, VF, grids
+
+
+def tandem_body_sdf(C, prm, z_tube_bottom):
+    """Signed distance (negative inside) of the tandem body as capsules: the tube (r_tandem_mm, axis from z_tube_bottom
+    to the tip centre L_iu - r) and the vaginal tandem (r_shaft_mm about the centreline C).  The meshes' flat ends are
+    inside these capsules, so a clearance measured against them is conservative."""
+    L, r, rs = float(val(prm, "L_iu_mm")), float(val(prm, "r_tandem_mm")), float(val(prm, "r_shaft_mm"))
+    a, b = np.array([0.0, 0.0, float(z_tube_bottom)]), np.array([0.0, 0.0, L - r])
+    C = np.asarray(C, float)
+
+    def f(Q):
+        return np.minimum(_seg_dist(Q, a, b) - r, _polyline_dist(Q, C) - rs)
+    return f
+
+
+def _surface_points(V, F, density, seed):
+    return np.vstack([np.asarray(V, float), _surface_samples(V, F, density, seed)])
+
+
+def ring_approach(rg, VF, grids, C, prm, z_tube_bottom):
+    """Fix plan S4b / S7c(iii) on the host: the per-half approach paths.  Half i (L first, then R) at approach distance
+    d is displaced in the tandem frame by  disp_i(d) = d e_i + o_i(d) n_i,  e_i = its rod direction (down, out of the
+    body), n_i = its outward medial normal (+/- x_r), o_i(d) = o for d >= click, o (1 - (1 - d / click)^p) below
+    (the half clicks in over the last `click` mm); d runs from D (ring_approach_D_mm) to 0 = the seat.  Clearance of a
+    row = min(tandem sdf at the displaced half's surface points, half sdf at the tandem's surface points) -- both
+    signed-distance grids, the tandem as capsules (conservative), the half as its composite (a lower bound); the second
+    half is also checked against the first, seated.  Kept per half: the smallest o >= ring_approach_offset_min_mm
+    (0.5 mm steps), then the largest click in ring_click_mm, then the smallest p, with >= ring_clearance_min_mm to the
+    tandem on every row (ring_approach_step_mm apart) and >= slot - 0.1 mm to the other half."""
+    h = float(val(prm, "ring_mesh_h_mm"))
+    dens = float(val(prm, "ring_sample_density_per_mm2"))
+    D, step = float(val(prm, "ring_approach_D_mm")), float(val(prm, "ring_approach_step_mm"))
+    thr = float(val(prm, "ring_clearance_min_mm"))
+    thr_hh = rg["slot"] - 0.1
+    ck_lo, ck_hi = [float(v) for v in val(prm, "ring_click_mm")]
+    shapes = [float(v) for v in val(prm, "ring_click_shapes")]
+    offs = np.arange(float(val(prm, "ring_approach_offset_min_mm")), float(val(prm, "ring_approach_offset_max_mm")) + 1e-9, 0.5)
+    tsdf = tandem_body_sdf(C, prm, z_tube_bottom)
+    PT = np.vstack([_surface_points(*VF[p], dens, 11 + k) for k, p in enumerate(TANDEM_V4_PARTS)])
+    lo_t = np.minimum(PT.min(0), [-3.0, -3.0, z_tube_bottom]) - 4.0
+    hi_t = PT.max(0) + 4.0
+    hi_t[2] = min(hi_t[2], rg["z_top"] + 6.0)                     # a half never rises above its seat
+    tgrid = sdf_grid(tsdf, lo_t, hi_t, h)
+    PH = {s: _surface_points(*VF[part], dens, 21 + k) for k, (s, part, _) in enumerate(RING_SIDES)}
+    ds = np.round(np.arange(0.0, D + 1e-9, step), 6)
+    order = [s for s, _, _ in RING_SIDES]
+    halves = rg["halves"]
+    pad = 3.0 * h + 1.0
+
+    def disp(s, d, o):
+        return d * np.asarray(halves[s]["approach_dir_down"], float) + o * np.asarray(halves[s]["n_out"], float)
+
+    def clear(s, v, other):
+        c_t = min(float(grid_eval(tgrid, PH[s] + v, 4.0).min()), float(grid_eval(grids[s], PT - v, pad).min()))
+        if other is None:
+            return c_t, None
+        c_h = min(float(grid_eval(grids[other], PH[s] + v, pad).min()), float(grid_eval(grids[s], PH[other] - v, pad).min()))
+        return c_t, c_h
+
+    def offset(d, o, click, p):
+        return o if d >= click else o * (1.0 - (1.0 - d / click) ** p)
+    out = {}
+    for k, s in enumerate(order):
+        other = order[0] if k == 1 else None
+        memo = {}
+
+        def row(d, o):
+            key = (round(float(d), 6), round(float(o), 6))
+            if key not in memo:
+                memo[key] = clear(s, disp(s, d, o), other)
+            return memo[key]
+
+        def ok(c):
+            return c[0] >= thr and (c[1] is None or c[1] >= thr_hh)
+        chosen, best = None, None
+        for o in offs:
+            if not all(ok(row(d, o)) for d in ds if d >= ck_hi):
+                continue
+            for click in np.arange(ck_hi, ck_lo - 1e-9, -1.0):
+                if not all(ok(row(d, o)) for d in ds if d >= click):
+                    continue
+                for p in shapes:
+                    cs = [row(d, offset(d, o, click, p)) for d in ds]
+                    worst = min(c[0] for c in cs)
+                    if best is None or worst > best[0]:
+                        best = (worst, float(o), float(click), p)
+                    if all(ok(c) for c in cs):
+                        chosen = (float(o), float(click), p)
+                        break
+                if chosen:
+                    break
+            if chosen:
+                break
+        if chosen is None and best is None:          # nothing even clears the far rows: keep the largest offset
+            best = (None, float(offs[-1]), ck_hi, shapes[0])
+        o, click, p = chosen if chosen else best[1:]
+        rows_ = []
+        for d in ds[::-1]:
+            oo = offset(d, o, click, p)
+            c = row(d, oo)
+            rows_.append(dict(d_mm=float(d), offset_mm=float(oo), disp_app=disp(s, d, oo), clearance_tandem_mm=c[0],
+                              clearance_other_half_mm=c[1]))
+        ct = np.array([r_["clearance_tandem_mm"] for r_ in rows_])
+        ch = np.array([r_["clearance_other_half_mm"] for r_ in rows_ if r_["clearance_other_half_mm"] is not None])
+        keep = rows_[::2] if (len(rows_) - 1) % 2 == 0 else rows_[::2] + [rows_[-1]]
+        out[s] = dict(order=k + 1, part=halves[s]["part"], e_app=halves[s]["approach_dir_down"],
+                      e_mode=halves[s]["approach_dir_mode"], e_rod_down_app=halves[s]["rod_dir_down"], n_out_app=halves[s]["n_out"],
+                      D_mm=D, offset_mm=o, click_mm=click, click_shape_p=p, pass_=bool(chosen is not None),
+                      min_clearance_tandem_mm=float(ct.min()), d_at_min_mm=float(rows_[int(np.argmin(ct))]["d_mm"]),
+                      min_clearance_other_half_mm=float(ch.min()) if len(ch) else None,
+                      seat_clearance_tandem_mm=float(ct[-1]), n_rows=int(len(rows_)), rows=keep,
+                      rows_note="every other checked row (every %.1f mm of d), the seat (d = 0) last" % (2 * step),
+                      n_rows_checked=int(len(memo)))
+        print("[approach v5] %s (%d.): offset %.1f mm, click-in over the last %.0f mm (p %.1f): min clearance to the tandem "
+              "%.2f mm at d %.1f (seat %.2f)%s; %s" % (
+                  s, k + 1, o, click, p, ct.min(), out[s]["d_at_min_mm"], ct[-1],
+                  "" if other is None else ", to the seated %s half %.2f mm" % (other, ch.min()),
+                  "PASS" if chosen else "NO schedule passes (best kept)"), flush=True)
+    return dict(
+        definition="half i follows pose_i(s) = tandem pose . Trans(disp_i((1 - s) D)) with disp_i(d) = d e_i + o_i(d) n_i "
+                   "(tandem / applicator frame; world = F + (p_app + disp) @ R_rows); e_i = e_app (down, out of the body; "
+                   "e_mode = params ring_approach_dir, from its rod direction e_rod_down_app), n_i = n_out_app (its "
+                   "outward medial normal), o_i(d) = offset_mm for d >= click_mm, offset_mm "
+                   "(1 - (1 - d / click_mm)^click_shape_p) below; L goes first (plan S7f: R_L then R_R).  The ring halves' "
+                   "OBJs are at their seat, so T_seat = identity for them: the scene adds only disp_i",
+        order=order, halves=out, clearance_min_mm=thr, half_half_min_mm=thr_hh,
+        check="host (applicator_venezia.ring_approach): signed-distance grids at %.2f mm, %.1f surface samples / mm2 + "
+              "mesh vertices, rows every %.1f mm of d" % (h, dens, step),
+        pass_all=bool(all(v["pass_"] for v in out.values())))
+
+
+def _ovoid_axis_at_z(h, z):
+    """The ovoid half's axis point at height z: on the boss (between its bottom and top) or on the rod polyline."""
+    b0, b1 = np.asarray(h["boss_top"], float), np.asarray(h["boss_bottom"], float)
+    if z >= b1[2]:
+        t = (float(z) - b1[2]) / (b0[2] - b1[2])
+        return b1 + min(max(t, 0.0), 1.0) * (b0 - b1)
+    pts = np.asarray(h["rod_pts"], float)
+    for a, b in zip(pts[:-1], pts[1:]):
+        if b[2] <= z <= a[2]:
+            return a + ((float(z) - a[2]) / (b[2] - a[2])) * (b - a)
+    return pts[-1]
+
+
+def _tandem_axis_at_z(C, z_tube_bottom, z):
+    """The tandem body's axis point at height z: the tube axis above its bottom, the vaginal tandem's centreline below."""
+    if z >= z_tube_bottom:
+        return np.array([0.0, 0.0, float(z)])
+    C = np.asarray(C, float)
+    zi = C[::-1, 2]
+    return np.array([np.interp(z, zi, C[::-1, 0]), np.interp(z, zi, C[::-1, 1]), float(z)])
+
+
+def validate_ring_vs_label(VF, rg, rods, rvox, lab, geo, prm, pose, frames, tandem_check, C, cl):
+    """S4c for v5: the whole device (v4 tandem body + ring halves) against the updated BT applicator label U the BT ovoid
+    label, at the BT pose (the label frame is the part frame).  IN-SAMPLE (the parts were measured on these labels):
+    a consistency ceiling, not validation (fix plan S4).  Every distance is signed (vtkImplicitPolyDataDistance on the
+    exported meshes, negative inside).
+      dice             device vs applicator U ovoid on the BT grid (GATED >= 0.80, provisional); also the ring halves vs
+                       the ovoid label, and both without the 12 mm collar zone above the ring (Q8)
+      label_to_model   label voxel -> max(0, signed distance to the part): the whole ovoid label (ring, GATED mean <= 1),
+                       its disc and socket voxels, each traced ovoid rod (GATED mean <= 1, P95 <= 2); the tandem rod and
+                       tube come from the v4 check (tandem_body)
+      model_to_label   surface samples of each half outside the label: disc, boss, rod along the traced sections, rod in
+                       the handle bundle (the label's blob), rod beyond the label (not scored)
+      connection       each rod's axis over its top 5 mm inside its half (signed distance < -2 mm)
+      seat             tandem-body vertices inside a half and half vertices inside the tandem body (0 each), and the
+                       smallest mesh-to-mesh distance
+      axes             tandem axis to each ovoid axis per height (plan: 22 +/- 2 mm at the ring bottom, the rod line
+                       extended; <= 8 mm in the bundle)
+      pelvis_frame     at device_final (the G32 tube pose) the model's ovoid-rod line at the traced heights vs the label
+                       sections carried BT -> preBT by frames.BONE (plan: within 3 mm in y)"""
+    import evaluate as ev
+    O = np.asarray(geo["frame"]["origin_BT_world"], float)
+    R = np.asarray(geo["frame"]["R_rows_BT_world"], float)
+    zL = R[2]
+    out = dict(frame="BT label frame at the BT pose (applicator_v5 parts placed with origin_BT_world / R_rows_BT_world)",
+               note="IN-SAMPLE: the parts were measured on these labels (fix plan S4: a consistency ceiling, not validation)")
+    # ---- Dice on the BT grid
+    U = lab["app"] | lab["ovoid"]
+    Mp = {p: ev.voxelize(O + np.asarray(V, float) @ R, F, lab["shape"], lab["aff"]) for p, (V, F) in VF.items()}
+    M = np.zeros(lab["shape"], bool)
+    for m in Mp.values():
+        M |= m
+    Mr = Mp["ovoid_L"] | Mp["ovoid_R"]
+    idx = np.argwhere(M | U)
+    zq = (idx.astype(float) @ lab["aff"][:3, :3].T + lab["aff"][:3, 3] - O) @ zL
+    no_collar = ~((zq > rg["z_top"]) & (zq <= rg["z_top"] + 12.0))
+    ii = tuple(idx.T)
+
+    def dice(a, b, sel=None):
+        s = np.ones(len(idx), bool) if sel is None else sel
+        aa, bb = a[ii][s], b[ii][s]
+        return float(2.0 * (aa & bb).sum() / max(1, aa.sum() + bb.sum()))
+    out["dice"] = dict(device_vs_app_or_ovoid=dice(M, U), device_vs_app_or_ovoid_without_collar=dice(M, U, no_collar),
+                       ring_halves_vs_ovoid=dice(Mr, lab["ovoid"]), device_cc=float(M.sum() * lab["vv"] / 1000.0),
+                       label_cc=float(U.sum() * lab["vv"] / 1000.0), ring_halves_cc=float(Mr.sum() * lab["vv"] / 1000.0),
+                       ovoid_label_cc=float(lab["ovoid"].sum() * lab["vv"] / 1000.0),
+                       note="device = tube + shaft + ovoid_L + ovoid_R voxelised at the BT pose; the collar zone = z_app in "
+                            "(ring top face, + 12 mm] (Q8: air in the fornix or device?); model voxels beyond the image "
+                            "field (the handle's extension) do not count")
+    # ---- signed distances to the exported meshes
+    sd = {p: _sdf(*VF[p]) for p in VF}
+    probe_far = np.array([[60.0, 60.0, 0.0]])
+    if not all(float(sd[p](probe_far)[0]) > 0 for p in VF):
+        raise RuntimeError("signed-distance sign check failed (a far point reads inside)")
+    for s, part, _ in RING_SIDES:
+        inside_pt = np.asarray(rg["halves"][s]["rod_knee"], float)[None]
+        if not float(sd[part](inside_pt)[0]) < 0:
+            raise RuntimeError("signed-distance sign check failed (%s: its rod axis reads outside)" % part)
+
+    def sd_ring(Q):
+        return np.minimum(sd["ovoid_L"](Q), sd["ovoid_R"](Q))
+    Qo = rvox["ovoid"]
+    do = np.maximum(0.0, sd_ring(Qo))
+    ds_disc = rounded_disc_sdf(np.hypot(Qo[:, 0] - rg["centre_xy"][0], Qo[:, 1] - rg["centre_xy"][1]), Qo[:, 2], rg["R_out"],
+                               rg["z_top"], rg["z_bottom"], rg["fillet_top"], rg["fillet_bottom"])
+    sock = ds_disc > float(val(prm, "ring_socket_out_mm"))
+    l2m = dict(ring=_dist_stats(do), ring_disc_voxels=_dist_stats(do[~sock]), ring_outside_disc_voxels=_dist_stats(do[sock]),
+               rod_L=_dist_stats(np.maximum(0.0, sd["ovoid_L"](rvox["rod_L"]))),
+               rod_R=_dist_stats(np.maximum(0.0, sd["ovoid_R"](rvox["rod_R"]))),
+               tandem_rod=tandem_check["label_to_model_mm"]["tandem_rod"], tube=tandem_check["label_to_model_mm"]["tube"],
+               definition="label voxel centre -> max(0, signed distance to the part mesh): ring = every ovoid-label voxel to "
+                          "ovoid_L U ovoid_R (disc voxels / voxels > ring_socket_out_mm outside the fitted disc: the "
+                          "sockets and the label's hub); rod_<side> = the traced ovoid rod's own label voxels (the "
+                          "tandem's selection rule) to its half; tandem_rod / tube = the v4 check (label_check.tandem_body)")
+    out["label_to_model_mm"] = l2m
+    # ---- model -> label (surface samples outside U)
+    Vs, Fs = _mask_isosurface(U, lab["aff"])
+    dist_U = _sdf((Vs - O) @ R.T, Fs)
+    inv = np.linalg.inv(lab["aff"])
+    Uf = U.astype(np.float32)
+    from scipy import ndimage as ndi
+
+    def m2l(Q):
+        ijk = (O + Q @ R) @ inv[:3, :3].T + inv[:3, 3]
+        o_ = ndi.map_coordinates(Uf, ijk.T, order=1, mode="constant", cval=0.0) < 0.5
+        d = np.zeros(len(Q))
+        if o_.any():
+            d[o_] = np.abs(dist_U(Q[o_]))
+        return d
+    z_lab_end = float(geo["bundle"]["label_end_z_mm"])
+    m2l_out = {}
+    for k, (s, part, _) in enumerate(RING_SIDES):
+        h = rg["halves"][s]
+        Ps = _surface_samples(*VF[part], 2.0, 31 + k)
+        d = m2l(Ps)
+        d_boss = _seg_dist(Ps, h["boss_top"], h["boss_bottom"]) - rg["r_boss"]
+        d_rod = _polyline_dist(Ps, h["rod_pts"]) - rg["r_rod"]
+        on_boss = (np.abs(d_boss) < 0.3) & (d_boss <= d_rod)
+        on_rod = (np.abs(d_rod) < 0.3) & ~on_boss
+        disc = ~on_boss & ~on_rod
+        z_knee = float(h["rod_knee"][2])
+        sel = dict(disc=disc, boss=on_boss, rod_traced=on_rod & (Ps[:, 2] >= z_knee),
+                   rod_in_bundle=on_rod & (Ps[:, 2] < z_knee) & (Ps[:, 2] >= z_lab_end))
+        m2l_out[part] = {k2: dict(_dist_stats(d[m]), frac_outside_label=float((d[m] > 0).mean()) if m.any() else None)
+                         for k2, m in sel.items()}
+        m2l_out[part]["not_scored_beyond_label_n"] = int((on_rod & (Ps[:, 2] < z_lab_end)).sum())
+    m2l_out["definition"] = ("surface point (uniform by area, 2 / mm2) of each half -> distance OUTSIDE applicator U ovoid (0 "
+                             "inside by the trilinear mask >= 0.5, else the distance to its 0.5 iso-surface); parts by the "
+                             "nearest design piece; rod_in_bundle = below the knee down to the label's end (the label's "
+                             "handle blob is larger than the rods); rod beyond the label not scored")
+    out["model_to_label_mm"] = m2l_out
+    # ---- rod connection: the rod axis over its top 5 mm is inside its half
+    conn = {}
+    for s, part, _ in RING_SIDES:
+        h = rg["halves"][s]
+        a, b = np.asarray(h["rod_top"], float), np.asarray(h["rod_knee"], float)
+        u = geom.unit(b - a)
+        Pa = a + np.outer(np.linspace(0.0, 5.0, 11), u)
+        v = sd[part](Pa)
+        conn[part] = dict(max_signed_distance_mm=float(v.max()), mean_mm=float(v.mean()), pass_=bool(v.max() < -2.0),
+                          rod_top_app=a, boss_top_app=h["boss_top"])
+    out["rod_connection"] = dict(conn, definition="signed distance of the rod axis to its own half mesh at 11 points over "
+                                                  "the rod's top 5 mm (plan: < -2 mm; G32 +6.74 mm, never inside)")
+    # ---- seat: the tandem body and the halves at the seat
+    VT = np.vstack([VF[p][0] for p in TANDEM_V4_PARTS])
+    VR = np.vstack([VF[p][0] for p in RING_V5_PARTS])
+    sdT_at_R = np.minimum(sd["tube"](VR), sd["shaft"](VR))
+    sdR_at_T = sd_ring(VT)
+    lh = sd["ovoid_R"](VF["ovoid_L"][0])
+    rh = sd["ovoid_L"](VF["ovoid_R"][0])
+    out["seat"] = dict(tandem_vertices_inside_ring=int((sdR_at_T < 0).sum()), ring_vertices_inside_tandem=int((sdT_at_R < 0).sum()),
+                       min_tandem_vertex_to_ring_mm=float(sdR_at_T.min()), min_ring_vertex_to_tandem_mm=float(sdT_at_R.min()),
+                       half_to_half_min_mm=float(min(lh.min(), rh.min())),
+                       definition="signed distances between the exported meshes' vertices and the other part's mesh at the "
+                                  "seat (G32: the shaft 2.86-2.96 mm into the caps); half_to_half = the slot")
+    # ---- axis distances
+    ztb = float(cl["z_tube_bottom_mm"])
+    b0 = np.asarray(geo["bundle"]["stations_xyz_req"], float)
+    rows = []
+    zlist = [("ring bottom face (rod line extended)", rg["z_bottom"], "rod_line"),
+             ("ring bottom face (boss axis)", rg["z_bottom"], "axis")]
+    for s in ("L", "R"):
+        zlist.append(("rod top %s" % s, float(rg["halves"][s]["rod_top"][2]), "axis"))
+    z_st = sorted(set(float(z) for s in ("L", "R") for z in np.asarray(rods[s]["stations_xyz_req"], float)[:, 2]), reverse=True)
+    zlist += [("z %.0f" % z, z, "axis") for z in z_st]
+    zlist += [("rod knee (enters the handle bundle)", float(rg["halves"]["L"]["rod_knee"][2]), "axis"),
+              ("first bundle section", float(b0[0, 2]), "axis"), ("label end", z_lab_end, "axis")]
+    for name, z, how in zlist:
+        t = _tandem_axis_at_z(C, ztb, z)
+        r_ = dict(where=name, z_mm=float(z))
+        for s in ("L", "R"):
+            if how == "rod_line":
+                p = _line_z(rods[s]["line_point"], rods[s]["dir_app_down"], z)
+            else:
+                p = _ovoid_axis_at_z(rg["halves"][s], z)
+            r_[s] = float(np.linalg.norm(p[:2] - t[:2]))
+        r_["L_R"] = float(np.linalg.norm(_ovoid_axis_at_z(rg["halves"]["L"], z)[:2] - _ovoid_axis_at_z(rg["halves"]["R"], z)[:2]))
+        rows.append(r_)
+    out["axis_distances_mm"] = dict(rows=rows, definition="in-plane (z_app = const) distance between the tandem body's axis "
+                                                          "(tube axis, then the vaginal tandem's centreline) and each ovoid "
+                                                          "axis (boss, then rod); L_R = between the two ovoid axes")
+    # ---- pelvis frame at device_final
+    df = pose["device_final"]
+    F_fin, R_fin = np.asarray(df["flange"], float), np.asarray(df["R_rows"], float)
+    Rb, tb = np.asarray(frames["BONE"]["R"], float), np.asarray(frames["BONE"]["t"], float)
+    pel = {}
+    for s in ("L", "R"):
+        S = np.asarray(rods[s]["stations_xyz_req"], float)[:, :3]
+        mdl = np.array([_line_z(rods[s]["line_point"], rods[s]["dir_app_down"], z) for z in S[:, 2]])
+        d = (F_fin + mdl @ R_fin) - ((O + S @ R) @ Rb.T + tb)
+        n = np.linalg.norm(d, axis=1)
+        pel["rod_" + s] = dict(n=int(len(n)), mean_mm=float(n.mean()), max_mm=float(n.max()), mean_dx_mm=float(d[:, 0].mean()),
+                               mean_dy_mm=float(d[:, 1].mean()), mean_dz_mm=float(d[:, 2].mean()),
+                               max_abs_dy_mm=float(np.abs(d[:, 1]).max()))
+    cr = np.array([rg["centre_xy"][0], rg["centre_xy"][1], rg["z_mid"]])
+    d = (F_fin + cr @ R_fin) - ((O + cr @ R) @ Rb.T + tb)
+    pel["ring_centre"] = dict(d_mm=d, norm_mm=float(np.linalg.norm(d)))
+    pel["definition"] = ("model = the rod line at the traced heights placed at device_final (F + p R_rows, the G32 tube "
+                         "pose); label = the raw traced sections at the BT label pose carried BT -> preBT by frames.BONE; "
+                         "d = model - label (preBT RAS: +x right, +y anterior, +z superior).  As for the vaginal tandem, "
+                         "d = the flange offset + the 2.4 deg axis error x the lever arm (label_check.tandem_body."
+                         "pelvis_frame.pose_decomposition)")
+    out["pelvis_frame"] = pel
+    return out
+
+
+def ring_acceptance(check, tandem_check, ap, stats, rg, carry):
+    """The S4c acceptance list of v5 (fix plan S4 'Accept' + the task's gates).  Each item: test, measured, pass."""
+    lm, tl = check["label_to_model_mm"], tandem_check["label_to_model_mm"]
+    ax = {r["where"]: r for r in check["axis_distances_mm"]["rows"]}
+    rb = ax["ring bottom face (rod line extended)"]
+    bun = ax["first bundle section"]
+    last_key = "z %.0f" % rg["z_last_separable_mm"]
+    pose_t = [a for a in tandem_check["acceptance"] if a["test"].startswith("tube pose")][0]
+    pel_t = [a for a in tandem_check["acceptance"] if a["test"].startswith("pelvis frame")][0]
+    acc = [
+        dict(test="Dice(device, applicator U ovoid label) >= 0.80 at the BT pose (in-sample geometry fit, provisional floor)",
+             measured=check["dice"]["device_vs_app_or_ovoid"], without_collar=check["dice"]["device_vs_app_or_ovoid_without_collar"],
+             ring_vs_ovoid=check["dice"]["ring_halves_vs_ovoid"], pass_=check["dice"]["device_vs_app_or_ovoid"] >= 0.80),
+        dict(test="tandem rod: label-to-model mean <= 1.0 mm and P95 <= 2.0 mm", measured=[tl["tandem_rod"]["mean_mm"], tl["tandem_rod"]["p95_mm"]],
+             pass_=tl["tandem_rod"]["mean_mm"] <= 1.0 and tl["tandem_rod"]["p95_mm"] <= 2.0),
+        dict(test="OR (right ovoid rod): label-to-model mean <= 1.0 mm and P95 <= 2.0 mm", measured=[lm["rod_R"]["mean_mm"], lm["rod_R"]["p95_mm"]],
+             pass_=lm["rod_R"]["mean_mm"] <= 1.0 and lm["rod_R"]["p95_mm"] <= 2.0),
+        dict(test="OL (left ovoid rod): label-to-model mean <= 1.0 mm and P95 <= 2.0 mm", measured=[lm["rod_L"]["mean_mm"], lm["rod_L"]["p95_mm"]],
+             pass_=lm["rod_L"]["mean_mm"] <= 1.0 and lm["rod_L"]["p95_mm"] <= 2.0),
+        dict(test="ring (every ovoid-label voxel): label-to-model mean <= 1.0 mm", measured=lm["ring"]["mean_mm"],
+             p95_mm=lm["ring"]["p95_mm"], pass_=lm["ring"]["mean_mm"] <= 1.0),
+        dict(test="tube (a3/a14 split): label-to-model mean <= 1.5 mm (P95 reported)", measured=tl["tube"]["mean_mm"],
+             p95_mm=tl["tube"]["p95_mm"], pass_=tl["tube"]["mean_mm"] <= 1.5),
+        dict(test="each half ONE closed, oriented component (half-disc + boss + rod)",
+             measured={p: [stats[p]["closed_oriented"], stats[p]["n_components"]] for p in RING_V5_PARTS},
+             pass_=all(stats[p]["closed_oriented"] and stats[p]["one_component"] for p in RING_V5_PARTS)),
+        dict(test="rod connection: each rod axis inside its half by more than 2 mm over its top 5 mm",
+             measured={p: check["rod_connection"][p]["max_signed_distance_mm"] for p in RING_V5_PARTS},
+             pass_=all(check["rod_connection"][p]["pass_"] for p in RING_V5_PARTS)),
+        dict(test="seat: 0 tandem-body vertices inside the ovoid body (and 0 ring vertices inside the tandem body)",
+             measured=[check["seat"]["tandem_vertices_inside_ring"], check["seat"]["ring_vertices_inside_tandem"]],
+             min_distance_mm=[check["seat"]["min_tandem_vertex_to_ring_mm"], check["seat"]["min_ring_vertex_to_tandem_mm"]],
+             pass_=check["seat"]["tandem_vertices_inside_ring"] == 0 and check["seat"]["ring_vertices_inside_tandem"] == 0),
+        dict(test="axis distance tandem to ovoid rod at the ring bottom 22 +/- 2 mm (rod line extended to the bottom face)",
+             measured=[rb["L"], rb["R"]], pass_=all(abs(rb[s] - 22.0) <= 2.0 for s in ("L", "R"))),
+        dict(test="axis distance tandem to ovoid rod <= 8 mm in the bundle (first bundle section)",
+             measured=[bun["L"], bun["R"]], label_last_separable=[ax[last_key]["L"], ax[last_key]["R"]],
+             note="MEASURED on the label: at its last separable section (z %.0f) the ovoid rods are %.1f / %.1f mm from the "
+                  "tandem; below that the label is one blob (the handle / clamp, wider than three rods), so the model rods "
+                  "run on parallel to the bundle axis from there" % (rg["z_last_separable_mm"], ax[last_key]["L"], ax[last_key]["R"]),
+             pass_=all(bun[s] <= 8.0 for s in ("L", "R"))),
+        dict(test="pelvis frame, G32 tube pose: ovoid rods within 3 mm in y of the mapped label rods (mean dy)",
+             measured=[check["pelvis_frame"]["rod_L"]["mean_dy_mm"], check["pelvis_frame"]["rod_R"]["mean_dy_mm"]],
+             max_abs_dy_mm=[check["pelvis_frame"]["rod_L"]["max_abs_dy_mm"], check["pelvis_frame"]["rod_R"]["max_abs_dy_mm"]],
+             pass_=all(abs(check["pelvis_frame"]["rod_" + s]["mean_dy_mm"]) <= 3.0 for s in ("L", "R"))),
+        dict(test=pel_t["test"] + " (tandem body = v4's)", measured=pel_t["measured"], pass_=pel_t["pass"]),
+        dict(test=pose_t["test"] + " (tandem body = v4's)", measured=pose_t["measured"], pass_=pose_t["pass"]),
+        dict(test="approach: each half offset >= 5 mm, clearance to the tandem body >= 0.5 mm on every row, the second "
+                  "half >= slot - 0.1 mm to the first (host)",
+             measured={s: [h["offset_mm"], h["min_clearance_tandem_mm"], h["min_clearance_other_half_mm"]] for s, h in ap["halves"].items()},
+             pass_=ap["pass_all"] and all(h["offset_mm"] >= 5.0 for h in ap["halves"].values())),
+        dict(test="tandem-first record carried from the tandem variant: tandem body identical, rows identical",
+             measured=carry, pass_=bool(carry.get("pass"))),
+    ]
+    for a_ in acc:
+        a_["pass"] = bool(a_.pop("pass_"))
+    return acc
+
+
+def _mesh_cut(V, F, p0, u, v):
+    """Segments (k, 2, 2) of a triangle mesh cut by the plane through p0 spanned by the unit vectors u, v, in (u, v)
+    coordinates."""
+    V, F = np.asarray(V, float), np.asarray(F, int)
+    n = np.cross(u, v)
+    s = (V - p0) @ n
+    sF = s[F]
+    X = F[(sF.min(1) < 0.0) & (sF.max(1) > 0.0)]
+    if not len(X):
+        return np.zeros((0, 2, 2))
+    pts = []
+    for i, j in ((0, 1), (1, 2), (2, 0)):
+        si, sj = s[X[:, i]], s[X[:, j]]
+        m = (si * sj) < 0.0
+        t = np.where(m, si / np.where(m, si - sj, 1.0), 0.0)
+        P_ = V[X[:, i]] + t[:, None] * (V[X[:, j]] - V[X[:, i]])
+        pts.append((m, P_))
+    seg = []
+    for k in range(len(X)):
+        q = [P_[k] for m, P_ in pts if m[k]]
+        if len(q) == 2:
+            seg.append([[(q[0] - p0) @ u, (q[0] - p0) @ v], [(q[1] - p0) @ u, (q[1] - p0) @ v]])
+    return np.array(seg)
+
+
+def fig_v5_label_check(geo, rg, rods, lab, VF, check, acc, fn):
+    """The v5 device against the updated BT applicator label and the BT ovoid label (BT label frame = part frame, the BT
+    pose): the label resampled on six planes (ovoid label orange, applicator minus ovoid blue) with the exported meshes'
+    cut outlines (tandem black, left half green, right half magenta)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
+    from scipy import ndimage as ndi
+    O = np.asarray(geo["frame"]["origin_BT_world"], float)
+    R = np.asarray(geo["frame"]["R_rows_BT_world"], float)
+    inv = np.linalg.inv(lab["aff"])
+    apf, ovf = lab["app"].astype(np.float32), lab["ovoid"].astype(np.float32)
+    xr, yr = np.asarray(rg["x_r"], float), np.asarray(rg["y_r"], float)
+    xo = {s: float(np.median(np.asarray(rods[s]["stations_xyz_req"], float)[:, :2] @ xr[:2])) for s in ("L", "R")}
+    z_rod = float(np.median(np.asarray(rods["L"]["stations_xyz_req"], float)[:, 2]))
+    zm = float(rg["z_mid"])
+    panels = [
+        ("device sagittal plane, 1 mm right of the slot (x' 1.0 mm)", 1.0 * xr, yr, EZ, (-30, 55), (-95, 68)),
+        ("parallel plane through the LEFT ovoid rod (x' %.1f mm)" % xo["L"], xo["L"] * xr, yr, EZ, (-30, 55), (-95, 12)),
+        ("parallel plane through the RIGHT ovoid rod (x' %.1f mm)" % xo["R"], xo["R"] * xr, yr, EZ, (-30, 55), (-95, 12)),
+        ("device coronal plane (through the tube axis, across the slot)", np.zeros(3), xr, EZ, (-30, 30), (-40, 30)),
+        ("axial plane at the ring's mid-thickness (z_app %.1f)" % zm, np.array([0.0, 0.0, zm]), EX, EY, (-28, 28), (-28, 32)),
+        ("axial plane through the rods (z_app %.0f)" % z_rod, np.array([0.0, 0.0, z_rod]), EX, EY, (-16, 20), (-8, 40)),
+    ]
+    col = dict(tube="k", shaft="k", ovoid_L="tab:green", ovoid_R="m")
+    fig, axs = plt.subplots(2, 3, figsize=(19, 15))
+    for ax, (title, p0, u, v, ur, vr) in zip(axs.ravel(), panels):
+        h = 0.25
+        A_, B_ = np.meshgrid(np.arange(ur[0], ur[1] + 1e-9, h), np.arange(vr[0], vr[1] + 1e-9, h), indexing="ij")
+        Q = p0 + A_.ravel()[:, None] * u + B_.ravel()[:, None] * v
+        ijk = ((O + Q @ R) @ inv[:3, :3].T + inv[:3, 3]).T
+        a_ = (ndi.map_coordinates(apf, ijk, order=1, mode="constant", cval=0.0) >= 0.5).reshape(A_.shape)
+        o_ = (ndi.map_coordinates(ovf, ijk, order=1, mode="constant", cval=0.0) >= 0.5).reshape(A_.shape)
+        rgb = np.ones(A_.shape + (3,))
+        rgb[a_ & ~o_] = [0.55, 0.75, 1.0]
+        rgb[o_] = [1.0, 0.78, 0.45]
+        ax.imshow(np.transpose(rgb, (1, 0, 2)), origin="lower", extent=(ur[0], ur[1], vr[0], vr[1]), interpolation="nearest")
+        for p, (V, F) in VF.items():
+            seg = _mesh_cut(V, F, p0, u, v)
+            if len(seg):
+                ax.add_collection(LineCollection(seg, colors=col[p], linewidths=1.3))
+        ax.set_xlim(*ur)
+        ax.set_ylim(*vr)
+        ax.set_aspect("equal")
+        ax.set_title(title, fontsize=10)
+        ax.grid(alpha=0.25)
+    for ax, xl in zip(axs.ravel(), ("y' (mm, anterior ->)", "y' (mm)", "y' (mm)", "x' (mm, patient right ->)",
+                                     "x_app (mm, right ->)", "x_app (mm, right ->)")):
+        ax.set_xlabel(xl)
+    for ax, yl in zip(axs.ravel(), ("z_app (mm, 0 = flange)",) * 4 + ("y_app (mm, anterior ->)",) * 2):
+        ax.set_ylabel(yl)
+    from matplotlib.patches import Patch
+    from matplotlib.lines import Line2D
+    axs[0, 0].legend(handles=[Patch(color=[1.0, 0.78, 0.45], label="BT ovoid label"),
+                              Patch(color=[0.55, 0.75, 1.0], label="updated applicator label minus ovoid"),
+                              Line2D([], [], color="k", label="v5 tandem body (= v4)"),
+                              Line2D([], [], color="tab:green", label="v5 left half (disc + boss + rod)"),
+                              Line2D([], [], color="m", label="v5 right half")], loc="lower left", fontsize=8)
+    lm, d = check["label_to_model_mm"], check["dice"]
+    npass = sum(a_["pass"] for a_ in acc)
+    fail = [a_["test"].split(":")[0][:48] for a_ in acc if not a_["pass"]]
+    fig.suptitle("applicator v5 vs the BT labels (BT label frame, IN-SAMPLE fit; x' / y' = the slot frame, azimuth %.1f deg)\n"
+                 "ring outer %.1f mm (label r_eq %.2f, MRI edge %.2f), faces z %.1f / %.1f, fillets %.1f / %.1f mm;  Dice device "
+                 "vs applicator U ovoid %.3f (ring vs ovoid %.3f)\nlabel-to-model mean / P95: ring %.2f / %.2f, OL %.2f / %.2f, "
+                 "OR %.2f / %.2f, tandem rod %.2f / %.2f mm;  acceptance %d / %d%s" % (
+                     rg["slot_azimuth_deg"], 2.0 * rg["R_out"], rg["outer_radius"]["label_req_plateau_mm"]["median"],
+                     (rg["outer_radius"]["mri_half_way_edge_mm"] or {}).get("median", float("nan")), rg["z_top"], rg["z_bottom"],
+                     rg["fillet_top"], rg["fillet_bottom"], d["device_vs_app_or_ovoid"], d["ring_halves_vs_ovoid"],
+                     lm["ring"]["mean_mm"], lm["ring"]["p95_mm"], lm["rod_L"]["mean_mm"], lm["rod_L"]["p95_mm"],
+                     lm["rod_R"]["mean_mm"], lm["rod_R"]["p95_mm"], lm["tandem_rod"]["mean_mm"], lm["tandem_rod"]["p95_mm"],
+                     npass, len(acc), (" (fail: %s)" % "; ".join(fail)) if fail else ""), fontsize=11)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    os.makedirs(os.path.dirname(fn), exist_ok=True)
+    fig.savefig(fn, dpi=80)
+    plt.close(fig)
+    print("[fig] wrote", fn, flush=True)
+
+
+def _vendor_vs_label(prm, geo, rg, cl):
+    """The physician's vendor sizes next to what the label measures, and how they correspond."""
+    z_tip = float(geo["tube"]["z_tip_label_mm"])
+    ring0 = geo["ring"]
+    zt, zb, zm = rg["z_top"], rg["z_bottom"], rg["z_mid"]
+    L_v = float(val(prm, "tandem_length_mm"))
+    z_ref = z_tip - L_v
+    tab = np.asarray(rg["profile_fit"]["radial_median_table"], float)
+    ok = np.isfinite(tab[:, 1]) & np.isfinite(tab[:, 2])
+    ch = float(val(prm, "ring_channel_diam_mm"))
+    orad = rg["outer_radius"]
+    mri = orad["mri_half_way_edge_mm"] or {}
+    return dict(
+        tandem_length=dict(
+            vendor_mm=L_v, model_L_iu_mm=float(val(prm, "L_iu_mm")), label_tip_z_app_mm=z_tip,
+            label_tip_to_mm=dict(flange=z_tip, ring_top_on_axis=z_tip - float(ring0["z_top_on_axis_mm"]), ring_top_face=z_tip - zt,
+                                 ring_mid_thickness=z_tip - zm, ring_bottom_face=z_tip - zb,
+                                 tube_bottom=z_tip - float(cl["z_tube_bottom_mm"])),
+            vendor_reference_z_app_mm=z_ref, vendor_reference_below_top_face_mm=zt - z_ref,
+            vendor_reference_above_mid_thickness_mm=z_ref - zm,
+            note="The label's tube tip is %.1f mm above the flange (the model keeps its validated L_iu %.1f mm); %.0f mm below "
+                 "the tip lands %.1f mm below the ring's top face, %.1f mm above its mid-thickness, i.e. INSIDE the ring.  "
+                 "The vendor's intrauterine length is therefore not measured from the ring's cervical surface the label "
+                 "shows: it corresponds to a reference inside the ovoids (the ring / channel plane), and the label's tip, a "
+                 "signal void on 1.6 mm slices, may also end short of the physical tip (the physician: the length 'might be "
+                 "larger depending on which part you measure')" % (z_tip, float(val(prm, "L_iu_mm")), L_v, zt - z_ref,
+                                                                    z_ref - zm)),
+        ring_diameter=dict(
+            vendor_channel_diam_mm=ch, channel_radius_mm=0.5 * ch, model_outer_diam_mm=2.0 * rg["R_out"],
+            label_outer_diam_req_mm=2.0 * orad["label_req_plateau_mm"]["median"],
+            label_outer_diam_outline_mm=2.0 * orad["label_outline_circle_mm"]["median"],
+            label_outer_diam_column_half_mm=None if orad["label_column_presence_half_mm"] is None else 2.0 * orad["label_column_presence_half_mm"],
+            mri_edge_diam_mm=None if not mri else 2.0 * mri["median"],
+            channel_to_outer_surface_mm=rg["R_out"] - 0.5 * ch,
+            thickness_faces_mm=zt - zb, label_thickness_max_mm=float((tab[ok, 1] - tab[ok, 2]).max()),
+            note="30 mm is the diameter of the circle of SOURCE CHANNELS (vendor: 22 / 26 / 30 mm sets); the label's ovoids "
+                 "measure %.1f mm across (area-equivalent, %.1f at the MRI edge), so the channel circle runs %.1f mm inside the "
+                 "outer surface of the %.0f mm model ring: 'the ovoids diameter in the spec is likely somewhere inside the "
+                 "ovoids, not the outer diameter' (the physician).  The model uses the OUTER size (U1 = label) and records "
+                 "the channel size only" % (2.0 * orad["label_req_plateau_mm"]["median"], 2.0 * mri.get("median", float("nan")),
+                                            rg["R_out"] - 0.5 * ch, 2.0 * rg["R_out"])))
+
+
+def main_ring(a):
+    """v5 (fix plan S4b + S4c): the v4 tandem body (copied byte for byte, its label geometry re-measured and checked)
+    PLUS the two lunar ring halves measured on the updated BT applicator label and the BT ovoid label.  Writes
+    applicator_<variant>/{tube.obj, shaft.obj, ovoid_L.obj, ovoid_R.obj, applicator.json, pose.json},
+    logs/applicator_venezia_<variant>.json and figs/applicator_<variant>_label_check.png.  pose.json = the tandem
+    variant's (same device_final, corpus, insertion paths) plus the ring's seat and approach in the world at
+    device_final; its insertion_path_tandem_first is carried verbatim (this variant's own record on a rebuild, else the
+    tandem variant's), checked against the body it was gated against (_tf_record_problems), and its rows are
+    regenerated and compared.  Everything is built and checked in memory first; pose.json is replaced atomically."""
+    import copy
+    import shutil
+    t0 = time.time()
+    if not a.variant:
+        raise SystemExit("--ring builds a NEW applicator variant: pass --variant (e.g. v5)")
+    src = HY + "/applicator_" + a.tandem_from
+    if os.path.abspath(src) == os.path.abspath(APP):
+        raise SystemExit("--tandem-from must name another variant than --variant")
+    old = _load_json_or_empty(APP + "/applicator.json")
+    if old and not old.get("params", {}).get("ring_body", {}).get("value", False):
+        raise SystemExit("%s holds an applicator that is not a ring variant (params.ring_body): refusing to overwrite it "
+                         "(pick a new --variant)" % APP)
+    if os.path.isdir(APP):
+        stray = sorted(f for f in os.listdir(APP) if f.endswith(".obj")
+                       and os.path.splitext(f)[0] not in TANDEM_V4_PARTS + RING_V5_PARTS)
+        if stray:
+            raise SystemExit("%s already holds other parts %s: a ring variant must not" % (APP, stray))
+    old_pose = {}
+    if os.path.exists(APP + "/pose.json"):
+        old_pose = json.load(open(APP + "/pose.json"))
+    deps_old, why_old = _depends_on_disk(APP) if old_pose else (None, "no pose.json")
+    src_app, src_pose = json.load(open(src + "/applicator.json")), json.load(open(src + "/pose.json"))
+    if not src_app.get("params", {}).get("tandem_only", {}).get("value", False):
+        raise SystemExit("--tandem-from %s is not a tandem-only variant (params.tandem_only)" % src)
+    deps_src, why_src = _depends_on_disk(src)
+    if deps_src is None:
+        raise SystemExit("the tandem variant %s is incomplete: %s" % (src, why_src))
+    for d in (LOGS, FIGS):
+        os.makedirs(d, exist_ok=True)
+    VF = {p: geom.read_obj(os.path.join(src, p + ".obj")) for p in TANDEM_V4_PARTS}
+    prm = copy.deepcopy(src_app["params"])
+    added = v5_params(prm, a.ring_outer_r)
+    if a.ring_approach_dir:
+        prm["ring_approach_dir"]["value"] = a.ring_approach_dir
+    app_in = json.load(open(P["inputs"] + "/applicator.json"))
+    lab = load_label_new(label_applicator_file(a.app_label))
+    geo, vox = measure_label_geometry(lab, app_in, prm)
+    g4 = src_app["label_geometry"]
+    same_geo = dict(frame_origin=_max_abs_diff(geo["frame"]["origin_BT_world"], g4["frame"]["origin_BT_world"]),
+                    frame_R=_max_abs_diff(geo["frame"]["R_rows_BT_world"], g4["frame"]["R_rows_BT_world"]),
+                    tandem_stations=_max_abs_diff(geo["tandem"]["stations_xyz_req"], g4["tandem"]["stations_xyz_req"]),
+                    bundle_lobe=_max_abs_diff(geo["bundle"]["tandem_lobe_xyz"], g4["bundle"]["tandem_lobe_xyz"]),
+                    bundle_axis=_max_abs_diff(geo["bundle"]["axis_app_down"], g4["bundle"]["axis_app_down"]))
+    if max(same_geo.values()) > 1e-4:
+        raise SystemExit("the label geometry re-measured now differs from applicator_%s's by %s: not the same label / code "
+                         "(rebuild the tandem variant first)" % (a.tandem_from, jz(same_geo, 6)))
+    C = np.asarray(src_app["landmarks"]["shaft_centreline"], float)
+    cl = src_app["landmarks"]["shaft_centreline_info"]
+    # ---- the ring halves
+    rg, rods, rvox = measure_ring_geometry(lab, geo, prm, C, cl)
+    ring_stats, VFr, grids = build_ring_meshes(rg, prm)
+    VFall = dict(VF)
+    VFall.update(VFr)
+    ap = ring_approach(rg, VFall, grids, C, prm, float(cl["z_tube_bottom_mm"]))
+    frames = load_frames()
+    df = src_pose["device_final"]
+    rule = dict(flange=np.asarray(df["flange"], float), tube_axis=np.asarray(df["tube_axis"], float),
+                x_app=np.asarray(df["x_app"], float), R_rows=np.asarray(df["R_rows"], float))
+    tandem_check = validate_device_vs_label(VF, geo, vox, lab, prm, C, cl, rule, frames, app_in, src_pose, a.tandem_from)
+    check = validate_ring_vs_label(VFall, rg, rods, rvox, lab, geo, prm, src_pose, frames, tandem_check, C, cl)
+    # ---- T_seat, landmarks, the vendor sizes
+    c_ring = np.array([rg["centre_xy"][0], rg["centre_xy"][1], rg["z_mid"]])
+    R_seat = np.stack([np.asarray(rg["x_r"], float), np.asarray(rg["y_r"], float), EZ])
+    T_seat = np.eye(4)
+    T_seat[:3, :3], T_seat[:3, 3] = R_seat.T, c_ring
+    k_c = 4.0 * rg["R_out"] / (3.0 * np.pi)
+    cap_c = [c_ring + sg * k_c * np.asarray(rg["x_r"], float) for _, _, sg in RING_SIDES]
+    lm_ = copy.deepcopy(src_app["landmarks"])
+    lm_.update(cap_centres=cap_c, cap_centres_note="the half-disc centroids of the two ring halves (L, R): ring centre +/- "
+                                                   "4 R / (3 pi) along x_r at the mid-thickness (reference points only)",
+               ring_centre=c_ring, ring_top_face_z=rg["z_top"], ring_bottom_face_z=rg["z_bottom"],
+               ring_axis=EZ, ring_slot_dir=rg["y_r"], ring_outer_r=rg["R_out"],
+               ovoid_rods={s: dict(top=rg["halves"][s]["rod_top"], knee=rg["halves"][s]["rod_knee"], end=rg["halves"][s]["rod_end"],
+                                   boss_top=rg["halves"][s]["boss_top"], dir_down=rg["halves"][s]["rod_dir_down"])
+                           for s in ("L", "R")})
+    vendor = _vendor_vs_label(prm, geo, rg, cl)
+    # ---- pose.json: the tandem variant's, plus the ring at device_final; the tandem-first record carried
+    R_fin, F_fin = np.asarray(df["R_rows"], float), np.asarray(df["flange"], float)
+    pose_out = copy.deepcopy(src_pose)
+    for k in BODY_PATH_RECORDS + ("stale_records",):
+        pose_out.pop(k, None)
+    pose_out["written"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    pose_out["device_final"]["cap_centres_world"] = jz([F_fin + c @ R_fin for c in cap_c], 4)
+    pose_out["device_final"]["v5_note"] = ("tube pose, shaft end and corpus = applicator_%s's (copied: the tandem body is its "
+                                           "own); cap_centres_world = the ring halves' half-disc centroids at the seat" % a.tandem_from)
+    pose_out["v5"] = jz(dict(
+        tandem_from=a.tandem_from,
+        ring_seat_world=dict(origin=F_fin + c_ring @ R_fin, R_rows=R_seat @ R_fin,
+                             convention="p_world = origin + p_ring @ R_rows (the ring frame at the seat, device_final)"),
+        halves={s: dict(part=h["part"], approach_dir_world=np.asarray(h["e_app"], float) @ R_fin,
+                        n_out_world=np.asarray(h["n_out_app"], float) @ R_fin, offset_mm=h["offset_mm"], click_mm=h["click_mm"],
+                        click_shape_p=h["click_shape_p"], D_mm=h["D_mm"], order=h["order"])
+                for s, h in ap["halves"].items()},
+        note="the ring halves ride on the tandem: at any tandem pose (F, R_rows) half i sits at F + (p_app + disp_i(d)) @ "
+             "R_rows (applicator.json ring.approach); the world vectors here are at device_final only"))
+    pose_json = pose_out
+    app_params_json = jz(prm)
+    deps_new = tandem_body_depends(app_params_json, pose_json, VF)
+    keep, stale, msgs = {}, dict(old_pose.get("stale_records") or {}), []
+    for k in BODY_PATH_RECORDS:
+        cands = []
+        if k in old_pose:
+            cands.append(("applicator_%s's own (before this rebuild)" % a.variant, old_pose[k], deps_old, why_old))
+        if k in src_pose:
+            cands.append(("applicator_%s's (the tandem variant)" % a.tandem_from, src_pose[k], deps_src, why_src))
+        chosen = None
+        for name, rec, dref, why in cands:
+            probs = _tf_record_problems(rec, pose_json, deps_new, dref, why)
+            if not probs:
+                chosen = (name, rec)
+                break
+            msgs.append("%s %s does not match: %s" % (k, name, "; ".join(probs)))
+        if chosen:
+            keep[k] = chosen[1]
+            msgs.append("%s carried verbatim from %s (written %s)" % (k, chosen[0], chosen[1].get("written")))
+        elif cands:
+            if not getattr(a, "force", False):
+                raise SystemExit("refusing to build: no %s record matches this variant's tandem body:\n  %s\nNothing was "
+                                 "written (--force moves it to pose.json stale_records)" % (k, "\n  ".join(msgs)))
+            stale[k] = dict(record=cands[0][1], moved=time.strftime("%Y-%m-%d %H:%M:%S"), why=msgs,
+                            note="moved here by a --ring --force build: the scene does not read it")
+    pose_json.update(keep)
+    if stale:
+        pose_json["stale_records"] = stale
+    carry = dict(pass_=False)
+    k = "insertion_path_tandem_first"
+    if k in keep and k in src_pose:
+        rows_new = geom.tandem_first_path(keep[k]["params"])
+        ref = src_pose[k]["rows"]
+        dF = max(float(np.abs(np.asarray(q["F"], float) - r_["F"]).max()) for q, r_ in zip(ref, rows_new))
+        da = max(float(np.abs(np.asarray(q["tube_axis"], float) - r_["tube_axis"]).max()) for q, r_ in zip(ref, rows_new))
+        carry = dict(record_identical_to_tandem_variant=bool(json.dumps(keep[k], sort_keys=True) == json.dumps(src_pose[k], sort_keys=True)),
+                     n_rows=[len(ref), len(rows_new)], regenerated_rows_max_abs_diff_F_mm=dF,
+                     regenerated_rows_max_abs_diff_axis=da, tandem_body_diff=_depends_diff(deps_src, deps_new),
+                     source=[m_ for m_ in msgs if "carried" in m_])
+        carry["pass_"] = bool(carry["record_identical_to_tandem_variant"] and len(ref) == len(rows_new) and dF <= 1e-6
+                              and da <= 1e-9 and not carry["tandem_body_diff"])
+    elif k not in src_pose:
+        carry = dict(pass_=True, note="the tandem variant holds no %s record" % k)
+    carry["pass"] = bool(carry.pop("pass_"))
+    for m_ in msgs:
+        print("[pose v5] %s" % m_, flush=True)
+    acc = ring_acceptance(check, tandem_check, ap, ring_stats, rg, carry)
+    for a_ in acc:
+        print("[S4c v5] %-4s %s: %s" % ("PASS" if a_["pass"] else "FAIL", a_["test"], jz(a_["measured"], 3)), flush=True)
+    label_check = dict(check, tandem_body=tandem_check, acceptance=acc, pass_all=all(a_["pass"] for a_ in acc),
+                       note="IN-SAMPLE (fix plan S4c): the parts were measured on these labels; a consistency ceiling, not validation")
+    # ---- applicator.json
+    parts = copy.deepcopy(src_app["parts"])
+    parts.update(ring_stats)
+    rg_json = {kk: vv for kk, vv in rg.items()}
+    app_out = copy.deepcopy(src_app)
+    app_out.update(
+        frame=FRAME_APP_V5, variant=a.variant,
+        device="Venezia-type applicator v5 (fix plan S4b): the v4 tandem body (tube + vaginal tandem, ONE rigid body; the "
+               "scene loads tube.obj + shaft.obj as the tandem) PLUS two lunar ring halves (ovoid_L.obj, ovoid_R.obj: the "
+               "scene's ovoid body), each ONE closed manifold = half-disc + socket boss + its own rod into the handle "
+               "bundle; ring OUTER diameter %.0f mm (U1 = label), all shapes measured on the updated BT applicator label and "
+               "the BT ovoid label.  Identity unconfirmed: RTPLAN / vendor geometry not available" % (2.0 * rg["R_out"]),
+        written=time.strftime("%Y-%m-%d %H:%M:%S"), params=prm, added_params=added,
+        added_params_note="ring-half keys added to applicator_%s's params (every other key is its, unchanged)" % a.tandem_from,
+        parts=parts, tandem_parts=list(TANDEM_V4_PARTS), ring_parts=list(RING_V5_PARTS), landmarks=lm_,
+        label_geometry=dict(geo, ring_halves=rg_json, ovoid_rods=rods), label_check=label_check,
+        ring=dict(T_seat=dict(origin_app=c_ring, R_rows_app=R_seat, matrix_app_from_ring=T_seat,
+                              convention="p_app = origin_app + p_ring @ R_rows_app; rows = x_r (the right half's outward medial "
+                                         "normal), y_r (anterior along the slot), z (the ring axis = the tube axis).  The OBJs "
+                                         "are already at this seat in the applicator frame",
+                              definition="origin = the ring centre (label plateau median) at the mid-thickness between the "
+                                         "fitted faces; the ring is perpendicular to the tube (device design; the label's "
+                                         "face tilts are within its voxel size, label_geometry.ring_halves.profile_fit)"),
+                  halves={s: dict(part=h["part"], n_out_app=h["n_out"], rod_dir_down_app=h["rod_dir_down"],
+                                  approach_dir_down_app=h["approach_dir_down"], rod_pts_app=h["rod_pts"],
+                                  boss=[h["boss_top"], h["boss_bottom"]]) for s, h in rg["halves"].items()},
+                  approach=ap),
+        vendor_vs_label=vendor,
+        tandem_from=dict(variant=a.tandem_from, applicator_json=src + "/applicator.json", pose_json=src + "/pose.json",
+                         mesh_sha256=deps_src["mesh_sha256"], label_geometry_max_abs_diff=same_geo,
+                         note="tube.obj / shaft.obj copied byte for byte; the label geometry they were built from re-measured "
+                              "identical"))
+    app_json = jz(app_out)
+    # ---- write (every check above ran): meshes, applicator.json, pose.json (atomic)
+    os.makedirs(APP, exist_ok=True)
+    for p in TANDEM_V4_PARTS:
+        shutil.copyfile(os.path.join(src, p + ".obj"), os.path.join(APP, p + ".obj"))
+    for p in RING_V5_PARTS:
+        V, F = VFr[p]
+        geom.write_obj(os.path.join(APP, p + ".obj"), V, F,
+                       header="%s: one lunar ring half of applicator v5 (half-disc + socket boss + rod, ONE closed manifold) at "
+                              "its seat, built from the updated BT applicator label and the BT ovoid label; %s" % (p, FRAME_APP_V5))
+    json.dump(app_json, open(APP + "/applicator.json", "w"), indent=1)
+    _dump_json_atomic(pose_json, APP + "/pose.json")
+    deps_disk, why_disk = _depends_on_disk(APP)
+    if deps_disk is None or _depends_diff(deps_src, deps_disk):
+        raise SystemExit("written %s: its tandem body differs from applicator_%s's (%s)" % (APP, a.tandem_from,
+                                                                                            why_disk or _depends_diff(deps_src, deps_disk)))
+    print("[pose v5] wrote %s/{applicator.json, pose.json, tube.obj, shaft.obj, ovoid_L.obj, ovoid_R.obj}; kept %s" % (
+        APP, sorted(keep) or "no record"), flush=True)
+    if not a.no_figs:
+        fig_v5_label_check(geo, rg, rods, lab, VFall, check, acc, os.path.join(FIGS, "applicator_%s_label_check.png" % a.variant))
+    files = sorted(os.listdir(APP))
+    log = dict(started=time.strftime("%Y-%m-%d %H:%M:%S"), args=vars(a), wall_s=round(time.time() - t0, 1), files=files,
+               acceptance=acc, label_check={kk: vv for kk, vv in label_check.items() if kk != "tandem_body"},
+               ring={kk: vv for kk, vv in rg.items() if kk not in ("sections", "profile_fit")}, approach=ap, vendor_vs_label=vendor,
+               mesh=ring_stats, carry=carry)
+    json.dump(jz(log), open(LOGS + "/applicator_venezia_%s.json" % a.variant, "w"), indent=1)
+    print("[done v5] %s: files %s; S4c pass %d / %d; wall %.1f s" % (APP, files, sum(a_["pass"] for a_ in acc), len(acc),
+                                                                     time.time() - t0), flush=True)
+
+
 # ============================================================================ main
 def main():
     ap = argparse.ArgumentParser()
@@ -2684,9 +4111,21 @@ def main():
                     help="with --tandem-only: rebuild even when the variant's pose.json insertion_path_tandem_first no longer "
                          "matches the rebuilt body / pose (it is moved to pose.json stale_records; without --force the "
                          "rebuild stops before writing anything)")
-    ap.add_argument("--app-label", default=None, help="with --tandem-only: the updated BT applicator label (default "
+    ap.add_argument("--app-label", default=None, help="with --tandem-only / --ring: the updated BT applicator label (default "
                                                       "APPSIM_APP_LABEL, else <data>/../BT_MRI_label_applicator.nii)")
+    ap.add_argument("--ring", action="store_true",
+                    help="fix plan S4b/S4c: the --tandem-from variant's tandem body (copied, checked) PLUS two lunar ring "
+                         "halves, each one closed manifold with its socket boss and rod, measured on the updated BT "
+                         "applicator label and the BT ovoid label, into applicator_<variant>/ (needs --variant, a new name)")
+    ap.add_argument("--tandem-from", default="v4", help="with --ring: the tandem-only variant whose tandem body, pose and "
+                                                        "tandem-first record are carried (v4)")
+    ap.add_argument("--ring-outer-r", type=float, default=None,
+                    help="with --ring: ring OUTER radius in mm (default params ring_outer_r_mm: 20, U1 = label)")
+    ap.add_argument("--ring-approach-dir", choices=["rod_sagittal", "rod", "handle"], default=None,
+                    help="with --ring: the direction each half backs out along (default params ring_approach_dir)")
     a = ap.parse_args()
+    if a.ring and a.tandem_only:
+        raise SystemExit("--ring and --tandem-only build different variants: pass one")
     global APP
     base_app = APP
     if a.variant:
@@ -2697,6 +4136,8 @@ def main():
         scaled_ovoids(a.scaled_ovoids, align_shaft=a.align_shaft); return
     if a.tandem_only:
         main_tandem_only(a); return
+    if a.ring:
+        main_ring(a); return
     t0 = time.time()
     for d in (APP, FIGS, LOGS):
         os.makedirs(d, exist_ok=True)

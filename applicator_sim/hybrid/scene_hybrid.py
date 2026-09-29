@@ -796,6 +796,119 @@ CFG = dict(
                                     #   canal_tie_follow "corpus" + springs / predicted attach, vs TF1u): the corpus equals
                                     #   the isolated EU3_C to 3e-9 mm; L tie force 7.35 -> 3.37 N net; L one body spread 2.34
                                     #   -> 0.17 mm, flange drift 1.04 -> 0.04 mm; strain p95 27.5 -> 16.7 %.
+    # --- S7b-S7d of the G32 fix plan (2026-09-28): the DEVICE-DRIVEN opening of the v5 wall, the ring halves and the
+    #     hand-over.  Every default below leaves the scene exactly as G32 / TF0c / TF1u / TF1v built it (host replay rp.py).
+    #     The physician (on G32): "the vagina ends at the cervix, and the cervix ends at the uterus; your simulation
+    #     separately expands the vagina, so the vagina-cervix boundary is broken" -- and the ring must sit at the
+    #     vagina-cervix interface.  So: no pre-opening, no balloon; the wall opens only where a device part is, and its top
+    #     ring is glued to the portio through V, C, K1 and R.  In K2 it stays on the portio only with wall_drive_params
+    #     k2_vault "live" (TF3); with the DEFAULT "rest" K2 blends the vault onto the rest shape and the junction breaks
+    #     (MEASURED, TF2c_c end of K2: 18-19 of 49 top-ring nodes per sheet > 3 mm off the cervix, up to 9 mm; 85 wall
+    #     nodes inside it).
+    wall_drive=None,                # None (DEFAULT): as before.  "device": the v5 wall (vagina_wall_dir vagina_wall_tet26v5
+                                    #   or _tet26v5p: meta wall.v5 + start.vtk) is KINEMATIC, moved every step by
+                                    #   hybrid/wall_drive.py from its collapsed START (the preBT label below the HR-CTV,
+                                    #   top ring on the cervix) as the tandem, then each ring half arrive: lumen = max(need
+                                    #   + c, collapsed section), straightened onto the device line, rate-limited, the top
+                                    #   ring glued to the cervix surface points it starts on (the vault stays on the
+                                    #   portio).  The organs meet a kinematic copy of its outer sheet (the balloon
+                                    #   machinery, node /balloon, one-way; cfg collision_proximity_mm "balloon"); the
+                                    #   wall's own collision models are off while it is driven.  Requires n_balloon 0,
+                                    #   apex_attach "off", insertion_path "tandem_first".  The wall's FEM is inert while
+                                    #   driven (positions written before and after every solve, velocities zeroed; its
+                                    #   volume ratio is not a mechanical state and is logged as 1, like balloon_drive_wall).
+    wall_drive_params={},           # overrides of wall_drive.DRIVE_DEFAULTS (unknown keys refused).  TF3: k2_vault "live"
+                                    #   (the vault re-derived on the live cervix in K2 and kept on it through the settle;
+                                    #   needs wall_handover false, vault_tie_k_mN_per_mm 0, n_k2 > 0) and ring_lead_slope
+                                    #   (the lumen ahead of a ring half opens only as the rate needs); both off by default.
+    wall_handover=False,            # "device": at the first settle row (H) the drive stops, the wall is at its REST shape
+                                    #   (the drive's K2 end state; any residual lag is logged as handover_jump_mm), its own
+                                    #   collision models come on (lumen: wall_contact_parts + wall_inner_contact_organs;
+                                    #   outer: as balloon_mode "follow": the drive sheet keeps carrying the organs and copies
+                                    #   the wall's outer sheet each step), and the vault top ring is held by a
+                                    #   FixedConstraint at its rest position (the ring-sized vault on the ring's top face).
+                                    #   WARNING, MEASURED (RP1L4): switching the wall's contacts on with the cervix 4 mm into
+                                    #   the rest vault and the vault top fixed crushed the top stations in 3 steps (J 0.05);
+                                    #   no TF run uses it.  False: the wall stays driven through H (the drive then holds its
+                                    #   last state: the rest shape with k2_vault "rest", the live vault with "live").
+    vault_tie_k_mN_per_mm=0.0,      # "device": > 0 ties the portio to the vault in the settle -- the cervix surface node
+                                    #   NEAREST to each vault_top node (paired once, at the hand-over or the first H row)
+                                    #   gets a spring towards that vault node's current position, the target capped at
+                                    #   0.5 mm from the cervix node per step (no offset); 0 = none (contact only).  KNOWN
+                                    #   FLAWS (review of TF2, not fixed: k2_vault "live" replaces it and refuses it): 98 vault
+                                    #   nodes map onto ~34 cervix nodes, the last pair wins (some pull towards LUMEN-sheet
+                                    #   nodes), and it only pulls, so where a vault node lies inside the cervix it pulls the
+                                    #   surface deeper in.
+    vault_tie_phase="handover",     # "handover" (DEFAULT): the vault tie (vault_tie_k_mN_per_mm) starts at the hand-over.
+                                    #   "H": it starts at the FIRST SETTLE ROW with the wall still driven (cfg wall_handover
+                                    #   false): each vault_top node is paired with its nearest cervix surface node there and
+                                    #   that node is sprung to the (kinematic, rest-shape) vault node, target capped 0.5 mm
+                                    #   per step -- the vagina-cervix junction (tissue continuity at the fornix) pulled
+                                    #   closed while the organs and the cervix settle.  MEASURED why (RP1L4): after K2 the
+                                    #   rest vault (top ring at 14.8 mm on the ring's top face) lay 3-9 mm off the cervix
+                                    #   surface on 35 of 98 nodes; the hand-over itself (wall contacts on with the cervix
+                                    #   4 mm into the vault, vault top fixed) crushed the top stations in 3 steps (J 0.05).
+    portio_tie_k_mN_per_mm=0.0,     # "device": > 0 carries the cervix nodes the vault is glued to (the portio around the
+                                    #   os: the pairing's triangle nodes) with the TANDEM's sideways motion each step
+                                    #   (canal_tie_carry "tube": the tube's rigid increment at the node minus its slide
+                                    #   along the tube, plus the corpus increment along it), a spring of this stiffness to
+                                    #   the carried position: zero force while the portio moves with the tube.  MEASURED
+                                    #   why (TF1a, end of C): the tied tract stays 2.5-5 mm from the tube, but the junction
+                                    #   lips 6-10 mm around it lag, so the vault's centre drifts 9 mm off the tube and the
+                                    #   tube crosses the glued top of the wall.  0 = off (DEFAULT).
+    portio_tie_mode="carry",        # "carry": the target is the node + this step's tube increment (TF1a_c: it transmits
+                                    #   the increments only, so an accumulated lag is never corrected -- the junction still
+                                    #   drifted 7.1 mm off the tube by the end of C).  "anchor": each node keeps its
+                                    #   LATERAL position in the tube's frame from the step it engaged (p_app = (x - F)
+                                    #   R_rows^T then); target = the node + that lateral offset's error, the axial part
+                                    #   removed (the portio slides freely along the tube) and capped at
+                                    #   portio_tie_cap_mm (force per node <= k x cap, as the canal tie).
+    portio_tie_cap_mm=0.5,
+    portio_tie_phases=None,         # None (DEFAULT): the portio tie acts in every phase.  A list of phases (e.g. ["V", "C",
+                                    #   "K1", "K2"]): its stiffness is 0 in every other phase.  Why (TF2): in R the tube is
+                                    #   still, so a "carry" tie holds each portio node at its start-of-step position and
+                                    #   resists the ring pushing the portio (TF1r2: the seated left half ended 7.8 mm inside
+                                    #   the portio; the cervix-only probe, no tie, 1.5-2.9 mm).
+    ring_phases=False,              # tandem_first + applicator_v5 ring: after C the schedule runs R_L, R_R (each half from
+                                    #   its approach start along applicator.json ring.approach to its seat on the tandem at
+                                    #   ring_step_mm per step, clicking in over the last click_mm), then K1 (the record's L
+                                    #   rows: tandem + clamped ring + corpus lifted together) and n_k2 K2 rows (the drive's
+                                    #   packing front), then H.  The halves are two kinematic bodies (/ring_L, /ring_R, parts
+                                    #   ovoid_L / ovoid_R); each is collision-inert until its own approach starts.  Needs
+                                    #   ovoid_mode "none" (the old single ovoid body is not built).
+    ring_step_mm=1.0,               # approach travel per step (the host checked the clearances every 0.5 mm)
+    ring_start_mm=None,             # approach distance at the first R row of each half; None = the approach's D (100 mm)
+    ring_hold_steps=2,              # rows holding each seated half before the next phase starts
+    ring_seat="sequential",         # "sequential" (DEFAULT): each half all the way onto its seat in turn (R_L, R_R).  "joint"
+                                    #   (cervix_probe's seat, TF2): each half in order travels to the stand-off d =
+                                    #   ring_standoff_mm (R_L, then R_R with the left half waiting there), then BOTH travel
+                                    #   together onto the seat (R_S: the assembled ring pushed onto the portio), then
+                                    #   ring_hold_steps rows seated.  Rows are equally spaced in PATH LENGTH of the approach
+                                    #   displacement (the largest over the halves that move; the lateral click-in is part of
+                                    #   the path): ring_step_mm while d > ring_near_mm, ring_step_near_mm below.  MEASURED
+                                    #   (cervix_probe CP0, one half at a time): the left half alone lifts its side of the
+                                    #   hanging portio, the tets across the slot edge shear to J 0.08 and the run aborts; the
+                                    #   joint seat completes in every E 30 probe run (CJ*, CK*).
+    ring_after_lift=False,          # True (TF2): K1 -- the record's lift rows, tandem + corpus together, the vault glued to the
+                                    #   portio, the wall's stations rising to their rest heights -- runs BEFORE the ring
+                                    #   phases, which then ride the lifted (final) tandem pose; K2 follows the seat.  False
+                                    #   (DEFAULT): R then K1 as the plan wrote it.  MEASURED why (RP1s1 / RP1s3, the joint
+                                    #   seat on the UNLIFTED end-of-C tandem): the seat lies ~24 mm below its final place, in
+                                    #   the narrower mid-upper vagina, and opening the lumen there pushed the rectum 45-51 mm
+                                    #   and the bladder 17 mm with 80-113 of their vertices overtaken by the sheet; both runs
+                                    #   aborted on crushed bladder tets at the sheet (J 0.16-0.18) at d 2-3 mm.
+    ring_standoff_mm=14.0,          # "joint": the stand-off d (cervix_probe: first portio contact at d ~ 10-14 mm)
+    ring_step_near_mm=None,         # "joint": path step below ring_near_mm (None = ring_step_mm)
+    ring_near_mm=14.0,              # "joint": where the near (contact) zone starts
+    n_k2=0,                         # K2 rows (the packing front of the drive; 0 = no K2 rows)
+    settle_rayleigh_stiffness=None, # the late-settle flip (README STAGE 3c): {body: value} sets that body's EulerImplicitSolver
+                                    #   rayleighStiffness from the FIRST settle row (host model: eigenvalue -1.2 -> -0.50 at
+                                    #   {"vagina": 0.01}); None (DEFAULT) = unchanged.
+    warm_start=None,                # {"tag": <run>, "phase": <first phase to run>}: start the schedule at the first row of
+                                    #   that phase from the state the run <tag> ended in (final/<body>_u.npy, velocities 0;
+                                    #   canal / corpus ties engaged as the tip has passed them; the drive's state rebuilt).
+                                    #   The source run must have stopped at the end of the preceding phase (stop_after_phase).
+                                    #   Steps keep their full-schedule numbers.  None (DEFAULT) = from row 0.
     # --- bookkeeping
     log_every=1,
 )
@@ -946,14 +1059,17 @@ def corpus_target(inp, cfg):
         u_ios = float(1.0 - float((np.array(e["tip"], float) - os_pt) @ p_axis) / travel)
     else:
         raise ValueError("insertion_axis must be 'auto', 'tube' or 'shaft' (got %r)" % mode)
-    return dict(delta_mm=dz, key=key, flange=np.array(e["flange"], float), tip=np.array(e["tip"], float),
-                screw=e["screw"], T=np.array(e["T_preBT_to_target"], float), R=np.array(e["R"], float),
-                t=np.array(e["t"], float), L_end_target=np.array(e["L_end_target"], float),
-                u_ios=u_ios, travel_mm=travel, insertion_axis=mode,
-                axis=p_axis, tube_axis=geom.unit(pose["device_final"]["tube_axis"]),
-                R_rows=np.array(pose["device_final"]["R_rows"], float),
-                is_default=bool(abs(dz - float(pose["default_flange_shift_mm"])) < 1e-9),
-                canal=pose.get("insertion_path_canal"), tandem_first=pose.get("insertion_path_tandem_first"))
+    out = dict(delta_mm=dz, key=key, flange=np.array(e["flange"], float), tip=np.array(e["tip"], float),
+               screw=e["screw"], T=np.array(e["T_preBT_to_target"], float), R=np.array(e["R"], float),
+               t=np.array(e["t"], float), L_end_target=np.array(e["L_end_target"], float),
+               u_ios=u_ios, travel_mm=travel, insertion_axis=mode,
+               axis=p_axis, tube_axis=geom.unit(pose["device_final"]["tube_axis"]),
+               R_rows=np.array(pose["device_final"]["R_rows"], float),
+               is_default=bool(abs(dz - float(pose["default_flange_shift_mm"])) < 1e-9),
+               canal=pose.get("insertion_path_canal"), tandem_first=pose.get("insertion_path_tandem_first"))
+    if cfg.get("ring_phases"):                          # S7f: the ring halves' approach paths (applicator_v5)
+        out["ring_app"] = inp["app"].get("ring")
+    return out
 
 
 def screw_at(screw, s):
@@ -1129,10 +1245,130 @@ def build_schedule_tandem_first(cfg, tgt):
     for k in range(int(cfg["n_presettle"])):
         sched.append(dict(pose_of(start), phase="P", u=0.0, s=0.0, ov_lag=0.0, stage="P"))
     n = len(rows)
+    if cfg.get("ring_phases"):
+        return sched + ring_phase_rows(cfg, tgt, rows, pose_of)
     for i, r in enumerate(rows):
         sched.append(dict(pose_of(r), phase=r["phase"], u=(i + 1) / float(n), s=0.5 * (r["w_r"] + r["w_l"]),
                           ov_lag=0.0, stage=r["phase"]))
     return sched
+
+
+def ring_phase_rows(cfg, tgt, rows, pose_of):
+    """S7f: the tandem-first rows with the ring phases (cfg ring_phases): V and C as recorded; R_L then R_R (the tandem
+    and the corpus held at the end-of-C row, each half from ring_start_mm (default its approach's D) to its seat in steps
+    of ring_step_mm, then ring_hold_steps rows seated); K1 = the record's L rows (tandem + clamped ring + corpus lifted
+    together, drive_kappa = w_l: the wall's stations rise to their rest heights); n_k2 K2 rows at the final pose
+    (drive_k2 = k / n_k2: the packing front).  Every row carries ring_d {side: approach distance d (mm), 0 = seated} and
+    ring_on (the halves whose collision models are live: a half is inert until its own approach starts).  u runs 0 -> 1
+    over all rows; s = (w_r + w_l) / 2 as in build_schedule_tandem_first."""
+    ring = tgt.get("ring_app")
+    if not ring or not (ring.get("approach") or {}).get("halves"):
+        raise ValueError("ring_phases needs an applicator with a ring and its approach paths (applicator_v5: "
+                         "applicator.json ring.approach)")
+    halves = ring["approach"]["halves"]
+    order = [s for s, _ in sorted(((s, int(h.get("order", 0))) for s, h in halves.items()), key=lambda t: t[1])]
+    D = {s: float(halves[s]["D_mm"]) for s in order}
+    d0 = {s: (D[s] if cfg.get("ring_start_mm") is None else min(D[s], float(cfg["ring_start_mm"]))) for s in order}
+    step = float(cfg.get("ring_step_mm", 1.0))
+    if step <= 0.0:
+        raise ValueError("ring_step_mm must be > 0")
+    hold = int(cfg.get("ring_hold_steps", 2) or 0)
+    VC = [r for r in rows if r["phase"] in ("V", "C")]
+    Lr = [r for r in rows if r["phase"] == "L"]
+    if not VC or not Lr:
+        raise ValueError("ring_phases needs the record's V, C and L rows")
+    out = []
+    park = {s: D[s] for s in order}
+    for r in VC:
+        out.append(dict(pose_of(r), phase=r["phase"], stage=r["phase"], ring_d=dict(park), ring_on=[],
+                        s=0.5 * (r["w_r"] + r["w_l"]), ov_lag=0.0))
+    end_C = VC[-1]
+    cur = dict(park)
+    on = []
+    after_lift = bool(cfg.get("ring_after_lift", False))
+    extra = {}
+    if after_lift:
+        # cfg ring_after_lift: K1 (the record's L rows: tandem + corpus lifted, the vault glued to the portio, the stations
+        # rising to their rest heights) BEFORE the ring; the halves then travel and seat on the LIFTED (final) tandem pose
+        for r in Lr:
+            out.append(dict(pose_of(r), phase="K1", stage="K1", ring_d=dict(park), ring_on=[],
+                            s=0.5 * (r["w_r"] + r["w_l"]), ov_lag=0.0, drive_kappa=float(r["w_l"])))
+        end_C = Lr[-1]                                  # the R rows below ride the lifted pose ...
+        extra = dict(drive_kappa=1.0)                   # ... with the wall's stations at their rest heights
+    if cfg.get("ring_seat", "sequential") == "joint":
+        # S7f with the probe's joint seat: each half to the stand-off, then both together onto the seat
+        so = float(cfg.get("ring_standoff_mm", 14.0))
+        sn = cfg.get("ring_step_near_mm")
+        sn = step if sn is None else float(sn)
+        dn = float(cfg.get("ring_near_mm", 14.0))
+
+        def add(sides, ds, phase):
+            nonlocal cur
+            for d in ds:
+                cur = dict(cur)
+                for s_ in sides:
+                    cur[s_] = max(0.0, float(d))
+                out.append(dict(pose_of(end_C), phase=phase, stage=phase, ring_d=cur, ring_on=list(on),
+                                s=0.5 * (end_C["w_r"] + end_C["w_l"]), ov_lag=0.0, **extra))
+        for s in order:
+            on = on + [s]
+            add([s], ring_path_ds([halves[s]], d0[s], so, step, sn, dn), "R_" + s)
+        add(list(order), ring_path_ds([halves[s] for s in order], so, 0.0, step, sn, dn) + [0.0] * hold, "R_S")
+    else:
+        for s in order:
+            on = on + [s]
+            n_s = int(np.ceil(d0[s] / step))
+            ds = [d0[s] - k * step for k in range(n_s)] + [0.0] * (1 + hold)
+            for d in ds:
+                cur = dict(cur)
+                cur[s] = max(0.0, float(d))
+                out.append(dict(pose_of(end_C), phase="R_" + s, stage="R_" + s, ring_d=cur, ring_on=list(on),
+                                s=0.5 * (end_C["w_r"] + end_C["w_l"]), ov_lag=0.0, **extra))
+    seated = {s: 0.0 for s in order}
+    for r in ([] if after_lift else Lr):
+        out.append(dict(pose_of(r), phase="K1", stage="K1", ring_d=dict(seated), ring_on=list(order),
+                        s=0.5 * (r["w_r"] + r["w_l"]), ov_lag=0.0, drive_kappa=float(r["w_l"])))
+    nk2 = int(cfg.get("n_k2", 0) or 0)
+    for k in range(1, nk2 + 1):
+        out.append(dict(pose_of(Lr[-1]), phase="K2", stage="K2", ring_d=dict(seated), ring_on=list(order),
+                        s=0.5 * (Lr[-1]["w_r"] + Lr[-1]["w_l"]), ov_lag=0.0, drive_kappa=1.0, drive_k2=k / float(nk2)))
+    n = len(out)
+    for i, r in enumerate(out):
+        r["u"] = (i + 1) / float(n)
+    return out
+
+
+def ring_disp_app(h, d):
+    """A ring half's approach displacement in the applicator frame at distance d from its seat (applicator.json
+    ring.approach.halves[side]: d e_app + o(d) n_out_app, o = offset_mm (1 - (1 - min(d / click_mm, 1))^click_shape_p));
+    d (m,) -> (m, 3).  The same path as wall_drive.approach_disp and cervix_probe.ring_disp."""
+    d = np.atleast_1d(np.asarray(d, float))
+    t = np.clip(d / float(h["click_mm"]), 0.0, 1.0)
+    o = float(h["offset_mm"]) * (1.0 - (1.0 - t) ** float(h["click_shape_p"]))
+    return d[:, None] * np.asarray(h["e_app"], float)[None, :] + o[:, None] * np.asarray(h["n_out_app"], float)[None, :]
+
+
+def ring_path_ds(hs, d_hi, d_lo, step_far, step_near, d_near, res=0.005):
+    """cfg ring_seat "joint": the approach distances of the rows of one or more halves moving together, from d_hi
+    (excluded: where they are) down to d_lo (included), equally spaced in PATH LENGTH of the displacement (the largest
+    over the halves): a new row whenever the path since the last row reaches step_far (d > d_near) or step_near (d <=
+    d_near), one row exactly where the near zone starts, and the last row at d_lo (cervix_probe.approach_d)."""
+    d_hi, d_lo = float(d_hi), float(d_lo)
+    if not d_hi > d_lo:
+        return []
+    n = max(2, int(np.ceil((d_hi - d_lo) / float(res))))
+    dd = np.linspace(d_hi, d_lo, n + 1)
+    seg = np.max([np.linalg.norm(np.diff(ring_disp_app(h, dd), axis=0), axis=1) for h in hs], axis=0)
+    out, acc = [], 0.0
+    for i in range(1, len(dd)):
+        acc += float(seg[i - 1])
+        st = float(step_near) if dd[i] <= float(d_near) else float(step_far)
+        cross = dd[i] <= float(d_near) < dd[i - 1]
+        if acc >= st - 1e-12 or cross or i == len(dd) - 1:
+            out.append(float(dd[i]))
+            acc = 0.0
+    out[-1] = d_lo
+    return out
 
 
 def build_schedule(cfg, tgt):
@@ -1347,9 +1583,11 @@ def _add_refined_collision_surface(n, inp, cfg, X0c):
     return rc
 
 
-def add_rigid_parts(root, name, files, groups, colors, pose0):
+def add_rigid_parts(root, name, files, groups, colors, pose0, prox=None):
     """A kinematic Rigid3d body carrying triangle surfaces (collision + visual) through RigidMapping.
-    The surfaces' own coordinates are the LOCAL frame (device: applicator frame; corpus: preBT world at rest)."""
+    The surfaces' own coordinates are the LOCAL frame (device: applicator frame; corpus: preBT world at rest).
+    prox: {part: {proximity: mm}} for the parts named in cfg collision_proximity_mm (the ring halves, TF2); None or a
+    part absent = no proximity argument (the graph as before)."""
     nd = root.addChild(name)
     nd.addObject("MechanicalObject", name="rig", template="Rigid3d", position=pose0)
     for k, (nm, f) in enumerate(files):
@@ -1359,10 +1597,11 @@ def add_rigid_parts(root, name, files, groups, colors, pose0):
         ch.addObject("MechanicalObject", name="mo", src="@ld")
         ch.addObject("RigidMapping", name="rm", input="@../rig", output="@mo")
         g = list(groups[nm])
+        pk = dict((prox or {}).get(nm) or {})
         if g:
-            ch.addObject("TriangleCollisionModel", name="tri", group=g, moving=True, simulated=False)
-            ch.addObject("LineCollisionModel", name="lin", group=g, moving=True, simulated=False)
-            ch.addObject("PointCollisionModel", name="pnt", group=g, moving=True, simulated=False)
+            ch.addObject("TriangleCollisionModel", name="tri", group=g, moving=True, simulated=False, **pk)
+            ch.addObject("LineCollisionModel", name="lin", group=g, moving=True, simulated=False, **pk)
+            ch.addObject("PointCollisionModel", name="pnt", group=g, moving=True, simulated=False, **pk)
         vis = ch.addChild("vis")
         vis.addObject("OglModel", name="ogl", src="@../ld", color=list(colors[nm]))
         vis.addObject("IdentityMapping", name="vm", input="@../mo", output="@ogl")
@@ -1461,6 +1700,7 @@ def build_scene(root, cfg=None, inp=None):
     if cfg["ovoid_mode"] == "off":
         for p in OVOID_BODY_PARTS:
             dgrp[p] = []
+    check_drive_cfg(cfg, inp)                           # S7b: refuse inconsistent wall_drive / ring cfgs before building
     sched = build_schedule(cfg, tgt)
     F0 = sched[0]["F"]
     Rdev = tgt["R_rows"].T                              # columns = applicator x, y, z in preBT world
@@ -1480,9 +1720,24 @@ def build_scene(root, cfg=None, inp=None):
         ovoids = add_rigid_parts(root, "ovoids", [(p, _pobj(p)) for p in ov_parts],
                                  dgrp, dcol, rigid_pose(R_ov0, ov_pose))
 
+    rings = {}
+    if cfg.get("ring_phases"):
+        # S7f: the two ring halves, each its own kinematic body (local coords = the applicator frame at the seat, so a
+        # half at approach distance d on the tandem pose (F, R_rows) sits at F + disp(d) @ R_rows); collision-inert
+        # (groups shared with everything) until its own approach starts (controller, _set_group)
+        dcol.update(ovoid_L=[0.35, 0.35, 0.42, 1.0], ovoid_R=[0.35, 0.35, 0.42, 1.0])
+        for side in ("L", "R"):
+            part = (tgt["ring_app"]["halves"].get(side) or {}).get("part", "ovoid_" + side)
+            # cfg collision_proximity_mm {"ovoid_L": mm, ...}: a contact margin on the half's own models (its pairs
+            # only -- the halves meet the cervix; cervix_probe CK*: 1 mm halves the portio penetration)
+            nd = add_rigid_parts(root, "ring_" + side, [(part, _pobj(part))], dict({part: RING_OFF_GROUPS}), dcol,
+                                 rigid_pose(R0, F0), prox={part: _prox_kw(cfg, part)})
+            rings[side] = dict(node=nd, part=part, on=False, models=[getattr(nd, part).tri, getattr(nd, part).lin,
+                                                                      getattr(nd, part).pnt],
+                               groups_on=list(dgrp[part]))
     # ---- couplings and supports
     ctx = dict(root=root, cfg=cfg, inp=inp, tgt=tgt, sched=sched, X0=X0, nodes=nodes, corpus=corp,
-               tandem=tandem, ovoids=ovoids, iface=iface, Rdev=Rdev, targets=tg, supports=sup,
+               tandem=tandem, ovoids=ovoids, iface=iface, Rdev=Rdev, targets=tg, supports=sup, rings=rings,
                extra=dict(inp.get("probe_info") or {}), deformable=defo, static=stat,
                corpus_fem=(nodes["corpus"] if corpus_fem else None), corpus_iface_mo=ifmo,
                corpus_iface_bary=(corpus_bary if corpus_fem else None))
@@ -1501,6 +1756,7 @@ def build_scene(root, cfg=None, inp=None):
         _add_corpus_follow(ctx)                         # ... and the surface the OARs meet (corpus_oar_contact)
     _wall_diag_setup(ctx)                               # read-only per-step lumen diagnostics (wall runs only)
     _add_balloon(ctx)                                   # Stage 2b OAR pre-relaxation (cfg n_balloon > 0, wall runs)
+    _add_drive(ctx)                                     # S7b: the device-driven v5 wall (cfg wall_drive "device")
     _add_sheet_penalty(ctx)                             # S2: OAR-vs-sheet monitor / P4 penalty (off by default)
     # Constraint correction LAST in each body node, so the compliance it builds from the linear solver sees every
     # force field above it.  Without it the constraint solver has no compliance at all: W = 0, the Gauss-Seidel
@@ -1973,6 +2229,184 @@ def _add_balloon(ctx):
                                                wall_outer_off=wall_off))
 
 
+RING_OFF_GROUPS = [1, 2, 3, 4, 9, 10, 11, 12, 21, 22, 30, 31, 32, 33, 34]    # shares an id with every model: no contact
+
+
+def check_drive_cfg(cfg, inp=None):
+    """Build-time check of the S7b / S7f keys (a ValueError names the conflict).  Defaults pass untouched."""
+    wd = cfg.get("wall_drive")
+    if wd not in (None, "device"):
+        raise ValueError("wall_drive must be null or 'device' (got %r)" % (wd,))
+    rp = cfg_flag(cfg, "ring_phases")
+    ho = cfg_flag(cfg, "wall_handover")
+    if wd is None:
+        if ho or float(cfg.get("vault_tie_k_mN_per_mm") or 0.0) > 0.0 or cfg.get("wall_drive_params"):
+            raise ValueError("wall_handover / vault_tie_k_mN_per_mm / wall_drive_params need wall_drive 'device'")
+    else:
+        if cfg.get("vagina_model", "solid") != "wall":
+            raise ValueError("wall_drive 'device' needs vagina_model 'wall'")
+        if int(cfg.get("n_balloon", 0) or 0) != 0:
+            raise ValueError("wall_drive 'device' replaces the balloon: n_balloon must be 0 (no pre-opening)")
+        if cfg.get("apex_attach") != "off":
+            raise ValueError("wall_drive 'device' glues the vault to the portio itself: apex_attach must be 'off' (got %r)"
+                             % cfg.get("apex_attach"))
+        if cfg.get("insertion_path", "rule") != "tandem_first":
+            raise ValueError("wall_drive 'device' is defined for insertion_path 'tandem_first'")
+        if cfg.get("wall_collision", "split") != "split":
+            raise ValueError("wall_drive 'device' needs wall_collision 'split'")
+        if inp is not None and not (inp["meta"]["vagina"].get("wall") or {}).get("v5"):
+            raise ValueError("wall_drive 'device' needs a v5 wall (vagina_wall_dir %r has no meta wall.v5)"
+                             % cfg.get("vagina_wall_dir"))
+        import wall_drive as WD
+        pr_ = WD.drive_cfg(cfg.get("wall_drive_params") or {})    # unknown keys fail here
+        if pr_["k2_vault"] == "live":
+            if ho:
+                raise ValueError("wall_drive_params k2_vault 'live' keeps the wall driven through the settle (its vault "
+                                 "follows the portio): wall_handover must be false")
+            if float(cfg.get("vault_tie_k_mN_per_mm") or 0.0) > 0.0:
+                raise ValueError("wall_drive_params k2_vault 'live' attaches the vault to the portio itself: "
+                                 "vault_tie_k_mN_per_mm must be 0")
+            if not int(cfg.get("n_k2", 0) or 0):
+                raise ValueError("wall_drive_params k2_vault 'live' acts in K2: n_k2 must be > 0")
+    if rp:
+        if cfg.get("insertion_path", "rule") != "tandem_first":
+            raise ValueError("ring_phases needs insertion_path 'tandem_first'")
+        if cfg.get("ovoid_mode") != "none":
+            raise ValueError("ring_phases builds the two halves itself: ovoid_mode must be 'none'")
+        if inp is not None and not inp["app"].get("ring"):
+            raise ValueError("ring_phases needs an applicator with a ring (applicator_v5)")
+    if int(cfg.get("n_k2", 0) or 0) and not rp:
+        raise ValueError("n_k2 > 0 needs ring_phases")
+    rs = cfg.get("ring_seat", "sequential")
+    if cfg_flag(cfg, "ring_after_lift") and not rp:
+        raise ValueError("ring_after_lift needs ring_phases")
+    if rs not in ("sequential", "joint"):
+        raise ValueError("ring_seat must be 'sequential' or 'joint' (got %r)" % (rs,))
+    if rs == "joint":
+        if not rp:
+            raise ValueError("ring_seat 'joint' needs ring_phases")
+        so = float(cfg.get("ring_standoff_mm", 14.0))
+        st0 = cfg.get("ring_start_mm")
+        if not so > 0.0 or (st0 is not None and not so < float(st0)):
+            raise ValueError("ring_standoff_mm must lie in (0, ring_start_mm) (got %r, start %r)" % (so, st0))
+        sn = cfg.get("ring_step_near_mm")
+        if sn is not None and not float(sn) > 0.0:
+            raise ValueError("ring_step_near_mm must be null or > 0 (got %r)" % (sn,))
+    elif cfg.get("ring_step_near_mm") is not None:
+        raise ValueError("ring_step_near_mm is a ring_seat 'joint' key")
+    if cfg.get("portio_tie_mode", "carry") not in ("carry", "anchor"):
+        raise ValueError("portio_tie_mode must be 'carry' or 'anchor' (got %r)" % cfg.get("portio_tie_mode"))
+    if float(cfg.get("portio_tie_k_mN_per_mm") or 0.0) > 0.0 and wd is None:
+        raise ValueError("portio_tie_k_mN_per_mm needs wall_drive 'device' (it ties the nodes the vault is glued to)")
+    vtp = cfg.get("vault_tie_phase", "handover")
+    if vtp not in ("handover", "H"):
+        raise ValueError("vault_tie_phase must be 'handover' or 'H' (got %r)" % (vtp,))
+    if vtp == "H" and (wd is None or ho or not float(cfg.get("vault_tie_k_mN_per_mm") or 0.0) > 0.0):
+        raise ValueError("vault_tie_phase 'H' needs wall_drive 'device', wall_handover false and vault_tie_k_mN_per_mm > 0")
+    ptp = cfg.get("portio_tie_phases")
+    if ptp is not None and not (isinstance(ptp, list) and all(isinstance(p, str) for p in ptp)):
+        raise ValueError("portio_tie_phases must be null or a list of phase names (got %r)" % (ptp,))
+    srs = cfg.get("settle_rayleigh_stiffness")
+    if srs is not None:
+        if not isinstance(srs, dict) or not all(b in DEFORMABLE + ["corpus"] for b in srs):
+            raise ValueError("settle_rayleigh_stiffness must be null or {body: value} (got %r)" % (srs,))
+    ws = cfg.get("warm_start")
+    if ws is not None and not (isinstance(ws, dict) and ws.get("tag") and ws.get("phase")):
+        raise ValueError("warm_start must be null or {\"tag\": <run>, \"phase\": <first phase to run>}")
+
+
+def _add_drive(ctx):
+    """S7b (cfg wall_drive "device"): the drive (hybrid/wall_drive.py) and the kinematic copy of the wall's OUTER sheet
+    that the organs meet.  The copy reuses the balloon's machinery and keys (ctx["balloon"]: the sheet monitor / P4
+    penalty work unchanged) but starts at the wall's START shape and is written from the drive each step (no lag while
+    driven); after the hand-over it copies the wall's outer sheet as balloon_mode "follow" does.  The wall's own inner and
+    outer collision models are off (groups shared with everything) while it is driven.  Also built here: an empty
+    FixedConstraint for the vault top (switched on at the hand-over) and, cfg vault_tie_k_mN_per_mm > 0, zero-stiffness
+    springs on the cervix surface nodes for the post-hand-over vault tie."""
+    cfg, inp, X0 = ctx["cfg"], ctx["inp"], ctx["X0"]
+    if cfg.get("wall_drive") != "device":
+        return
+    import wall_drive as WD
+    P = inp["P"]
+    meta = inp["meta"]["vagina"]
+    v5 = meta["wall"]["v5"]
+    Xs = read_vtk_points("%s/vagina/%s" % (P["meshes"], v5.get("start_file", "start.vtk")))
+    tab = WD.node_tables(meta, X0["vagina"], Xs)
+    pr = WD.drive_cfg(cfg.get("wall_drive_params") or {})
+    cx_tri = None
+    if pr["k2_vault"] == "live":                        # the live vault needs the cervix surface (tet-node triangles)
+        _, Fcx = geom.read_obj("%s/cervix/surface.obj" % P["meshes"])
+        cx_tri = np.asarray(inp["meta"]["cervix"]["surface_obj_vertex_to_tet_node"], int)[np.asarray(Fcx, int)]
+    drv = WD.WallDrive(tab, WD.tandem_geometry(inp["app"]), WD.ring_geometry(inp["app"]), pr, cervix_tri=cx_tri)
+    outer = np.asarray(meta["node_sets"]["outer_surface"], int)
+    tri = np.asarray(meta["node_set_extra"]["outer_triangles"], int)
+    rem = -np.ones(len(X0["vagina"]), np.int64)
+    rem[outer] = np.arange(len(outer))
+    tri_loc = rem[tri]
+    grp = groups_for(cfg)
+    g_on = sorted({9, 10, 11, 12, 21, 22})              # disjoint from bladder [4,32], rectum [3,33], sigmoid [3,34]
+    g_off = sorted(set(g_on) | {1, 2, 3, 4})
+    pkw = _prox_kw(cfg, "balloon")
+    nd = ctx["root"].addChild("balloon")
+    X_start = Xs[outer]
+    nd.addObject("MechanicalObject", name="mo", template="Vec3d", position=X_start.tolist())
+    nd.addObject("MeshTopology", name="mt", position=X_start.tolist(), triangles=tri_loc.tolist())
+    models = [nd.addObject("TriangleCollisionModel", name="tri", group=g_on, moving=True, simulated=False, **pkw),
+              nd.addObject("LineCollisionModel", name="lin", group=g_on, moving=True, simulated=False, **pkw),
+              nd.addObject("PointCollisionModel", name="pnt", group=g_on, moving=True, simulated=False, **pkw)]
+    vis = nd.addChild("vis")
+    vis.addObject("OglModel", name="ogl", color=[0.95, 0.75, 0.35, 0.35])
+    vis.addObject("IdentityMapping", name="vm", input="@../mo", output="@ogl")
+    vn = ctx["nodes"]["vagina"]
+    wall_models = [vn.outer.tri, vn.outer.lin, vn.outer.pnt, vn.inner.tri, vn.inner.lin, vn.inner.pnt]
+    off_all = sorted(set(grp["vagina_outer"]) | set(grp["vagina_inner"]) | {1, 3, 4, 9, 21, 22})
+    wall_outer_on = list(grp["vagina_outer"])
+    wall_outer_follow = sorted(set(wall_outer_on) | {3, 4})    # balloon_mode "follow": the outer sheet ignores the OARs
+    wall_on_list = [wall_outer_follow] * 3 + [list(grp["vagina_inner"])] * 3
+    # the wall starts inert: its own models ignore everything (the controller re-applies these at step 0 as well)
+    for m in wall_models:
+        m.group.value = " ".join(str(int(g)) for g in off_all)
+    w = meta["wall"]
+    ctx["balloon"] = dict(node=nd, models=models, X_start=X_start, X_end=X0["vagina"][outer].copy(), idx=outer,
+                          g_on=g_on, g_off=g_off, wall_models=wall_models, wall_on=wall_outer_on, wall_off=off_all,
+                          wall_on_list=wall_on_list, wall_off_list=[off_all] * 6, active=True, released=False, w=0.0,
+                          n=0, W_start=None, W_cur=None, drive=False, rounds=[], cur=X_start.copy(), tri_loc=tri_loc,
+                          station=np.asarray(w["grid_index"], int)[outer, 0].copy(),
+                          t_lo=np.asarray(w["tangent"], float)[0].copy(), t_hi=np.asarray(w["tangent"], float)[-1].copy(),
+                          device_drive=True)
+    vtop = np.asarray(meta["node_sets"]["vault_top"], int)
+    ctx["vault_fix"] = vn.addObject("FixedConstraint", name="vault_fix", fixAll=False, indices=[])
+    ctx["drive"] = dict(drv=drv, tab=tab, state=drv.init_state(), P=None, on=True, handover_done=False,
+                        vault_top=vtop, tip_rows=None)
+    k_pt = float(cfg.get("portio_tie_k_mN_per_mm") or 0.0)
+    if k_pt > 0.0:
+        pn = np.unique(tab["pair_tri"].ravel())
+        ctx["portio_tie"] = dict(idx=pn, k=k_pt, eng=np.full(len(pn), -1, int))
+        ctx["portio_tgt"] = ctx["targets"].addObject("MechanicalObject", name="portio_tgt", template="Vec3d",
+                                                     position=X0["cervix"][pn].tolist())
+        ctx["portio_ff"] = ctx["nodes"]["cervix"].addObject(
+            "RestShapeSpringsForceField", name="portio_tie", points=[int(i) for i in pn], stiffness=[0.0] * len(pn),
+            external_rest_shape="@/targets/portio_tgt", external_points=list(range(len(pn))))
+    k_vt = float(cfg.get("vault_tie_k_mN_per_mm") or 0.0)
+    if k_vt > 0.0:
+        cs = np.asarray(inp["meta"]["cervix"]["node_sets"]["surface_nodes"], int)
+        ctx["vault_tie"] = dict(cands=cs, idx=None, k=k_vt)
+        ctx["vault_tie_tgt"] = ctx["targets"].addObject("MechanicalObject", name="vault_tie_tgt", template="Vec3d",
+                                                        position=X0["cervix"][cs].tolist())
+        ctx["vault_tie_ff"] = ctx["nodes"]["cervix"].addObject(
+            "RestShapeSpringsForceField", name="vault_tie", points=[int(i) for i in cs], stiffness=[0.0] * len(cs),
+            external_rest_shape="@/targets/vault_tie_tgt", external_points=list(range(len(cs))))
+    ctx["extra"]["wall_drive"] = dict(
+        mode="device", wall=cfg.get("vagina_wall_dir"), section=v5.get("section"), tag=v5.get("tag"),
+        params=WD.params_record(pr), n_nodes=int(tab["n"]), n_inner=int(len(tab["inner"])),
+        n_vault_top=int(len(vtop)), sheet_nodes=int(len(outer)), sheet_triangles=int(len(tri)),
+        start_vs_rest_max_mm=round(float(np.linalg.norm(Xs - X0["vagina"], axis=1).max()), 3),
+        groups=dict(sheet_on=g_on, wall_off=off_all, wall_on_after_handover=wall_on_list[::3]),
+        handover=cfg_flag(cfg, "wall_handover"), vault_tie_k_mN_per_mm=k_vt, portio_tie_k_mN_per_mm=k_pt,
+        n_portio_tie_nodes=int(len(ctx["portio_tie"]["idx"])) if k_pt > 0.0 else 0,
+        proximity_mm=pkw.get("proximity"))
+
+
 def _add_sheet_penalty(ctx):
     """S2: the OAR-vs-sheet monitor (cfg oar_sheet_monitor) and the P4 penalty springs (oar_sheet_penalty_mN_per_mm
     > 0) on the surface nodes of cfg oar_sheet_bodies.  Same pattern as the canal tie: a solver-less target MO written
@@ -2114,8 +2548,9 @@ def scene_summary(ctx):
                  np.array(inp["pose"]["corpus"]["corpus_centroid_pre"]))), 3) if tgt["is_default"] else None,
              n_sched=len(ctx["sched"]),
              phases=dict({p: sum(1 for r in ctx["sched"] if r["phase"] == p) for p in "BPATD"},     # + the tandem-first
-                         **{p: sum(1 for r in ctx["sched"] if r["phase"] == p) for p in "VCL"     # phases, only when
-                            if any(r["phase"] == p for r in ctx["sched"])}),                       # present (G32 as was)
+                         **{p: sum(1 for r in ctx["sched"] if r["phase"] == p)                     # phases, only when
+                            for p in ("V", "C", "L", "R_L", "R_R", "R_S", "K1", "K2")               # present (G32 as was)
+                            if any(r["phase"] == p for r in ctx["sched"])}),
              insertion_path=cfg.get("insertion_path", "rule"), applicator_dir=cfg.get("applicator_dir", "applicator"),
              material=cfg["material"], groups=groups_for(cfg), insertion_axis=tgt["insertion_axis"],
              vagina_model=cfg.get("vagina_model", "solid"),
@@ -2316,6 +2751,49 @@ def corpus_tie_follow_on(cfg):
     if m and not cfg.get("corpus_canal_tie", True):
         raise ValueError("corpus_tie_follow is true but corpus_canal_tie is false (no corpus ties to carry)")
     return m
+
+
+PORTIO_ENGAGE_MM = 5.0          # the portio tie engages a node once the tip is this far past it along the tube ...
+PORTIO_REACH_MM = 15.0          # ... and the node lies within this of the tube line (the tube is AT the portio)
+
+
+def portio_tie_step(Xp, row, pt, k, L_iu, ramp):
+    """cfg portio_tie_k_mN_per_mm: which portio nodes are tied this step and their stiffness.  A node engages (and stays
+    engaged; pt["eng"] = the step it engaged, updated in place) once the row's tip is PORTIO_ENGAGE_MM past it along the
+    tube axis and it lies within PORTIO_REACH_MM of the tube line; the stiffness ramps over `ramp` steps as the canal tie.
+    MEASURED why (TF1a_b, engaged from the first row): the tube's rigid increment evaluated at portio nodes far above
+    the tip is its frame's rotation times a long lever, and dragged the cervix 11 mm during V."""
+    F = np.asarray(row["F"], float)
+    a = geom.unit(np.asarray(row["R_rows"], float)[2])
+    q = np.asarray(Xp, float) - F
+    h = q @ a
+    lat = np.linalg.norm(q - np.outer(h, a), axis=1)
+    new = (float(L_iu) - h >= PORTIO_ENGAGE_MM) & (lat <= PORTIO_REACH_MM) & (pt["eng"] < 0)
+    pt["eng"][new] = int(k)
+    if new.any():                                       # the node's position in the tube's frame when it engaged
+        anc = pt.setdefault("anchor_app", np.zeros((len(pt["eng"]), 3)))
+        anc[new] = q[new] @ np.asarray(row["R_rows"], float).T
+    eng = pt["eng"] >= 0
+    kk = np.where(eng, float(pt["k"]) * np.clip((int(k) - pt["eng"] + 1) / float(ramp), 0.0, 1.0), 0.0)
+    return kk, eng
+
+
+def portio_anchor_offsets(Xp, row, pt, eng, cap):
+    """portio_tie_mode "anchor": per node, the lateral (tube-normal) error between where it is and where its engagement
+    position in the tube's frame (pt["anchor_app"]) puts it on this row's tube pose, capped at `cap` mm; zero for nodes
+    not engaged.  The axial part is dropped: the portio slides freely along the tube."""
+    Xp = np.asarray(Xp, float)
+    out = np.zeros_like(Xp)
+    anc = pt.get("anchor_app")
+    if anc is None or not np.any(eng):
+        return out
+    R = np.asarray(row["R_rows"], float)
+    a = geom.unit(R[2])
+    d = np.asarray(row["F"], float) + anc @ R - Xp
+    d = d - np.outer(d @ a, a)
+    n = np.linalg.norm(d, axis=1)
+    d = d * np.minimum(1.0, float(cap) / np.maximum(n, 1e-12))[:, None]
+    return np.where(np.asarray(eng)[:, None], d, 0.0)
 
 
 def rigid_step_increment(X, T_prev, T_now):
@@ -2654,6 +3132,15 @@ class HybridController(Sofa.Core.Controller):
             self.corpus_tgt_before = self.corpus_tgt_prev       # eu2: the target BEFORE this step's update
             self.corpus_tie_follow = corpus_tie_follow_on(self.cfg)
             self.corpus_tie = None
+        # S7b / S7f: the device-driven wall, the ring halves, the settle Rayleigh switch (all inert by default)
+        self.drive = c.get("drive")
+        self.ring_h = None
+        self.ring_pose = {}
+        if c.get("rings"):
+            import wall_drive as WD
+            self.ring_h = WD.ring_geometry(c["inp"]["app"])["halves"]
+        self.srs_done = False
+        self.warm = None
         self.dx_hist = []
         self.ok_hist = []
         self.lig_ext_max = 0.0
@@ -2809,7 +3296,13 @@ class HybridController(Sofa.Core.Controller):
         self._set_rigid(c["tandem"], Rr.T, r["F"])      # rigid_pose wants columns = applicator axes, hence .T
         if c.get("ovoids") is not None:                 # (ovoid_mode "none": no ovoid body)
             self._set_rigid(c["ovoids"], ovoid_R_rows(r).T, ovoid_origin(r, a))   # its own frame in "rods" mode
-        if c.get("balloon") is not None:
+        if c.get("rings"):                              # S7f: the two ring halves on the tandem (cfg ring_phases)
+            self._rings(r)
+        if r["phase"] == "H" and not self.srs_done and cfg.get("settle_rayleigh_stiffness"):
+            self._settle_rayleigh()
+        if c.get("drive") is not None:                  # S7b: the device-driven wall (its sheet carries the organs)
+            self._drive(r)
+        elif c.get("balloon") is not None:
             self._balloon(r)
         # (2) velocity scaling (quasi-static relaxation during the settle phase)
         sc = float(cfg["settle_vel_scale"] if r["phase"] == "H" else cfg["motion_vel_scale"])
@@ -2839,6 +3332,20 @@ class HybridController(Sofa.Core.Controller):
             self.canal_d = res["canal_d"]
             if self.tie_force_on:                       # eu2: read back at the end of the step (_end)
                 self.canal_tie_last = dict(tgt=np.asarray(res["tgt"], float), k=np.asarray(res["k"], float), carry=carry)
+        if c.get("portio_tie") is not None:             # S7b: the portio around the os carried with the tube
+            pt = c["portio_tie"]
+            Xp = self.X("cervix")[pt["idx"]]
+            kk, eng = portio_tie_step(Xp, r, pt, self.k, self.L_iu, float(cfg["tie_ramp_steps"]))
+            if cfg.get("portio_tie_phases") is not None and r["phase"] not in cfg["portio_tie_phases"]:
+                kk = np.zeros_like(kk)                  # TF2: off in the other phases (the ring pushes the portio in R)
+            if cfg.get("portio_tie_mode", "carry") == "anchor":
+                cp = portio_anchor_offsets(Xp, r, pt, eng, float(cfg.get("portio_tie_cap_mm", 0.5)))
+            else:
+                cp = canal_tie_carry("tube", Xp, self.row_prev, r)
+            cp = np.where(eng[:, None], cp, 0.0)
+            c["portio_tgt"].position.value = (Xp + cp).tolist()
+            c["portio_ff"].stiffness.value = kk.tolist()
+            pt["last"] = dict(tgt=Xp + cp, carry=cp, k=kk)
         self.row_prev = r                               # eu2: the next step's carry starts from this row
         # (3a) S9: the elastic corpus's own canal ties (same arithmetic, the row's tube axis, depth engagement)
         if self.corpus_fem and c.get("corpus_canal_ff") is not None:
@@ -2880,6 +3387,224 @@ class HybridController(Sofa.Core.Controller):
             mo.position.value = X.tolist()
             self.apex_lift = lift
 
+    # ---------------------------------------------------------------- S7b / S7f: ring halves, the drive, hand-over
+    def _rings(self, r):
+        """Place each ring half on the row's tandem pose at its approach distance (row ring_d; parked at D when absent)
+        and switch its collision models on once its approach has started (row ring_on)."""
+        import wall_drive as WD
+        c = self.ctx
+        F, Rr = np.asarray(r["F"], float), np.asarray(r["R_rows"], float)
+        dd = r.get("ring_d") or {}
+        on = set(r.get("ring_on") or [])
+        for side, e in c["rings"].items():
+            h = self.ring_h[side]
+            d = float(dd.get(side, h["D"]))
+            org, R = WD.half_pose(F, Rr, h, d)
+            self._set_rigid(e["node"], R.T, org)
+            self.ring_pose[side] = (org, R, d)
+            want = side in on
+            if want != e["on"]:
+                e["seen"] = [_set_group(m, e["groups_on"] if want else RING_OFF_GROUPS) for m in e["models"]]
+                e["on"] = want
+
+    def _drive_row(self, r):
+        """The drive's view of a schedule row: the tandem pose, the K1 / K2 weights and the live ring halves (their
+        current pose and, while approaching, ring_lead_samples poses up to ring_lead_mm further along, each with how
+        much further it is: wall_drive.lead_poses)."""
+        import wall_drive as WD
+        row = dict(F=r["F"], R_rows=r["R_rows"], tube_axis=r["tube_axis"], drive_kappa=r.get("drive_kappa", 0.0),
+                   drive_k2=r.get("drive_k2", 0.0))
+        if self.ring_h:
+            on = set(r.get("ring_on") or [])
+            pr = self.drive["drv"].p
+            F, Rr = np.asarray(r["F"], float), np.asarray(r["R_rows"], float)
+            ring, lead = {}, {}
+            for side in sorted(on):
+                h = self.ring_h[side]
+                d = float((r.get("ring_d") or {}).get(side, h["D"]))
+                ring[side] = WD.half_pose(F, Rr, h, d)
+                lp = WD.lead_poses(F, Rr, h, d, pr)
+                if lp:
+                    lead[side] = lp
+            if ring:
+                row["ring"], row["ring_lead"] = ring, lead
+        return row
+
+    def _drive(self, r):
+        """cfg wall_drive "device": this step's driven wall (wall_drive.WallDrive.step on the cervix as it is now), written
+        into the wall's dofs (velocities zeroed; re-imposed after the solve in _end) and into the organs' sheet.  At the
+        first settle row with cfg wall_handover: the hand-over (_handover); afterwards the sheet copies the wall's outer
+        sheet each step (balloon_mode "follow")."""
+        c, D, cfg = self.ctx, self.drive, self.cfg
+        b = c["balloon"]
+        if r["phase"] == "H" and cfg_flag(cfg, "wall_handover") and not D["handover_done"]:
+            self._handover()
+        if not D["on"]:
+            self._sheet_write(b, self.X("vagina")[b["idx"]])
+            if c.get("vault_tie") is not None:
+                self._vault_tie()
+            return
+        if not D.get("groups_set"):                     # the wall inert while driven (also set at build time)
+            D["groups_set"] = True
+            D["wall_group_seen"] = [_set_group(m, g) for m, g in zip(b["wall_models"], b["wall_off_list"])]
+        P, D["state"], D["diag"] = D["drv"].step(self._drive_row(r), self.X("cervix"), D["state"])
+        D["P"] = P
+        mo = c["nodes"]["vagina"].dofs
+        mo.position.value = P.tolist()
+        mo.velocity.value = np.zeros_like(P).tolist()
+        self._sheet_write(b, P[b["idx"]])
+        vt = c.get("vault_tie")
+        if vt is not None and r["phase"] == "H" and cfg.get("vault_tie_phase", "handover") == "H":
+            if vt.get("pair_w") is None:                # cfg vault_tie_phase "H": pair once, at the first settle row
+                from scipy.spatial import cKDTree
+                vt["pair_w"] = D["vault_top"]
+                vt["pair_c"] = cKDTree(self.X("cervix")[vt["cands"]]).query(P[D["vault_top"]])[1]
+                vt["start_step"] = int(self.k)
+            self._vault_tie()
+
+    def _handover(self):
+        """End of the drive (first H row, cfg wall_handover): the wall at its REST shape (the drive's K2 end state; the
+        residual is logged as handover_jump_mm), its own contact models on (lumen: devices + wall_inner_contact_organs;
+        outer: follow mode), the vault top ring fixed at rest, the drive sheet switched to copying the outer sheet."""
+        c, D = self.ctx, self.drive
+        b = c["balloon"]
+        X0w = c["X0"]["vagina"]
+        mo = c["nodes"]["vagina"].dofs
+        Xw = np.array(mo.position.value, dtype=float, copy=True)
+        D["handover_jump_mm"] = float(np.linalg.norm(Xw - X0w, axis=1).max())
+        mo.position.value = X0w.tolist()
+        mo.velocity.value = np.zeros_like(X0w).tolist()
+        D["wall_group_seen"] = [_set_group(m, g) for m, g in zip(b["wall_models"], b["wall_on_list"])]
+        c["vault_fix"].indices.value = [int(i) for i in D["vault_top"]]
+        D["on"], D["handover_done"], D["P"] = False, True, None
+        D["handover_step"] = int(self.k)
+        b["released"] = False                           # the sheet stays the organs' contact surface (follow)
+        self._sheet_write(b, X0w[b["idx"]])
+        vt = c.get("vault_tie")
+        if vt is not None:                              # the cervix surface node nearest to each vault node
+            Xc = self.X("cervix")[vt["cands"]]
+            from scipy.spatial import cKDTree
+            j = cKDTree(Xc).query(X0w[D["vault_top"]])[1]
+            vt["pair_w"] = D["vault_top"]
+            vt["pair_c"] = j                            # indices into cands
+
+    def _vault_tie(self):
+        """cfg vault_tie_k_mN_per_mm (after the hand-over, or from the first H row with vault_tie_phase "H"): each paired
+        cervix node is sprung towards its vault node, the target at most 0.5 mm from where it is (bounded force, as the
+        canal tie); nodes within 0.3 mm are held.  A cervix node paired with several vault nodes takes the LAST pair's
+        target (see the cfg comment: known flaws; k2_vault "live" replaces the tie)."""
+        c = self.ctx
+        vt = c["vault_tie"]
+        cs = vt["cands"]
+        Xc = self.X("cervix")[cs]
+        tg = Xc.copy()
+        kk = np.zeros(len(cs))
+        Xw = self.X("vagina")[vt["pair_w"]]
+        for jw, jc in zip(range(len(vt["pair_w"])), vt["pair_c"]):
+            v = Xw[jw] - Xc[jc]
+            n = float(np.linalg.norm(v))
+            if n > 0.3:
+                tg[jc] = Xc[jc] + v * min(1.0, 0.5 / n)
+            kk[jc] = vt["k"]
+        c["vault_tie_tgt"].position.value = tg.tolist()
+        c["vault_tie_ff"].stiffness.value = kk.tolist()
+
+    def _settle_rayleigh(self):
+        """cfg settle_rayleigh_stiffness {body: value}: from the first settle row, that body's EulerImplicitSolver
+        rayleighStiffness (README STAGE 3c: the late-settle flip of the stretched wall)."""
+        c = self.ctx
+        self.srs_done = True
+        self.srs_log = {}
+        for b, v in (self.cfg.get("settle_rayleigh_stiffness") or {}).items():
+            nd = c["nodes"].get(b)
+            if nd is None or not hasattr(nd, "ode"):
+                continue
+            nd.ode.rayleighStiffness.value = float(v)
+            self.srs_log[b] = dict(value=float(v), read_back=float(nd.ode.rayleighStiffness.value), step=int(self.k))
+
+    def warm_start(self, runs_dir):
+        """cfg warm_start {"tag", "phase"}: start at the first row of `phase` from the state run `tag` ended in (its
+        final/<body>_u.npy; the source must have stopped at the end of the previous phase).  Velocities zero; canal and
+        corpus ties engaged (ramp complete) for the nodes the tip has passed by the previous row; the corpus pose
+        target, the tie carry and the drive's state rebuilt at that row."""
+        c, cfg = self.ctx, self.cfg
+        ws = cfg["warm_start"]
+        if ws["phase"] == "H":                          # the settle: from the end of the schedule (source stopped after it)
+            k0 = len(self.sched)
+        else:
+            k0 = next((i for i, r in enumerate(self.sched) if r["phase"] == ws["phase"]), None)
+        if not k0:
+            raise ValueError("warm_start: phase %r is not in the schedule after its first row" % ws["phase"])
+        fin = os.path.join(runs_dir, ws["tag"], "final")
+        rp = self.sched[k0 - 1]
+        # the source must have stopped exactly where this schedule resumes (review of TF2: only the shapes were checked)
+        sp = os.path.join(runs_dir, ws["tag"], "summary.json")
+        want = "stopped_after_%s" % rp["phase"]
+        if os.path.exists(sp):
+            with open(sp) as fh:
+                ssum = json.load(fh)
+            got = ssum.get("status")
+            if got != want:
+                raise ValueError("warm_start: source run %s ended %r, this schedule resumes after phase %r (needs %r)"
+                                 % (ws["tag"], got, rp["phase"], want))
+        rec = dict(tag=ws["tag"], phase=ws["phase"], k0=int(k0), source=fin, bodies={})
+        for b in self.body_order:
+            X0 = c["X0"][b]
+            u = np.load(os.path.join(fin, "%s_u.npy" % b))
+            if u.shape != X0.shape:
+                raise ValueError("warm_start: %s_u.npy has shape %s, the mesh %s" % (b, u.shape, X0.shape))
+            X = X0 + u
+            mo = c["nodes"][b].dofs
+            mo.position.value = X.tolist()
+            mo.velocity.value = np.zeros_like(X).tolist()
+            self.X_prev[b] = X
+            rec["bodies"][b] = round(float(np.linalg.norm(u, axis=1).max()), 3)
+        ramp = int(np.ceil(float(cfg["tie_ramp_steps"])))
+        ts = rp.get("tip_s")
+        if len(self.eng_step) and c.get("canal_s") is not None and ts is not None:
+            self.eng_step[np.asarray(c["canal_s"], float) <= float(ts)] = k0 - ramp - 1
+        if self.corpus_fem:
+            if len(self.eng_step_k) and ts is not None:
+                self.eng_step_k[np.asarray(c["corpus_canal_s_eng"], float) <= float(ts)] = k0 - ramp - 1
+            cp = c["corpus_pose"]
+            tg = corpus_pose_targets(c["X0"]["corpus"], np.asarray(rp["T_corpus"], float), corpus_stretch_at(cp["lam"], rp))
+            self.corpus_tgt_prev = self.corpus_tgt = self.corpus_tgt_before = tg
+        self.row_prev = rp
+        pt = c.get("portio_tie")
+        if pt is not None:                              # the portio nodes the tube had reached by the previous row
+            portio_tie_step(self.X("cervix")[pt["idx"]], rp, pt, k0 - ramp - 1, self.L_iu, 1.0)
+        if self.drive is not None:
+            D = self.drive
+            st = D["drv"].init_state()
+            hmax = -np.inf
+            a, c0 = D["tab"]["a"], D["tab"]["c0"]
+            L = float(D["drv"].geo["L_iu"])
+            for r in self.sched[:k0]:
+                tip = np.asarray(r["F"], float) + L * geom.unit(np.asarray(r["R_rows"], float)[2])
+                hmax = max(hmax, float((tip - c0) @ a))
+            st["tip_h_max"] = hmax
+            # the push-out is rate-limited from ZERO, so one step rebuilds at most rate_mm of it (MEASURED on TF1a_c's
+            # end of C: 4.19 mm off the source wall after one step): repeat the row until the push is steady (1.38 mm
+            # after 5 steps there, the rest is history -- the slot's closing lag and the speed limit)
+            n_rb = 1
+            while True:
+                st["P"] = None                          # no speed limit for the rebuild
+                push0 = np.asarray(st["push"], float).copy()
+                _, st, _ = D["drv"].step(self._drive_row(rp), self.X("cervix"), st)
+                if float(np.abs(np.asarray(st["push"], float) - push0).max()) <= 1e-9 or n_rb >= 200:
+                    break
+                n_rb += 1
+            rec["drive_rebuild_steps"] = n_rb
+            Xw = self.X("vagina")
+            rec["drive_rebuild_vs_source_mm"] = round(float(np.linalg.norm(st["P"] - Xw, axis=1).max()), 4)
+            st["P"] = Xw.copy()
+            D["state"] = st
+            self._sheet_write(c["balloon"], Xw[c["balloon"]["idx"]])
+        self.k = int(k0)
+        self.warm = rec
+        c["extra"]["warm_start"] = rec
+        return rec
+
     def _balloon(self, r):
         """Phase B: drive the balloon from its start section to the wall's rest outer sheet; on the first step
         after B switch it off and let the wall's own outer sheet take the OAR contact over."""
@@ -2916,6 +3641,56 @@ class HybridController(Sofa.Core.Controller):
             self._sheet_write(b, b["X_end"])
             b["balloon_group_seen"] = [_set_group(m, b["g_off"]) for m in b["models"]]
             b["wall_group_seen"] = [_set_group(m, g) for m, g in zip(b["wall_models"], b["wall_on_list"])]
+
+    def _drive_log(self):
+        """log row["drive"]: the drive's own diagnostics (wall_drive.WallDrive.step) and, after the solve, the vault top
+        ring against the cervix it is glued to: |top node - its glue point (cervix surface point + start offset) NOW|
+        (the portio moved in the solve), and the signed gap along the paired triangle's normal."""
+        D = self.drive
+        out = {}
+        dg = D.get("diag") or {}
+        for k, v in dg.items():
+            out[k] = (round(v, 4) if isinstance(v, float) else v)
+        out["on"] = bool(D["on"])
+        if D.get("handover_done"):
+            out.update(handover_step=D.get("handover_step"), handover_jump_mm=round(float(D["handover_jump_mm"]), 4))
+        top = D["vault_top"]
+        Xt = self.X_prev["vagina"][top]
+        if D["drv"].live and (D.get("state") or {}).get("vault") is not None:
+            # wall_drive_params k2_vault "live" after its pairing: against the LIVE junction (the top ring's new
+            # attachment on the cervix, wall_drive.vault_pair), its offset along the paired triangle's normal
+            J, nJ, _ = D["drv"].junction(self.X_prev["cervix"], D["state"])
+            e = Xt - J
+            gap = np.einsum("ij,ij->i", Xt - (J - float(D["drv"].p["vault_offset_mm"]) * nJ), nJ)
+            ref = "live"
+        else:
+            G, _, nG = D["drv"].glue(self.X_prev["cervix"])
+            e = Xt - G
+            gap = np.einsum("ij,ij->i", Xt - (G - D["tab"]["pair_off"]), nG[top])
+            ref = None
+        out["vault"] = dict(glue_residual_max_mm=round(float(np.linalg.norm(e, axis=1).max()), 4),
+                            glue_residual_mean_mm=round(float(np.linalg.norm(e, axis=1).mean()), 4),
+                            normal_gap_max_mm=round(float(gap.max()), 4), normal_gap_min_mm=round(float(gap.min()), 4),
+                            n_gap_gt_3mm=int((gap > 3.0).sum()))
+        if ref is not None:
+            # live: normal_gap_* / glue_residual_* are against the TARGET junction (meaningful once the top ring has
+            # arrived, drive.vault_live.lam_top 1); what the physician asks for is the top ring ON the cervix while it
+            # slides there too: its signed distance to the live cervix surface (< 0 inside), after the solve
+            import wall_drive as WD
+            vs = D["state"]["vault"]
+            Xc = self.X_prev["cervix"]
+            _, _, _, dd = WD.closest_on_tris(Xt, Xc, vs["T"], k_near=32)
+            sd = np.where(WD.inside_closed(Xt, Xc, vs["T"]), -dd, dd)
+            out["vault"].update(ref=ref, surface_sd_min_mm=round(float(sd.min()), 4),
+                                surface_sd_max_mm=round(float(sd.max()), 4), n_sd_gt_3mm=int((sd > 3.0).sum()),
+                                n_sd_gt_1mm=int((sd > 1.0).sum()), n_sd_lt_m0p5=int((sd < -0.5).sum()))
+        vt = self.ctx.get("vault_tie")
+        if vt is not None and vt.get("pair_w") is not None:     # the vault tie's pairs after the solve
+            dd = np.linalg.norm(self.X_prev["vagina"][vt["pair_w"]] - self.X_prev["cervix"][vt["cands"]][vt["pair_c"]],
+                                axis=1)
+            out["vault_tie"] = dict(pair_dist_max_mm=round(float(dd.max()), 4), pair_dist_mean_mm=round(float(dd.mean()), 4),
+                                    n_gt_3mm=int((dd > 3.0).sum()), start_step=vt.get("start_step"))
+        return out
 
     def _sheet_write(self, b, X):
         """Place the balloon: X = its outer-node positions; a subdivided copy (cfg balloon_subdivide) gets its edge
@@ -2994,6 +3769,11 @@ class HybridController(Sofa.Core.Controller):
             mo = c["nodes"]["vagina"].dofs
             mo.position.value = c["balloon"]["W_cur"].tolist()
             mo.velocity.value = np.zeros_like(c["balloon"]["W_cur"]).tolist()
+        if self.drive is not None and self.drive["on"] and self.drive["P"] is not None:   # S7b: the driven wall
+            driven = True
+            mo = c["nodes"]["vagina"].dofs
+            mo.position.value = self.drive["P"].tolist()
+            mo.velocity.value = np.zeros_like(self.drive["P"]).tolist()
         wall = 1000.0 * (time.perf_counter() - self.t_step)
         disp, dx, finite, minvol = {}, 0.0, True, 1.0
         Xv, vrv = None, None
@@ -3132,6 +3912,21 @@ class HybridController(Sofa.Core.Controller):
                 Xm - self.X_prev["cervix"][c["iface"]], axis=1).max()), 5))
         if c.get("sheet_pen") is not None and finite:   # S2 monitor: OAR surface nodes vs the sheet, post-solve
             row["oar_sheet"] = self._sheet_monitor()
+        if self.drive is not None and finite:           # S7b: the drive and the vault on the portio
+            row["drive"] = self._drive_log()
+            pt = c.get("portio_tie")
+            if pt is not None and pt.get("last") is not None:
+                row["drive"]["portio_tie"] = tie_force_log(pt["last"]["tgt"], pt["last"]["k"],
+                                                           self.X_prev["cervix"][pt["idx"]], pt["last"]["carry"])
+        if self.ring_pose:
+            row["ring"] = {s_: dict(d_mm=round(float(v[2]), 3), on=bool(c["rings"][s_]["on"]))
+                           for s_, v in self.ring_pose.items()}
+        if getattr(self, "srs_log", None) and not getattr(self, "srs_logged", False):
+            row["settle_rayleigh"] = self.srs_log
+            self.srs_logged = True
+        if self.warm is not None and not getattr(self, "warm_logged", False):
+            row["warm_start"] = self.warm
+            self.warm_logged = True
         if c.get("balloon") is not None:
             b = c["balloon"]
             row["balloon"] = dict(w=round(float(b["w"]), 4), active=bool(b["active"]), released=bool(b["released"]),
