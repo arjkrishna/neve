@@ -2797,6 +2797,87 @@ APPSIM_TIMEOUT=14000 APPSIM_CPUS=4 bash run_docker_par.sh TF3c hybrid/run_hybrid
 python -P -B hybrid/tf_metrics.py score --tag TF3c
 ```
 
+## STAGE 3e -- RECTUM LATERAL SUPPORT AND R01 FIGURES (TF4, 2026-09-30)
+
+**Why.**  STAGE 3d's open failures: the rectum scored below the unmoved one (0.214 CAL / 0.267 PRED vs 0.371), sliding
+to the patient's right on the 0.1 / 0.1 supports where BT moves it 23-26 mm straight back (left-right <= 2.4 mm in the
+lower half, <= 4.7 at any level); the stock stills put both ring halves on the flange before the seat.  Reviewed and
+re-measured independently (own voxeliser, trimmed reference, per-frame checks); reviewer's numbers where they differ.
+
+**What was built** (key off: G32, TF0c, TF1u, TF1v, TF3c, TF3p replay (rp.py) bit-identical to HEAD 2cb937d in every
+per-step hash; key on adds only `/targets/rect_lat_tgt` and `/rectum/lateral_support`):
+- `k_rectum_lateral_mN_per_mm` (default None = nothing built; negative, non-number or a static rectum refused): a
+  RestShapeSpringsForceField (k per node) on the rectum surface nodes minus `junction_sigmoid` (upper cut end; 759 of
+  810 here, 40 at the junction's height) with a target MO that `HybridController._begin` rewrites every step to
+  (x_rest, y_now, z_now), world x = left-right (cardinal-spring pattern).  Logged as `row["rectum_lateral"]` (sideways
+  force N, offset from rest mm, drag N), `rect_lat:` in the STEP line, `summary final.rectum_lateral`.  Tests:
+  `test_ties` 23/23 (5 new), `test_corpus` 17/17, `test_wall_drive` 26/26.
+- One-step drag: the target keeps the start-of-step y, z, so within a step the spring also resists front-back /
+  up-down motion with k per node (step 177: 0.053 N vs 0.055 N sideways; 0.00045 N at the end); nothing at a
+  standstill.  Drag-free (after the deadline): a ConstantForceField k (x_rest - x) along x, rewritten each step.
+- Renderers (`label_views`, `overlay_views`, `render_tree`): each ring half at its logged pose (`ring_halves` via
+  `animate_hybrid.part_pose`, as the videos), parked halves omitted and noted (`--ring-parked omit|draw`).  Ring-run
+  overlays name CAL / PRED, add the trimmed Dice (`--trim-json`), drop the "no ring" / packing text, use 3-D gaps
+  (TF3c rectum 72 -> 22 mm), mark the tandem pose in-sample.  G32 / TF1v renders pixel-identical to HEAD.
+
+| run | what | result |
+|---|---|---|
+| TF4s_lat | TF3c + key 0.5, 5 steps (smoke) | exit 0, finite, sideways offset <= 0.13 mm |
+| TF4rC_k025 / _k05 / _k10 | TF3c + key 0.25 / 0.5 / 1.0, V..C from scratch, 4 CPUs (~22 min) | end of C: lower rectum +0.9 / +0.5 / +0.3 mm right, Dice 0.559 / 0.563 / 0.567, min rectum tet 0.853 / 0.848 / 0.801 (TF3c +13.4 mm, 0.351); gate <= 3 mm, >= 0.43: all pass, the smallest kept |
+| **TF4c_k025** (CAL), **TF4p_k025** (PRED) | TF3c / TF3p + key 0.25, one run V..H from scratch, 6 CPUs | PRED converged, 668 steps, 5159 s; CAL settle cap after 703 steps, 5853 s (below); TF4c_k025 = TF4rC_k025 bit for bit at step 177 |
+| TF4c, TF4p | + key 0.5 (provisional) | written, never run |
+
+**Scores** (M121: TF4c_k025@702, TF4p_k025@666; trimmed keeps 64.0 / 78.1 / 89.4 of 103.4 cc at t 6 / 10.2 / 14):
+
+| run | vagina (a) / (b) | trimmed (a), t 6 / 10.2 / 14 | trimmed (b), t 10.2 | rectum | bladder | cervix (a) / (b) |
+|---|---|---|---|---|---|---|
+| G32 ; TF1v | 0.630 / 0.629 ; 0.638 / 0.638 | 0.634 / 0.682 / 0.673 ; 0.641 / 0.690 / 0.683 | 0.681 ; 0.690 | 0.403 ; 0.406 | 0.873 ; 0.872 | 0.638 / 0.581 ; 0.620 / 0.574 |
+| TF3c CAL ; TF3p PRED | 0.888 / 0.881 ; 0.622 / 0.621 | 0.661 / 0.753 / 0.818 ; 0.771 / 0.734 / 0.680 | 0.748 ; 0.729 | 0.214 ; 0.267 | 0.866 ; 0.866 | 0.692 / 0.616 ; 0.691 / 0.615 |
+| **TF4c_k025 CAL** | 0.888 / 0.880 | 0.661 / 0.753 / 0.818 | 0.748 | **0.529** | 0.866 | 0.693 / 0.617 |
+| **TF4p_k025 PRED** | 0.619 / 0.617 | 0.768 / 0.731 / 0.676 | 0.724 | **0.437** | 0.865 | 0.693 / 0.616 |
+
+As TF3: vagina before insertion, uterus 0.882, tandem pose, device 0.706, sigmoid 0.188.  Cervix in vagina 0.43 / 0.23
+cc (BT 0.99).  Rectum MSD 5.1 / 6.0 mm (TF3 10.5 / 9.4); unmoved 0.371; straight-back ceiling 0.638.
+
+**Rectum and process** (CAL unless noted):
+- End vs BT (5 mm slabs, preBT frame): lower (z -65..-45) CAL 0.5 mm right, 4.2 mm too far back (the CAL wall carries
+  BT's tissue behind the vagina); PRED 0.2 mm right, 10.7 mm short of BT's back move (runs' -65..-40 band: 4.4 / 9.8);
+  TF3c 22.3 mm right.  Upper 8-10 mm too far back (BT's moved 6 mm forward; as TF3).  The spring also blocks BT's
+  4-4.7 mm leftward shift at z -15..-10 (model 3.0-6.7 mm right there).  Dice: V 0.399, C 0.559, K1 0.498, R_L peak
+  0.624 (step 282), R_R end 0.285, R_S 0.357, K2 end 0.529.  Held nodes stay within 2.8 mm of rest x.
+- R_R transient: `oar_sheet` <= 7 rectum vertices to 3.8 mm behind the sheet (PRED 18, 2.5 mm; the reviewer's local
+  check: none / one), rectum tet 0.606 (TF3c 0.764; PRED 0.713 vs 0.778); none at the end or inside a device part.
+- Other organs within 0.25 mm of TF3 to R_R; from R_S the cervix moves mean 0.19 / max 1.0 mm (PRED 0.29 / 1.85),
+  PRED's vault inner sheet up to 6.1 mm (vagina 0.622 -> 0.619).  Junction as TF3: vault top <= 1.53 mm off the
+  cervix; wall nodes > 0.5 mm inside it up to 233 (R_L, 10.3 mm deep), none from step 561 (PRED 564).
+- Settle: TF4c_k025 hit the 40-row cap (`settle_not_converged`: lower-rectum jitter ~0.04 mm per step); net H movement
+  <= 0.061 mm, scores equal from step 660 to 702.  Settled in practice, the formal 0.02 mm/step rule not met (eval:
+  "RUN DID NOT COMPLETE"; the 4.8 mm drift projection extrapolates jitter).
+
+**What fails or needs care** (reviewers' findings, most severe first):
+- The rectum result is imposed and in-sample: the support was designed from the BT diagnosis and k picked by
+  BT-measured gates (Dice 0.559-0.567 over k); "no sideways slide" is enforced, only the backward move is simulated,
+  and in CAL a BT-derived wall drives it.  The overlay rectum callouts and `tf_metrics` (tag "PREDICTED", also on the
+  CAL vagina) do not say so.
+- Videos: fixed.  `animate_hybrid.phase_label` now rewords K1 / K2 for ring runs as `label_views.phase_words` does
+  (K1 names no ring while both halves are parked; K2 is the wall's blend, not packing); the four TF4 videos were
+  re-rendered.  The lumen view's "ovoids: crossing the wall" flag in K2 is a real ~0.5 mm rod-wall crossing at one
+  section.  The videos show the same wall-in-cervix transient as the stills below.
+- Stills at steps 216-501 show the wall band inside the cervix under a "vault rim 0.2 mm" caption: caption before use.
+  Replaces STAGE 3d's "Figures" bullet: use `figs/tf4/labeled/`.
+- Smaller: overlay full vagina Dice is the final frame (CAL 0.887), the trimmed one M121; sagittal / oblique "gap
+  here" differ (sigmoid 8 vs 42 mm); G32 / TF1v overlays and STAGE 3's "packing behind the ring" predate the
+  no-packing decision; STAGE 3d's "ring 7.0 mm below BT's" includes the rods (scan ring to halves: median 1.5 mm).
+
+Reproduce:
+```bash
+python -P -B hybrid/test_ties.py                                                                       # 23/23
+APPSIM_TIMEOUT=3600 APPSIM_CPUS=4 bash run_docker_par.sh TF4rC_k025 hybrid/run_hybrid.py --tag TF4rC_k025 --cfg /out/hybrid/runs/_cfg/TF4rC_k025.json
+#   likewise TF4rC_k05 / TF4rC_k10; TF4c_k025 / TF4p_k025 (V..H) with APPSIM_TIMEOUT=12000 APPSIM_CPUS=6
+python -P -B hybrid/tf_metrics.py score --tag TF4c_k025
+#   figures: render_tree.py --figs <new folder>, then label_views / bt_overlay prep / overlay_views --trim-json through it
+```
+
 ### Commands
 
 ```bash

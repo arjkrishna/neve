@@ -24,6 +24,9 @@ What is tested (fix plan logs/audit_G32/fix_plan_G32_audit.md, S1 "Accept"):
        touching the graph); why: an interface one or two rows behind the carried ties shears the junction; the carry
        over B / V / C with a rate jump / L / H rows (exact increment at every boundary, zero at rest); carry=c is
        canal_tie_step at X + c in every mode, dilate never pulls in; tie_force_log and the end-of-step force row.
+  TF4  the rectum's lateral-only support (cfg k_rectum_lateral_mN_per_mm): the target rule (x_rest, y_now, z_now),
+       the key's values, the node set (surface minus junction), the force log, _add_supports building NOTHING with
+       the key None / 0 and only the target MO + one spring field with it on, and the controller's per-step write.
 All geometry is synthetic (no patient or case-derived coordinates, axes or device dimensions); only
 test_s1b_depth_engagement reads this machine's canal_path_s when the meshes exist.
 """
@@ -859,6 +862,159 @@ def test_eu2_controller_follow_and_default():
         assert cN.row_prev is rows[k] and cN.canal_tie_last is not None and cO.canal_tie_last is None
     assert worst < 1e-9, worst
     return dict(follow_target_vs_end_max_mm=worst)
+
+
+# ----------------------------------------------------------------------------- TF4: the rectum's lateral-only support
+def test_tf4_rectum_lateral_target_rule():
+    """rectum_lateral_targets: x = the rest x, y and z = the current position, bit for bit; the input is not modified;
+    a spring k (target - x) at the start of the step then has zero y / z components and k (x_rest - x) in x."""
+    rng = np.random.default_rng(41)
+    X_rest = rng.normal(0.0, 20.0, (50, 3))                          # synthetic
+    X_now = X_rest + rng.normal(0.0, 5.0, X_rest.shape)
+    keep = X_now.copy()
+    T = S.rectum_lateral_targets(X_now, X_rest[:, 0])
+    assert np.array_equal(X_now, keep)                                # no side effect
+    assert np.array_equal(T[:, 0], X_rest[:, 0]) and np.array_equal(T[:, 1:], X_now[:, 1:])
+    k = 0.5
+    f = k * (T - X_now)
+    assert np.array_equal(f[:, 1:], np.zeros((50, 2)))
+    assert np.allclose(f[:, 0], k * (X_rest[:, 0] - X_now[:, 0]), atol=0.0, rtol=0.0)
+    T0 = S.rectum_lateral_targets(X_rest, X_rest[:, 0])               # at rest: target = the node, zero force
+    assert np.array_equal(T0, X_rest)
+    Xs = X_rest + np.array([0.0, -7.0, 3.0])                          # pushed straight back / up: still zero force
+    assert np.array_equal(S.rectum_lateral_targets(Xs, X_rest[:, 0]), Xs)
+    return dict(n=len(T))
+
+
+def test_tf4_rectum_lateral_k_and_nodes():
+    """The cfg key: absent / None / 0 -> 0.0 (nothing is built), a number -> float, anything else refused; the node set
+    = surface nodes minus the junction set, sorted."""
+    assert S.CFG["k_rectum_lateral_mN_per_mm"] is None
+    assert S.rectum_lateral_k({}) == 0.0 and S.rectum_lateral_k(S.load_cfg({})) == 0.0
+    assert S.rectum_lateral_k(dict(k_rectum_lateral_mN_per_mm=0)) == 0.0
+    assert S.rectum_lateral_k(dict(k_rectum_lateral_mN_per_mm=0.5)) == 0.5
+    assert S.rectum_lateral_k(dict(k_rectum_lateral_mN_per_mm=1)) == 1.0
+    for bad in (-0.1, True, "0.5", float("nan"), float("inf"), [0.5]):
+        try:
+            S.rectum_lateral_k(dict(k_rectum_lateral_mN_per_mm=bad))
+        except ValueError:
+            continue
+        raise AssertionError("accepted %r" % (bad,))
+    ns = dict(surface_nodes=[9, 1, 4, 7, 3, 12], junction_sigmoid=[7, 12, 20], fixed_ends=[1, 7, 12, 20])
+    assert S.rectum_lateral_nodes(ns).tolist() == [1, 3, 4, 9]      # lower cut end (1) kept, junction (7, 12) out
+
+
+def test_tf4_rectum_lateral_log_values():
+    """rectum_lateral_log on known states: 10 nodes 2 mm toward +x at k 0.5 -> fx -1 mN each (net -0.01 N), one node
+    3 mm toward -x -> +1.5 mN; y / z drag = k x the step's motion; units N."""
+    x_rest = np.zeros(11)
+    X_end = np.zeros((11, 3))
+    X_end[:10, 0] = 2.0
+    X_end[10, 0] = -3.0
+    tgt = np.zeros((11, 3))
+    tgt[:, 0] = x_rest
+    X_end[:, 1] = -0.2                                                # every node moved 0.2 mm in -y over the step
+    out = S.rectum_lateral_log(tgt, 0.5, X_end, x_rest)
+    assert abs(out["net_fx_N"] - (-0.010 + 0.0015)) < 1e-9, out
+    assert abs(out["sum_abs_fx_N"] - 0.0115) < 1e-9, out
+    assert abs(out["max_node_fx_N"] - 0.0015) < 1e-9, out
+    assert abs(out["dx_mean_mm"] - round(17.0 / 11.0, 4)) < 1e-9 and out["dx_absmax_mm"] == 3.0, out
+    assert abs(out["drag_yz_net_N"] - 11 * 0.5 * 0.2 / 1000.0) < 1e-9 and out["n"] == 11, out
+    return out
+
+
+class _RecNode(object):
+    """A scene-graph node that records addObject / addChild (a stand-in for Sofa.Core.Node)."""
+
+    def __init__(self, path, log):
+        self.path, self.log = path, log
+
+    def addObject(self, typ, name=None, **kw):
+        o = _obj(**kw)
+        o.typ, o.name = typ, name
+        self.log.append((self.path, typ, name, kw))
+        return o
+
+
+def _supports_ctx(cfg_over):
+    """A fake ctx holding only what _add_supports reads: synthetic meshes (no patient data) and recording nodes."""
+    rng = np.random.default_rng(3)
+    X0 = {b: rng.normal(0.0, 10.0, (30, 3)) for b in S.BODIES}
+    ns = {b: dict() for b in S.BODIES}
+    ns["cervix"]["lateral_os_level"] = []                            # no cardinal ligaments in this fake
+    ns["vagina"]["fixed_inferior"] = [0, 1]
+    ns["bladder"]["anterior_support"] = [2, 3]
+    ns["rectum"].update(posterior_support=[4, 5, 6], fixed_ends=[0, 1, 28, 29], junction_sigmoid=[28, 29],
+                        surface_nodes=list(range(0, 30, 2)) + [29])
+    ns["sigmoid"]["fixed_ends"] = [0]
+    log = []
+    ctx = dict(cfg=S.load_cfg(dict(cfg_over)), inp=dict(meta={b: dict(node_sets=ns[b]) for b in S.BODIES}), X0=X0,
+               nodes={b: _RecNode("/" + b, log) for b in S.BODIES}, targets=_RecNode("/targets", log),
+               supports=_RecNode("/supports", log), extra={}, static=[])
+    return ctx, log
+
+
+def test_tf4_rectum_lateral_build_off_and_on():
+    """_add_supports: key None (default) and 0 build exactly the objects of the key-less cfg (same calls, same args,
+    no ctx["rect_lat"], no extra); 0.5 adds ONLY the target MO (rest positions of surface minus junction nodes) and one
+    RestShapeSpringsForceField on the rectum pointing at it, after every existing object; a static rectum is refused."""
+    base = dict(k_rectum_support_mN_per_mm=0.1, k_rectum_ends_mN_per_mm=0.1)
+    ctxA, logA = _supports_ctx(base)
+    ctxA["cfg"].pop("k_rectum_lateral_mN_per_mm")                    # the pre-TF4 cfg (no key at all)
+    S._add_supports(ctxA)
+    for v in (None, 0, 0.0):
+        ctxB, logB = _supports_ctx(dict(base, k_rectum_lateral_mN_per_mm=v))
+        S._add_supports(ctxB)
+        assert repr(logB) == repr(logA) and "rect_lat" not in ctxB and ctxB["extra"] == ctxA["extra"], v
+    ctxC, logC = _supports_ctx(dict(base, k_rectum_lateral_mN_per_mm=0.5))
+    S._add_supports(ctxC)
+    assert repr(logC[:len(logA)]) == repr(logA) and len(logC) == len(logA) + 2
+    (p1, t1, n1, kw1), (p2, t2, n2, kw2) = logC[len(logA):]
+    li = sorted(set(list(range(0, 30, 2)) + [29]) - {28, 29})
+    assert (p1, t1, n1) == ("/targets", "MechanicalObject", "rect_lat_tgt")
+    assert np.array_equal(np.asarray(kw1["position"]), ctxC["X0"]["rectum"][li])
+    assert (p2, t2, n2) == ("/rectum", "RestShapeSpringsForceField", "lateral_support")
+    assert kw2["points"] == li and kw2["stiffness"] == [0.5] * len(li)
+    assert kw2["external_rest_shape"] == "@/targets/rect_lat_tgt" and kw2["external_points"] == list(range(len(li)))
+    rl = ctxC["rect_lat"]
+    assert rl["idx"].tolist() == li and np.array_equal(rl["x_rest"], ctxC["X0"]["rectum"][li, 0]) and rl["tgt"] is None
+    assert ctxC["extra"]["rectum_lateral"]["n_nodes"] == len(li)
+    ctxD, _ = _supports_ctx(dict(base, k_rectum_lateral_mN_per_mm=0.5))
+    ctxD["static"] = ["rectum"]
+    try:
+        S._add_supports(ctxD)
+    except ValueError:
+        return dict(n_nodes=len(li))
+    raise AssertionError("a static rectum with the lateral support was accepted")
+
+
+def test_tf4_controller_writes_lateral_target():
+    """HybridController._begin (3c): with ctx["rect_lat"] the target MO holds (x_rest, y_now, z_now) of the rectum's
+    start-of-step state at every step; without it nothing is touched (the default path)."""
+    rows, F0, a0, Ts = _eu2_rigid_rows(8, n_steps=4)
+    Xr = _on_tube(F0, a0, n=20, seed=2)
+    idx = np.arange(20)
+    tgt = dict(tube_axis=geom.unit(rows[-1]["tube_axis"]), axis=a0, R_rows=rows[-1]["R_rows"])
+    base = dict(canal_tie_mode="centre", canal_tie_axis="row", canal_rod_axis="tube", k_canal_mN_per_mm=400.0)
+    rng = np.random.default_rng(5)
+    R0 = rng.normal(0.0, 15.0, (40, 3))                               # a synthetic "rectum"
+    li = np.arange(0, 40, 3)
+    cL, ctxL = make_controller(dict(base, k_rectum_lateral_mN_per_mm=0.5), rows, Xr, idx, tgt=tgt)
+    ctxL["nodes"]["rectum"] = types.SimpleNamespace(dofs=_obj(position=R0.tolist(), velocity=np.zeros_like(R0).tolist()))
+    ctxL["rect_lat"] = dict(idx=li, x_rest=R0[li, 0].copy(), k=0.5, tgt_mo=_obj(position=R0[li].tolist()), tgt=None)
+    cO, ctxO = make_controller(base, rows, Xr, idx, tgt=tgt)
+    for k in range(len(rows)):
+        Rk = R0 + rng.normal(0.0, 3.0, R0.shape)
+        ctxL["nodes"]["rectum"].dofs.position.value = Rk.tolist()
+        cL.k = cO.k = k
+        cL._begin()
+        cO._begin()
+        T = np.asarray(ctxL["rect_lat"]["tgt_mo"].position.value)
+        assert np.array_equal(T[:, 0], R0[li, 0]) and np.array_equal(T[:, 1:], Rk[li, 1:])
+        assert np.array_equal(ctxL["rect_lat"]["tgt"], T)
+        assert np.array_equal(np.asarray(ctxL["canal_tgt"].position.value), np.asarray(ctxO["canal_tgt"].position.value))
+    assert "rect_lat" not in ctxO
+    return dict(steps=len(rows))
 
 
 # ----------------------------------------------------------------------------- S2 helpers

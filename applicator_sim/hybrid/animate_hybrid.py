@@ -249,11 +249,20 @@ def phase_names():
 
 
 def phase_label(dev):
-    """'V (vaginal travel)': the frame's own phase_name, else run_hybrid.PHASE_NAMES, else the letter alone."""
+    """'V (vaginal travel)': the frame's own phase_name, else run_hybrid.PHASE_NAMES, else the letter alone.  For a
+    ring_phases run (device json "ring_halves") the two logged names that are false are reworded as in
+    label_views.phase_words: K2's "packing front" is the wall drive's blend front (no packing is modelled, and none
+    was used), and K1 lifts no ring while both halves are still parked."""
     ph = str(dev.get("phase", "?"))
     nm = dev.get("phase_name")
     if not nm or nm == ph:
         nm = phase_names().get(ph, ph)
+    rh = dev.get("ring_halves") or {}
+    if rh:
+        if ph == "K2":
+            nm = "the vaginal wall blends onto its seated shape, from the vault down"
+        elif ph == "K1" and not any(bool(h.get("on", True)) for h in rh.values()):
+            nm = "lift: tandem, portio and vault together (ring halves not yet inserted)"
     return ph, nm
 
 

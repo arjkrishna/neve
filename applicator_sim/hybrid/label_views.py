@@ -37,6 +37,14 @@ front, and the tube below the flange), is drawn whole, see-through, outlined, an
 Tandem-first runs word the phase-dependent numbers accordingly: the cervix's largest displacement and the os's move
 along the vagina, the vault lift signed, a move under 0.5 mm left out rather than printed as "0 mm".
 
+Ring halves (cfg ring_phases, S7f: device json "ring_halves", each half its own body): each half is drawn at ITS OWN
+logged pose of the frame (animate_hybrid.part_pose, as the videos draw it), not at the tandem's flange.  A half whose
+approach has not started (ring_halves <side>.on false: parked ring_start_mm down its approach, collisions off) is left
+out and the figure says so (--ring-parked draw: draw it where the log parks it, as the videos do; the camera box then
+takes it in).  The labels give each half's state (seated / mm still to go) and the ring's seat below the flange; the
+logged phase names that are false for such a run (K2 "packing front": no packing; K1 "ring" before a half has started)
+are reworded (phase_words).  A run without ring_halves (G32, TF1v) is drawn exactly as before.
+
 The render tree must be the one built for the run (hybrid/render_tree.py: meshes = the run's scene root,
 applicator = its applicator_dir, plus inputs/ and hybrid/eval/).  Every number printed on the figure is read or
 computed from the run's files; nothing is hard-coded.  Writes figs/labeled/<tag>_step<k>_{sagittal,oblique}.png
@@ -77,6 +85,8 @@ OPA = dict(sagittal=dict(corpus=0.97, cervix=0.97, vagina=1.0, bladder=0.55, rec
 MIN_SEP_PX = 46.0                      # anchors of different labels are kept at least this far apart where possible
 U_MATCH_MM = 0.005                     # a saved nodal displacement is used only if it reproduces the frame's surface to
                                        # this (tf_metrics.U_MATCH_MM: OBJs are written at 1 um, u_npy is float32)
+RING_PARKED = "omit"                   # a ring half not yet started (ring_halves on false): "omit" (noted) | "draw"
+SEATED_MM = 0.05                       # a ring half this close to its seat (ring_halves d_mm) is "seated"
 
 
 # ------------------------------------------------------------------------------------------------ state
@@ -210,13 +220,28 @@ class State:
             if "shaft_centreline" in lm else None
         self.r_tube = float(d.get("r_tandem_mm") or self.app.get("r_tandem_mm", {}).get("value") or 2.18)
         self.parts, self.stations = {}, {}
+        # S7f ring halves: each at its own logged pose (AH.part_pose, as the videos draw them); {} for other runs
+        rh = {h.get("part"): h for h in (d.get("ring_halves") or {}).values()}
+        self.ring_halves, self.ring_top_mm = {}, None
         for p in list(AH.TANDEM) + list(AH.OVOIDS):
             V, Fc = geom.read_obj(AH.part_obj(p))
-            org, R = (self.Fo, self.R_o) if p in OVOID_BODY else (self.F, self.R_t)
+            if p in rh:
+                h = rh[p]
+                on = bool(h.get("on", True))
+                self.ring_halves[p] = dict(d_mm=float(h.get("d_mm") or 0.0), on=on,
+                                           drawn=on or RING_PARKED == "draw")
+                # the OBJs sit at the seat in the applicator frame (applicator.json ring.T_seat): the ring's top face
+                top = -float(np.asarray(V, float)[:, 2].max())
+                self.ring_top_mm = top if self.ring_top_mm is None else min(self.ring_top_mm, top)
+                if not self.ring_halves[p]["drawn"]:
+                    continue
+                org, R = AH.part_pose(d, p, self.R_t)
+            else:
+                org, R = (self.Fo, self.R_o) if p in OVOID_BODY else (self.F, self.R_t)
             self.parts[p] = (org + np.asarray(V, float) @ R, np.asarray(Fc, int))
             if p in AH.FRONT_PARTS:            # cross-section stations: the cut view draws a stretch in front whole
                 self.stations[p] = AH.part_stations(p, V, self.appj)
-        self.has_ring = "ovoid_L" in self.parts or "ovoid_R" in self.parts
+        self.has_ring = bool(self.ring_halves) or "ovoid_L" in self.parts or "ovoid_R" in self.parts
         # the wall's rings
         w = self.meta["vagina"]["wall"]
         self.gi = np.asarray(w["grid_index"], int)
@@ -385,17 +410,70 @@ class State:
         return f
 
 
+def phase_words(st):
+    """The frame's phase name as the figure prints it: the logged one (run_hybrid.PHASE_NAMES), except where it says
+    something false of a ring_phases run (S7f): K2's "packing front" is the wall drive's blend front (no packing is
+    modelled, and none was used), and K1 lifts no ring while both halves are still parked."""
+    nm = st.phase_name
+    if st.ring_halves:
+        if st.phase == "K2":
+            nm = "the vaginal wall blends onto its seated shape, from the vault down"
+        elif st.phase == "K1" and not any(h["on"] for h in st.ring_halves.values()):
+            nm = "lift: tandem, portio and vault together (ring halves not yet inserted)"
+    return nm
+
+
 def state_words(st):
     """'end of insertion, after settling' (the seated state of a Stage 1-3 run, as before) or the frame's phase and
     tandem depth."""
     if st.is_last and not st.tf:
         return "end of insertion, after settling"
-    w = "phase %s, %s" % (st.phase, st.phase_name)
+    w = "phase %s, %s" % (st.phase, phase_words(st))
     if st.is_last:
         w = "final state, " + w
     if st.depth is not None:
         w += "; tandem depth d = %.1f mm past the external os" % st.depth
     return w
+
+
+def half_side(p):
+    return "left" if p.endswith("_L") else "right"
+
+
+def half_words(h):
+    """One ring half's state from its device json entry: 'seated' | 'on its approach, 15 mm to go' | 'not yet
+    inserted (parked 100 mm down its approach)'."""
+    if not h["on"]:
+        return "not yet inserted (parked %.0f mm down its approach)" % h["d_mm"]
+    if h["d_mm"] <= SEATED_MM:
+        return "seated"
+    return "on its approach, %.0f mm to go" % h["d_mm"]
+
+
+def ring_status(st):
+    """'left seated; right on its approach, 15 mm to go' for the halves of a ring_phases run ('' otherwise)."""
+    return "; ".join("%s %s" % (half_side(p), half_words(h)) for p, h in sorted(st.ring_halves.items()))
+
+
+def set_ring_parked(mode):
+    """--ring-parked (label_views / overlay_views): omit | draw a ring half that has not started its approach."""
+    global RING_PARKED
+    if mode not in ("omit", "draw"):
+        raise SystemExit("--ring-parked must be omit or draw, not %r" % mode)
+    RING_PARKED = mode
+
+
+def ring_parked_note(st):
+    """The figure's note on halves left out (not yet inserted), '' when every half is drawn."""
+    left = [p for p, h in sorted(st.ring_halves.items()) if not h["drawn"]]
+    if not left:
+        return ""
+    dd = sorted({"%.0f mm" % st.ring_halves[p]["d_mm"] for p in left})
+    who = ("the %s ring half" % half_side(left[0])) if len(left) == 1 else \
+        ("both ring halves" if len(left) == len(st.ring_halves) else "the %s ring halves" % " and ".join(
+            half_side(p) for p in left))
+    return "Not drawn: %s (not yet inserted: parked %s down %s approach, collisions off)." % (
+        who, " / ".join(dd), "its" if len(left) == 1 else "their")
 
 
 # ------------------------------------------------------------------------------------------------ anchors
@@ -661,7 +739,10 @@ def labels_for(st, view, info):
     add("tandem (intrauterine tube)", dict(corpus="in the uterine cavity", cervix="tip in the cervical canal",
                                            vagina="tip not yet in the cervix")[f["tip_in"]] + front_note("tube"),
         "device", [st.F + 0.55 * Lt * st.a])
-    if st.has_ring:
+    if st.ring_halves:                   # S7f: the halves seat on the flange (applicator.json ring.T_seat)
+        fl = (("the vaginal tandem leans %.0f° off the\ntube line below it; " % f["shaft_lean"]) if "shaft_lean" in f
+              else "") + "the ring seats with its\ntop face %.1f mm below the flange" % st.ring_top_mm
+    elif st.has_ring:
         fl = "tandem bends %.1f° here; ring plane" % f["angle"]
     elif "shaft_lean" in f:
         fl = "no ring in this run; the vaginal tandem\nleans %.0f° off the tube line below it" % f["shaft_lean"]
@@ -774,8 +855,14 @@ def labels_for(st, view, info):
     if cut:
         r0 = ring_cut_points(st, 0, x_cut)
         add("introitus", "vaginal opening", "landmark", [r0.get("ant"), r0.get("post")])
-        add("vaginal lumen", "held open by the applicator" if st.has_ring else "around the vaginal tandem",
-            "landmark", [st.X["vagina"][st.inner(st.n_ax // 2)].mean(0)])
+        if st.ring_halves:               # S7f: which parts the lumen is opened around in THIS frame
+            on = [half_side(p) for p, h in sorted(st.ring_halves.items()) if h["on"]]
+            lum = "opened around the vaginal tandem\n(ring halves not yet inserted)" if not on else \
+                "opened around the tandem and %s" % ("both ring halves" if len(on) == len(st.ring_halves) else
+                                                     "the %s ring half" % " and ".join(on))
+        else:
+            lum = "held open by the applicator" if st.has_ring else "around the vaginal tandem"
+        add("vaginal lumen", lum, "landmark", [st.X["vagina"][st.inner(st.n_ax // 2)].mean(0)])
         rt = ring_cut_points(st, st.n_ax - 1, x_cut)
         if st.canal_src == "legacy":                     # the pre-S6c figure, word for word (a visual reading)
             add("vagina–HR-CTV junction", "anterior fornix; the only contact\nin this plane (the rest is lateral)",
@@ -795,7 +882,22 @@ def labels_for(st, view, info):
             if "post" in gap:
                 add("posterior fornix", "vault rim, %s\nin this plane" % word(gap["post"]), "landmark",
                     [rt.get("post")])
-        if st.has_ring:
+        if st.ring_halves:               # S7f: a half on the kept side is labelled; one the cut removes is noted
+            info["ring_gone"] = []
+            for p in sorted(st.ring_halves):
+                if p not in st.parts:        # not drawn (parked): compose() notes it
+                    continue
+                V = st.parts[p][0]
+                keep = V[:, 0] >= x_cut
+                if keep.mean() < 0.25:       # (nearly) all in the removed half: the section shows none of it
+                    info["ring_gone"].append(p)
+                    continue
+                Vk = V[keep]
+                Vk = Vk[Vk[:, 0] <= Vk[:, 0].min() + 2.0]          # nearest the section plane: on the cut outline
+                ref = np.median(Vk, 0)
+                add("ring half (%s)" % half_side(p), "%s;\none piece with its fused rod" % half_words(st.ring_halves[p]),
+                    "device", [Vk[np.argmin(np.linalg.norm(Vk[:, 1:] - ref[1:], axis=1))]])
+        elif st.has_ring:
             oc = [np.asarray(q_, float) for q_ in AH.ovoid_centres(st.dev)]
             add("ovoid (ring cap)", "right cap; the left one is in the removed half", "device",
                 [q_ for q_ in oc if q_[0] >= x_cut])
@@ -828,7 +930,11 @@ def labels_for(st, view, info):
             Vc = st.parts[pname][0]
             caps.append(pick_clear(Vc, proj, taken + [proj(c_) for c_ in caps],
                                    lambda q_, p_: float(np.linalg.norm(q_ - cam))))
-        if caps:
+        if st.ring_halves:               # S7f: the two lunar halves, each with its state in this frame
+            add("ring halves (lunar ovoids)", "\n".join(
+                ["%s: %s" % (half_side(p), half_words(h) if h["drawn"] else "not yet inserted (parked; not drawn)")
+                 for p, h in sorted(st.ring_halves.items())] + ["each one piece with its fused rod"]), "device", caps)
+        elif caps:
             add("ovoids (ring caps)", "left and right, perpendicular to the tandem", "device", caps)
     return L
 
@@ -920,8 +1026,12 @@ def compose(img, labels, info, view, st, out):
                oblique="Viewed from the patient's left, anterior and superior; nothing cut.  All tissue is drawn "
                        "see-through to show the applicator inside.")[view]
     ax.text(W / 2, 40, ttl, ha="center", va="center", fontsize=21, fontweight="bold")
-    ax.text(W / 2, 80, "run %s, step %d (%s).  %s" % (st.tag, st.step, state_words(st), sub),
-            ha="center", va="center", fontsize=12.5, color=(0.25, 0.25, 0.28))
+    s1 = "run %s, step %d (%s)." % (st.tag, st.step, state_words(st))
+    t_ = ax.text(W / 2, 80, "%s  %s" % (s1, sub), ha="center", va="center", fontsize=12.5, color=(0.25, 0.25, 0.28))
+    if t_.get_window_extent(renderer=fig.canvas.get_renderer()).width > W - 40:   # a long phase name (R_S): 2 lines
+        t_.remove()
+        for y_, s_ in ((70, s1), (93, sub)):
+            ax.text(W / 2, y_, s_, ha="center", va="center", fontsize=12.5, color=(0.25, 0.25, 0.28))
     if view == "sagittal":
         ax.text(mL + 16, top + 22, "◀ anterior", ha="left", va="center", fontsize=12, color=(0.3, 0.3, 0.3))
         ax.text(mL + Sw - 16, top + 22, "posterior ▶", ha="right", va="center", fontsize=12, color=(0.3, 0.3, 0.3))
@@ -935,7 +1045,7 @@ def compose(img, labels, info, view, st, out):
              ("D", TXT_LANDMARK, "anatomical landmark")]
     if any(Lb["cat"] == "defect" for Lb in labels):
         items.append(("X", TXT_DEFECT, "model defect"))
-    x = W / 2 - 150 * (len(items) + 2)
+    x = W / 2 - 150 * (len(items) + 2) - (150 if (st.ring_halves and info.get("outlines")) else 0)
     for m_, c_, t_ in items:
         ax.plot([x], [ky], marker=m_, ms=10, mfc=c_, mec="white", mew=1.4)
         ax.text(x + 16, ky, t_, ha="left", va="center", fontsize=12)
@@ -953,9 +1063,22 @@ def compose(img, labels, info, view, st, out):
     if info.get("outlines"):
         x += 560
         ax.plot([x, x + 34], [ky, ky], color=(0.15, 0.15, 0.18), lw=1.7, ls=(0, (6, 3)))
-        ax.text(x + 44, ky, "ovoid caps seen through tissue", ha="left", va="center", fontsize=12)
-    foot = "Tandem and tandem rod black; ovoid caps light grey; ovoid rods mid grey; packing pale." if st.has_ring else \
-        "Tandem (intrauterine tube and vaginal shaft) black; no ring, ovoid rods or packing in this run."
+        ax.text(x + 44, ky, "ring halves seen through tissue" if st.ring_halves else "ovoid caps seen through tissue",
+                ha="left", va="center", fontsize=12)
+    if st.ring_halves:                   # S7f: no separate rods or packing; what is not drawn / not in the section
+        foot = "Tandem (intrauterine tube and vaginal shaft) black; ring halves (each one piece with its fused rod) " \
+               "light grey; no packing."
+        gone = info.get("ring_gone") or []
+        notes = [ring_parked_note(st)] + (["In the removed half of the section: the %s (%s)." % (
+            " and the ".join("%s ring half" % half_side(p) for p in gone),
+            "; ".join(half_words(st.ring_halves[p]) for p in gone))] if gone else [])
+        notes = "  ".join(n for n in notes if n)
+        if notes:
+            ax.text(W / 2, ky + 72, notes, ha="center", va="center", fontsize=11, color=(0.35, 0.35, 0.38))
+    elif st.has_ring:
+        foot = "Tandem and tandem rod black; ovoid caps light grey; ovoid rods mid grey; packing pale."
+    else:
+        foot = "Tandem (intrauterine tube and vaginal shaft) black; no ring, ovoid rods or packing in this run."
     if info.get("front"):                # tandem stretches the cut would remove (render: AH.front_cells)
         foot += "  Where the %s %s in front of the section plane, %s drawn whole, see-through, outlined." % (
             " and ".join(dict(tube="tube", shaft="vaginal shaft")[p] for p in info["front"]),
@@ -1014,7 +1137,11 @@ def main():
     ap.add_argument("--views", default="sagittal,oblique")
     ap.add_argument("--canal", choices=["path", "legacy"], default="path",
                     help="path: the physician's labelled canal (tandem_path.npz, default); legacy: canal.npz")
+    ap.add_argument("--ring-parked", choices=["omit", "draw"], default=RING_PARKED,
+                    help="ring_phases runs: a ring half not yet inserted is left out and noted (omit, default) or drawn "
+                         "where the log parks it (draw, as the videos; the camera box takes it in)")
     a = ap.parse_args()
+    set_ring_parked(a.ring_parked)
     AH.run_extra_parts(a.tag)
     steps = select_steps(a.tag, a.steps) if a.steps else [a.step]
     od = P["figs"] + "/labeled"

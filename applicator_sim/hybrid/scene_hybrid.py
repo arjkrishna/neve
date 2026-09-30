@@ -557,6 +557,21 @@ CFG = dict(
     cardinal_tension_only=True,     # a ligament is a cable: it resists stretch beyond cardinal_len_mm only
     k_bladder_support_mN_per_mm=2.0,
     k_rectum_support_mN_per_mm=2.0,
+    k_rectum_lateral_mN_per_mm=None,
+                                    # TF4: a LEFT-RIGHT-ONLY support of the rectum.  None / 0 (DEFAULT) = no object is
+                                    # built, every earlier run replays bit for bit.  A number k = a RestShapeSprings
+                                    # ForceField of k mN/mm on every rectum surface node except the rectosigmoid
+                                    # junction (meta node set junction_sigmoid, the upper cut end), whose target the
+                                    # controller rewrites each step to (x_rest, y_now, z_now) (rectum_lateral_targets;
+                                    # the cardinal-ligament pattern): the spring resists only the node's patient
+                                    # left-right (world x) offset from rest, so the rectum can still be pushed straight
+                                    # back as soft as k_rectum_support / k_rectum_ends allow.  y / z see only the drag
+                                    # of one step's increment (k x the step's y / z motion; logged).  MEASURED why (TF2 /
+                                    # TF3, rdiag): with 0.1 / 0.1 supports and E 30 the driven outer sheet pressing on the
+                                    # rectum's front-left face slid it 11-28 mm to the patient's right, where BT shows
+                                    # the lower rectum 23-26 mm posterior and <= 2.4 mm sideways.  log row
+                                    # ["rectum_lateral"] (rectum_lateral_log): the lateral spring force at the end of
+                                    # every step.
     vagina_inferior="fixed",        # "fixed" (CONTRACT) | "spring" (k_vagina_inferior_mN_per_mm)
     k_vagina_inferior_mN_per_mm=50.0,
     vagina_inferior_outer_only=False,
@@ -1954,6 +1969,26 @@ def _add_supports(ctx):
         _pin(ctx["nodes"]["rectum"], "fix_ends", ns["rectum"]["fixed_ends"], cfg.get("k_rectum_ends_mN_per_mm"))
     if cfg["fix_sigmoid_ends"] and "sigmoid" not in stat:
         _pin(ctx["nodes"]["sigmoid"], "fix_ends", ns["sigmoid"]["fixed_ends"], cfg.get("k_sigmoid_ends_mN_per_mm"))
+    # TF4: the rectum's left-right-only support (cfg k_rectum_lateral_mN_per_mm; None / 0 = nothing built).  Same
+    # pattern as the cardinal ligaments: a solver-less target MO the controller rewrites every step (_begin, 3c).
+    kl = rectum_lateral_k(cfg)
+    if kl > 0 and "rectum" in stat:
+        raise ValueError("k_rectum_lateral_mN_per_mm > 0 with a static rectum (static_bodies): the support would be inert")
+    if kl > 0:
+        li = rectum_lateral_nodes(ns["rectum"])
+        if not len(li):
+            raise ValueError("k_rectum_lateral_mN_per_mm: the rectum has no surface node outside junction_sigmoid")
+        tmo = ctx["targets"].addObject("MechanicalObject", name="rect_lat_tgt", template="Vec3d",
+                                       position=X0["rectum"][li].tolist())
+        ctx["nodes"]["rectum"].addObject("RestShapeSpringsForceField", name="lateral_support",
+                                         points=[int(i) for i in li], stiffness=[kl] * len(li),
+                                         external_rest_shape="@/targets/rect_lat_tgt",
+                                         external_points=list(range(len(li))))
+        ctx["rect_lat"] = dict(idx=li, x_rest=X0["rectum"][li, 0].copy(), k=kl, tgt_mo=tmo, tgt=None)
+        z = X0["rectum"][li, 2]
+        ctx["extra"]["rectum_lateral"] = dict(k_mN_per_mm=kl, n_nodes=int(len(li)), axis="world x (patient left-right)",
+                                              nodes="surface_nodes minus junction_sigmoid",
+                                              z_rest_range_mm=[round(float(z.min()), 2), round(float(z.max()), 2)])
     ctx["extra"].update(n_vagina_fixed=int(len(vfix)), n_bladder_support=int(len(bs)), n_rectum_support=int(len(rs)),
                         k_rectum_ends=cfg.get("k_rectum_ends_mN_per_mm"), k_sigmoid_ends=cfg.get("k_sigmoid_ends_mN_per_mm"),
                         n_rectum_ends=int(len(ns["rectum"]["fixed_ends"])),
@@ -2857,6 +2892,48 @@ def tie_force_log(tgt, k, X_end, carry=None):
     return out
 
 
+# ---- TF4: the rectum's left-right-only support (cfg k_rectum_lateral_mN_per_mm).  Pure, unit-tested in test_ties.py.
+def rectum_lateral_k(cfg):
+    """The lateral support stiffness (mN/mm): 0.0 when the key is absent, None or 0 (nothing is built); a negative or
+    non-number value is refused."""
+    v = cfg.get("k_rectum_lateral_mN_per_mm")
+    if v is None:
+        return 0.0
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not np.isfinite(float(v)) or float(v) < 0:
+        raise ValueError("k_rectum_lateral_mN_per_mm must be None or a number >= 0 (got %r)" % (v,))
+    return float(v)
+
+
+def rectum_lateral_nodes(ns_rectum):
+    """The nodes the lateral support acts on: the rectum's surface nodes minus the rectosigmoid junction set (meta
+    node sets surface_nodes, junction_sigmoid), sorted."""
+    return np.setdiff1d(np.asarray(ns_rectum["surface_nodes"], int), np.asarray(ns_rectum["junction_sigmoid"], int))
+
+
+def rectum_lateral_targets(X_now, x_rest):
+    """The spring targets for one step: each node's CURRENT position with its world x (patient left-right) replaced by
+    its rest x.  A spring k (target - x) then pulls only along x at the start of the step."""
+    T = np.array(X_now, dtype=float, copy=True)
+    T[:, 0] = np.asarray(x_rest, float)
+    return T
+
+
+def rectum_lateral_log(tgt, k, X_end, x_rest):
+    """log row["rectum_lateral"]: the support's spring force at the END of the step (k mN/mm, mm -> N).  fx = k (x_rest -
+    x): its net (signed, world +x = RAS, toward the patient's right), the summed magnitudes and the largest node
+    force; the lateral offset from rest (mean signed, max |.|); and the one-step drag in y / z (k (target - x) in y, z:
+    minus the node's motion over the step), net magnitude."""
+    X_end = np.asarray(X_end, float)
+    dx = X_end[:, 0] - np.asarray(x_rest, float)
+    fx = -float(k) * dx
+    dyz = float(k) * (np.asarray(tgt, float)[:, 1:] - X_end[:, 1:])
+    return dict(net_fx_N=round(float(fx.sum()) / 1000.0, 5), sum_abs_fx_N=round(float(np.abs(fx).sum()) / 1000.0, 5),
+                max_node_fx_N=round(float(np.abs(fx).max()) / 1000.0 if len(fx) else 0.0, 6),
+                dx_mean_mm=round(float(dx.mean()) if len(dx) else 0.0, 4),
+                dx_absmax_mm=round(float(np.abs(dx).max()) if len(dx) else 0.0, 4),
+                drag_yz_net_N=round(float(np.linalg.norm(dyz.sum(0))) / 1000.0, 5), n=int(len(dx)))
+
+
 # ---- S9: the elastic corpus (corpus_model "fem").  Pure arithmetic, unit-tested in hybrid/test_corpus.py.
 def corpus_model(cfg):
     """The cfg's corpus model, checked: "rigid" (default, the kinematic Rigid3d corpus) or "fem"."""
@@ -3360,6 +3437,11 @@ class HybridController(Sofa.Core.Controller):
             if cfg["cardinal_tension_only"]:
                 c["lig_ff"].stiffness.value = np.where(ext > 0.0, float(cfg["k_cardinal_mN_per_mm"]), 0.0).tolist()
             self.lig_ext_max = float(ext.max())
+        # (3c) TF4: the rectum's lateral-only support -- target (x_rest, y_now, z_now) from the start-of-step state
+        rl = c.get("rect_lat")
+        if rl is not None:
+            rl["tgt"] = rectum_lateral_targets(self.X("rectum")[rl["idx"]], rl["x_rest"])
+            rl["tgt_mo"].position.value = rl["tgt"].tolist()
         # (4) vagina apex follows the cervix
         if c.get("apex_tgt") is not None:
             Xc = self.X("cervix")[c["apex_pair"]] + c["apex_off"]
@@ -3910,6 +3992,9 @@ class HybridController(Sofa.Core.Controller):
             Xm = c["X0"]["cervix"][c["iface"]] @ Tc[:3, :3].T + Tc[:3, 3]
             row["attach"] = dict(target="predicted", residual_mm=round(float(np.linalg.norm(
                 Xm - self.X_prev["cervix"][c["iface"]], axis=1).max()), 5))
+        rl = c.get("rect_lat")
+        if rl is not None and rl["tgt"] is not None and finite:   # TF4: the lateral support's end-of-step force
+            row["rectum_lateral"] = rectum_lateral_log(rl["tgt"], rl["k"], self.X_prev["rectum"][rl["idx"]], rl["x_rest"])
         if c.get("sheet_pen") is not None and finite:   # S2 monitor: OAR surface nodes vs the sheet, post-solve
             row["oar_sheet"] = self._sheet_monitor()
         if self.drive is not None and finite:           # S7b: the drive and the vault on the portio

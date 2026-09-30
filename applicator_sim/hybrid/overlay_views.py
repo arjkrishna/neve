@@ -30,7 +30,13 @@ tf_metrics recorded for that frame (a tf_metrics 1.0 file: the harmonic extensio
 label_views.py.  --canal legacy (canal.npz) applies to the BT overlays only and reproduces the earlier figures.
 
 Device: the run's own parts; a tandem-only run (applicator_v4, TF0) has no ring, and the ring / packing callouts
-and keys are left out.  Patient-derived: local only."""
+and keys are left out.  A ring_phases run (S7f, device json ring_halves; label_views.State draws each half at its own
+logged pose) is captioned for what it is (findings / ring_extras): the wall variant (CAL = rest shape calibrated on
+this BT, in-sample; PRED = device hull + margins, predictive), the vagina Dice against the updated BT reference
+(eval/<tag>/tf_metrics.json) and, with --trim-json (a trimref.py JSON), against the trimmed reference, the halves'
+state and the scan's ring label to the model's halves, the in-sample pose rule, no packing, and the gap of each callout
+measured to the simulated SURFACE in 3-D (gap_anchor_surf).  Other runs are captioned as before.
+Patient-derived: local only."""
 import argparse
 import os
 import sys
@@ -103,11 +109,14 @@ def fmt(v, f="%.2f"):
         return "n/a"
 
 
-def findings(stats, canal_div, cfg=None):
+def findings(stats, canal_div, cfg=None, ring=None):
     """Callout text per structure: the measured misalignment, then the likely cause with its evidence.  The cervix
     cause depends on what the run's canal ties followed (cfg canal_tie_set): G16-G32 tied canal.npz, whose lower
     part is extrapolated along a0; a canal_path run (TF0 on) ties the physician's path.  The ring line is left out
-    for a run without a ring."""
+    for a run without a ring.  A ring_phases run (ring = ring_extras(...)) is worded for what it is: the wall variant
+    (CAL / PRED) and the reference of the vagina Dice, the ring halves (bt_overlay's ring_offset_mm reads cap centres,
+    which a ring run has none of), no packing (none was used), the in-sample pose rule, and the rectum's moves without
+    a cause the figure cannot measure."""
     cfg = cfg or {}
     S, M, sc, pe = stats["structures"], stats["measurements"], stats.get("scores_PELVIS") or {}, \
         stats.get("pose_rule_error") or {}
@@ -159,6 +168,28 @@ def findings(stats, canal_div, cfg=None):
                  "no ring in this run (tandem only)"]),
         canal=["scan canal within %.1f mm of the real tandem;" % M["bt_canal_vs_real_tandem_max_mm"],
                "model's %s uterus keeps its curve: %.0f mm off" % (ut, canal_div)])
+    if ring is not None:                 # S7f ring run (ring_extras): no packing was used; the pose rule is in-sample
+        f["corpus"] = [f["corpus"][0], "placed by the tandem pose rule (%s uterus);" % ut,
+                       "the rule was tuned on this BT: in-sample"]
+        tr = ring.get("trim")
+        # (lines <= ~60 characters: a callout's text column is 580 px wide on either side)
+        f["vagina"] = ([ring["variant"]] if ring.get("variant") else []) + [
+            "Dice %s (filled) %s" % (fmt(ring.get("dice"), "%.3f"), ring["ref_short"])] + (
+            ["trimmed reference, %s cc: Dice %s%s" % (
+                fmt(tr["cc"], "%.0f"), fmt(tr["dice"], "%.3f"),
+                "" if tr["spec"].find("@") < 0 else " (M121, step %s)" % tr["spec"].split("@")[1]),
+             "(BT label kept ≤ %s mm behind the device)" % fmt(tr["t_mm"], "%.1f")] if tr else
+            ["(the BT contour also takes in tissue behind the vagina)"]) + [
+            "model %s of the scan;" % dirw(res["vagina"]),
+            "vault %.0f mm wide (L-R) vs %.0f in the scan" % (w.get("model", [np.nan])[0], w.get("BT", [np.nan])[0])]
+        f["device"] = ["tandem %s° / %s mm from the real one" % (
+                           fmt(pe.get("axis_angle_deg"), "%.1f"), fmt((pe.get("flange_offset_mm") or {}).get("total"), "%.1f")),
+                       "(tandem pose rule tuned on this BT: in-sample)",
+                       "ring halves: %s" % ring["status"]] + \
+            (["scan's ring label to the model's halves: median %.1f mm," % ring["ring_mm"][0],
+              "95th percentile %.1f mm" % ring["ring_mm"][1]] if ring.get("ring_mm") else [])
+        f["rectum"] = [f["rectum"][0], "real move: %s;" % dirw(S["rectum"]["true_displacement_mm"], 2.0),
+                       "model move: %s" % dirw(S["rectum"]["model_displacement_mm"], 2.0)]
     return f
 
 
@@ -169,6 +200,67 @@ def gap_anchor(A, B):
     i = int(np.argsort(d)[int(0.95 * (len(d) - 1))])
     j = int(np.argmin(np.linalg.norm(B - A[i], axis=1)))
     return A[i], B[j], float(d[i])
+
+
+def gap_anchor_surf(A, V, F):
+    """As gap_anchor, but the distance is to the simulated SURFACE (V, F) in 3-D, not to the simulation's outline in
+    the section plane: an organ that moved out of the plane (TF3c's rectum, 13 mm to the right) has no outline near the
+    scan's, and the in-plane distance (72 mm there) is not its gap.  Returns the scan point, the surface's nearest
+    vertex to it and the exact point-to-surface distance."""
+    A, V = np.asarray(A, float), np.asarray(V, float)
+    d = np.abs(LV.implicit_distance(V, F)(A))
+    i = int(np.argsort(d)[int(0.95 * (len(d) - 1))])
+    j = int(np.argmin(np.linalg.norm(V - A[i], axis=1)))
+    return A[i], V[j], float(d[i])
+
+
+def trim_entry(fn, tag):
+    """The run's trimmed-reference vagina Dice from a trimref.py JSON (keys t_mm, trim_cc, and per run spec 'TAG' or
+    'TAG@k' -> dice_trim): the final state (key TAG) if scored, else its latest M121 average (TAG@k).  None when the
+    file does not score this run."""
+    J = AH.load_json(fn)
+    keys = [k for k in J if isinstance(J[k], dict) and k.split("@")[0] == tag]
+    if not keys:
+        print("[overlay] %s does not score %s: no trimmed-reference Dice on the figure" % (fn, tag))
+        return None
+    key = tag if tag in keys else sorted(keys, key=lambda k: int(k.split("@")[1]))[-1]
+    return dict(spec=key, dice=J[key].get("dice_trim"), t_mm=J.get("t_mm"), cc=J.get("trim_cc"))
+
+
+def ring_extras(st, prep, trim_json=None):
+    """What the captions of a ring_phases run (S7f, st.ring_halves) say, computed from the run's files:
+    wall variant (meta wall.v5.section: 'cal' = rest shape from this BT, in-sample; 'pred' = device hull + margins),
+    the vagina Dice against the UPDATED BT reference (eval/<tag>/tf_metrics.json final.vagina.filled_dice_BT_grid:
+    vagina | updated applicator | ovoid; else the evaluator's scores_PELVIS, older applicator label, named so), the
+    trimmed reference (--trim-json, trimref.py) if given, each half's state, and the scan's ring label (prep
+    ovoid.obj) to the model's ring halves: point-to-surface distance of its vertices, median / 95th percentile."""
+    stats, bt, _ = prep
+    v5 = ((st.meta["vagina"].get("wall") or {}).get("v5") or {})
+    sec = v5.get("section")
+    r = dict(section=sec, variant={"cal": "CAL: seated shape from this BT (calibrated, in-sample)",
+                                   "pred": "PRED: seated shape = device hull + margins (predictive)"}.get(sec),
+             short={"cal": "CAL", "pred": "PRED"}.get(sec))
+    fn = "%s/eval/%s/tf_metrics.json" % (P["hybrid"], st.tag)
+    fd = ((AH.load_json(fn).get("final") or {}).get("vagina") or {}).get("filled_dice_BT_grid") or {} \
+        if os.path.exists(fn) else {}
+    if fd.get("updated_reference") is not None:
+        cc = fmt(fd.get("updated_reference_cc"), "%.0f")
+        r.update(dice=fd["updated_reference"], ref="vs BT vagina + device (updated label, %s cc)" % cc,
+                 ref_short="vs BT vagina + device, %s cc" % cc)
+    else:
+        sc = (stats.get("scores_PELVIS") or {}).get("vagina_filled") or {}
+        r.update(dice=sc.get("dice"), ref="vs BT vagina + applicator (older label)",
+                 ref_short="vs BT vagina + applicator (older label)")
+    r["trim"] = trim_entry(trim_json, st.tag) if trim_json else None
+    r["status"] = LV.ring_status(st)
+    halves = [st.parts[p] for p in sorted(st.ring_halves) if p in st.parts]
+    r["ring_mm"] = None
+    if halves:
+        V = np.vstack([h[0] for h in halves])
+        F = np.vstack([h[1] + sum(len(g[0]) for g in halves[:i]) for i, h in enumerate(halves)])
+        d = np.abs(LV.implicit_distance(V, F)(bt["ovoid"][0]))
+        r["ring_mm"] = (float(np.median(d)), float(np.percentile(d, 95)))
+    return r
 
 
 def canal_divergence(st, cl):
@@ -222,8 +314,9 @@ def build(st, view, Sw, Sh, prep):
                     out["lines"].append(("model", n, np.array([proj(q) for q in L])))
                 for L in Lb:
                     out["lines"].append(("bt", n, np.array([proj(q) for q in L])))
-                if Lm and Lb:
-                    pb, pm, d = gap_anchor(np.vstack(Lb), np.vstack(Lm))
+                if Lm and Lb:                   # ring runs: the gap to the simulated SURFACE (gap_anchor_surf)
+                    pb, pm, d = gap_anchor_surf(np.vstack(Lb), *st.surf[n]) if st.ring_halves else \
+                        gap_anchor(np.vstack(Lb), np.vstack(Lm))
                     out["callouts"][n] = (proj(pb), proj(pm), d)
             for p_, (V, F) in st.parts.items():
                 for L in polylines(AH.poly(pv, V, F).slice(normal="x", origin=(x_cut, 0, 0))):
@@ -251,7 +344,8 @@ def build(st, view, Sw, Sh, prep):
                 sub = Vb[inside][:: max(1, int(inside.sum() // 2500))]
                 if len(sub) == 0:
                     continue
-                pb, pm, d = gap_anchor(sub, Vm[:: max(1, len(Vm) // 4000)])
+                pb, pm, d = gap_anchor_surf(sub, *st.surf[n]) if st.ring_halves else \
+                    gap_anchor(sub, Vm[:: max(1, len(Vm) // 4000)])
                 out["callouts"][n] = (proj(pb), proj(pm), d)
             Vo = bt["ovoid"][0]
             q = Vo[np.argmin(np.linalg.norm(Vo - cam, axis=1))]
@@ -266,7 +360,7 @@ def build(st, view, Sw, Sh, prep):
 
 
 # ------------------------------------------------------------------------------------------------ compose
-def compose(img, info, ov, view, st, stats, out):
+def compose(img, info, ov, view, st, stats, out, ring=None):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -297,7 +391,7 @@ def compose(img, info, ov, view, st, stats, out):
         for piece, col in canal_split(st, mc):
             ax.plot(piece[:, 0], piece[:, 1], color=col, lw=2.6, zorder=4, path_effects=halo)
         ax.plot(bc[:, 0], bc[:, 1], color=COL_BT_CANAL, lw=2.6, ls=(0, (5, 3)), zorder=4, path_effects=halo)
-    F = findings(stats, ov["canal_div"], st.cfg)
+    F = findings(stats, ov["canal_div"], st.cfg, ring)
     labels = []
     for key, (pb, pm, d) in ov["callouts"].items():
         col = COL_DEV if key == "device" else (COL_BT_CANAL if key == "canal" else line_col(st.col[key], 0.72))
@@ -327,10 +421,11 @@ def compose(img, info, ov, view, st, stats, out):
     # ---- titles and orientation
     ttl = dict(sagittal="Simulation vs BT scan: sagittal section through the device",
                oblique="Simulation vs BT scan: oblique 3-D view")[view]
+    run = st.tag + ((", %s vaginal wall" % ring["short"]) if ring and ring.get("short") else "")
     sub = dict(sagittal="Solid outlines: the simulation (run %s, seated).  Dashed outlines: the dataset's post-insertion (BT) "
-                        "segmentation, registered by the pelvis.  Anterior left, superior up." % st.tag,
+                        "segmentation, registered by the pelvis.  Anterior left, superior up." % run,
                oblique="See-through surfaces: the simulation (run %s, seated).  Outlines: the dataset's post-insertion (BT) "
-                       "segmentation, registered by the pelvis." % st.tag)[view]
+                       "segmentation, registered by the pelvis." % run)[view]
     ax.text(W / 2, 40, ttl, ha="center", va="center", fontsize=21, fontweight="bold")
     ax.text(W / 2, 80, sub, ha="center", va="center", fontsize=12.5, color=(0.25, 0.25, 0.28))
     if view == "sagittal":
@@ -358,8 +453,9 @@ def compose(img, info, ov, view, st, stats, out):
                 "inside the cervix", va="center", fontsize=12)
     ky2, x = ky + 30, mL - 60
     ax.annotate("", xy=(x + 46, ky2), xytext=(x, ky2), arrowprops=dict(arrowstyle="-|>", color=(0.3, 0.3, 0.3), lw=2.2))
-    ax.text(x + 56, ky2, "from the simulation to the scan, at the largest local gap", va="center", fontsize=12)
-    x += 560
+    ax.text(x + 56, ky2, "from the simulation to the scan, at the largest local gap" +
+            (" (3-D, to the simulated surface)" if ring else ""), va="center", fontsize=12)
+    x += 560 + (250 if ring else 0)
     if st.canal_s is None:
         ax.plot([x, x + 30], [ky2, ky2], color=LV.COL_CANAL, lw=4)
         ax.plot([x + 36, x + 66], [ky2, ky2], color=COL_BT_CANAL, lw=4, ls=(0, (4, 2)))
@@ -382,7 +478,11 @@ def compose(img, info, ov, view, st, stats, out):
         s_ = S[n]
         key = "vagina_filled" if (n == "vagina" and "vagina_filled" in sc) else n
         y = ty0 + 38 + 22 * r_
-        cells = [NAMES[n] + (" (filled)" if n == "vagina" else ""), fmt((sc.get(key) or {}).get("dice")),
+        vd = (sc.get(key) or {}).get("dice")
+        if n == "vagina" and ring:           # ring run: the updated-reference Dice of the callout, the variant named
+            vd = ring.get("dice")
+        cells = [NAMES[n] + ((" (filled%s)" % ((", " + ring["short"]) if ring and ring.get("short") else ""))
+                             if n == "vagina" else ""), fmt(vd),
                  fmt((sc.get(key) or {}).get("msd"), "%.1f mm"),
                  "%.0f → %.0f cc" % (s_["vol_pre_label_cc"], s_["vol_bt_label_cc"]),
                  "%.1f mm" % s_["true_displacement_len"],
@@ -390,13 +490,25 @@ def compose(img, info, ov, view, st, stats, out):
                  "n/a *" if n == "vagina" else "%.0f°" % s_["direction_agreement_deg"], "%.1f mm" % s_["residual_len"]]
         for (h_, dx), c_ in zip(cols, cells):
             ax.text(tx0 + dx, y, c_, fontsize=11, va="center", color=line_col(st.col[n], 0.72) if dx == 0 else (0.15, 0.15, 0.15))
-    ax.text(tx0, ty0 + 38 + 22 * len(ORG) + 8, "Dice and surface distance: the evaluator's pelvis-registered scores (vagina: the "
-            "filled wall vs the scan's vagina + applicator).  Volumes from the segmentations; the simulation conserves "
-            "each organ's volume.", fontsize=10, color=(0.35, 0.35, 0.38), va="center")
-    ax.text(tx0, ty0 + 38 + 22 * len(ORG) + 28, "* the simulated vagina starts from a distended reference (%.0f cc), not the "
-            "collapsed pre-insertion label (%.0f cc), so its move is not comparable.  Patient-derived figure: keep local."
-            % (S["vagina"]["vol_model_rest_cc"], S["vagina"]["vol_pre_label_cc"]),
-            fontsize=10, color=(0.35, 0.35, 0.38), va="center")
+    if ring:
+        n1 = ("Dice and surface distance: the evaluator's pelvis-registered scores; vagina Dice: the filled wall %s%s.  "
+              "Volumes from the segmentations; the simulation conserves each organ's volume."
+              % (ring["ref"], ", its surface distance vs the older label" if "updated" in ring["ref"] else ""))
+    else:
+        n1 = "Dice and surface distance: the evaluator's pelvis-registered scores (vagina: the filled wall vs the scan's " \
+             "vagina + applicator).  Volumes from the segmentations; the simulation conserves each organ's volume."
+    ax.text(tx0, ty0 + 38 + 22 * len(ORG) + 8, n1, fontsize=10, color=(0.35, 0.35, 0.38), va="center")
+    if ring and st.cfg.get("wall_drive") == "device":     # S7b: the driven v5 wall starts collapsed, ends prescribed
+        n2 = ("* the driven wall starts collapsed (built from the pre-insertion label, %.0f cc) and ends on a prescribed "
+              "seated shape (%s), so its centroid move is not a simulation result.  Patient-derived figure: keep local."
+              % (S["vagina"]["vol_pre_label_cc"], {"cal": "CAL: from this BT, in-sample",
+                                                   "pred": "PRED: device hull + margins"}.get(ring.get("section"),
+                                                                                             "the wall's rest shape")))
+    else:
+        n2 = ("* the simulated vagina starts from a distended reference (%.0f cc), not the collapsed pre-insertion label "
+              "(%.0f cc), so its move is not comparable.  Patient-derived figure: keep local."
+              % (S["vagina"]["vol_model_rest_cc"], S["vagina"]["vol_pre_label_cc"]))
+    ax.text(tx0, ty0 + 38 + 22 * len(ORG) + 28, n2, fontsize=10, color=(0.35, 0.35, 0.38), va="center")
     fig.savefig(out, dpi=100)
     plt.close(fig)
 
@@ -626,10 +738,13 @@ def canal_view(st, out, size=1040):
                             (40 + 0.72 * W, (0.35, 0.35, 0.38), (0, (1.5, 2.5)), "the same canal before insertion")):
         ax.plot([x, x + 36], [ky, ky], color=col, lw=4 if ls == "-" else 1.6, ls=ls)
         ax.text(x + 46, ky, txt, va="center", fontsize=11.5)
-    ax.text(W / 2, ky + 40, "Device black%s; uterus, cervix and vagina see-through.  Distances are to the tube SEGMENT "
-            "(flange to tip), fix plan S0's definition.  Patient-derived figure: keep local."
-            % ("" if st.has_ring else " (tandem only: no ring)"), ha="center", va="center", fontsize=10.5,
-            color=(0.35, 0.35, 0.38))
+    if st.ring_halves:                   # S7f: each half at its own logged pose; a half not yet inserted is noted
+        dv = "Tandem black, ring halves light grey; uterus, cervix and vagina see-through.  %s" % (
+            (LV.ring_parked_note(st) + "  ") if LV.ring_parked_note(st) else "")
+    else:
+        dv = "Device black%s; uterus, cervix and vagina see-through.  " % ("" if st.has_ring else " (tandem only: no ring)")
+    ax.text(W / 2, ky + 40, dv + "Distances are to the tube SEGMENT (flange to tip), fix plan S0's definition.  "
+            "Patient-derived figure: keep local.", ha="center", va="center", fontsize=10.5, color=(0.35, 0.35, 0.38))
     fig.savefig(out, dpi=100)
     plt.close(fig)
     return dict(step=st.step, lower_in_tube_frac=m["lower_in_tube_frac"], lower_max_mm=round(m["lower_max_mm"], 2),
@@ -648,7 +763,13 @@ def main():
                                                   "(label_views.py); the BT overlays are drawn for the last frame")
     ap.add_argument("--canal", choices=["path", "legacy"], default="path",
                     help="the model canal on the BT overlays: path (tandem_path.npz, default) or legacy (canal.npz)")
+    ap.add_argument("--trim-json", default=None,
+                    help="ring runs: a trimref.py JSON (t_mm, trim_cc, <TAG>[@k].dice_trim); its trimmed-reference "
+                         "vagina Dice is printed beside the full-reference one (default: the reference is only named)")
+    ap.add_argument("--ring-parked", choices=["omit", "draw"], default=LV.RING_PARKED,
+                    help="ring runs: a ring half not yet inserted is left out and noted (omit) or drawn where parked")
     a = ap.parse_args()
+    LV.set_ring_parked(a.ring_parked)
     AH.run_extra_parts(a.tag)
     views = [v.strip() for v in a.views.split(",") if v.strip()]
     od = P["figs"] + "/labeled"
@@ -658,13 +779,18 @@ def main():
         st = LV.State(a.tag, canal=a.canal)
         st.fx = st.facts()
         prep = load_prep(a.tag)
+        ring = ring_extras(st, prep, a.trim_json) if st.ring_halves else None
+        if ring:
+            print("ring run: wall %s | vagina Dice %s %s | trimmed %s | halves: %s | scan ring to model halves %s mm"
+                  % (ring["short"], fmt(ring.get("dice"), "%.4f"), ring["ref"], ring["trim"], ring["status"],
+                     None if ring["ring_mm"] is None else tuple(round(v, 2) for v in ring["ring_mm"])))
         for view in bt_views:
             Sh = a.size if view == "sagittal" else int(a.size * 1.15)
             Sw = a.size if view == "sagittal" else int(a.size * 0.93)
             img, info, ov = build(st, view, Sw, Sh, prep)
             out = "%s/%s_step%04d_overlay_%s%s.png" % (od, a.tag, st.step, view,
                                                        "_canalnpz" if a.canal == "legacy" else "")
-            compose(img, info, ov, view, st, prep[0], out)
+            compose(img, info, ov, view, st, prep[0], out, ring=ring)
             print("wrote", out, "| callouts:", {k: round(v[2], 1) for k, v in ov["callouts"].items()},
                   "| canal divergence %.1f mm" % ov["canal_div"])
     if "canal" in views:

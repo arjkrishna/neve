@@ -32,7 +32,8 @@ Windows: directory junctions (_winapi.CreateJunction; `ln -s` in Git Bash COPIES
 An existing link pointing elsewhere is replaced only with --force, and only the LINK is removed (os.rmdir on a
 junction / os.unlink on a symlink), never its target.  Checks printed after building: the tree's rest vagina has the
 vertex count of the run's exported frames, the wall meta is present for a wall run, and every device part the run
-loaded exists.  Nothing under <out> is written."""
+loaded exists (a ring_phases run: both ring halves, and every exported frame logs both in its device json
+"ring_halves", the pose the renderers draw each half at).  Nothing under <out> is written."""
 import argparse
 import json
 import os
@@ -154,6 +155,21 @@ def check(tree, tag, cfg):
             + (["packing"] if cfg.get("device_packing") else [])
     if cfg.get("device_parts"):
         parts = list(cfg["device_parts"])
+    if cfg.get("ring_phases"):
+        # S7f: the two ring halves are their own bodies (ovoid_mode "none"); the renderers draw each at its own pose
+        # from the frames' device json "ring_halves" (animate_hybrid.part_pose), so every frame must carry them
+        parts += [p for p in ("ovoid_L", "ovoid_R") if p not in parts]
+        if os.path.exists(fr):
+            want = {"ovoid_L", "ovoid_R"}
+            miss = []
+            for f in idx["frames"]:
+                with open("%s/runs/%s/frames/%s" % (hyb, tag, f["device"])) as fh:
+                    got = {h.get("part") for h in (json.load(fh).get("ring_halves") or {}).values()}
+                if not want <= got:
+                    miss.append(int(f["step"]))
+            (bad if miss else notes).append(
+                "ring_halves: %s" % (("missing in %d frames (first step %d)" % (len(miss), miss[0])) if miss else
+                                     "both halves logged in all %d frames" % len(idx["frames"])))
     for p in parts:
         fn = "%s/applicator/%s.obj" % (hyb, pf.get(p, p))
         (notes if os.path.exists(fn) else bad).append("part %s -> %s%s" % (p, os.path.basename(fn),

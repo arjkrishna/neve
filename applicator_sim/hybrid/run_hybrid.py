@@ -373,15 +373,18 @@ def run_one(cfg, tag):
             write_frame(ctx, ctrl, out, r, fc)
         if r["step"] % int(cfg["log_every"]) == 0 or ctrl.done:
             cf = r.get("corpus_fem")                        # S9 elastic corpus: its pose error, non-rigid part, ties
+            rl = r.get("rectum_lateral")                    # TF4: the rectum's lateral-only support (cfg key on)
             print("STEP %3d %s u=%.3f s=%.3f lag=%5.1f wall=%5.0fms dx=%.4f cont=%4d err=%.2e it=%3d minV=%.3f "
-                  "umax(cvx/vag/bld/rec/sig)=%.2f/%.2f/%.2f/%.2f/%.2f%s"
+                  "umax(cvx/vag/bld/rec/sig)=%.2f/%.2f/%.2f/%.2f/%.2f%s%s"
                   % (r["step"], r["phase"], r["u"], r["corpus_s"], r["ov_lag_mm"], r["wall_ms"], r["dx_max_mm"],
                      r["n_contacts"], r["constraint_err"], r["constraint_it"], r["min_vol_ratio"],
                      r["disp"]["cervix"]["umax"], r["disp"]["vagina"]["umax"], r["disp"]["bladder"]["umax"],
                      r["disp"]["rectum"]["umax"], r["disp"]["sigmoid"]["umax"],
                      "" if cf is None else " corpus: minV=%s pose=%.3f/%.3f nonrigid=%.3f attach=%s ties=%s"
                      % (r["disp"]["corpus"].get("min_vol_ratio"), cf["pose_rms_mm"], cf["pose_max_mm"],
-                        cf["nonrigid_serosa_max_mm"], cf.get("attach_residual_mm"), cf.get("n_ties_active"))),
+                        cf["nonrigid_serosa_max_mm"], cf.get("attach_residual_mm"), cf.get("n_ties_active")),
+                     "" if rl is None else " rect_lat: fx=%+.4fN |fx|=%.4fN dx=%+.2f/%.2fmm drag=%.4fN"
+                     % (rl["net_fx_N"], rl["sum_abs_fx_N"], rl["dx_mean_mm"], rl["dx_absmax_mm"], rl["drag_yz_net_N"])),
                   flush=True)
     if not ctrl.done and ctrl.status == "running":
         ctrl.status = "max_steps"
@@ -427,6 +430,8 @@ def run_one(cfg, tag):
                      skipped_bodies=fc["skipped"], ms_per_frame_median=round(float(np.median(fc["ms"])), 1),
                      ms_per_frame_total=round(float(np.sum(fc["ms"])), 1)) if fe > 0 and fc["ms"] else None),
         cfg={k: v for k, v in cfg.items() if not k.startswith("_")}, provenance=prov)
+    if fin.get("rectum_lateral") is not None:          # TF4 (cfg k_rectum_lateral_mN_per_mm): its end-of-run force
+        summary["final"]["rectum_lateral"] = fin["rectum_lateral"]
     if fin.get("finite", False):
         disp, dev = write_outputs(ctx, ctrl, out, summary)
         summary["displacement"] = disp
