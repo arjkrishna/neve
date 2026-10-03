@@ -1,0 +1,87 @@
+{
+ "schema": "v5_reg_donor_unit/1",
+ "donor_id": "ia172_069",
+ "source": "ia172",
+ "case_id": "ia172_069",
+ "licence": "Head-CTA 172-series (Blagosklonova et al., Zenodo 15697196, doi 10.5281/zenodo.15697196; paper doi 10.3390/data11040074), CC BY 4.0 image -- attribution required; VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL",
+ "sides": {
+  "R": {
+   "built": true,
+   "file": "/repo/carotid_data/va_sources/v5_reg/donors_v5/ia172_069/R.json",
+   "verdict": "pass",
+   "wall_class": "real_surface",
+   "usable": true,
+   "coarseness_score": 0.1416,
+   "takeoff_10_native": 42.8,
+   "subclavian_elevation_deg": 12.0,
+   "length_mm": 231.5,
+   "landmarks": {
+    "C6": 47.0,
+    "C2": 128.0,
+    "C1": 157.0,
+    "dura": 204.0,
+    "end": 231.47
+   },
+   "surface_genus": 2.0,
+   "chirality": 1.0,
+   "flag_level": 0,
+   "eligible_class": "primary",
+   "surface_md5": "e7cdfcc49f3f29594c47513694f04ef2",
+   "min_ostium_advance_mm": 0.0
+  },
+  "L": {
+   "built": true,
+   "file": "/repo/carotid_data/va_sources/v5_reg/donors_v5/ia172_069/L.json",
+   "verdict": "review",
+   "wall_class": "real_surface",
+   "usable": true,
+   "coarseness_score": 0.1228,
+   "takeoff_10_native": 61.5,
+   "subclavian_elevation_deg": 6.8,
+   "length_mm": 228.3,
+   "landmarks": {
+    "C6": 47.0,
+    "C2": 130.0,
+    "C1": 161.0,
+    "dura": 207.0,
+    "end": 228.25
+   },
+   "surface_genus": 5.0,
+   "chirality": 1.0,
+   "flag_level": 1,
+   "eligible_class": "primary",
+   "surface_md5": "b55e56246c873ffdf14d196ac6e0504a",
+   "min_ostium_advance_mm": 0.0
+  }
+ },
+ "built": "2026-10-02 20:37:55",
+ "version": "graft_v5_reg_donor 1.1 (2026-10-02; v5_assign: --out-root, --eligible per-side wall / QC / trace files)",
+ "eligible_class": "primary",
+ "eligible_rank": 2,
+ "patient_key": "ia172:ia172_069",
+ "non_commercial": true,
+ "attributions": [
+  "Head-CTA 172-series (Blagosklonova et al., Zenodo 15697196, doi 10.5281/zenodo.15697196; paper doi 10.3390/data11040074), CC BY 4.0 image -- attribution required",
+  "TotalSegmentator (CC BY 4.0, Wasserthal et al. 2023, doi 10.1148/ryai.230024) used for vertebra landmarks / QC references: attribution"
+ ],
+ "provenance_flags": [],
+ "pair_flags": [
+  "L review: Arterial VA label off the trace (0.00 within 2 mm)"
+ ],
+ "coarseness_pair": {
+  "score_mean_contact_free": 0.1322,
+  "score_min_side_contact_free": 0.1228,
+  "R_L_contact_free": [
+   0.1416,
+   0.1228
+  ],
+  "R_L_all_bins": [
+   0.2791,
+   0.156
+  ],
+  "all_bins_gt_dense_host_both": true,
+  "contact_free_ge_dense_host_both": true,
+  "dense_host_RVA_mesh": 0.027
+ },
+ "pair_complete": true
+}

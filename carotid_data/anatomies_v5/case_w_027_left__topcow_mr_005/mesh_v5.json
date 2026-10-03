@@ -1,0 +1,379 @@
+{
+ "spacing_mm": 0.45,
+ "seconds": 156.2,
+ "union": "owned (sdf_union_v4)",
+ "sections_tube_only": [],
+ "suppressed_stretches_mm": {},
+ "sections_tube_in_effect": [],
+ "localise_margin_mm": 0.5,
+ "far_clamp": {
+  "used": false,
+  "why": null
+ },
+ "right_route_detail": {
+  "fork": {
+   "frac_0.3mm": 0.2521,
+   "frac_0.5mm": 0.1282
+  },
+  "siphon": {
+   "frac_0.3mm": 0.3218,
+   "frac_0.5mm": 0.1548
+  }
+ },
+ "margin_mm": 0.5,
+ "va_margin_mm": 0.5,
+ "attempts": [
+  {
+   "margin_mm": 0.5,
+   "va_margin_mm": 0.5,
+   "genus": 0.0,
+   "nonmanifold_edges": 0,
+   "components_before_keep": 5,
+   "dropped_fragments": [
+    524,
+    228,
+    124,
+    20
+   ],
+   "dropped_volume_mm3": 13.86,
+   "seconds": 61.7
+  }
+ ],
+ "sections": {
+  "lower_R": {
+   "voxels": 179775,
+   "voxels_widened": 171760,
+   "voxels_refused": 0,
+   "surface_tris": 113400
+  },
+  "eca_R": {
+   "voxels": 73645,
+   "voxels_widened": 19688,
+   "voxels_refused": 167,
+   "surface_tris": 113400
+  },
+  "siphon_R": {
+   "voxels": 154785,
+   "voxels_widened": 151055,
+   "voxels_refused": 716,
+   "surface_tris": 34038
+  },
+  "lower_L": {
+   "voxels": 147966,
+   "voxels_widened": 135059,
+   "voxels_refused": 87,
+   "surface_tris": 109296
+  },
+  "eca_L": {
+   "voxels": 63150,
+   "voxels_widened": 18438,
+   "voxels_refused": 0,
+   "surface_tris": 109296
+  },
+  "ecaext_L": {
+   "voxels": 15862,
+   "voxels_widened": 9777,
+   "voxels_refused": 637,
+   "surface_tris": 3870
+  },
+  "siphon_L": {
+   "voxels": 146357,
+   "voxels_widened": 141770,
+   "voxels_refused": 914,
+   "surface_tris": 32554
+  },
+  "va_R": {
+   "voxels": 55779,
+   "voxels_widened": 51738,
+   "voxels_refused": 969,
+   "surface_tris": 17524
+  },
+  "va_L": {
+   "voxels": 87708,
+   "voxels_widened": 83393,
+   "voxels_refused": 627,
+   "surface_tris": 19760
+  },
+  "vaC_R": {
+   "voxels": 188122,
+   "voxels_widened": 177743,
+   "voxels_refused": 558,
+   "surface_tris": 35312
+  },
+  "vaC_L": {
+   "voxels": 221498,
+   "voxels_widened": 214560,
+   "voxels_refused": 81,
+   "surface_tris": 48452
+  }
+ },
+ "spans": {
+  "lower_R": [
+   "RCCA",
+   41.36447794128783,
+   130.0
+  ],
+  "eca_R": [
+   "RECA",
+   0.0,
+   29.432221962008377
+  ],
+  "siphon_R": [
+   "RCCA",
+   130.0,
+   226.07797421800296
+  ],
+  "lower_L": [
+   "LCCA",
+   82.3690199889795,
+   157.56286587981097
+  ],
+  "eca_L": [
+   "LECA",
+   0.0,
+   29.55578086034199
+  ],
+  "ecaext_L": [
+   "LECA",
+   29.55578086034199,
+   44.221349681016534
+  ],
+  "siphon_L": [
+   "LCCA",
+   157.56286587981097,
+   253.4286974202958
+  ],
+  "va_R": [
+   "RVA",
+   197.5491449894035,
+   243.29776917611267
+  ],
+  "va_L": [
+   "LVA",
+   145.8300764940523,
+   215.67913494678305
+  ],
+  "vaC_R": [
+   "RVA",
+   31.934323087628563,
+   197.5491449894035
+  ],
+  "vaC_L": [
+   "LVA",
+   5.006116309463243,
+   145.8300764940523
+  ]
+ },
+ "full": {
+  "tris": 59998,
+  "comps": 1,
+  "open_edges": 0,
+  "genus": [
+   {
+    "cells": 59998,
+    "genus": 0.0,
+    "boundary_loops": 0
+   }
+  ]
+ },
+ "obj": {
+  "tris": 23500,
+  "comps": 1,
+  "open_edges": 0,
+  "genus": [
+   {
+    "cells": 23500,
+    "genus": 0.0,
+    "boundary_loops": 0
+   }
+  ]
+ },
+ "obj_tris_budget": 23500,
+ "routes": {
+  "RCCA": {
+   "lumen_min_mm": 1.622,
+   "lumen_min_at_mm": 188.2,
+   "declared_there_mm": 1.749,
+   "median_deficit_mm": 0.044,
+   "route_pts_outside": 0,
+   "navigable": true
+  },
+  "LCCA": {
+   "lumen_min_mm": 1.529,
+   "lumen_min_at_mm": 185.6,
+   "declared_there_mm": 1.624,
+   "median_deficit_mm": 0.079,
+   "route_pts_outside": 0,
+   "navigable": true
+  }
+ },
+ "decimation": {
+  "full": "vtk_quadric",
+  "full_budget": 60000,
+  "obj": "vtk_quadric",
+  "obj_budgets_rejected": []
+ },
+ "centerline_pts_outside": 0,
+ "centerline_pts_checked": 1783,
+ "ladder_v5b": {
+  "pinned": {
+   "carotid_margin_mm": 0.5,
+   "suppressed": {},
+   "tube_only": [],
+   "v4_far_clamp": false
+  },
+  "rounds": [],
+  "bisections": [],
+  "flags": [],
+  "test_overrides": {},
+  "cache_seconds": 63.6,
+  "rung": "1 pinned, VA whole (va margin 0.5)",
+  "va_margin_mm": 0.5,
+  "va_tubed": {
+   "va_R": {
+    "stretch_mm": [
+     197.55,
+     242.46
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "va_L": {
+    "stretch_mm": [
+     145.83,
+     215.68
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "vaC_R": {
+    "stretch_mm": [
+     31.93,
+     197.55
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "vaC_L": {
+    "stretch_mm": [
+     5.01,
+     145.83
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   }
+  }
+ },
+ "pass": true,
+ "v5_gates": {
+  "union_clean_tree": true,
+  "full_clean_tree": true,
+  "obj_clean_tree": true,
+  "self_intersecting_faces": {
+   "union": 0,
+   "full": 0,
+   "obj": 0
+  },
+  "union_tris": 956560,
+  "full_tris": 59998,
+  "obj_tris": 23500,
+  "obj_budget": 23500,
+  "obj_budget_ok": true,
+  "full_budget": 60000,
+  "full_budget_ok": true,
+  "routes_navigable": true,
+  "route_lumen_min_mm": {
+   "RCCA": 1.622,
+   "LCCA": 1.529
+  },
+  "centerline_pts_outside": 0,
+  "bake_pass": true,
+  "va_real_wall_owned": {
+   "right": true,
+   "left": true
+  },
+  "right_route_detail_identical_v4": true,
+  "right_route_detail_ratio_0.3mm": {
+   "fork": 1.0,
+   "siphon": 1.0
+  },
+  "right_route_identical_beyond_mm": 0,
+  "rung": "1 pinned, VA whole (va margin 0.5)",
+  "flags": [],
+  "all_pass": true
+ },
+ "va_detail": {
+  "right": {
+   "donor": "song_AHMU1218108 R",
+   "donor_surface_genus": 6.0,
+   "real_surface": true,
+   "whole_tube": false,
+   "donor_stretch_mm": [
+    31.93,
+    197.55
+   ],
+   "n_windows": 0,
+   "windows_from_ostium_mm": [],
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "donor_real_frac_0.3mm": 0.128,
+   "donor_real_frac_0.5mm": 0.0754,
+   "donor_real_frac_rel_0.15": 0.1787,
+   "topbrain_frac_0.3mm": 0.0771,
+   "whole_va_conservative_frac_0.3mm": 0.0996,
+   "A2_donor_alone_frac_0.3mm": 0.1514,
+   "A2_donor_in_situ_frac_0.3mm": 0.1513,
+   "A2_detail_kept_in_situ_over_alone": 0.999,
+   "A2_error": null,
+   "v4_host_core_frac_0.3mm": 0.001,
+   "A3_whole_va_frac_0.3mm_v5_v4": [
+    0.0996,
+    0.0171
+   ]
+  },
+  "left": {
+   "donor": "song_AHMU1218108 L",
+   "donor_surface_genus": 2.0,
+   "real_surface": true,
+   "whole_tube": false,
+   "donor_stretch_mm": [
+    5.01,
+    145.83
+   ],
+   "n_windows": 0,
+   "windows_from_ostium_mm": [],
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "donor_real_frac_0.3mm": 0.1462,
+   "donor_real_frac_0.5mm": 0.0737,
+   "donor_real_frac_rel_0.15": 0.1341,
+   "topbrain_frac_0.3mm": 0.1533,
+   "whole_va_conservative_frac_0.3mm": 0.1294,
+   "A2_donor_alone_frac_0.3mm": 0.1894,
+   "A2_donor_in_situ_frac_0.3mm": 0.1957,
+   "A2_detail_kept_in_situ_over_alone": 1.033,
+   "A2_error": null,
+   "v4_host_core_frac_0.3mm": 0.0,
+   "A3_whole_va_frac_0.3mm_v5_v4": [
+    0.1294,
+    0.0487
+   ]
+  }
+ }
+}

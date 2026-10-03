@@ -1,0 +1,1059 @@
+{
+ "name": "case_w_050_left__topcow_mr_026_L",
+ "anatomy_dir": "/repo/carotid_data/anatomies_v5",
+ "steps_budget": 300,
+ "seed": 777,
+ "exception": null,
+ "reset_s": 2.4,
+ "branches": 18,
+ "has_RVA_LVA": [
+  true,
+  true
+ ],
+ "loader_mesh_path": "/repo/carotid_data/anatomies_v5/case_w_050_left__topcow_mr_026_L/vessel_architecture_collision.obj",
+ "loader_mesh_is_this_obj": true,
+ "rva": {
+  "donor": null,
+  "v4_va_kept": true,
+  "length_mm": 236.4,
+  "s_17_takeoff_mm": 27.0,
+  "ostium_mm": 27.0,
+  "donor_lo_mm": 157.2,
+  "cut_mm": 217.2,
+  "path_s_fork1_mm": 33.5,
+  "path_s_fork2_mm": 60.4
+ },
+ "target_vessel_frame": {
+  "dist_to_rcca_mm": 0.0,
+  "rcca_s_mm": 181.6
+ },
+ "insertion_inside": true,
+ "episodes": 3,
+ "steps": 900,
+ "steps_per_episode": 300,
+ "exercised_in_episode": null,
+ "nonfinite_steps": 0,
+ "tip_outside_steps": 0,
+ "tip_outside_max_mm": 0.0,
+ "tip_outside_gt_0.5mm_steps": 0,
+ "dev_pts_checked": 683458,
+ "dev_pts_outside": 6332,
+ "dev_out_gt_0.3mm_pts": 2359,
+ "dev_outside_max_mm": 1.7762537608982472,
+ "dev_out_worst": {
+  "mm": 1.776,
+  "step": 35,
+  "branch": "RCCA",
+  "s_mm": 3.0,
+  "dof_index": 150,
+  "dist_from_tip_mm": 230.2,
+  "point": [
+   -8.27,
+   23.91,
+   415.46
+  ],
+  "d_centreline_mm": 5.13
+ },
+ "tip_out_worst": null,
+ "tip_out_sites": {},
+ "dev_out_gt_0.3mm_by_branch": {
+  "(0)@0": 14,
+  "(0)@10": 15,
+  "(0)@20": 30,
+  "(11)@0": 6,
+  "(11)@10": 34,
+  "(11)@20": 71,
+  "(11)@30": 251,
+  "(11)@40": 348,
+  "LCCA@0": 17,
+  "RCCA@0": 678,
+  "RVA@0": 355,
+  "RVA@10": 156,
+  "RVA@100": 7,
+  "RVA@110": 3,
+  "RVA@130": 16,
+  "RVA@140": 258,
+  "RVA@20": 45,
+  "RVA@30": 1,
+  "RVA@40": 3,
+  "RVA@70": 9,
+  "RVA@80": 11,
+  "RVA@90": 31
+ },
+ "max_rva_s_mm": 166.7,
+ "donor_traversed_mm": 9.5,
+ "reached_donor_20mm": false,
+ "reached_topbrain": false,
+ "steps_in_donor_stretch": 261,
+ "first_step_in_donor": null,
+ "fork_attempts": [
+  [
+   2,
+   1
+  ],
+  [
+   0,
+   0
+  ],
+  [
+   0,
+   0
+  ]
+ ],
+ "unbuckles": 5,
+ "ms_per_step": 406.5,
+ "final_tip": {
+  "branch": "RVA",
+  "s_mm": 133.8
+ },
+ "episode_records": [
+  {
+   "nonfinite_steps": 0,
+   "tip_outside_steps": 0,
+   "tip_outside_max_mm": 0.0,
+   "tip_outside_gt_0.5mm_steps": 0,
+   "dev_pts_checked": 206932,
+   "dev_pts_outside": 516,
+   "dev_outside_max_mm": 1.7531606410857397,
+   "max_rva_s_mm": 74.9,
+   "first_step_in_rva_past_17": 268,
+   "first_step_in_donor": null,
+   "first_step_past_cut": null,
+   "steps_in_donor_stretch": 0,
+   "mode_counts": {
+    "advance": 91,
+    "align": 104,
+    "unbuckle": 8,
+    "recover": 19,
+    "turn": 6,
+    "approach": 27,
+    "hook": 15,
+    "exercise": 30
+   },
+   "branch_visits": {
+    "(11)": 149,
+    "RCCA": 50,
+    "RVA": 87,
+    "(17)": 14
+   },
+   "dev_out_gt_0.3mm_by_branch": {
+    "(11)@30": 53,
+    "(11)@20": 8,
+    "RCCA@0": 8,
+    "(11)@40": 1,
+    "RVA@0": 15,
+    "RVA@10": 144,
+    "RVA@20": 7,
+    "RVA@30": 1,
+    "RVA@40": 3
+   },
+   "dev_out_gt_0.3mm_pts": 240,
+   "dev_out_worst": {
+    "mm": 1.753,
+    "step": 264,
+    "branch": "RVA",
+    "s_mm": 16.0,
+    "dof_index": 25,
+    "dist_from_tip_mm": 20.2,
+    "point": [
+     -4.09,
+     43.42,
+     414.54
+    ],
+    "d_centreline_mm": 6.8
+   },
+   "unbuckles": 2,
+   "tip_out_sites": {},
+   "tip_out_worst": null,
+   "steps": 300,
+   "ms_per_step": 290.8,
+   "fork_attempts": [
+    2,
+    1
+   ],
+   "final_tip": {
+    "branch": "RVA",
+    "s_mm": 72.9
+   },
+   "donor_traversed_mm": 0.0,
+   "reached_donor_20mm": false,
+   "reached_topbrain": false,
+   "trace": [
+    [
+     9,
+     "advance",
+     "(11)",
+     22.7,
+     9.6,
+     0.0
+    ],
+    [
+     19,
+     "advance",
+     "(11)",
+     30.7,
+     20.2,
+     0.0
+    ],
+    [
+     29,
+     "align",
+     "(11)",
+     37.8,
+     25.2,
+     3.4
+    ],
+    [
+     39,
+     "align",
+     "(11)",
+     41.8,
+     27.8,
+     5.8
+    ],
+    [
+     49,
+     "align",
+     "(11)",
+     44.8,
+     33.2,
+     11.4
+    ],
+    [
+     59,
+     "advance",
+     "RCCA",
+     5.0,
+     41.8,
+     19.8
+    ],
+    [
+     69,
+     "advance",
+     "RCCA",
+     6.0,
+     40.5,
+     19.8
+    ],
+    [
+     79,
+     "turn",
+     "(11)",
+     39.8,
+     17.8,
+     13.5
+    ],
+    [
+     89,
+     "align",
+     "(11)",
+     36.8,
+     22.5,
+     5.0
+    ],
+    [
+     99,
+     "align",
+     "(11)",
+     37.8,
+     25.2,
+     5.0
+    ],
+    [
+     109,
+     "align",
+     "(11)",
+     42.8,
+     28.6,
+     6.6
+    ],
+    [
+     119,
+     "align",
+     "(11)",
+     45.8,
+     35.2,
+     12.9
+    ],
+    [
+     129,
+     "unbuckle",
+     "RCCA",
+     4.0,
+     40.2,
+     20.9
+    ],
+    [
+     139,
+     "recover",
+     "RCCA",
+     7.0,
+     43.7,
+     20.9
+    ],
+    [
+     149,
+     "turn",
+     "(11)",
+     39.8,
+     17.3,
+     13.5
+    ],
+    [
+     159,
+     "align",
+     "(11)",
+     37.8,
+     22.0,
+     5.0
+    ],
+    [
+     169,
+     "align",
+     "(11)",
+     37.8,
+     24.7,
+     5.0
+    ],
+    [
+     179,
+     "align",
+     "(11)",
+     40.8,
+     28.1,
+     5.8
+    ],
+    [
+     189,
+     "align",
+     "(11)",
+     44.8,
+     34.7,
+     12.1
+    ],
+    [
+     199,
+     "align",
+     "RVA",
+     3.0,
+     43.7,
+     21.6
+    ],
+    [
+     209,
+     "advance",
+     "RVA",
+     8.0,
+     53.4,
+     30.9
+    ],
+    [
+     219,
+     "advance",
+     "RVA",
+     14.0,
+     64.0,
+     41.4
+    ],
+    [
+     229,
+     "approach",
+     "RVA",
+     20.0,
+     72.4,
+     50.2
+    ],
+    [
+     239,
+     "approach",
+     "RVA",
+     23.0,
+     77.7,
+     55.7
+    ],
+    [
+     249,
+     "approach",
+     "RVA",
+     25.0,
+     83.0,
+     61.2
+    ],
+    [
+     259,
+     "hook",
+     "(17)",
+     4.7,
+     84.4,
+     62.8
+    ],
+    [
+     269,
+     "advance",
+     "RVA",
+     36.0,
+     83.3,
+     62.8
+    ],
+    [
+     279,
+     "exercise",
+     "RVA",
+     44.0,
+     84.4,
+     66.0
+    ],
+    [
+     289,
+     "exercise",
+     "RVA",
+     65.9,
+     94.9,
+     76.6
+    ],
+    [
+     299,
+     "exercise",
+     "RVA",
+     72.9,
+     93.6,
+     81.8
+    ]
+   ],
+   "episode": 0,
+   "seconds": 87.2
+  },
+  {
+   "nonfinite_steps": 0,
+   "tip_outside_steps": 0,
+   "tip_outside_max_mm": 0.0,
+   "tip_outside_gt_0.5mm_steps": 0,
+   "dev_pts_checked": 261877,
+   "dev_pts_outside": 2502,
+   "dev_outside_max_mm": 1.7485353895209181,
+   "max_rva_s_mm": 166.7,
+   "first_step_in_rva_past_17": 0,
+   "first_step_in_donor": null,
+   "first_step_past_cut": null,
+   "steps_in_donor_stretch": 172,
+   "mode_counts": {
+    "advance": 197,
+    "unbuckle": 12,
+    "unstick": 51,
+    "exercise": 40
+   },
+   "branch_visits": {
+    "RVA": 300
+   },
+   "dev_out_gt_0.3mm_by_branch": {
+    "RVA@70": 9,
+    "RVA@80": 6,
+    "RVA@90": 7,
+    "RVA@110": 3,
+    "(11)@30": 120,
+    "RVA@140": 224,
+    "RVA@130": 8,
+    "RVA@20": 38,
+    "RVA@10": 11,
+    "RCCA@0": 369,
+    "(11)@40": 82,
+    "RVA@0": 170,
+    "(11)@20": 20
+   },
+   "dev_out_gt_0.3mm_pts": 1067,
+   "dev_out_worst": {
+    "mm": 1.749,
+    "step": 247,
+    "branch": "RCCA",
+    "s_mm": 6.0,
+    "dof_index": 121,
+    "dist_from_tip_mm": 182.0,
+    "point": [
+     -7.46,
+     18.87,
+     418.95
+    ],
+    "d_centreline_mm": 4.56
+   },
+   "unbuckles": 3,
+   "tip_out_sites": {},
+   "tip_out_worst": null,
+   "steps": 300,
+   "ms_per_step": 465.3,
+   "fork_attempts": [
+    0,
+    0
+   ],
+   "final_tip": {
+    "branch": "RVA",
+    "s_mm": 162.7
+   },
+   "donor_traversed_mm": 9.5,
+   "reached_donor_20mm": false,
+   "reached_topbrain": false,
+   "trace": [
+    [
+     9,
+     "advance",
+     "RVA",
+     80.9,
+     104.2,
+     86.1
+    ],
+    [
+     19,
+     "advance",
+     "RVA",
+     90.9,
+     114.7,
+     96.6
+    ],
+    [
+     29,
+     "advance",
+     "RVA",
+     100.9,
+     125.3,
+     107.2
+    ],
+    [
+     39,
+     "advance",
+     "RVA",
+     111.9,
+     135.9,
+     117.7
+    ],
+    [
+     49,
+     "advance",
+     "RVA",
+     122.9,
+     146.4,
+     128.3
+    ],
+    [
+     59,
+     "advance",
+     "RVA",
+     134.8,
+     157.0,
+     138.9
+    ],
+    [
+     69,
+     "advance",
+     "RVA",
+     144.7,
+     167.5,
+     149.4
+    ],
+    [
+     79,
+     "advance",
+     "RVA",
+     150.7,
+     178.1,
+     160.0
+    ],
+    [
+     89,
+     "advance",
+     "RVA",
+     152.7,
+     188.7,
+     170.5
+    ],
+    [
+     99,
+     "advance",
+     "RVA",
+     149.7,
+     187.3,
+     171.6
+    ],
+    [
+     109,
+     "unstick",
+     "RVA",
+     152.7,
+     193.2,
+     175.0
+    ],
+    [
+     119,
+     "advance",
+     "RVA",
+     154.7,
+     201.3,
+     183.2
+    ],
+    [
+     129,
+     "advance",
+     "RVA",
+     157.7,
+     200.0,
+     186.4
+    ],
+    [
+     139,
+     "advance",
+     "RVA",
+     162.7,
+     210.6,
+     191.7
+    ],
+    [
+     149,
+     "unstick",
+     "RVA",
+     164.7,
+     214.0,
+     199.1
+    ],
+    [
+     159,
+     "advance",
+     "RVA",
+     162.7,
+     207.9,
+     193.8
+    ],
+    [
+     169,
+     "advance",
+     "RVA",
+     163.7,
+     218.5,
+     200.1
+    ],
+    [
+     179,
+     "advance",
+     "RVA",
+     163.7,
+     217.2,
+     200.1
+    ],
+    [
+     189,
+     "unstick",
+     "RVA",
+     163.7,
+     226.2,
+     208.3
+    ],
+    [
+     199,
+     "advance",
+     "RVA",
+     165.7,
+     231.2,
+     213.0
+    ],
+    [
+     209,
+     "unstick",
+     "RVA",
+     166.7,
+     234.6,
+     220.4
+    ],
+    [
+     219,
+     "advance",
+     "RVA",
+     163.7,
+     228.5,
+     214.1
+    ],
+    [
+     229,
+     "unstick",
+     "RVA",
+     163.7,
+     235.9,
+     217.8
+    ],
+    [
+     239,
+     "advance",
+     "RVA",
+     162.7,
+     242.5,
+     223.6
+    ],
+    [
+     249,
+     "unstick",
+     "RVA",
+     162.7,
+     238.8,
+     227.8
+    ],
+    [
+     259,
+     "advance",
+     "RVA",
+     162.7,
+     239.9,
+     222.6
+    ],
+    [
+     269,
+     "exercise",
+     "RVA",
+     161.7,
+     240.9,
+     223.6
+    ],
+    [
+     279,
+     "exercise",
+     "RVA",
+     161.7,
+     251.5,
+     233.1
+    ],
+    [
+     289,
+     "exercise",
+     "RVA",
+     161.7,
+     250.2,
+     238.4
+    ],
+    [
+     299,
+     "exercise",
+     "RVA",
+     162.7,
+     260.7,
+     242.6
+    ]
+   ],
+   "episode": 1,
+   "seconds": 139.6
+  },
+  {
+   "nonfinite_steps": 0,
+   "tip_outside_steps": 0,
+   "tip_outside_max_mm": 0.0,
+   "tip_outside_gt_0.5mm_steps": 0,
+   "dev_pts_checked": 214649,
+   "dev_pts_outside": 3314,
+   "dev_outside_max_mm": 1.7762537608982472,
+   "max_rva_s_mm": 164.7,
+   "first_step_in_rva_past_17": 0,
+   "first_step_in_donor": null,
+   "first_step_past_cut": null,
+   "steps_in_donor_stretch": 89,
+   "mode_counts": {
+    "advance": 145,
+    "unstick": 119,
+    "exercise": 36
+   },
+   "branch_visits": {
+    "RVA": 300
+   },
+   "dev_out_gt_0.3mm_by_branch": {
+    "RVA@10": 1,
+    "RVA@0": 170,
+    "(11)@30": 78,
+    "(11)@40": 265,
+    "RCCA@0": 301,
+    "(11)@20": 43,
+    "RVA@140": 34,
+    "RVA@130": 8,
+    "(11)@10": 34,
+    "LCCA@0": 17,
+    "(0)@20": 30,
+    "(11)@0": 6,
+    "RVA@100": 7,
+    "(0)@10": 15,
+    "RVA@90": 24,
+    "RVA@80": 5,
+    "(0)@0": 14
+   },
+   "dev_out_gt_0.3mm_pts": 1052,
+   "dev_out_worst": {
+    "mm": 1.776,
+    "step": 35,
+    "branch": "RCCA",
+    "s_mm": 3.0,
+    "dof_index": 150,
+    "dist_from_tip_mm": 230.2,
+    "point": [
+     -8.27,
+     23.91,
+     415.46
+    ],
+    "d_centreline_mm": 5.13
+   },
+   "unbuckles": 0,
+   "tip_out_sites": {},
+   "tip_out_worst": null,
+   "steps": 300,
+   "ms_per_step": 463.3,
+   "fork_attempts": [
+    0,
+    0
+   ],
+   "final_tip": {
+    "branch": "RVA",
+    "s_mm": 133.8
+   },
+   "donor_traversed_mm": 7.5,
+   "reached_donor_20mm": false,
+   "reached_topbrain": false,
+   "trace": [
+    [
+     9,
+     "advance",
+     "RVA",
+     163.7,
+     271.3,
+     253.2
+    ],
+    [
+     19,
+     "unstick",
+     "RVA",
+     163.7,
+     277.9,
+     260.0
+    ],
+    [
+     29,
+     "advance",
+     "RVA",
+     163.7,
+     285.3,
+     267.2
+    ],
+    [
+     39,
+     "unstick",
+     "RVA",
+     161.7,
+     279.2,
+     268.2
+    ],
+    [
+     49,
+     "advance",
+     "RVA",
+     157.7,
+     282.6,
+     264.0
+    ],
+    [
+     59,
+     "advance",
+     "RVA",
+     161.7,
+     286.9,
+     269.3
+    ],
+    [
+     69,
+     "unstick",
+     "RVA",
+     162.7,
+     296.6,
+     277.7
+    ],
+    [
+     79,
+     "advance",
+     "RVA",
+     158.7,
+     283.4,
+     273.5
+    ],
+    [
+     89,
+     "unstick",
+     "RVA",
+     158.7,
+     293.2,
+     275.4
+    ],
+    [
+     99,
+     "advance",
+     "RVA",
+     157.7,
+     297.4,
+     278.8
+    ],
+    [
+     109,
+     "unstick",
+     "RVA",
+     153.7,
+     300.9,
+     286.2
+    ],
+    [
+     119,
+     "advance",
+     "RVA",
+     136.8,
+     294.8,
+     279.8
+    ],
+    [
+     129,
+     "unstick",
+     "RVA",
+     134.8,
+     302.2,
+     284.6
+    ],
+    [
+     139,
+     "advance",
+     "RVA",
+     133.8,
+     308.8,
+     290.7
+    ],
+    [
+     149,
+     "unstick",
+     "RVA",
+     129.8,
+     305.1,
+     293.8
+    ],
+    [
+     159,
+     "advance",
+     "RVA",
+     121.9,
+     306.1,
+     288.6
+    ],
+    [
+     169,
+     "unstick",
+     "RVA",
+     126.9,
+     311.2,
+     293.0
+    ],
+    [
+     179,
+     "advance",
+     "RVA",
+     129.8,
+     320.1,
+     301.2
+    ],
+    [
+     189,
+     "advance",
+     "RVA",
+     118.9,
+     309.3,
+     299.1
+    ],
+    [
+     199,
+     "unstick",
+     "RVA",
+     119.9,
+     317.5,
+     299.1
+    ],
+    [
+     209,
+     "advance",
+     "RVA",
+     118.9,
+     320.9,
+     302.3
+    ],
+    [
+     219,
+     "unstick",
+     "RVA",
+     118.9,
+     326.7,
+     310.7
+    ],
+    [
+     229,
+     "advance",
+     "RVA",
+     114.9,
+     318.3,
+     304.4
+    ],
+    [
+     239,
+     "unstick",
+     "RVA",
+     119.9,
+     326.5,
+     308.4
+    ],
+    [
+     249,
+     "advance",
+     "RVA",
+     120.9,
+     332.3,
+     314.2
+    ],
+    [
+     259,
+     "unstick",
+     "RVA",
+     124.9,
+     331.0,
+     319.4
+    ],
+    [
+     269,
+     "exercise",
+     "RVA",
+     118.9,
+     320.1,
+     309.9
+    ],
+    [
+     279,
+     "exercise",
+     "RVA",
+     126.9,
+     330.7,
+     312.0
+    ],
+    [
+     289,
+     "exercise",
+     "RVA",
+     128.8,
+     338.9,
+     321.6
+    ],
+    [
+     299,
+     "exercise",
+     "RVA",
+     132.8,
+     339.9,
+     321.6
+    ]
+   ],
+   "episode": 2,
+   "seconds": 139.0
+  }
+ ],
+ "seconds": 369.2,
+ "passed": true,
+ "rva_exercised": false
+}

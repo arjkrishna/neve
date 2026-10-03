@@ -1,0 +1,1197 @@
+{
+ "name": "case_m_022_left__topcow_mr_021_L",
+ "patient": "topcow_mr_021",
+ "handedness": "mirrored",
+ "version": "graft_v5_reg 1.1 (2026-10-02; v5_assign: calibre at the cut splice, min ostium advance, plan handedness check, assignment provenance)",
+ "compat": false,
+ "hand": "follow",
+ "sides": {
+  "right": {
+   "donor_id": "song_AHMU1218113",
+   "donor_side": "L",
+   "donor_mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "wall_class": "real_surface",
+   "real_surface": true,
+   "donor_qc": "review",
+   "donor_coarseness": 0.1327,
+   "splice_window_mm": [
+    141.849387099556,
+    220.27730674189448
+   ],
+   "splice_window_rule": "[C2, dura]",
+   "n_candidates_evaluated": 1,
+   "first_fail_counts": {
+    "calibre": 5
+   },
+   "first_rejections": [],
+   "base": null,
+   "host_subclavian_elevation_deg": 23.157726992905737,
+   "donor_subclavian_elevation_deg_native": 5.521175486933572,
+   "tb_patient_side": "left",
+   "tb_mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "tb_len_mm": 93.12163134778616,
+   "donor_source": "song",
+   "donor_licence": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8); VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL",
+   "donor_eligible": {
+    "class": "primary",
+    "rank": 8,
+    "patient_key": "song:AHMU1218113",
+    "dataset_ref": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8)",
+    "licence": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8); VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL",
+    "non_commercial": true,
+    "arterial_derived": true,
+    "attributions": [
+     "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8)",
+     "TotalSegmentator (CC BY 4.0, Wasserthal et al. 2023, doi 10.1148/ryai.230024) used for vertebra landmarks / QC references: attribution"
+    ],
+    "scanner": {
+     "manufacturer": "Siemens (inferred)",
+     "model": null,
+     "kernel": "Qr40d\\3",
+     "series_description": "DE #PP  DE_CarotidAngio  1.0  Qr40  3  A_90kV"
+    },
+    "acquisition_voxel_mm": [
+     0.49023,
+     0.49023,
+     0.70001
+    ],
+    "provenance_flags": [
+     "Siemens Song case (series 'DE #PP  DE_CarotidAngio  1.0  Qr40  3  A_90kV': 1.0 mm slice thickness, 0.7 mm grid): accepted at native bars (decision 03:50 item 6)"
+    ],
+    "side_flags": [
+     "L review: Arterial VA label off the trace (0.85 within 2 mm)"
+    ],
+    "qc_status": "donor_review",
+    "provisional_only": false,
+    "wall_truncated": false,
+    "v1_rescue_used": false,
+    "flag_level": 2,
+    "eye": [
+     {
+      "verdict": "kept",
+      "by": "scaleup_lane_song",
+      "when": "2026-10-02 13:54"
+     }
+    ]
+   },
+   "donor_coarseness_detail": {
+    "score": 0.1327,
+    "score_def": "final tally (scaleup_tally.json): donor-stretch union > 0.3 mm on the CT-edge wall, contact-free 10 mm bins (validated ranking rule, decision 03:50 item 4)",
+    "tally_contact_free_u03": 0.1327,
+    "tally_all_bins_u03": 0.2322,
+    "builder_score": 0.0447
+   },
+   "donor_surface_seg_tag": "ct_seg4",
+   "donor_surface_genus": 4.0,
+   "min_ostium_advance_mm": 0.0,
+   "replaced": true,
+   "pose_deg": -3.0,
+   "pose_axis": "x",
+   "splice_move_mm": 0,
+   "tb_start_trim_mm": 5,
+   "splice_on_donor_mm": 153.79173586508244,
+   "cut_at_mm": 185.98545236005162,
+   "ostium_at_mm": 32.93713470603693,
+   "stub_mm": 5.526985391074421,
+   "join_kink_deg": 12.823510635240456,
+   "origin_turn_deg": {
+    "at_O_h": 24.282151530732147,
+    "at_ostium": 19.002845106454668
+   },
+   "tb_len_used_mm": 87.24756361191207,
+   "ramp": {
+    "side": "donor",
+    "rule": "v4",
+    "from_r": 1.8065655145218653,
+    "to_r": 2.2091317109692596,
+    "span_mm": [
+     -25.0,
+     0.0
+    ]
+   },
+   "tb_placement": "fit",
+   "gate": {
+    "exit_mm": 8.897191509208884,
+    "parent_reentry": false,
+    "parent_min_after_exit_mm": 1.386805617146642,
+    "clear_others_mm": 3.0205938978223634,
+    "clear_others_who": "cc - RECA",
+    "clear_others_at_mm": 88.38736266769948,
+    "self_mm": 3.188555469142517,
+    "self_pair_mm": [
+     45.6880374412969,
+     28.00359457077153
+    ],
+    "clear": 1.386805617146642,
+    "who": "parent (after exit)",
+    "ok": true
+   },
+   "total_mm": 272.4956651678136,
+   "splice_calibre_ratio": 1.22283509411168,
+   "splice_calibre_q_tb_over_donor": 1.22283509411168,
+   "splice_calibre_preferred": true,
+   "splice_calibre_pass": 1,
+   "takeoff_5mm_deg": 69.30616954149684,
+   "takeoff_10mm_deg": 111.68863290632667,
+   "donor_takeoff_10mm_deg_native": 133.08160895209124,
+   "donor_takeoff_5mm_deg_native": 99.17101857927612,
+   "takeoff_delta_10mm_deg": -21.39297604576457,
+   "takeoff_not_preserved": true,
+   "parent_tangent_mismatch_deg": 54.66321185479488,
+   "va_10mm_elevation_deg": 33.13772358893557,
+   "course_rms_to_corridor_mm": 14.145042860293028,
+   "tip_moved_vs_v4_mm": 19.824666114802422,
+   "tip_to_donor_confluence_mm": 4.171864307820718,
+   "rotation_det": 0.9999999999999996,
+   "pose_gates": {
+    "rotation_proper": [
+     true,
+     0.9999999999999996
+    ],
+    "course_rms": [
+     true,
+     14.145042860293028
+    ],
+    "takeoff_band": [
+     true,
+     104.2275903109875
+    ],
+    "rise": [
+     true,
+     40.6186685299316
+    ]
+   },
+   "real_from_mm_past_ostium": 0.0,
+   "ostium_advance_mm": 0,
+   "final": {
+    "ok": true,
+    "clear": 1.386805617146642,
+    "who": "parent (after exit)",
+    "exit_mm": 8.897191509208884,
+    "self_mm": 3.188555469142517,
+    "clear_others_mm": 3.0205938978223634,
+    "clear_others_who": "cc - RECA",
+    "exact_all_pairs_from_exit_mm": 3.0205938978223634
+   },
+   "pass": true,
+   "separation": {
+    "target": false,
+    "identical_to_anatomies_v5": true,
+    "v5_placement_kept": true
+   }
+  },
+  "left": {
+   "donor_id": "song_AHMU1218113",
+   "donor_side": "R",
+   "donor_mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "wall_class": "real_surface",
+   "real_surface": true,
+   "donor_qc": "review",
+   "donor_coarseness": 0.0756,
+   "splice_window_mm": [
+    135.9962122489049,
+    219.52106522042783
+   ],
+   "splice_window_rule": "[C2, dura]",
+   "n_candidates_evaluated": 470,
+   "first_fail_counts": {
+    "calibre": 4512,
+    "splice_window": 564,
+    "course_rms": 237,
+    "clearance": 235
+   },
+   "first_rejections": [],
+   "base": {
+    "rotation_proper": {
+     "pass": true,
+     "value": 1.0000000000000007
+    },
+    "course_rms": {
+     "pass": true,
+     "value": 16.15528492889807
+    },
+    "takeoff_band": {
+     "pass": true,
+     "value": 86.71324976707848
+    },
+    "rise": {
+     "pass": true,
+     "value": 72.59157371783373
+    },
+    "origin_turn": {
+     "pass": true,
+     "value": 24.60674175837136,
+     "detail": {
+      "at_O_h": 0.0,
+      "at_ostium": 24.60674175837136
+     }
+    },
+    "splice_window": {
+     "pass": true,
+     "value": 209.57631533641361
+    },
+    "calibre": {
+     "pass": true,
+     "value": 1.396866255703045,
+     "preferred": false
+    },
+    "join_kink": {
+     "pass": true,
+     "value": 41.98832751794345
+    },
+    "tip_move": {
+     "pass": true,
+     "value": 28.996979249097045
+    },
+    "clearance": {
+     "pass": false,
+     "value": -0.6461634708305617,
+     "why": "clearance -0.65 mm with cc - RCCA",
+     "exit_mm": 6.983471857252243
+    },
+    "_geometry": {
+     "p": [
+      [
+       47.54,
+       34.47,
+       430.11
+      ],
+      [
+       46.56,
+       35.19,
+       431.7
+      ],
+      [
+       45.59,
+       35.9,
+       433.29
+      ],
+      [
+       44.62,
+       36.62,
+       434.88
+      ],
+      [
+       43.86,
+       36.99,
+       436.63
+      ],
+      [
+       43.19,
+       36.92,
+       438.5
+      ],
+      [
+       42.53,
+       37.05,
+       440.38
+      ],
+      [
+       41.98,
+       37.14,
+       442.29
+      ],
+      [
+       41.46,
+       37.31,
+       444.21
+      ],
+      [
+       40.92,
+       37.57,
+       446.11
+      ],
+      [
+       40.44,
+       37.79,
+       448.03
+      ],
+      [
+       39.55,
+       37.53,
+       449.79
+      ],
+      [
+       38.41,
+       36.91,
+       451.3
+      ],
+      [
+       37.34,
+       35.91,
+       452.64
+      ],
+      [
+       36.61,
+       34.47,
+       453.8
+      ],
+      [
+       36.22,
+       32.69,
+       454.62
+      ],
+      [
+       36.03,
+       30.94,
+       455.56
+      ],
+      [
+       36.13,
+       29.23,
+       456.57
+      ],
+      [
+       36.18,
+       27.79,
+       457.93
+      ],
+      [
+       36.3,
+       26.6,
+       459.54
+      ],
+      [
+       36.26,
+       25.64,
+       461.28
+      ],
+      [
+       36.13,
+       25.08,
+       463.19
+      ],
+      [
+       35.78,
+       24.95,
+       465.14
+      ],
+      [
+       35.25,
+       25.08,
+       467.06
+      ],
+      [
+       34.51,
+       25.21,
+       468.91
+      ],
+      [
+       33.68,
+       25.21,
+       470.72
+      ],
+      [
+       33.43,
+       24.85,
+       472.64
+      ],
+      [
+       32.95,
+       24.08,
+       474.42
+      ],
+      [
+       32.63,
+       23.11,
+       476.13
+      ],
+      [
+       32.05,
+       21.97,
+       477.65
+      ],
+      [
+       31.6,
+       21.08,
+       479.38
+      ],
+      [
+       31.24,
+       20.2,
+       481.13
+      ],
+      [
+       30.86,
+       19.3,
+       482.86
+      ],
+      [
+       30.62,
+       18.64,
+       484.72
+      ],
+      [
+       30.13,
+       17.68,
+       486.38
+      ],
+      [
+       29.71,
+       17.43,
+       488.3
+      ],
+      [
+       29.04,
+       17.16,
+       490.15
+      ],
+      [
+       28.64,
+       16.63,
+       492.03
+      ],
+      [
+       28.13,
+       16.2,
+       493.9
+      ],
+      [
+       27.47,
+       16.02,
+       495.77
+      ],
+      [
+       26.96,
+       16.02,
+       497.69
+      ],
+      [
+       26.51,
+       16.15,
+       499.63
+      ],
+      [
+       25.95,
+       16.48,
+       501.52
+      ],
+      [
+       25.67,
+       16.81,
+       503.44
+      ],
+      [
+       25.74,
+       16.97,
+       505.42
+      ],
+      [
+       25.59,
+       16.94,
+       507.4
+      ],
+      [
+       25.49,
+       16.79,
+       509.36
+      ],
+      [
+       24.8,
+       16.52,
+       511.21
+      ],
+      [
+       24.2,
+       16.38,
+       513.1
+      ],
+      [
+       24.03,
+       16.8,
+       515.0
+      ],
+      [
+       23.97,
+       17.17,
+       516.93
+      ],
+      [
+       24.06,
+       17.15,
+       518.91
+      ],
+      [
+       24.24,
+       16.79,
+       520.87
+      ],
+      [
+       24.67,
+       16.6,
+       522.8
+      ],
+      [
+       24.78,
+       16.35,
+       524.76
+      ],
+      [
+       24.73,
+       16.42,
+       526.76
+      ],
+      [
+       25.06,
+       16.31,
+       528.7
+      ],
+      [
+       24.74,
+       15.78,
+       530.55
+      ],
+      [
+       24.3,
+       15.53,
+       532.44
+      ],
+      [
+       24.4,
+       15.53,
+       534.42
+      ],
+      [
+       24.56,
+       15.55,
+       536.4
+      ],
+      [
+       25.08,
+       15.66,
+       538.29
+      ],
+      [
+       25.84,
+       16.09,
+       540.07
+      ],
+      [
+       26.53,
+       16.22,
+       541.92
+      ],
+      [
+       27.94,
+       16.45,
+       543.27
+      ],
+      [
+       29.3,
+       17.1,
+       544.55
+      ],
+      [
+       30.63,
+       18.23,
+       545.49
+      ],
+      [
+       32.23,
+       19.26,
+       545.38
+      ],
+      [
+       33.72,
+       20.07,
+       544.36
+      ],
+      [
+       35.12,
+       20.41,
+       543.01
+      ],
+      [
+       36.75,
+       19.69,
+       542.22
+      ],
+      [
+       38.28,
+       18.49,
+       542.51
+      ],
+      [
+       39.28,
+       17.1,
+       543.49
+      ],
+      [
+       39.27,
+       15.73,
+       544.88
+      ],
+      [
+       38.68,
+       14.8,
+       546.54
+      ],
+      [
+       37.99,
+       14.25,
+       548.32
+      ],
+      [
+       37.27,
+       14.05,
+       550.17
+      ],
+      [
+       36.83,
+       13.91,
+       552.11
+      ],
+      [
+       36.32,
+       13.84,
+       554.04
+      ],
+      [
+       35.96,
+       13.93,
+       555.99
+      ],
+      [
+       35.98,
+       14.3,
+       557.94
+      ],
+      [
+       36.16,
+       14.84,
+       559.85
+      ],
+      [
+       36.76,
+       15.3,
+       561.68
+      ],
+      [
+       37.42,
+       15.98,
+       563.43
+      ],
+      [
+       38.39,
+       17.17,
+       564.65
+      ],
+      [
+       39.36,
+       18.45,
+       565.8
+      ],
+      [
+       40.39,
+       19.92,
+       566.55
+      ],
+      [
+       41.81,
+       21.31,
+       566.71
+      ],
+      [
+       43.24,
+       22.68,
+       566.51
+      ],
+      [
+       44.49,
+       24.14,
+       565.99
+      ],
+      [
+       45.48,
+       25.69,
+       565.22
+      ],
+      [
+       45.98,
+       27.32,
+       564.2
+      ],
+      [
+       45.76,
+       28.91,
+       563.05
+      ],
+      [
+       44.66,
+       30.16,
+       561.97
+      ],
+      [
+       43.03,
+       30.9,
+       561.11
+      ],
+      [
+       41.12,
+       31.27,
+       560.66
+      ],
+      [
+       39.16,
+       31.55,
+       560.81
+      ],
+      [
+       37.17,
+       31.7,
+       560.96
+      ],
+      [
+       35.31,
+       32.13,
+       561.53
+      ],
+      [
+       33.49,
+       32.44,
+       562.26
+      ],
+      [
+       31.76,
+       32.76,
+       563.2
+      ],
+      [
+       30.31,
+       32.99,
+       564.54
+      ],
+      [
+       29.11,
+       32.88,
+       566.13
+      ],
+      [
+       28.31,
+       32.36,
+       567.87
+      ],
+      [
+       27.4,
+       32.07,
+       569.62
+      ],
+      [
+       26.26,
+       31.46,
+       571.13
+      ],
+      [
+       25.06,
+       30.88,
+       572.58
+      ],
+      [
+       23.76,
+       30.53,
+       574.06
+      ],
+      [
+       22.42,
+       30.39,
+       575.53
+      ],
+      [
+       21.05,
+       29.7,
+       576.49
+      ],
+      [
+       19.38,
+       29.36,
+       577.52
+      ],
+      [
+       17.8,
+       29.4,
+       578.74
+      ],
+      [
+       16.23,
+       29.63,
+       579.95
+      ],
+      [
+       14.65,
+       29.66,
+       581.16
+      ],
+      [
+       13.16,
+       29.76,
+       582.47
+      ],
+      [
+       11.54,
+       29.55,
+       583.61
+      ],
+      [
+       9.84,
+       29.51,
+       584.64
+      ],
+      [
+       8.23,
+       29.39,
+       585.75
+      ],
+      [
+       7.13,
+       28.96,
+       587.35
+      ],
+      [
+       6.51,
+       28.31,
+       589.12
+      ],
+      [
+       6.24,
+       27.39,
+       590.86
+      ],
+      [
+       6.23,
+       26.29,
+       592.52
+      ],
+      [
+       6.44,
+       25.06,
+       594.05
+      ],
+      [
+       6.69,
+       23.45,
+       595.17
+      ],
+      [
+       6.73,
+       21.76,
+       596.22
+      ]
+     ],
+     "splice_on_donor_mm": 209.57631533641361,
+     "cut_at_mm": 215.98750189866809,
+     "ostium_at_mm": 6.983471857252243
+    },
+    "all_pass": false
+   },
+   "host_subclavian_elevation_deg": 13.216712150360763,
+   "donor_subclavian_elevation_deg_native": 34.76027507557893,
+   "tb_patient_side": "right",
+   "tb_mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "tb_len_mm": 30.96831657727759,
+   "donor_source": "song",
+   "donor_licence": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8); VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL",
+   "donor_eligible": {
+    "class": "primary",
+    "rank": 8,
+    "patient_key": "song:AHMU1218113",
+    "dataset_ref": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8)",
+    "licence": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8); VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL",
+    "non_commercial": true,
+    "arterial_derived": true,
+    "attributions": [
+     "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8)",
+     "TotalSegmentator (CC BY 4.0, Wasserthal et al. 2023, doi 10.1148/ryai.230024) used for vertebra landmarks / QC references: attribution"
+    ],
+    "scanner": {
+     "manufacturer": "Siemens (inferred)",
+     "model": null,
+     "kernel": "Qr40d\\3",
+     "series_description": "DE #PP  DE_CarotidAngio  1.0  Qr40  3  A_90kV"
+    },
+    "acquisition_voxel_mm": [
+     0.49023,
+     0.49023,
+     0.70001
+    ],
+    "provenance_flags": [
+     "Siemens Song case (series 'DE #PP  DE_CarotidAngio  1.0  Qr40  3  A_90kV': 1.0 mm slice thickness, 0.7 mm grid): accepted at native bars (decision 03:50 item 6)"
+    ],
+    "side_flags": [
+     "R review: Arterial VA label off the trace (0.00 within 2 mm)"
+    ],
+    "qc_status": "donor_review",
+    "provisional_only": false,
+    "wall_truncated": false,
+    "v1_rescue_used": false,
+    "flag_level": 2,
+    "eye": [
+     {
+      "verdict": "kept",
+      "by": "scaleup_lane_song",
+      "when": "2026-10-02 13:54"
+     }
+    ]
+   },
+   "donor_coarseness_detail": {
+    "score": 0.0756,
+    "score_def": "final tally (scaleup_tally.json): donor-stretch union > 0.3 mm on the CT-edge wall, contact-free 10 mm bins (validated ranking rule, decision 03:50 item 4)",
+    "tally_contact_free_u03": 0.0756,
+    "tally_all_bins_u03": 0.1944,
+    "builder_score": 0.0854
+   },
+   "donor_surface_seg_tag": "ct_seg4",
+   "donor_surface_genus": 6.0,
+   "min_ostium_advance_mm": 0.0,
+   "replaced": true,
+   "pose_deg": 3.0,
+   "pose_axis": "x+6y",
+   "splice_move_mm": 0,
+   "tb_start_trim_mm": 0,
+   "splice_on_donor_mm": 209.57631533641361,
+   "cut_at_mm": 215.9875018986683,
+   "ostium_at_mm": 6.983471857252232,
+   "stub_mm": 6.9589858654014165,
+   "join_kink_deg": 41.98832751794306,
+   "origin_turn_deg": {
+    "at_O_h": 0.0,
+    "at_ostium": 24.606741758373694
+   },
+   "tb_len_used_mm": 30.96831657727759,
+   "ramp": {
+    "side": "donor",
+    "rule": "v4",
+    "from_r": 1.7132172311793945,
+    "to_r": 1.2264719146767065,
+    "span_mm": [
+     -25.0,
+     0.0
+    ]
+   },
+   "tb_placement": "fit",
+   "gate": {
+    "exit_mm": 6.983471857252232,
+    "parent_reentry": false,
+    "parent_min_after_exit_mm": 0.7142736638256242,
+    "clear_others_mm": 0.8798612184906958,
+    "clear_others_who": "cc - LCCA",
+    "clear_others_at_mm": 72.77308407492215,
+    "self_mm": 3.9694759085795015,
+    "self_pair_mm": [
+     147.2091807690463,
+     134.32397194576652
+    ],
+    "clear": 0.7142736638256242,
+    "who": "parent (after exit)",
+    "ok": true
+   },
+   "total_mm": 246.80220205122666,
+   "splice_calibre_ratio": 1.396866255703045,
+   "splice_calibre_q_tb_over_donor": 0.7158881502915957,
+   "splice_calibre_preferred": false,
+   "splice_calibre_pass": 2,
+   "takeoff_5mm_deg": 80.54201648073335,
+   "takeoff_10mm_deg": 81.56974144112453,
+   "donor_takeoff_10mm_deg_native": 72.14503526589951,
+   "donor_takeoff_5mm_deg_native": 72.04888528152041,
+   "takeoff_delta_10mm_deg": 9.424706175225026,
+   "takeoff_not_preserved": false,
+   "parent_tangent_mismatch_deg": 23.795323569170296,
+   "va_10mm_elevation_deg": 78.90771597408776,
+   "course_rms_to_corridor_mm": 19.55230454916363,
+   "tip_moved_vs_v4_mm": 37.849828923913755,
+   "tip_to_donor_confluence_mm": 3.554779136739685,
+   "rotation_det": 1.0000000000000007,
+   "pose_gates": {
+    "rotation_proper": [
+     true,
+     1.0000000000000007
+    ],
+    "course_rms": [
+     true,
+     19.55230454916363
+    ],
+    "takeoff_band": [
+     true,
+     81.54557189936762
+    ],
+    "rise": [
+     true,
+     78.88697932853253
+    ]
+   },
+   "real_from_mm_past_ostium": 0.0,
+   "ostium_advance_mm": 0,
+   "final": {
+    "ok": true,
+    "clear": 0.7142736638256242,
+    "who": "parent (after exit)",
+    "exit_mm": 6.983471857252232,
+    "self_mm": 3.9694759085795015,
+    "clear_others_mm": 0.8798612184906958,
+    "clear_others_who": "cc - LCCA",
+    "exact_all_pairs_from_exit_mm": 0.8798612184906958
+   },
+   "pass": true,
+   "separation": {
+    "target": true,
+    "identical_to_anatomies_v5": false,
+    "v5_placement_kept": null,
+    "objective": "v4-kept RCCA real voxels (lower_R + siphon_R) refused under sdf_union_v4's ownership rule (f_local - f_VA < m) by this VA and the other VA (as placed in this build, else as in anatomies_v5); then the other VA kept; then the original order",
+    "margin_mm": 0.5,
+    "rcca_voxels_v4_kept": 378710,
+    "reach_mm": 7.02,
+    "candidates_passing_every_gate": 235,
+    "chosen_order": 1469,
+    "chosen": {
+     "lost": 439,
+     "lost_by_this_va": 0,
+     "lost_relief_gt_0.3mm": 439,
+     "lost_by_section": {
+      "lower_R": 289,
+      "siphon_R": 150
+     },
+     "min_slack_mm": 1.538
+    },
+    "chosen_other_va_must_move": false,
+    "original_first_passing": {
+     "lost": 11938,
+     "lost_by_this_va": 11499,
+     "lost_relief_gt_0.3mm": 11592,
+     "lost_by_section": {
+      "lower_R": 289,
+      "siphon_R": 11649
+     },
+     "min_slack_mm": -6.387,
+     "rcca_s_mm": [
+      190.5,
+      232.0
+     ],
+     "va_s_mm": [
+      211.8,
+      237.0
+     ]
+    },
+    "original_first_pose": [
+     -3.0,
+     "x"
+    ],
+    "original_first_splice_move": -10,
+    "pose_family": "ext",
+    "tb_shift_deg_axis": [
+     0.0,
+     null
+    ],
+    "n_candidates_lost_0": 0,
+    "n_candidates_lost_0_other_kept": 0,
+    "lost_distribution_lowest": [
+     439,
+     439,
+     439,
+     439,
+     439,
+     439,
+     455,
+     598,
+     606,
+     744,
+     834,
+     865,
+     890,
+     1328,
+     1345,
+     1377,
+     1470,
+     1478,
+     1588,
+     1709
+    ],
+    "lost_as_in_anatomies_v5": {
+     "lost": 11938,
+     "lost_by_this_va": 11499,
+     "lost_relief_gt_0.3mm": 11592,
+     "lost_by_section": {
+      "lower_R": 289,
+      "siphon_R": 11649
+     },
+     "min_slack_mm": -6.387,
+     "rcca_s_mm": [
+      190.5,
+      232.0
+     ],
+     "va_s_mm": [
+      211.8,
+      237.0
+     ]
+    },
+    "closest_rcca_chosen": {
+     "centre_mm": 15.68,
+     "at_rcca_s": 223.5,
+     "at_va_s": 233.0,
+     "wall_mm": 12.1,
+     "wall_at_rcca_s": 223.5
+    },
+    "closest_rcca_v5": {
+     "centre_mm": 4.82,
+     "at_rcca_s": 209.2,
+     "at_va_s": 224.8,
+     "wall_mm": 0.9,
+     "wall_at_rcca_s": 209.0
+    },
+    "course_shift_vs_v5_rms_mm": 15.59,
+    "course_shift_vs_v5_max_mm": 25.85
+   }
+  }
+ },
+ "tip_to_tip_mm": 49.519307757061156,
+ "v4_tip_to_tip_mm": 36.548074705824966,
+ "seconds": 72.82,
+ "plan": {
+  "patient": "topcow_mr_021",
+  "handedness": "mirrored",
+  "flags": [],
+  "right": {
+   "donor_id": "song_AHMU1218113",
+   "donor_side": "L",
+   "mirror": true
+  },
+  "left": {
+   "donor_id": "song_AHMU1218113",
+   "donor_side": "R",
+   "mirror": true
+  },
+  "v5_assign": {
+   "tool": "graft_v5_assign 1.1 (2026-10-02; v5_assign: --donor-root, --score v5, --reserve-units, patient_key)",
+   "patient": "topcow_mr_021",
+   "handedness": "mirrored",
+   "assigned_units": [
+    "song_AHMU1218113"
+   ],
+   "assigned_class": {
+    "song_AHMU1218113": "primary"
+   },
+   "rule": "strict one-to-one donor pair <-> TopBrain patient; follow handedness (native: donor R -> RVA, donor L -> LVA; mirrored: donor L mirrored -> RVA, donor R mirrored -> LVA); a side whose donor fails a gate keeps v4's VA (flagged)",
+   "served": {
+    "right": true,
+    "left": true
+   },
+   "flags": []
+  }
+ },
+ "sep_version": "graft_v5_reg_sep 1.0 (2026-10-02; v5_route13: separation objective S1-S5 on graft_v5_reg 1.1)"
+}

@@ -1,0 +1,157 @@
+# Chinese open-data platforms: is there a public head-and-neck angiography dataset with cervical vertebral-artery (VA) labels?
+
+Searched 2026-10-01, in Chinese and English, on the platforms' own search APIs wherever they could be reached anonymously, plus the Chinese web engines that did not block a scripted client. This builds on the English-language notes in `research_notes/Public cervical vertebral artery datasets/` and the report `reports/Public cervical vertebral artery datasets.md`. It does not repeat them.
+
+## Takeaway
+
+**No Chinese open-data platform hosts a head-and-neck CTA or MRA dataset with cervical VA labels.** This holds for downloadable data and for application-only data. Across 18 platforms, 椎动脉 ("vertebral artery") returned zero imaging datasets on every native search that worked: OpenDataLab, ModelScope, ScienceDB, Heywhale, Gitee, OpenI, HyperAI, PKU Dataverse and the national CSTR portal. The only 椎动脉 hits anywhere were an ultrasound teaching set, TCM corpora and clinical tables.
+
+Four leads come closest. None changes the conclusion of the English report.
+
+1. **Fu et al. 2020 (Xuanwu Hospital + Shukun 数坤): the VA is labelled from the arch, but the data are explicitly not public.** The paper annotated "the aorta, subclavian artery, common carotid artery, vertebral artery, internal carotid artery, basilar artery …" on 18,259 head-and-neck CTAs. Its data-availability statement says the images "cannot be made publicly accessible due to privacy protection" (read this time via Europe PMC full text; last week's gap is now closed). The unverified Zhihu "HeadNeckCTA2025" page almost certainly describes this cohort. Zhihu still returns 403.
+2. **Beijing Tiantan Hospital, "心、脑、外周血管疾病医学影像数据集" ("imaging dataset for cardio-, cerebro- and peripheral-vascular disease"), National Basic Science Data Center (NBSDC).** It was built for a national catheter-intervention robotics project. Access is by application with a signed, officially sealed form. Its own description file, downloaded anonymously, shows that the cerebrovascular part is **TOF-MRA**, that every file is **raw DICOM with no labels**, and that the brain subset is only about 4.9 GB. No VA geometry.
+3. **NCMI "医学图像标准测试数据库-脑卒中影像与标注数据" ("medical-image standard test database: stroke images and annotations").** It includes **433 head-and-neck CTAs** (aneurysm cases, PLA General Hospital) with physician-drawn aneurysm ROIs, not vessel labels. Access is "有条件共享 / 线下共享" ("conditional sharing / shared offline").
+4. **Two Huazhong University of Science and Technology (HUST) master's theses** on carotid + VA segmentation (2020) and on intracranial CTA arteries (2021, 77 cases, "计划将其公开…", "plans to make it public…"). CNKI blocked every route to the full text, so there is no evidence that either dataset was released.
+
+The practical conclusion is unchanged: VMR 0248 + SPL now, then Arterial on the TotalSegmentator CTAs. Of the Chinese leads, only Fu et al. / Shukun and the HUST groups would be worth an email, and only for a research-collaboration request.
+
+---
+
+## 1. Candidates (anything that touches head-and-neck angiography)
+
+### 1.1 Fu et al. 2020 / Xuanwu Hospital / Shukun "CerebralDoc" cohort (the likely "HeadNeckCTA2025")
+
+- **Name:** "Rapid vessel segmentation and reconstruction of head and neck angiograms using 3D convolutional neural network" (Nat Commun 2020). Chinese press coverage: 《Nature》子刊收录宣武医院头颈CTA血管重建最新成果 ("Nature sub-journal publishes Xuanwu Hospital's latest head-and-neck CTA vessel-reconstruction result").
+- **URLs:** [PMC7518426](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7518426/); full text read from [Europe PMC fullTextXML](https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7518426/fullTextXML); [jiqizhixin coverage](https://www.jiqizhixin.com/articles/2020-10-14-3)
+- **Modality / cases:** head-and-neck CTA; 18,766 collected, 18,259 labelled, from 5 tertiary hospitals (Jun 2017 – Nov 2018).
+- **VA labelling (quoted from the paper):** "We annotated the arteries including the aorta, subclavian artery, common carotid artery, vertebral artery, internal carotid artery, basilar artery, posterior cerebral artery, middle cerebral artery, and anterior cerebral artery." The framework runs "from the aortic arch to the intracranial artery". Each scan carries "four masks" (bone, aorta, carotid artery, intracranial artery); the VA sits inside these masks rather than having its own class. The figures mention "Left vertebral artery arising directly from the aorta" and "Vein artifact at the origin of the right vertebral artery", so VA origins are inside the field of view.
+- **Access (quoted):** "Currently, the source imaging data from five tertiary hospitals cannot be made publicly accessible due to privacy protection. The CerebralDoc is accessible from the webserver created for this study at http://test.platform.shukun.net/login … Request for software access and the remaining clinical evaluation images generated by technologists can be submitted to F.F."
+- **Verdict:** **no availability**. Not downloadable and not even "on request" for the images; only the software and some evaluation images can be requested.
+- **HeadNeckCTA2025 (Zhihu `zhuanlan.zhihu.com/p/29607061020`):** still unverifiable. The page returns HTTP 403, and the Zhihu API returns `{"error":{"message":"请求参数异常，请升级客户端后重试。","code":10003}}` ("abnormal request parameters, please upgrade the client and retry"). The 360 search for "HeadNeckCTA2025" returned nothing relevant (only HECKTOR 2025 and CTA clinical papers). Last week's snippet listed the same five-hospital counts as Fu et al. (Xuanwu 8,593; Friendship 4,407; …), so it is a write-up of this cohort, not a release.
+
+### 1.2 Tiantan "心、脑、外周血管疾病医学影像数据集" ("Medical imaging dataset for heart, brain, and peripheral vascular diseases")
+
+- **Platform:** 国家基础学科公共科学数据中心 (NBSDC, National Basic Science Data Center, CAS CNIC), also indexed on 中国科技资源共享网 (escience.org.cn).
+- **Identifier:** CSTR:16666.11.NBSDC.UPFJ6QMG; landing page <https://www.nbsdc.cn/general/dataLinks/16666.11.nbsdc.UpfJ6qMG> (internal dataId `666072b5195d266d328f4fa4`).
+- **Producer:** 首都医科大学附属北京天坛医院 (Beijing Tiantan Hospital), author 高峰 (Gao Feng). Project: 国家重点研发计划 2018AAA0102600, 「基于异构融合计算模型与架构的心脑血管诊疗人机协同介入技术智能平台」 ("an intelligent platform for human–machine collaborative interventional cardio-cerebrovascular diagnosis and treatment, based on heterogeneous fusion computing models and architecture"). That is a catheter-intervention robotics programme, the same goal as ours.
+- **Description (escience metadata):** 「主要用于心脑血管诊疗人机协同介入技术智能平台的核心算法研究和案例测试……包括CTA、DSA、MRA和ASL等特殊模态数据，数据总量为约230GB。」 ("mainly for core-algorithm research and case testing of the human–machine collaborative interventional platform … includes CTA, DSA, MRA, ASL and other modalities, about 230 GB in total.")
+- **Files (NBSDC file-tree API):** 40 files, 207.09 GB in three folders:
+  - `a.心血管疾病医学影像数据集` ("cardiovascular"): 13 `.dcm.zip` files of 2.5–13 GB each.
+  - `b.脑血管医学影像数据集` ("cerebrovascular"): a split zip of 18 × 256 MB plus 71 MB, so **about 4.9 GB**.
+  - `c.外周血管医学影像数据集` ("peripheral vascular"): 7 `.dcm.zip` files.
+  - `数据说明文件.docx` ("data description file").
+- **What the description file says.** It downloaded anonymously via `/api/general/v1/checkAndDownloadFile`.
+  - 「本数据集包含以DICOM形式存储的原始医学影像……数据均已通过匿名化处理」 ("contains raw medical images stored as DICOM … all anonymised")
+  - 「心血管影像模态为CTA……扫描最小空间分辨率为0.5mm；**脑血管影像模态为TOF-MRA**，扫描最小空间分辨率为0.8mm；外周血管影像模态为CTA」 ("the cardiac modality is CTA … minimum spatial resolution 0.5 mm; **the cerebrovascular modality is TOF-MRA**, minimum resolution 0.8 mm; the peripheral modality is CTA")
+  - 「影像关键信息为成像灰度和成像参数，可支持图像分割……等数字模型的构建与验证」 ("the key information is image grey levels and acquisition parameters; it can support building and validating segmentation … models"), i.e. **no labels supplied**.
+  - 「本数据集完全共享。」 ("This dataset is fully shared.")
+- **Access:** shareScope 完全共享 ("fully shared"), sharePathway 线上共享 ("shared online"), but the application process (escience `applicationProcess`) is: 「注册用户登录……完成在线数据申请表填写后，需下载该申请表的电子版，打印并由负责人签字，同时加盖公章后重新上传。数据申请经国家基础学科公共科学数据中心、数据生产方审批通过后，用户将获得数据下载链接。」 ("register and log in … after filling in the online application form, download it, print it, have the responsible person sign it **and affix the institution's official seal**, then re-upload it. After NBSDC **and the data producer** approve, the user receives a download link.") A Chinese-style official seal (公章) is effectively required; it is unclear whether a foreign institution would be accepted.
+- **Verdict:** **application-only, raw images, no VA labels, and the brain part is TOF-MRA, probably intracranial.** Not useful for cervical VA geometry. The project's other 10 NBSDC releases (test reports, knowledge graph, animal coronary and peripheral intervention data) contain no vessel geometry either.
+
+### 1.3 NCMI "医学图像标准测试数据库-脑卒中影像与标注数据" ("Medical Image Standard Test Database – Stroke Imaging and Labeling Data")
+
+- **Platform:** 国家人口健康科学数据中心 (NCMI / PHDA, National Population Health Data Center); CSTR:17970.12.A00AL.202209.372.V1.0; link <https://www.ncmi.cn/phda/dataDetails.html?type=project_data&id=CSTR:17970.12.A00AL.202209.372.V1.0>. Reached through the escience portal; ncmi.cn itself refused scripted search requests.
+- **Description:** 「本数据集共包含头部CT脑出血、头部CT脑缺血、**CTA头颈动脉瘤**三个子数据集……**433例CTA头颈动脉瘤数据来源于中国人民解放军总医院**。每例影像数据包含患者的原始CT影像和医生勾画的感兴趣区域。」 ("three sub-datasets: head-CT haemorrhage, head-CT ischaemia, and **CTA head-and-neck aneurysm** … **433 CTA head-and-neck aneurysm cases from the PLA General Hospital**. Each case contains the raw CT images and a physician-drawn region of interest.")
+- **Labels:** aneurysm ROIs only; no vessel or VA labels.
+- **Access:** 有条件共享 ("conditional sharing"), 线下共享 ("offline sharing"); 「按照人口健康科学数据仓储（PHDA）服务信息中的申请流程申请使用」 ("apply following the PHDA application procedure").
+- **Verdict:** **application/offline, no VA labels.** If the scans run arch to vertex they would be one more unlabelled image source (like TotalSegmentator's CTAs), but the field of view is unverified and the access route is far harder than TotalSegmentator's CC BY 4.0.
+
+### 1.4 HUST master's theses (CNKI)
+
+Both were found by 360 Search. CNKI (`cdmd.cnki.com.cn`, `xuewen.cnki.net`) returned **HTTP 418** to curl, and WebFetch failed with a TLS certificate mismatch on the Tencent EdgeOne CDN. Only the search snippets were read.
+
+- **2020, 「基于深度学习的CTA图像颈动脉和椎动脉血管分割」** ("deep-learning segmentation of the carotid and vertebral arteries in CTA images"), HUST, <https://cdmd.cnki.com.cn/Article/CDMD-10487-1020353767.htm>. Snippet: 「因此,研究深度学习技术分割CTA图像中的颈动脉和椎动脉血管,有利于提高诊断效率……其次,研究了利用V-Net网络结构进行颈动脉和椎动脉血[管分割]……实验结果表明,本文提出的基于深度学习的颈动脉和椎动[脉]……」 ("studying deep-learning segmentation of carotid and vertebral arteries in CTA improves diagnostic efficiency … V-Net was used to segment the carotid and vertebral arteries … the experiments show that the proposed …"). Case count, VA extent and availability are unknown. **No availability statement seen.**
+- **2021, 「深度学习在人脑CTA动脉血管分割中的应用」** ("deep learning for arterial segmentation in human brain CTA"), HUST, <https://cdmd.cnki.com.cn/Article/CDMD-10487-1021907175.htm>. Snippet: 「由于缺乏CTA脑血管分割的开源数据集,本文从临床上收集了77例头颈部CTA影像,使用计算机标注和人工修正相结合的方式标注出**颅内的动脉血管**,并计划将其公[开]……」 ("because open CTA cerebrovascular segmentation datasets are lacking, 77 head-and-neck CTAs were collected and the **intracranial arteries** were labelled by computer annotation plus manual correction, and [the authors] plan to make it public…"). Even if released, the labels are intracranial only.
+- **Verdict:** paper/thesis only; **no evidence of release**. The 2020 thesis is the only Chinese academic source with explicit cervical VA segmentation; a request to the HUST group is a long shot.
+
+### 1.5 Annotation standard, not data: 2024 expert consensus
+
+- **「头颈动脉CT血管成像数据标注与质量控制专家共识（2024）」** ("Expert consensus on data annotation and quality control for head-and-neck arterial CT angiography"), 中华放射学杂志 (Chinese Journal of Radiology) 2024; 58(2):150-157. The authors are the Chinese Medical Association radiology AI working group and others ([brainmed summary](https://www.brainmed.com/info/detail?id=47109)).
+- From the Sogou snippet of the WeChat repost: 「数据集图像特征中的血管包括主动脉弓、头臂干、双侧锁骨下动脉、双侧颈总动脉、双侧颈内动脉、基底动脉、**双侧椎动脉**、双侧大脑前动脉……」 ("the vessels in the dataset image features include the aortic arch, brachiocephalic trunk, bilateral subclavian arteries, bilateral common carotids, bilateral internal carotids, basilar artery, **bilateral vertebral arteries**, bilateral anterior cerebral arteries…").
+- The WebFetch summary of the brainmed page found no specific dataset, size or availability. It is a labelling convention that commercial vendors (Shukun etc.) follow, which explains why the private Chinese corpora label the VA from the subclavian. **Not a dataset.**
+
+---
+
+## 2. Exclusions found on Chinese platforms (no cervical VA)
+
+| Item | Platform / ID | Why excluded |
+|---|---|---|
+| CereVessMRA, 「annotation of vessels for 271 TOF-MRA volumes」 | ScienceDB, doi:10.57760/sciencedb.13880, CC BY-NC 4.0, 5.97 GB, open | 150 IXI (UK) + 121 Datian Hospital (Fujian) TOF-MRA; 28,128 slices ÷ 271 ≈ 104 slices per volume, so an intracranial slab |
+| 头颈CT血管造影后处理中医用图像配准的应用 ("medical image registration in head-and-neck CTA post-processing") | ScienceDB, doi:10.57760/sciencedb.dmh.01208, CC BY-NC 4.0 | 89 patients, but the deposit is **1 file, 4.2 MB** of study statistics, not images |
+| 同步辐射非人灵长类脑血管成像二值分割数据集 ("synchrotron macaque cerebrovascular binary segmentation") | ScienceDB, sciencedb.31111 / 31113 | macaque micro-CT, 1 µm |
+| Aneumo | ModelScope `SAIS/Aneumo` (CC BY-NC 4.0), `ai4s/Aneumo` (CC BY-NC-ND) | 上海科学智能研究院 (Shanghai Academy of AI for Science) intracranial-aneurysm CFD models |
+| COSTA mirror | ModelScope `ai4s/COSTA` (MIT) | 「多中心和多供应商TOF-MRA脑血管分割数据库」 ("multi-centre, multi-vendor TOF-MRA cerebrovascular database"), intracranial |
+| royal_brisbane_aneurysm_mask | ModelScope `ai4s/royal_brisbane_aneurysm_mask` (CC0, OpenNeuro mirror) | aneurysm masks only |
+| M3D-Seg / RADAR-auxiliary-data | ModelScope | aggregate of 25 public CT sets (incl. HaN-Seg, TotalSegmentator v1); RADAR = TotalSegmentator masks on abdominal CT |
+| IntrA | OpenDataLab id 2670 | PKU intracranial aneurysm surface models |
+| SegRap 2023 | OpenDataLab id 9209 | 200 NPC patients, contrast + non-contrast H&N CT, 3 mm; 45 OARs, **no artery** (the paper names the ICA only as a nearby structure) ([arXiv 2312.09576](https://arxiv.org/html/2312.09576)) |
+| 解剖学（头颈部分）的CT分割数据 ("anatomy (head-and-neck part) CT segmentation data") | Heywhale `6399a3afda3e2df846274483` | PDDCA (MICCAI 2015 OARs), no vessels |
+| Cerebral MRA Dataset Annotations | Tsinghua IVG, <https://ivg.au.tsinghua.edu.cn/dataset/Cerebral-MRA/Cerebral-MRA.html> | 109 UNC/TubeTK MRAs, Circle of Willis landmarks/segments, non-commercial |
+| OMIX002680 「MRA or CTA data」 | NGDC/CNCB OMIX | a 16 KB xlsx of vascular-involvement grades, controlled access (Zhongshan Hospital) |
+| 颈动脉及椎动脉疾病超声诊断数据集 ("carotid and vertebral artery disease ultrasound diagnosis dataset") | NCMI, CSTR:A0006.21.A0005.201906.000279 | ultrasound teaching material, "约500条病例资料" ("about 500 case records") |
+| 智能三维脑血流成像系统CTA报告集 / 病例报告表 ("intelligent 3D cerebral-blood-flow imaging system: CTA reports / case report forms") | NCMI, CSTR:17970.11.A009L.202204.29 / .31 | Beijing Friendship Hospital, 114 head-and-neck CTA **reports** (text), no images |
+| 2017-2021年宣武医院症状性颅内外动脉粥样硬化性狭窄患者数据集 ("Xuanwu Hospital 2017–2021 symptomatic intra/extracranial atherosclerotic stenosis patients") | NCMI, CSTR:17970.11.A0053.202109.815 | 450 cases of clinical information, about 50 kB |
+| 2018-2021北京协和医院症状性颅内动脉狭窄患者HR-MRI ("PUMCH 2018–2021 symptomatic intracranial stenosis HR-MRI") | NCMI | intracranial vessel-wall MRI reading criteria |
+| 20例全脑颅内动脉管壁T1W和TOF-MRA ("20 whole-brain intracranial vessel-wall T1W and TOF-MRA scans") | NCMI (7T, IBP CAS) | intracranial |
+| Gitee `zhutouzjq/seg_superficial_calci` | Gitee, Apache-2.0 | 3D Slicer plugin: region-growing carotid lumen plus superficial-calcification segmentation; code, no data |
+| Gitee `three-canteens-malaban/xun-fei-challenge` | Gitee | empty template README, "讯飞脑血管分割比赛的代码" ("code for the iFLYTEK cerebrovascular segmentation competition"); no data |
+| Gitee `flbtg/dataset` | Gitee (HTTP 451, "The content may contain violation information") | mirror of a generic medical-dataset list (3Dircadb, CHASE, KiTS…) |
+
+---
+
+## 3. Platform-by-platform search log
+
+Search terms (Chinese): 椎动脉 ("vertebral artery"); 椎动脉 分割 ("VA segmentation"); 头颈 / 头颈部 / 头颈CTA / 头颈部CTA ("head and neck" / "head-and-neck CTA"); 头颈动脉 ("head-and-neck arteries"); 颈动脉 ("carotid"); 颈动脉 CTA / 分割; 脑血管 ("cerebrovascular"); 脑血管 分割; 血管 ("vessel"); 血管分割 ("vessel segmentation"); 动脉 ("artery"); CTA; CT血管成像 / CT血管造影 ("CT angiography"); 血管造影 ("angiography"); 颈部 / 颈部血管 ("neck" / "neck vessels"); 主动脉 / 主动脉弓 ("aorta" / "aortic arch"); 椎基底动脉 ("vertebrobasilar artery"); 基底动脉 ("basilar artery"); 锁骨下动脉 ("subclavian artery"); 血管中心线 / 中心线 ("vessel centerline"); 脑动脉 ("cerebral artery"); 颅内 / 颅内动脉 ("intracranial artery"); 动脉瘤 ("aneurysm"); 卒中 ("stroke"). English: vertebral artery, carotid, cerebrovascular, vessel segmentation, angiography, head and neck CTA, Circle of Willis, TopCoW, TopBrain, HaN-Seg, HNCTA, MRA, centerline.
+
+**Pitfall worth remembering:** on this Windows machine, Git Bash's curl mangles Chinese characters passed on the command line, which produced false zero-hit results at first. Every Chinese query here was re-sent from a UTF-8 body file or percent-encoded in Perl. The OpenDataLab and ModelScope results below are from the corrected runs.
+
+| Platform | How searched | Result | Could not open |
+|---|---|---|---|
+| **OpenDataLab 浦源** (opendatalab.com) | `POST /datasets/api/v3/datasets/list` `{keywords}`; 26 Chinese + 24 English terms | 0 hits for 椎动脉, 头颈, 头颈部, 主动脉弓; vessel hits all retinal, placental, IntrA, 2-PM mouse, MSD hepatic; SegRap/StructSeg are H&N OARs | — |
+| **ModelScope 魔搭** (modelscope.cn) | `GET /api/v1/dolphin/datasets?Query=`; 40 terms | 椎动脉/颈动脉 matched only a TCM herbal-pillow corpus; cerebrovascular = Aneumo, COSTA, royal_brisbane | model search endpoint not found (models are not datasets anyway) |
+| **Baidu AI Studio 飞桨** | dataset API `POST /studio/dataset/public/list` | `{"errorCode":8403,"errorMsg":"未登录"}` ("not logged in"): **search requires login**. US web search over aistudio.baidu.com found only lung/heart/trachea CT, ARCADE (coronary X-ray), VerSe, LA, Medical MNIST | the platform's own search |
+| **Alibaba Tianchi 天池** | list API `/v3/proxy/office/api/dataset/list` | `"api access denied!"` / 403 even with the CSRF token; US web search over tianchi.aliyun.com found only Lung Vessel Segmentation (VESSEL12) and Brain MRI segmentation | the platform's own search |
+| **Heywhale 和鲸** | `GET /api/datasets?Title=` (title only); 21 terms | only PDDCA (H&N OARs), MSD hepatic vessels, CHASE | description full-text search not exposed |
+| **BAAI 智源** DataHub (data.baai.ac.cn) | found `/search/v2/getAllDataset` in its JS bundle | nginx 405 under every prefix tried; web search shows only hub.baai.ac.cn articles (CT-RATE, RadGenome) | the platform's own search |
+| **ScienceDB 科学数据银行** (scidb.cn) | native `POST /api/sdb-query-service/query?q=` (25 terms × 3 pages, filtered) + DataCite `prefix=10.57760` | 椎动脉 = 0 hits; found CereVessMRA, the 89-patient registration study (tables), macaque SR | — |
+| **国家人口健康科学数据中心 NCMI** (ncmi.cn) | `/dataSearch/search_data.do` | returns 「您访问的页面不存在」 ("the page you requested does not exist") to scripted POSTs, even with session cookies; **covered instead via the escience CSTR portal**, which indexes NCMI records (CSTR 17970.*): standard test DB (433 CTA), ultrasound VA set, CTA reports | native search UI |
+| **国家基础学科公共科学数据中心 NBSDC** (nbsdc.cn) | via escience, then nbsdc `searchDataDetail`, `getFileTree`, `checkAndDownloadFile` | Tiantan dataset (§1.2); its description docx downloaded and read | data files themselves (application only) |
+| **国家科技资源共享服务平台 / 中国科技资源共享网** (escience.org.cn = CSTR registry front end) | `GET https://api.escience.org.cn/metadata/global-search/open/page?keyword=`; 19 + 7 terms; `…/search/detail?cstrId=` | the most productive source; all NCMI and NBSDC leads came from here | — |
+| **China Science & Technology Cloud 科技云 / InstDB** | cstcloud.cn reachable; instdb.cn did not resolve (curl 000) | ScienceDB is CSTCloud's data repository and was searched directly | InstDB |
+| **Huawei Cloud ModelArts AI Gallery** | `pangu.huaweicloud.com/gallery/datasets.html` → 403; `developer.huaweicloud.com/develop/aigallery/dataset.html` → 404 | web search shows only documentation | **not searchable** |
+| **Gitee 码云** | `/api/v5/search/repositories` returns `[]` even for "unet" (disabled); used the so.gitee.com widget API `https://so.gitee.com/v1/search/widget/wong1slagnlmzwvsu5ya?q=`; 26 terms | carotid-calcification Slicer plugin; empty iFLYTEK template; medical-dataset-list mirrors | `flbtg/dataset` blocked (HTTP 451) |
+| **CSTR / DataCite China** | DataCite `query=` with Chinese terms, global and ScienceDB prefix | nothing beyond ScienceDB items | NCMI records are not in DataCite (CSTR only) |
+| **PKU Open Research Data** (opendata.pku.edu.cn, Dataverse) | `/api/search?q=` 13 terms | no imaging/vessel datasets | Fudan and WHU Dataverse hosts did not resolve |
+| **HyperAI 超神经** (hyper.ai/cn, Chinese dataset mirror) | `/cn/datasets?q=` 18 terms | retinal vessel sets, 2-PM, VerSe only | — |
+| **OpenI 启智** (openi.pcl.ac.cn) | `/api/v1/dataset/list/public?q=` 15 terms (name match) | 0 hits for every vessel term | — |
+| **NGDC OMIX** (ngdc.cncb.ac.cn) | search API not found; OMIX002680 via web search | xlsx only | native search |
+
+**General Chinese web:**
+
+- **Baidu:** CAPTCHA redirect (`wappass.baidu.com/static/captcha`).
+- **Bing (zh-CN):** zero organic results for a scripted client.
+- **Sogou:** one query succeeded (it surfaced the consensus document), then an anti-spider redirect.
+- **360 Search (so.com):** about 20 queries succeeded, then it blocked. These surfaced the HUST theses, the Fu et al. coverage and the consensus.
+- **Zhihu:** 403 on the page and its API.
+- **CNKI:** HTTP 418 (curl) and a TLS certificate mismatch (WebFetch).
+- **WebSearch (US-only):** largely returns English pages for Chinese queries, so it is of little use for the Chinese web.
+
+---
+
+## 4. What this adds to the English report
+
+- The English report's "main remaining blind spot" is closed for **platforms**. The Chinese open-data ecosystem (OpenDataLab, ModelScope, ScienceDB, the national data centres, Gitee, OpenI, HyperAI, PKU Dataverse) holds no cervical VA labels. The two closed platforms (AI Studio, Tianchi) show nothing relevant in their web-indexed pages.
+- **Fu et al.'s data-availability statement is now read: not available.**
+- The national portals do hold **head-and-neck CTA images** (NCMI's 433-case aneurysm test set) and an **interventional-robotics imaging set** (Tiantan, NBSDC). Both are unlabelled for vessels and both need a sealed or offline application, so neither beats TotalSegmentator's 123 CC BY 4.0 CTAs as Arterial input.
+- Contacts worth a cold email, in order:
+  1. Fu / Lu Jie, Xuanwu Hospital, with Shukun: VA from the arch already labelled, but they state privacy blocks release.
+  2. The HUST 2020 carotid+VA thesis group.
+  3. Gao Feng, Tiantan: raw TOF-MRA/CTA only.
+
+## 5. Gaps
+
+- AI Studio and Tianchi native search need a logged-in browser (AI Studio says 未登录, "not logged in"; Tianchi's API is denied). A logged-in human session could run 椎动脉 / 头颈CTA there in two minutes.
+- The CNKI full texts of the two HUST theses (case counts, VA extent, release URL) were not read.
+- The NCMI 433-case CTA field of view (does it reach the arch?) is unverified.
+- The Zhihu "HeadNeckCTA2025" page is still unread.
+- Huawei AI Gallery, InstDB, and the Fudan and WHU Dataverses could not be reached.

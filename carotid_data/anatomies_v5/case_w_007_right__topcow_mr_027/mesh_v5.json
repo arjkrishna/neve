@@ -1,0 +1,327 @@
+{
+ "spacing_mm": 0.45,
+ "seconds": 202.6,
+ "union": "owned (sdf_union_v4)",
+ "sections_tube_only": [],
+ "suppressed_stretches_mm": {},
+ "sections_tube_in_effect": [],
+ "localise_margin_mm": 0.5,
+ "far_clamp": {
+  "used": false,
+  "why": null
+ },
+ "right_route_detail": {
+  "fork": {
+   "frac_0.3mm": 0.1794,
+   "frac_0.5mm": 0.084
+  },
+  "siphon": {
+   "frac_0.3mm": 0.3466,
+   "frac_0.5mm": 0.1956
+  }
+ },
+ "margin_mm": 0.5,
+ "va_margin_mm": 0.5,
+ "attempts": [
+  {
+   "margin_mm": 0.5,
+   "va_margin_mm": 0.5,
+   "genus": 0.0,
+   "nonmanifold_edges": 0,
+   "components_before_keep": 10,
+   "dropped_fragments": [
+    996,
+    756,
+    694,
+    300,
+    254,
+    16,
+    8,
+    8,
+    8
+   ],
+   "dropped_volume_mm3": 60.67,
+   "seconds": 64.9
+  }
+ ],
+ "sections": {
+  "lower_R": {
+   "voxels": 164197,
+   "voxels_widened": 152655,
+   "voxels_refused": 1645,
+   "surface_tris": 124848
+  },
+  "eca_R": {
+   "voxels": 50222,
+   "voxels_widened": 11886,
+   "voxels_refused": 346,
+   "surface_tris": 124848
+  },
+  "siphon_R": {
+   "voxels": 153958,
+   "voxels_widened": 150467,
+   "voxels_refused": 500,
+   "surface_tris": 38962
+  },
+  "lower_L": {
+   "voxels": 170404,
+   "voxels_widened": 156945,
+   "voxels_refused": 1410,
+   "surface_tris": 112264
+  },
+  "eca_L": {
+   "voxels": 57490,
+   "voxels_widened": 19063,
+   "voxels_refused": 0,
+   "surface_tris": 112264
+  },
+  "siphon_L": {
+   "voxels": 175821,
+   "voxels_widened": 157030,
+   "voxels_refused": 8880,
+   "surface_tris": 45108
+  },
+  "va_R": {
+   "voxels": 37516,
+   "voxels_widened": 30471,
+   "voxels_refused": 1347,
+   "surface_tris": 7770
+  },
+  "va_L": {
+   "voxels": 58340,
+   "voxels_widened": 51907,
+   "voxels_refused": 894,
+   "surface_tris": 10834
+  },
+  "vaC_R": {
+   "voxels": 205027,
+   "voxels_widened": 190827,
+   "voxels_refused": 565,
+   "surface_tris": 41188
+  }
+ },
+ "spans": {
+  "lower_R": [
+   "RCCA",
+   44.2950081896345,
+   125.06973057354658
+  ],
+  "eca_R": [
+   "RECA",
+   0.0,
+   22.915078388876537
+  ],
+  "siphon_R": [
+   "RCCA",
+   130.0,
+   228.59929540331132
+  ],
+  "lower_L": [
+   "LCCA",
+   73.07594684871601,
+   157.56286587981097
+  ],
+  "eca_L": [
+   "LECA",
+   0.0,
+   29.042446256046464
+  ],
+  "siphon_L": [
+   "LCCA",
+   157.56286587981097,
+   260.664694654434
+  ],
+  "va_R": [
+   "RVA",
+   222.10496946173558,
+   255.95812758585168
+  ],
+  "va_L": [
+   "LVA",
+   155.62699735791165,
+   197.84189514142665
+  ],
+  "vaC_R": [
+   "RVA",
+   31.949002288075214,
+   222.10496946173558
+  ]
+ },
+ "full": {
+  "tris": 60000,
+  "comps": 1,
+  "open_edges": 0,
+  "genus": [
+   {
+    "cells": 60000,
+    "genus": 0.0,
+    "boundary_loops": 0
+   }
+  ]
+ },
+ "obj": {
+  "tris": 23500,
+  "comps": 1,
+  "open_edges": 0,
+  "genus": [
+   {
+    "cells": 23500,
+    "genus": 0.0,
+    "boundary_loops": 0
+   }
+  ]
+ },
+ "obj_tris_budget": 23500,
+ "routes": {
+  "RCCA": {
+   "lumen_min_mm": 1.31,
+   "lumen_min_at_mm": 197.7,
+   "declared_there_mm": 1.417,
+   "median_deficit_mm": 0.061,
+   "route_pts_outside": 0,
+   "navigable": true
+  },
+  "LCCA": {
+   "lumen_min_mm": 1.292,
+   "lumen_min_at_mm": 226.7,
+   "declared_there_mm": 1.283,
+   "median_deficit_mm": 0.071,
+   "route_pts_outside": 0,
+   "navigable": true
+  }
+ },
+ "decimation": {
+  "full": "vcg_mc_collapse+quadric_preserve_topology",
+  "full_budget": 60000,
+  "obj": "vcg_quadric_preserve_topology_area_weighted",
+  "obj_budgets_rejected": []
+ },
+ "centerline_pts_outside": 0,
+ "centerline_pts_checked": 1769,
+ "ladder_v5b": {
+  "pinned": {
+   "carotid_margin_mm": 0.5,
+   "suppressed": {},
+   "tube_only": [],
+   "v4_far_clamp": false
+  },
+  "rounds": [],
+  "bisections": [],
+  "flags": [],
+  "test_overrides": {},
+  "cache_seconds": 74.0,
+  "rung": "1 pinned, VA whole (va margin 0.5)",
+  "va_margin_mm": 0.5,
+  "va_tubed": {
+   "va_R": {
+    "stretch_mm": [
+     222.1,
+     254.99
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "va_L": {
+    "stretch_mm": [
+     155.63,
+     197.66
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "vaC_R": {
+    "stretch_mm": [
+     31.95,
+     222.1
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   }
+  }
+ },
+ "pass": true,
+ "v5_gates": {
+  "union_clean_tree": true,
+  "full_clean_tree": true,
+  "obj_clean_tree": true,
+  "self_intersecting_faces": {
+   "union": 0,
+   "full": 0,
+   "obj": 0
+  },
+  "union_tris": 946906,
+  "full_tris": 60000,
+  "obj_tris": 23500,
+  "obj_budget": 23500,
+  "obj_budget_ok": true,
+  "full_budget": 60000,
+  "full_budget_ok": true,
+  "routes_navigable": true,
+  "route_lumen_min_mm": {
+   "RCCA": 1.31,
+   "LCCA": 1.292
+  },
+  "centerline_pts_outside": 0,
+  "bake_pass": true,
+  "va_real_wall_owned": {
+   "right": true
+  },
+  "right_route_detail_identical_v4": true,
+  "right_route_detail_ratio_0.3mm": {
+   "fork": 1.0,
+   "siphon": 1.0
+  },
+  "right_route_identical_beyond_mm": 0,
+  "rung": "1 pinned, VA whole (va margin 0.5)",
+  "flags": [],
+  "all_pass": true
+ },
+ "va_detail": {
+  "right": {
+   "donor": "ia172_058 R",
+   "donor_surface_genus": 2.0,
+   "real_surface": true,
+   "whole_tube": false,
+   "donor_stretch_mm": [
+    31.95,
+    222.1
+   ],
+   "n_windows": 0,
+   "windows_from_ostium_mm": [],
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "donor_real_frac_0.3mm": 0.0978,
+   "donor_real_frac_0.5mm": 0.0278,
+   "donor_real_frac_rel_0.15": 0.1857,
+   "topbrain_frac_0.3mm": 0.0154,
+   "whole_va_conservative_frac_0.3mm": 0.0736,
+   "A2_donor_alone_frac_0.3mm": 0.0882,
+   "A2_donor_in_situ_frac_0.3mm": 0.0883,
+   "A2_detail_kept_in_situ_over_alone": 1.001,
+   "A2_error": null,
+   "v4_host_core_frac_0.3mm": 0.0007,
+   "A3_whole_va_frac_0.3mm_v5_v4": [
+    0.0736,
+    0.0027
+   ]
+  },
+  "left": {
+   "donor": null,
+   "v4_va_kept": true,
+   "why": "no donor planned for this side: v4 VA kept (flagged)",
+   "v4_host_core_frac_0.3mm": 0.0
+  }
+ }
+}

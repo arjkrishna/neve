@@ -1,0 +1,90 @@
+{
+ "schema": "v5_reg_donor_unit/1",
+ "donor_id": "song_AHMU1218113",
+ "source": "song",
+ "case_id": "AHMU1218113",
+ "licence": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8); VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL",
+ "sides": {
+  "R": {
+   "built": true,
+   "file": "/repo/carotid_data/va_sources/v5_reg/donors_v5/song_AHMU1218113/R.json",
+   "verdict": "review",
+   "wall_class": "real_surface",
+   "usable": true,
+   "coarseness_score": 0.0756,
+   "takeoff_10_native": 72.1,
+   "subclavian_elevation_deg": 34.8,
+   "length_mm": 243.6,
+   "landmarks": {
+    "C6": 39.0,
+    "C2": 137.0,
+    "C1": 161.0,
+    "dura": 221.0,
+    "end": 243.5
+   },
+   "surface_genus": 6.0,
+   "chirality": 1.0,
+   "flag_level": 2,
+   "eligible_class": "primary",
+   "surface_md5": "705797441fa38f601dbd6a8b5364f1c1",
+   "min_ostium_advance_mm": 0.0
+  },
+  "L": {
+   "built": true,
+   "file": "/repo/carotid_data/va_sources/v5_reg/donors_v5/song_AHMU1218113/L.json",
+   "verdict": "review",
+   "wall_class": "real_surface",
+   "usable": true,
+   "coarseness_score": 0.1327,
+   "takeoff_10_native": 133.1,
+   "subclavian_elevation_deg": 5.5,
+   "length_mm": 242.5,
+   "landmarks": {
+    "C6": 58.0,
+    "C2": 143.0,
+    "C1": 168.0,
+    "dura": 222.0,
+    "end": 242.5
+   },
+   "surface_genus": 4.0,
+   "chirality": 1.0,
+   "flag_level": 2,
+   "eligible_class": "primary",
+   "surface_md5": "1a53f8c0f7c8172d394f32302a74e6be",
+   "min_ostium_advance_mm": 0.0
+  }
+ },
+ "built": "2026-10-02 20:38:00",
+ "version": "graft_v5_reg_donor 1.1 (2026-10-02; v5_assign: --out-root, --eligible per-side wall / QC / trace files)",
+ "eligible_class": "primary",
+ "eligible_rank": 8,
+ "patient_key": "song:AHMU1218113",
+ "non_commercial": true,
+ "attributions": [
+  "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8)",
+  "TotalSegmentator (CC BY 4.0, Wasserthal et al. 2023, doi 10.1148/ryai.230024) used for vertebra landmarks / QC references: attribution"
+ ],
+ "provenance_flags": [
+  "Siemens Song case (series 'DE #PP  DE_CarotidAngio  1.0  Qr40  3  A_90kV': 1.0 mm slice thickness, 0.7 mm grid): accepted at native bars (decision 03:50 item 6)"
+ ],
+ "pair_flags": [
+  "R review: Arterial VA label off the trace (0.00 within 2 mm)",
+  "L review: Arterial VA label off the trace (0.85 within 2 mm)"
+ ],
+ "coarseness_pair": {
+  "score_mean_contact_free": 0.1042,
+  "score_min_side_contact_free": 0.0756,
+  "R_L_contact_free": [
+   0.0756,
+   0.1327
+  ],
+  "R_L_all_bins": [
+   0.1944,
+   0.2322
+  ],
+  "all_bins_gt_dense_host_both": true,
+  "contact_free_ge_dense_host_both": true,
+  "dense_host_RVA_mesh": 0.027
+ },
+ "pair_complete": true
+}

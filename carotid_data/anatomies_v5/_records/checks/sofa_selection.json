@@ -1,0 +1,1419 @@
+{
+ "most_changed_15": [
+  "case_m_006_left__topcow_mr_007_L",
+  "case_m_030_right__topcow_mr_013_L",
+  "case_w_016_left__topcow_mr_011_L",
+  "case_w_016_right__topcow_mr_011_L",
+  "case_w_018b_left__topcow_mr_007_L",
+  "case_w_033_left__topcow_mr_007",
+  "case_w_048_left__topcow_mr_008",
+  "case_w_050_left__topcow_mr_026_L",
+  "case_w_008_right__topcow_mr_020",
+  "case_w_050_left__topcow_mr_004_L",
+  "case_w_007_left__topcow_mr_021_L",
+  "case_w_022_right__topcow_mr_026",
+  "case_k_011_left__topcow_mr_023_L",
+  "case_w_047_left__topcow_mr_026_L",
+  "case_w_007_left__topcow_mr_013_L"
+ ],
+ "why": {
+  "case_m_006_left__topcow_mr_007_L": [
+   "obj_fix"
+  ],
+  "case_m_030_right__topcow_mr_013_L": [
+   "carotid_changed"
+  ],
+  "case_w_016_left__topcow_mr_011_L": [
+   "carotid_changed"
+  ],
+  "case_w_016_right__topcow_mr_011_L": [
+   "carotid_changed"
+  ],
+  "case_w_018b_left__topcow_mr_007_L": [
+   "obj_fix"
+  ],
+  "case_w_033_left__topcow_mr_007": [
+   "v4_va_kept_by_bake ['left']"
+  ],
+  "case_w_048_left__topcow_mr_008": [
+   "obj_fix"
+  ],
+  "case_w_050_left__topcow_mr_026_L": [
+   "v4_va_kept_by_bake ['right']"
+  ],
+  "case_w_008_right__topcow_mr_020": [
+   "largest window 9.14 mm (RVA, Song 002 R)"
+  ],
+  "case_w_050_left__topcow_mr_004_L": [
+   "worst right-route ratio (fork 0.82)"
+  ],
+  "case_w_007_left__topcow_mr_021_L": [
+   "RVA course change: max 41.7 mm from v4's RVA"
+  ],
+  "case_w_022_right__topcow_mr_026": [
+   "RVA course change: max 41.1 mm from v4's RVA"
+  ],
+  "case_k_011_left__topcow_mr_023_L": [
+   "RVA course change: max 38.0 mm from v4's RVA"
+  ],
+  "case_w_047_left__topcow_mr_026_L": [
+   "RVA course change: max 36.3 mm from v4's RVA"
+  ],
+  "case_w_007_left__topcow_mr_013_L": [
+   "RVA course change: max 34.1 mm from v4's RVA"
+  ]
+ },
+ "random_10": [
+  "case_m_006_left__topcow_mr_025_L",
+  "case_m_022_left__topcow_mr_016",
+  "case_m_024_left__topcow_mr_001",
+  "case_w_003_left__topcow_mr_010",
+  "case_w_003_left__topcow_mr_024",
+  "case_w_008_right__topcow_mr_001",
+  "case_w_012_right__topcow_mr_023_L",
+  "case_w_036_left__topcow_mr_011",
+  "case_w_047_left__topcow_mr_027",
+  "case_w_050_left__topcow_mr_020_L"
+ ],
+ "rule": "v5_checks item 4: pick the SOFA set = the 15 most changed anatomies + 10 random (neve-build-meshlab, read-only).\n\n\"Most changed\", stated rule:\n  1. every flagged anatomy of the bake: carotid_changed (3), OBJ re-decimated (obj_fix, 3), a VA kept from v4 by the\n     bake (2), the largest tube window (case_w_008_right__topcow_mr_020, 9.14 mm), the worst right-route ratio\n     (case_w_050_left__topcow_mr_004_L, fork 0.82);\n  2. filled to 15 by the largest RVA course change against v4: the max distance of the v5 RVA centreline (past the\n     (17) take-off) from the v4 RVA polyline (anatomies whose RVA is replaced);\n  3. 10 random from the other 208 (numpy default_rng(20261002)).\nAlso writes the RVA course change of every anatomy.   -> /sp/v5_va/checks/sofa_selection.json\n",
+ "rva_change": {
+  "case_k_004_left__topcow_mr_010": {
+   "rva_max_dev_mm": 28.8,
+   "rva_mean_dev_mm": 13.0,
+   "rva_len_v5_mm": 267.0,
+   "rva_replaced": true
+  },
+  "case_k_004_left__topcow_mr_011_L": {
+   "rva_max_dev_mm": 20.4,
+   "rva_mean_dev_mm": 12.8,
+   "rva_len_v5_mm": 204.5,
+   "rva_replaced": true
+  },
+  "case_k_004_left__topcow_mr_014_L": {
+   "rva_max_dev_mm": 24.9,
+   "rva_mean_dev_mm": 7.5,
+   "rva_len_v5_mm": 223.8,
+   "rva_replaced": true
+  },
+  "case_k_004_left__topcow_mr_018": {
+   "rva_max_dev_mm": 22.5,
+   "rva_mean_dev_mm": 11.7,
+   "rva_len_v5_mm": 242.5,
+   "rva_replaced": true
+  },
+  "case_k_004_left__topcow_mr_023_L": {
+   "rva_max_dev_mm": 28.4,
+   "rva_mean_dev_mm": 8.8,
+   "rva_len_v5_mm": 239.0,
+   "rva_replaced": true
+  },
+  "case_k_005_right__topcow_mr_001": {
+   "rva_max_dev_mm": 23.5,
+   "rva_mean_dev_mm": 11.9,
+   "rva_len_v5_mm": 239.8,
+   "rva_replaced": true
+  },
+  "case_k_005_right__topcow_mr_013_L": {
+   "rva_max_dev_mm": 14.4,
+   "rva_mean_dev_mm": 8.2,
+   "rva_len_v5_mm": 247.5,
+   "rva_replaced": true
+  },
+  "case_k_005_right__topcow_mr_023_L": {
+   "rva_max_dev_mm": 22.4,
+   "rva_mean_dev_mm": 9.8,
+   "rva_len_v5_mm": 239.0,
+   "rva_replaced": true
+  },
+  "case_k_005_right__topcow_mr_024_L": {
+   "rva_max_dev_mm": 9.1,
+   "rva_mean_dev_mm": 4.3,
+   "rva_len_v5_mm": 231.5,
+   "rva_replaced": true
+  },
+  "case_k_008_right__topcow_mr_001_L": {
+   "rva_max_dev_mm": 16.8,
+   "rva_mean_dev_mm": 9.2,
+   "rva_len_v5_mm": 266.0,
+   "rva_replaced": true
+  },
+  "case_k_008_right__topcow_mr_005": {
+   "rva_max_dev_mm": 12.3,
+   "rva_mean_dev_mm": 6.2,
+   "rva_len_v5_mm": 243.2,
+   "rva_replaced": true
+  },
+  "case_k_008_right__topcow_mr_010_L": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 231.0,
+   "rva_replaced": false
+  },
+  "case_k_008_right__topcow_mr_012_L": {
+   "rva_max_dev_mm": 17.7,
+   "rva_mean_dev_mm": 11.3,
+   "rva_len_v5_mm": 268.0,
+   "rva_replaced": true
+  },
+  "case_k_008_right__topcow_mr_027": {
+   "rva_max_dev_mm": 30.6,
+   "rva_mean_dev_mm": 10.0,
+   "rva_len_v5_mm": 231.0,
+   "rva_replaced": true
+  },
+  "case_k_011_left__topcow_mr_012_L": {
+   "rva_max_dev_mm": 17.8,
+   "rva_mean_dev_mm": 11.8,
+   "rva_len_v5_mm": 268.0,
+   "rva_replaced": true
+  },
+  "case_k_011_left__topcow_mr_013_L": {
+   "rva_max_dev_mm": 28.4,
+   "rva_mean_dev_mm": 12.3,
+   "rva_len_v5_mm": 252.5,
+   "rva_replaced": true
+  },
+  "case_k_011_left__topcow_mr_016_L": {
+   "rva_max_dev_mm": 31.4,
+   "rva_mean_dev_mm": 10.6,
+   "rva_len_v5_mm": 272.8,
+   "rva_replaced": true
+  },
+  "case_k_011_left__topcow_mr_023_L": {
+   "rva_max_dev_mm": 38.0,
+   "rva_mean_dev_mm": 12.2,
+   "rva_len_v5_mm": 263.8,
+   "rva_replaced": true
+  },
+  "case_k_011_left__topcow_mr_026_L": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 234.0,
+   "rva_replaced": false
+  },
+  "case_m_006_left__topcow_mr_002": {
+   "rva_max_dev_mm": 21.1,
+   "rva_mean_dev_mm": 14.2,
+   "rva_len_v5_mm": 234.8,
+   "rva_replaced": true
+  },
+  "case_m_006_left__topcow_mr_007_L": {
+   "rva_max_dev_mm": 23.6,
+   "rva_mean_dev_mm": 12.6,
+   "rva_len_v5_mm": 258.8,
+   "rva_replaced": true
+  },
+  "case_m_006_left__topcow_mr_022_L": {
+   "rva_max_dev_mm": 18.2,
+   "rva_mean_dev_mm": 10.5,
+   "rva_len_v5_mm": 258.8,
+   "rva_replaced": true
+  },
+  "case_m_006_left__topcow_mr_025_L": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 233.5,
+   "rva_replaced": false
+  },
+  "case_m_006_left__topcow_mr_027_L": {
+   "rva_max_dev_mm": 22.5,
+   "rva_mean_dev_mm": 11.0,
+   "rva_len_v5_mm": 280.8,
+   "rva_replaced": true
+  },
+  "case_m_022_left__topcow_mr_016": {
+   "rva_max_dev_mm": 22.4,
+   "rva_mean_dev_mm": 6.9,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_m_022_left__topcow_mr_020": {
+   "rva_max_dev_mm": 24.7,
+   "rva_mean_dev_mm": 9.1,
+   "rva_len_v5_mm": 300.2,
+   "rva_replaced": true
+  },
+  "case_m_022_left__topcow_mr_021_L": {
+   "rva_max_dev_mm": 20.2,
+   "rva_mean_dev_mm": 7.9,
+   "rva_len_v5_mm": 272.2,
+   "rva_replaced": true
+  },
+  "case_m_022_left__topcow_mr_022_L": {
+   "rva_max_dev_mm": 19.5,
+   "rva_mean_dev_mm": 10.8,
+   "rva_len_v5_mm": 258.8,
+   "rva_replaced": true
+  },
+  "case_m_022_left__topcow_mr_024_L": {
+   "rva_max_dev_mm": 8.2,
+   "rva_mean_dev_mm": 3.6,
+   "rva_len_v5_mm": 231.5,
+   "rva_replaced": true
+  },
+  "case_m_024_left__topcow_mr_001": {
+   "rva_max_dev_mm": 23.4,
+   "rva_mean_dev_mm": 11.7,
+   "rva_len_v5_mm": 239.8,
+   "rva_replaced": true
+  },
+  "case_m_024_left__topcow_mr_006": {
+   "rva_max_dev_mm": 22.8,
+   "rva_mean_dev_mm": 8.1,
+   "rva_len_v5_mm": 238.0,
+   "rva_replaced": true
+  },
+  "case_m_024_left__topcow_mr_013_L": {
+   "rva_max_dev_mm": 14.4,
+   "rva_mean_dev_mm": 8.2,
+   "rva_len_v5_mm": 247.5,
+   "rva_replaced": true
+  },
+  "case_m_024_left__topcow_mr_016_L": {
+   "rva_max_dev_mm": 31.7,
+   "rva_mean_dev_mm": 10.7,
+   "rva_len_v5_mm": 272.8,
+   "rva_replaced": true
+  },
+  "case_m_024_left__topcow_mr_023_L": {
+   "rva_max_dev_mm": 21.5,
+   "rva_mean_dev_mm": 9.3,
+   "rva_len_v5_mm": 239.0,
+   "rva_replaced": true
+  },
+  "case_m_030_right__topcow_mr_003_L": {
+   "rva_max_dev_mm": 13.1,
+   "rva_mean_dev_mm": 5.8,
+   "rva_len_v5_mm": 258.0,
+   "rva_replaced": true
+  },
+  "case_m_030_right__topcow_mr_013_L": {
+   "rva_max_dev_mm": 14.3,
+   "rva_mean_dev_mm": 8.1,
+   "rva_len_v5_mm": 237.8,
+   "rva_replaced": true
+  },
+  "case_m_030_right__topcow_mr_016": {
+   "rva_max_dev_mm": 22.6,
+   "rva_mean_dev_mm": 7.0,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_m_030_right__topcow_mr_016_L": {
+   "rva_max_dev_mm": 23.0,
+   "rva_mean_dev_mm": 7.0,
+   "rva_len_v5_mm": 272.8,
+   "rva_replaced": true
+  },
+  "case_m_030_right__topcow_mr_024": {
+   "rva_max_dev_mm": 13.9,
+   "rva_mean_dev_mm": 5.7,
+   "rva_len_v5_mm": 213.8,
+   "rva_replaced": true
+  },
+  "case_w_002_right__topcow_mr_006": {
+   "rva_max_dev_mm": 13.1,
+   "rva_mean_dev_mm": 6.5,
+   "rva_len_v5_mm": 237.8,
+   "rva_replaced": true
+  },
+  "case_w_002_right__topcow_mr_013_L": {
+   "rva_max_dev_mm": 17.6,
+   "rva_mean_dev_mm": 8.9,
+   "rva_len_v5_mm": 237.8,
+   "rva_replaced": true
+  },
+  "case_w_002_right__topcow_mr_016_L": {
+   "rva_max_dev_mm": 21.9,
+   "rva_mean_dev_mm": 6.4,
+   "rva_len_v5_mm": 272.8,
+   "rva_replaced": true
+  },
+  "case_w_002_right__topcow_mr_022": {
+   "rva_max_dev_mm": 22.4,
+   "rva_mean_dev_mm": 10.1,
+   "rva_len_v5_mm": 231.8,
+   "rva_replaced": true
+  },
+  "case_w_002_right__topcow_mr_024": {
+   "rva_max_dev_mm": 18.7,
+   "rva_mean_dev_mm": 8.3,
+   "rva_len_v5_mm": 213.8,
+   "rva_replaced": true
+  },
+  "case_w_003_left__topcow_mr_007_L": {
+   "rva_max_dev_mm": 23.6,
+   "rva_mean_dev_mm": 12.6,
+   "rva_len_v5_mm": 258.8,
+   "rva_replaced": true
+  },
+  "case_w_003_left__topcow_mr_010": {
+   "rva_max_dev_mm": 28.0,
+   "rva_mean_dev_mm": 12.8,
+   "rva_len_v5_mm": 267.0,
+   "rva_replaced": true
+  },
+  "case_w_003_left__topcow_mr_016_L": {
+   "rva_max_dev_mm": 21.9,
+   "rva_mean_dev_mm": 6.4,
+   "rva_len_v5_mm": 272.8,
+   "rva_replaced": true
+  },
+  "case_w_003_left__topcow_mr_024": {
+   "rva_max_dev_mm": 25.1,
+   "rva_mean_dev_mm": 7.1,
+   "rva_len_v5_mm": 224.0,
+   "rva_replaced": true
+  },
+  "case_w_003_left__topcow_mr_024_L": {
+   "rva_max_dev_mm": 13.4,
+   "rva_mean_dev_mm": 7.8,
+   "rva_len_v5_mm": 231.2,
+   "rva_replaced": true
+  },
+  "case_w_003_right__topcow_mr_001": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 236.0,
+   "rva_replaced": false
+  },
+  "case_w_003_right__topcow_mr_011_L": {
+   "rva_max_dev_mm": 18.3,
+   "rva_mean_dev_mm": 12.5,
+   "rva_len_v5_mm": 204.2,
+   "rva_replaced": true
+  },
+  "case_w_003_right__topcow_mr_016": {
+   "rva_max_dev_mm": 17.0,
+   "rva_mean_dev_mm": 6.5,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_w_007_left__topcow_mr_005": {
+   "rva_max_dev_mm": 18.9,
+   "rva_mean_dev_mm": 5.9,
+   "rva_len_v5_mm": 238.2,
+   "rva_replaced": true
+  },
+  "case_w_007_left__topcow_mr_013_L": {
+   "rva_max_dev_mm": 34.1,
+   "rva_mean_dev_mm": 14.5,
+   "rva_len_v5_mm": 247.5,
+   "rva_replaced": true
+  },
+  "case_w_007_left__topcow_mr_016_L": {
+   "rva_max_dev_mm": 21.7,
+   "rva_mean_dev_mm": 7.1,
+   "rva_len_v5_mm": 272.8,
+   "rva_replaced": true
+  },
+  "case_w_007_left__topcow_mr_017": {
+   "rva_max_dev_mm": 17.9,
+   "rva_mean_dev_mm": 10.9,
+   "rva_len_v5_mm": 239.2,
+   "rva_replaced": true
+  },
+  "case_w_007_left__topcow_mr_021_L": {
+   "rva_max_dev_mm": 41.7,
+   "rva_mean_dev_mm": 11.3,
+   "rva_len_v5_mm": 272.2,
+   "rva_replaced": true
+  },
+  "case_w_007_right__topcow_mr_005": {
+   "rva_max_dev_mm": 12.3,
+   "rva_mean_dev_mm": 6.2,
+   "rva_len_v5_mm": 243.2,
+   "rva_replaced": true
+  },
+  "case_w_007_right__topcow_mr_010_L": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 235.8,
+   "rva_replaced": false
+  },
+  "case_w_007_right__topcow_mr_023": {
+   "rva_max_dev_mm": 18.5,
+   "rva_mean_dev_mm": 7.6,
+   "rva_len_v5_mm": 234.8,
+   "rva_replaced": true
+  },
+  "case_w_007_right__topcow_mr_027": {
+   "rva_max_dev_mm": 29.2,
+   "rva_mean_dev_mm": 10.4,
+   "rva_len_v5_mm": 255.8,
+   "rva_replaced": true
+  },
+  "case_w_007_right__topcow_mr_027_L": {
+   "rva_max_dev_mm": 22.5,
+   "rva_mean_dev_mm": 11.0,
+   "rva_len_v5_mm": 280.8,
+   "rva_replaced": true
+  },
+  "case_w_008_right__topcow_mr_001": {
+   "rva_max_dev_mm": 20.9,
+   "rva_mean_dev_mm": 11.6,
+   "rva_len_v5_mm": 262.5,
+   "rva_replaced": true
+  },
+  "case_w_008_right__topcow_mr_003": {
+   "rva_max_dev_mm": 25.1,
+   "rva_mean_dev_mm": 12.2,
+   "rva_len_v5_mm": 278.5,
+   "rva_replaced": true
+  },
+  "case_w_008_right__topcow_mr_020": {
+   "rva_max_dev_mm": 25.3,
+   "rva_mean_dev_mm": 9.1,
+   "rva_len_v5_mm": 244.8,
+   "rva_replaced": true
+  },
+  "case_w_008_right__topcow_mr_022": {
+   "rva_max_dev_mm": 22.1,
+   "rva_mean_dev_mm": 10.2,
+   "rva_len_v5_mm": 231.8,
+   "rva_replaced": true
+  },
+  "case_w_008_right__topcow_mr_023_L": {
+   "rva_max_dev_mm": 21.8,
+   "rva_mean_dev_mm": 9.4,
+   "rva_len_v5_mm": 239.0,
+   "rva_replaced": true
+  },
+  "case_w_012_left__topcow_mr_001": {
+   "rva_max_dev_mm": 23.9,
+   "rva_mean_dev_mm": 11.9,
+   "rva_len_v5_mm": 239.8,
+   "rva_replaced": true
+  },
+  "case_w_012_left__topcow_mr_003_L": {
+   "rva_max_dev_mm": 13.6,
+   "rva_mean_dev_mm": 8.1,
+   "rva_len_v5_mm": 258.0,
+   "rva_replaced": true
+  },
+  "case_w_012_left__topcow_mr_013_L": {
+   "rva_max_dev_mm": 20.3,
+   "rva_mean_dev_mm": 9.6,
+   "rva_len_v5_mm": 247.5,
+   "rva_replaced": true
+  },
+  "case_w_012_left__topcow_mr_020": {
+   "rva_max_dev_mm": 15.8,
+   "rva_mean_dev_mm": 9.3,
+   "rva_len_v5_mm": 249.8,
+   "rva_replaced": true
+  },
+  "case_w_012_left__topcow_mr_021_L": {
+   "rva_max_dev_mm": 21.4,
+   "rva_mean_dev_mm": 11.1,
+   "rva_len_v5_mm": 272.2,
+   "rva_replaced": true
+  },
+  "case_w_012_right__topcow_mr_011_L": {
+   "rva_max_dev_mm": 15.0,
+   "rva_mean_dev_mm": 8.9,
+   "rva_len_v5_mm": 204.2,
+   "rva_replaced": true
+  },
+  "case_w_012_right__topcow_mr_012": {
+   "rva_max_dev_mm": 17.6,
+   "rva_mean_dev_mm": 11.1,
+   "rva_len_v5_mm": 253.5,
+   "rva_replaced": true
+  },
+  "case_w_012_right__topcow_mr_023_L": {
+   "rva_max_dev_mm": 21.5,
+   "rva_mean_dev_mm": 9.3,
+   "rva_len_v5_mm": 239.0,
+   "rva_replaced": true
+  },
+  "case_w_012_right__topcow_mr_024_L": {
+   "rva_max_dev_mm": 12.4,
+   "rva_mean_dev_mm": 6.4,
+   "rva_len_v5_mm": 231.2,
+   "rva_replaced": true
+  },
+  "case_w_012_right__topcow_mr_026_L": {
+   "rva_max_dev_mm": 33.2,
+   "rva_mean_dev_mm": 10.7,
+   "rva_len_v5_mm": 273.8,
+   "rva_replaced": true
+  },
+  "case_w_013_right__topcow_mr_004_L": {
+   "rva_max_dev_mm": 21.1,
+   "rva_mean_dev_mm": 10.8,
+   "rva_len_v5_mm": 277.8,
+   "rva_replaced": true
+  },
+  "case_w_013_right__topcow_mr_011": {
+   "rva_max_dev_mm": 16.4,
+   "rva_mean_dev_mm": 9.4,
+   "rva_len_v5_mm": 233.8,
+   "rva_replaced": true
+  },
+  "case_w_013_right__topcow_mr_013_L": {
+   "rva_max_dev_mm": 16.8,
+   "rva_mean_dev_mm": 9.8,
+   "rva_len_v5_mm": 247.5,
+   "rva_replaced": true
+  },
+  "case_w_013_right__topcow_mr_021_L": {
+   "rva_max_dev_mm": 22.5,
+   "rva_mean_dev_mm": 9.8,
+   "rva_len_v5_mm": 272.2,
+   "rva_replaced": true
+  },
+  "case_w_013_right__topcow_mr_024": {
+   "rva_max_dev_mm": 14.8,
+   "rva_mean_dev_mm": 4.7,
+   "rva_len_v5_mm": 224.0,
+   "rva_replaced": true
+  },
+  "case_w_014_right__topcow_mr_010": {
+   "rva_max_dev_mm": 22.0,
+   "rva_mean_dev_mm": 7.4,
+   "rva_len_v5_mm": 267.0,
+   "rva_replaced": true
+  },
+  "case_w_014_right__topcow_mr_011_L": {
+   "rva_max_dev_mm": 15.0,
+   "rva_mean_dev_mm": 8.8,
+   "rva_len_v5_mm": 204.5,
+   "rva_replaced": true
+  },
+  "case_w_014_right__topcow_mr_027": {
+   "rva_max_dev_mm": 31.4,
+   "rva_mean_dev_mm": 10.3,
+   "rva_len_v5_mm": 241.0,
+   "rva_replaced": true
+  },
+  "case_w_016_left__topcow_mr_011_L": {
+   "rva_max_dev_mm": 14.8,
+   "rva_mean_dev_mm": 9.4,
+   "rva_len_v5_mm": 204.5,
+   "rva_replaced": true
+  },
+  "case_w_016_left__topcow_mr_014_L": {
+   "rva_max_dev_mm": 18.4,
+   "rva_mean_dev_mm": 8.8,
+   "rva_len_v5_mm": 223.8,
+   "rva_replaced": true
+  },
+  "case_w_016_left__topcow_mr_017_L": {
+   "rva_max_dev_mm": 14.8,
+   "rva_mean_dev_mm": 9.8,
+   "rva_len_v5_mm": 259.2,
+   "rva_replaced": true
+  },
+  "case_w_016_left__topcow_mr_024": {
+   "rva_max_dev_mm": 14.2,
+   "rva_mean_dev_mm": 4.7,
+   "rva_len_v5_mm": 224.0,
+   "rva_replaced": true
+  },
+  "case_w_016_left__topcow_mr_024_L": {
+   "rva_max_dev_mm": 8.0,
+   "rva_mean_dev_mm": 3.2,
+   "rva_len_v5_mm": 231.2,
+   "rva_replaced": true
+  },
+  "case_w_016_right__topcow_mr_001": {
+   "rva_max_dev_mm": 23.5,
+   "rva_mean_dev_mm": 11.9,
+   "rva_len_v5_mm": 239.8,
+   "rva_replaced": true
+  },
+  "case_w_016_right__topcow_mr_010": {
+   "rva_max_dev_mm": 28.0,
+   "rva_mean_dev_mm": 12.8,
+   "rva_len_v5_mm": 267.0,
+   "rva_replaced": true
+  },
+  "case_w_016_right__topcow_mr_011_L": {
+   "rva_max_dev_mm": 15.0,
+   "rva_mean_dev_mm": 8.9,
+   "rva_len_v5_mm": 204.2,
+   "rva_replaced": true
+  },
+  "case_w_016_right__topcow_mr_014_L": {
+   "rva_max_dev_mm": 18.1,
+   "rva_mean_dev_mm": 8.7,
+   "rva_len_v5_mm": 223.8,
+   "rva_replaced": true
+  },
+  "case_w_017_left__topcow_mr_002_L": {
+   "rva_max_dev_mm": 21.7,
+   "rva_mean_dev_mm": 11.8,
+   "rva_len_v5_mm": 242.8,
+   "rva_replaced": true
+  },
+  "case_w_017_left__topcow_mr_005_L": {
+   "rva_max_dev_mm": 23.4,
+   "rva_mean_dev_mm": 13.8,
+   "rva_len_v5_mm": 242.5,
+   "rva_replaced": true
+  },
+  "case_w_017_left__topcow_mr_010": {
+   "rva_max_dev_mm": 28.0,
+   "rva_mean_dev_mm": 13.1,
+   "rva_len_v5_mm": 267.0,
+   "rva_replaced": true
+  },
+  "case_w_017_left__topcow_mr_011_L": {
+   "rva_max_dev_mm": 19.0,
+   "rva_mean_dev_mm": 10.5,
+   "rva_len_v5_mm": 204.5,
+   "rva_replaced": true
+  },
+  "case_w_017_left__topcow_mr_014_L": {
+   "rva_max_dev_mm": 25.8,
+   "rva_mean_dev_mm": 7.7,
+   "rva_len_v5_mm": 223.8,
+   "rva_replaced": true
+  },
+  "case_w_017_right__topcow_mr_005_L": {
+   "rva_max_dev_mm": 22.7,
+   "rva_mean_dev_mm": 6.1,
+   "rva_len_v5_mm": 242.5,
+   "rva_replaced": true
+  },
+  "case_w_017_right__topcow_mr_010": {
+   "rva_max_dev_mm": 21.3,
+   "rva_mean_dev_mm": 6.8,
+   "rva_len_v5_mm": 267.0,
+   "rva_replaced": true
+  },
+  "case_w_017_right__topcow_mr_011": {
+   "rva_max_dev_mm": 15.6,
+   "rva_mean_dev_mm": 9.2,
+   "rva_len_v5_mm": 233.8,
+   "rva_replaced": true
+  },
+  "case_w_017_right__topcow_mr_014_L": {
+   "rva_max_dev_mm": 20.9,
+   "rva_mean_dev_mm": 9.4,
+   "rva_len_v5_mm": 223.8,
+   "rva_replaced": true
+  },
+  "case_w_017_right__topcow_mr_018": {
+   "rva_max_dev_mm": 16.4,
+   "rva_mean_dev_mm": 9.9,
+   "rva_len_v5_mm": 242.5,
+   "rva_replaced": true
+  },
+  "case_w_018_right__topcow_mr_005_L": {
+   "rva_max_dev_mm": 10.4,
+   "rva_mean_dev_mm": 4.5,
+   "rva_len_v5_mm": 242.5,
+   "rva_replaced": true
+  },
+  "case_w_018_right__topcow_mr_007_L": {
+   "rva_max_dev_mm": 23.4,
+   "rva_mean_dev_mm": 13.0,
+   "rva_len_v5_mm": 278.0,
+   "rva_replaced": true
+  },
+  "case_w_018_right__topcow_mr_014_L": {
+   "rva_max_dev_mm": 17.9,
+   "rva_mean_dev_mm": 8.8,
+   "rva_len_v5_mm": 223.8,
+   "rva_replaced": true
+  },
+  "case_w_018_right__topcow_mr_022": {
+   "rva_max_dev_mm": 22.4,
+   "rva_mean_dev_mm": 10.1,
+   "rva_len_v5_mm": 231.8,
+   "rva_replaced": true
+  },
+  "case_w_018_right__topcow_mr_026": {
+   "rva_max_dev_mm": 27.1,
+   "rva_mean_dev_mm": 12.2,
+   "rva_len_v5_mm": 267.8,
+   "rva_replaced": true
+  },
+  "case_w_018b_left__topcow_mr_002": {
+   "rva_max_dev_mm": 21.1,
+   "rva_mean_dev_mm": 14.2,
+   "rva_len_v5_mm": 234.8,
+   "rva_replaced": true
+  },
+  "case_w_018b_left__topcow_mr_002_L": {
+   "rva_max_dev_mm": 24.4,
+   "rva_mean_dev_mm": 13.2,
+   "rva_len_v5_mm": 242.8,
+   "rva_replaced": true
+  },
+  "case_w_018b_left__topcow_mr_003": {
+   "rva_max_dev_mm": 26.5,
+   "rva_mean_dev_mm": 12.5,
+   "rva_len_v5_mm": 278.5,
+   "rva_replaced": true
+  },
+  "case_w_018b_left__topcow_mr_007": {
+   "rva_max_dev_mm": 20.2,
+   "rva_mean_dev_mm": 11.8,
+   "rva_len_v5_mm": 250.5,
+   "rva_replaced": true
+  },
+  "case_w_018b_left__topcow_mr_007_L": {
+   "rva_max_dev_mm": 23.6,
+   "rva_mean_dev_mm": 12.6,
+   "rva_len_v5_mm": 258.8,
+   "rva_replaced": true
+  },
+  "case_w_021_right__topcow_mr_001_L": {
+   "rva_max_dev_mm": 30.0,
+   "rva_mean_dev_mm": 12.5,
+   "rva_len_v5_mm": 246.0,
+   "rva_replaced": true
+  },
+  "case_w_021_right__topcow_mr_008_L": {
+   "rva_max_dev_mm": 28.2,
+   "rva_mean_dev_mm": 7.1,
+   "rva_len_v5_mm": 252.2,
+   "rva_replaced": true
+  },
+  "case_w_021_right__topcow_mr_016": {
+   "rva_max_dev_mm": 17.0,
+   "rva_mean_dev_mm": 6.5,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_w_021_right__topcow_mr_016_L": {
+   "rva_max_dev_mm": 21.9,
+   "rva_mean_dev_mm": 6.4,
+   "rva_len_v5_mm": 272.8,
+   "rva_replaced": true
+  },
+  "case_w_021_right__topcow_mr_020": {
+   "rva_max_dev_mm": 16.8,
+   "rva_mean_dev_mm": 9.5,
+   "rva_len_v5_mm": 249.8,
+   "rva_replaced": true
+  },
+  "case_w_022_right__topcow_mr_005_L": {
+   "rva_max_dev_mm": 31.9,
+   "rva_mean_dev_mm": 11.4,
+   "rva_len_v5_mm": 227.5,
+   "rva_replaced": true
+  },
+  "case_w_022_right__topcow_mr_011": {
+   "rva_max_dev_mm": 20.2,
+   "rva_mean_dev_mm": 11.9,
+   "rva_len_v5_mm": 203.2,
+   "rva_replaced": true
+  },
+  "case_w_022_right__topcow_mr_024_L": {
+   "rva_max_dev_mm": 14.6,
+   "rva_mean_dev_mm": 8.5,
+   "rva_len_v5_mm": 216.5,
+   "rva_replaced": true
+  },
+  "case_w_022_right__topcow_mr_026": {
+   "rva_max_dev_mm": 41.1,
+   "rva_mean_dev_mm": 13.4,
+   "rva_len_v5_mm": 303.5,
+   "rva_replaced": true
+  },
+  "case_w_024_right__topcow_mr_002": {
+   "rva_max_dev_mm": 20.6,
+   "rva_mean_dev_mm": 14.5,
+   "rva_len_v5_mm": 224.8,
+   "rva_replaced": true
+  },
+  "case_w_024_right__topcow_mr_011": {
+   "rva_max_dev_mm": 16.4,
+   "rva_mean_dev_mm": 9.4,
+   "rva_len_v5_mm": 233.8,
+   "rva_replaced": true
+  },
+  "case_w_024_right__topcow_mr_023_L": {
+   "rva_max_dev_mm": 21.5,
+   "rva_mean_dev_mm": 9.3,
+   "rva_len_v5_mm": 239.0,
+   "rva_replaced": true
+  },
+  "case_w_024_right__topcow_mr_026": {
+   "rva_max_dev_mm": 27.1,
+   "rva_mean_dev_mm": 12.2,
+   "rva_len_v5_mm": 267.8,
+   "rva_replaced": true
+  },
+  "case_w_024_right__topcow_mr_026_L": {
+   "rva_max_dev_mm": 16.0,
+   "rva_mean_dev_mm": 9.6,
+   "rva_len_v5_mm": 273.8,
+   "rva_replaced": true
+  },
+  "case_w_025_right__topcow_mr_007": {
+   "rva_max_dev_mm": 30.8,
+   "rva_mean_dev_mm": 12.0,
+   "rva_len_v5_mm": 250.5,
+   "rva_replaced": true
+  },
+  "case_w_025_right__topcow_mr_016_L": {
+   "rva_max_dev_mm": 20.8,
+   "rva_mean_dev_mm": 7.8,
+   "rva_len_v5_mm": 272.8,
+   "rva_replaced": true
+  },
+  "case_w_025_right__topcow_mr_020": {
+   "rva_max_dev_mm": 15.0,
+   "rva_mean_dev_mm": 8.0,
+   "rva_len_v5_mm": 249.8,
+   "rva_replaced": true
+  },
+  "case_w_025_right__topcow_mr_020_L": {
+   "rva_max_dev_mm": 15.9,
+   "rva_mean_dev_mm": 8.5,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_w_025_right__topcow_mr_021_L": {
+   "rva_max_dev_mm": 23.9,
+   "rva_mean_dev_mm": 11.0,
+   "rva_len_v5_mm": 272.2,
+   "rva_replaced": true
+  },
+  "case_w_026_left__topcow_mr_010_L": {
+   "rva_max_dev_mm": 32.3,
+   "rva_mean_dev_mm": 11.8,
+   "rva_len_v5_mm": 267.0,
+   "rva_replaced": true
+  },
+  "case_w_026_left__topcow_mr_020_L": {
+   "rva_max_dev_mm": 17.1,
+   "rva_mean_dev_mm": 8.4,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_w_027_left__topcow_mr_004": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 234.5,
+   "rva_replaced": false
+  },
+  "case_w_027_left__topcow_mr_005": {
+   "rva_max_dev_mm": 12.3,
+   "rva_mean_dev_mm": 6.2,
+   "rva_len_v5_mm": 243.2,
+   "rva_replaced": true
+  },
+  "case_w_027_left__topcow_mr_020": {
+   "rva_max_dev_mm": 16.7,
+   "rva_mean_dev_mm": 9.2,
+   "rva_len_v5_mm": 249.8,
+   "rva_replaced": true
+  },
+  "case_w_027_left__topcow_mr_022": {
+   "rva_max_dev_mm": 22.4,
+   "rva_mean_dev_mm": 10.1,
+   "rva_len_v5_mm": 231.8,
+   "rva_replaced": true
+  },
+  "case_w_027_left__topcow_mr_026": {
+   "rva_max_dev_mm": 23.7,
+   "rva_mean_dev_mm": 10.4,
+   "rva_len_v5_mm": 267.8,
+   "rva_replaced": true
+  },
+  "case_w_027_right__topcow_mr_005_L": {
+   "rva_max_dev_mm": 12.0,
+   "rva_mean_dev_mm": 6.5,
+   "rva_len_v5_mm": 242.5,
+   "rva_replaced": true
+  },
+  "case_w_027_right__topcow_mr_008": {
+   "rva_max_dev_mm": 14.7,
+   "rva_mean_dev_mm": 7.0,
+   "rva_len_v5_mm": 262.5,
+   "rva_replaced": true
+  },
+  "case_w_027_right__topcow_mr_016": {
+   "rva_max_dev_mm": 15.4,
+   "rva_mean_dev_mm": 6.2,
+   "rva_len_v5_mm": 261.8,
+   "rva_replaced": true
+  },
+  "case_w_027_right__topcow_mr_020": {
+   "rva_max_dev_mm": 19.1,
+   "rva_mean_dev_mm": 10.5,
+   "rva_len_v5_mm": 249.8,
+   "rva_replaced": true
+  },
+  "case_w_027_right__topcow_mr_022": {
+   "rva_max_dev_mm": 23.1,
+   "rva_mean_dev_mm": 11.4,
+   "rva_len_v5_mm": 231.8,
+   "rva_replaced": true
+  },
+  "case_w_029_right__topcow_mr_004": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 235.5,
+   "rva_replaced": false
+  },
+  "case_w_029_right__topcow_mr_010_L": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 235.8,
+   "rva_replaced": false
+  },
+  "case_w_029_right__topcow_mr_024_L": {
+   "rva_max_dev_mm": 8.2,
+   "rva_mean_dev_mm": 3.6,
+   "rva_len_v5_mm": 231.5,
+   "rva_replaced": true
+  },
+  "case_w_029_right__topcow_mr_026": {
+   "rva_max_dev_mm": 27.1,
+   "rva_mean_dev_mm": 12.2,
+   "rva_len_v5_mm": 267.8,
+   "rva_replaced": true
+  },
+  "case_w_029_right__topcow_mr_026_L": {
+   "rva_max_dev_mm": 22.6,
+   "rva_mean_dev_mm": 8.6,
+   "rva_len_v5_mm": 273.8,
+   "rva_replaced": true
+  },
+  "case_w_033_left__topcow_mr_007": {
+   "rva_max_dev_mm": 10.3,
+   "rva_mean_dev_mm": 6.5,
+   "rva_len_v5_mm": 250.5,
+   "rva_replaced": true
+  },
+  "case_w_033_left__topcow_mr_010": {
+   "rva_max_dev_mm": 28.0,
+   "rva_mean_dev_mm": 12.8,
+   "rva_len_v5_mm": 267.0,
+   "rva_replaced": true
+  },
+  "case_w_033_left__topcow_mr_011_L": {
+   "rva_max_dev_mm": 21.8,
+   "rva_mean_dev_mm": 10.1,
+   "rva_len_v5_mm": 204.2,
+   "rva_replaced": true
+  },
+  "case_w_033_left__topcow_mr_016": {
+   "rva_max_dev_mm": 17.0,
+   "rva_mean_dev_mm": 6.5,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_w_033_left__topcow_mr_024": {
+   "rva_max_dev_mm": 10.5,
+   "rva_mean_dev_mm": 5.0,
+   "rva_len_v5_mm": 213.8,
+   "rva_replaced": true
+  },
+  "case_w_034_left__topcow_mr_005_L": {
+   "rva_max_dev_mm": 24.9,
+   "rva_mean_dev_mm": 15.9,
+   "rva_len_v5_mm": 242.5,
+   "rva_replaced": true
+  },
+  "case_w_034_left__topcow_mr_008_L": {
+   "rva_max_dev_mm": 33.7,
+   "rva_mean_dev_mm": 9.6,
+   "rva_len_v5_mm": 252.2,
+   "rva_replaced": true
+  },
+  "case_w_034_left__topcow_mr_011": {
+   "rva_max_dev_mm": 16.4,
+   "rva_mean_dev_mm": 9.4,
+   "rva_len_v5_mm": 233.8,
+   "rva_replaced": true
+  },
+  "case_w_034_left__topcow_mr_014_L": {
+   "rva_max_dev_mm": 18.1,
+   "rva_mean_dev_mm": 8.7,
+   "rva_len_v5_mm": 223.8,
+   "rva_replaced": true
+  },
+  "case_w_034_left__topcow_mr_016": {
+   "rva_max_dev_mm": 17.0,
+   "rva_mean_dev_mm": 6.5,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_w_034_right__topcow_mr_005": {
+   "rva_max_dev_mm": 12.3,
+   "rva_mean_dev_mm": 6.2,
+   "rva_len_v5_mm": 243.2,
+   "rva_replaced": true
+  },
+  "case_w_034_right__topcow_mr_017_L": {
+   "rva_max_dev_mm": 13.4,
+   "rva_mean_dev_mm": 7.7,
+   "rva_len_v5_mm": 259.2,
+   "rva_replaced": true
+  },
+  "case_w_034_right__topcow_mr_020_L": {
+   "rva_max_dev_mm": 17.1,
+   "rva_mean_dev_mm": 8.4,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_w_034_right__topcow_mr_027": {
+   "rva_max_dev_mm": 31.6,
+   "rva_mean_dev_mm": 10.6,
+   "rva_len_v5_mm": 260.8,
+   "rva_replaced": true
+  },
+  "case_w_035_left__topcow_mr_001": {
+   "rva_max_dev_mm": 23.5,
+   "rva_mean_dev_mm": 11.9,
+   "rva_len_v5_mm": 239.8,
+   "rva_replaced": true
+  },
+  "case_w_035_left__topcow_mr_011": {
+   "rva_max_dev_mm": 16.4,
+   "rva_mean_dev_mm": 9.4,
+   "rva_len_v5_mm": 233.8,
+   "rva_replaced": true
+  },
+  "case_w_035_left__topcow_mr_015_L": {
+   "rva_max_dev_mm": 19.6,
+   "rva_mean_dev_mm": 10.1,
+   "rva_len_v5_mm": 263.0,
+   "rva_replaced": true
+  },
+  "case_w_035_left__topcow_mr_016": {
+   "rva_max_dev_mm": 21.7,
+   "rva_mean_dev_mm": 7.2,
+   "rva_len_v5_mm": 266.8,
+   "rva_replaced": true
+  },
+  "case_w_035_left__topcow_mr_024_L": {
+   "rva_max_dev_mm": 8.2,
+   "rva_mean_dev_mm": 3.6,
+   "rva_len_v5_mm": 231.5,
+   "rva_replaced": true
+  },
+  "case_w_036_left__topcow_mr_001_L": {
+   "rva_max_dev_mm": 16.0,
+   "rva_mean_dev_mm": 10.0,
+   "rva_len_v5_mm": 246.0,
+   "rva_replaced": true
+  },
+  "case_w_036_left__topcow_mr_011": {
+   "rva_max_dev_mm": 16.2,
+   "rva_mean_dev_mm": 9.1,
+   "rva_len_v5_mm": 218.8,
+   "rva_replaced": true
+  },
+  "case_w_036_left__topcow_mr_020": {
+   "rva_max_dev_mm": 17.3,
+   "rva_mean_dev_mm": 9.5,
+   "rva_len_v5_mm": 249.8,
+   "rva_replaced": true
+  },
+  "case_w_036_left__topcow_mr_022": {
+   "rva_max_dev_mm": 21.9,
+   "rva_mean_dev_mm": 10.2,
+   "rva_len_v5_mm": 231.8,
+   "rva_replaced": true
+  },
+  "case_w_036_left__topcow_mr_024": {
+   "rva_max_dev_mm": 14.4,
+   "rva_mean_dev_mm": 4.7,
+   "rva_len_v5_mm": 224.0,
+   "rva_replaced": true
+  },
+  "case_w_036_right__topcow_mr_005": {
+   "rva_max_dev_mm": 13.0,
+   "rva_mean_dev_mm": 6.2,
+   "rva_len_v5_mm": 243.2,
+   "rva_replaced": true
+  },
+  "case_w_036_right__topcow_mr_014_L": {
+   "rva_max_dev_mm": 18.1,
+   "rva_mean_dev_mm": 8.7,
+   "rva_len_v5_mm": 223.8,
+   "rva_replaced": true
+  },
+  "case_w_036_right__topcow_mr_018_L": {
+   "rva_max_dev_mm": 17.1,
+   "rva_mean_dev_mm": 9.5,
+   "rva_len_v5_mm": 241.8,
+   "rva_replaced": true
+  },
+  "case_w_036_right__topcow_mr_020_L": {
+   "rva_max_dev_mm": 18.5,
+   "rva_mean_dev_mm": 8.4,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_w_036_right__topcow_mr_023": {
+   "rva_max_dev_mm": 24.5,
+   "rva_mean_dev_mm": 10.4,
+   "rva_len_v5_mm": 244.5,
+   "rva_replaced": true
+  },
+  "case_w_037_right__topcow_mr_010_L": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 235.8,
+   "rva_replaced": false
+  },
+  "case_w_037_right__topcow_mr_020_L": {
+   "rva_max_dev_mm": 18.0,
+   "rva_mean_dev_mm": 8.2,
+   "rva_len_v5_mm": 241.0,
+   "rva_replaced": true
+  },
+  "case_w_037_right__topcow_mr_023": {
+   "rva_max_dev_mm": 29.7,
+   "rva_mean_dev_mm": 13.0,
+   "rva_len_v5_mm": 244.5,
+   "rva_replaced": true
+  },
+  "case_w_039_right__topcow_mr_001_L": {
+   "rva_max_dev_mm": 26.9,
+   "rva_mean_dev_mm": 11.6,
+   "rva_len_v5_mm": 266.0,
+   "rva_replaced": true
+  },
+  "case_w_039_right__topcow_mr_021_L": {
+   "rva_max_dev_mm": 23.3,
+   "rva_mean_dev_mm": 8.2,
+   "rva_len_v5_mm": 272.2,
+   "rva_replaced": true
+  },
+  "case_w_039_right__topcow_mr_022_L": {
+   "rva_max_dev_mm": 21.5,
+   "rva_mean_dev_mm": 8.3,
+   "rva_len_v5_mm": 258.8,
+   "rva_replaced": true
+  },
+  "case_w_039_right__topcow_mr_023": {
+   "rva_max_dev_mm": 17.3,
+   "rva_mean_dev_mm": 7.6,
+   "rva_len_v5_mm": 244.5,
+   "rva_replaced": true
+  },
+  "case_w_039_right__topcow_mr_026_L": {
+   "rva_max_dev_mm": 33.2,
+   "rva_mean_dev_mm": 10.7,
+   "rva_len_v5_mm": 273.8,
+   "rva_replaced": true
+  },
+  "case_w_040_left__topcow_mr_005_L": {
+   "rva_max_dev_mm": 11.8,
+   "rva_mean_dev_mm": 5.0,
+   "rva_len_v5_mm": 237.5,
+   "rva_replaced": true
+  },
+  "case_w_040_left__topcow_mr_011": {
+   "rva_max_dev_mm": 16.4,
+   "rva_mean_dev_mm": 9.4,
+   "rva_len_v5_mm": 233.8,
+   "rva_replaced": true
+  },
+  "case_w_040_left__topcow_mr_021": {
+   "rva_max_dev_mm": 27.7,
+   "rva_mean_dev_mm": 10.4,
+   "rva_len_v5_mm": 273.5,
+   "rva_replaced": true
+  },
+  "case_w_040_left__topcow_mr_023": {
+   "rva_max_dev_mm": 17.0,
+   "rva_mean_dev_mm": 7.4,
+   "rva_len_v5_mm": 244.8,
+   "rva_replaced": true
+  },
+  "case_w_040_left__topcow_mr_023_L": {
+   "rva_max_dev_mm": 21.1,
+   "rva_mean_dev_mm": 9.2,
+   "rva_len_v5_mm": 239.0,
+   "rva_replaced": true
+  },
+  "case_w_042_left__topcow_mr_005_L": {
+   "rva_max_dev_mm": 10.4,
+   "rva_mean_dev_mm": 4.5,
+   "rva_len_v5_mm": 242.5,
+   "rva_replaced": true
+  },
+  "case_w_042_left__topcow_mr_010_L": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 231.0,
+   "rva_replaced": false
+  },
+  "case_w_042_left__topcow_mr_023": {
+   "rva_max_dev_mm": 17.3,
+   "rva_mean_dev_mm": 7.6,
+   "rva_len_v5_mm": 244.5,
+   "rva_replaced": true
+  },
+  "case_w_042_left__topcow_mr_026_L": {
+   "rva_max_dev_mm": 16.0,
+   "rva_mean_dev_mm": 9.6,
+   "rva_len_v5_mm": 273.8,
+   "rva_replaced": true
+  },
+  "case_w_046_left__topcow_mr_012": {
+   "rva_max_dev_mm": 16.5,
+   "rva_mean_dev_mm": 10.5,
+   "rva_len_v5_mm": 253.5,
+   "rva_replaced": true
+  },
+  "case_w_046_left__topcow_mr_020_L": {
+   "rva_max_dev_mm": 18.3,
+   "rva_mean_dev_mm": 8.3,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_w_046_left__topcow_mr_026": {
+   "rva_max_dev_mm": 29.9,
+   "rva_mean_dev_mm": 12.4,
+   "rva_len_v5_mm": 267.8,
+   "rva_replaced": true
+  },
+  "case_w_047_left__topcow_mr_018_L": {
+   "rva_max_dev_mm": 13.3,
+   "rva_mean_dev_mm": 8.6,
+   "rva_len_v5_mm": 241.8,
+   "rva_replaced": true
+  },
+  "case_w_047_left__topcow_mr_022": {
+   "rva_max_dev_mm": 22.4,
+   "rva_mean_dev_mm": 10.1,
+   "rva_len_v5_mm": 231.8,
+   "rva_replaced": true
+  },
+  "case_w_047_left__topcow_mr_023": {
+   "rva_max_dev_mm": 23.2,
+   "rva_mean_dev_mm": 10.3,
+   "rva_len_v5_mm": 244.5,
+   "rva_replaced": true
+  },
+  "case_w_047_left__topcow_mr_026_L": {
+   "rva_max_dev_mm": 36.3,
+   "rva_mean_dev_mm": 11.3,
+   "rva_len_v5_mm": 273.8,
+   "rva_replaced": true
+  },
+  "case_w_047_left__topcow_mr_027": {
+   "rva_max_dev_mm": 31.6,
+   "rva_mean_dev_mm": 10.6,
+   "rva_len_v5_mm": 260.8,
+   "rva_replaced": true
+  },
+  "case_w_048_left__topcow_mr_001": {
+   "rva_max_dev_mm": 25.7,
+   "rva_mean_dev_mm": 12.3,
+   "rva_len_v5_mm": 239.8,
+   "rva_replaced": true
+  },
+  "case_w_048_left__topcow_mr_005": {
+   "rva_max_dev_mm": 20.8,
+   "rva_mean_dev_mm": 6.1,
+   "rva_len_v5_mm": 243.2,
+   "rva_replaced": true
+  },
+  "case_w_048_left__topcow_mr_008": {
+   "rva_max_dev_mm": 34.4,
+   "rva_mean_dev_mm": 14.2,
+   "rva_len_v5_mm": 262.5,
+   "rva_replaced": true
+  },
+  "case_w_048_left__topcow_mr_010_L": {
+   "rva_max_dev_mm": 29.8,
+   "rva_mean_dev_mm": 11.6,
+   "rva_len_v5_mm": 267.0,
+   "rva_replaced": true
+  },
+  "case_w_050_left__topcow_mr_004_L": {
+   "rva_max_dev_mm": 21.1,
+   "rva_mean_dev_mm": 10.5,
+   "rva_len_v5_mm": 277.8,
+   "rva_replaced": true
+  },
+  "case_w_050_left__topcow_mr_005": {
+   "rva_max_dev_mm": 12.8,
+   "rva_mean_dev_mm": 5.7,
+   "rva_len_v5_mm": 213.5,
+   "rva_replaced": true
+  },
+  "case_w_050_left__topcow_mr_020_L": {
+   "rva_max_dev_mm": 18.0,
+   "rva_mean_dev_mm": 9.8,
+   "rva_len_v5_mm": 251.0,
+   "rva_replaced": true
+  },
+  "case_w_050_left__topcow_mr_021_L": {
+   "rva_max_dev_mm": 22.7,
+   "rva_mean_dev_mm": 8.5,
+   "rva_len_v5_mm": 272.2,
+   "rva_replaced": true
+  },
+  "case_w_050_left__topcow_mr_026_L": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 236.2,
+   "rva_replaced": false
+  },
+  "case_w_051_right__topcow_mr_008": {
+   "rva_max_dev_mm": 24.4,
+   "rva_mean_dev_mm": 8.1,
+   "rva_len_v5_mm": 247.8,
+   "rva_replaced": true
+  },
+  "case_w_051_right__topcow_mr_008_L": {
+   "rva_max_dev_mm": 33.1,
+   "rva_mean_dev_mm": 8.2,
+   "rva_len_v5_mm": 262.5,
+   "rva_replaced": true
+  },
+  "case_w_051_right__topcow_mr_012": {
+   "rva_max_dev_mm": 23.7,
+   "rva_mean_dev_mm": 12.6,
+   "rva_len_v5_mm": 253.5,
+   "rva_replaced": true
+  },
+  "case_w_051_right__topcow_mr_017_L": {
+   "rva_max_dev_mm": 14.9,
+   "rva_mean_dev_mm": 7.9,
+   "rva_len_v5_mm": 249.0,
+   "rva_replaced": true
+  },
+  "case_w_051_right__topcow_mr_025_L": {
+   "rva_max_dev_mm": 0.0,
+   "rva_mean_dev_mm": 0.0,
+   "rva_len_v5_mm": 233.5,
+   "rva_replaced": false
+  },
+  "case_w_052_left__topcow_mr_010_L": {
+   "rva_max_dev_mm": 32.3,
+   "rva_mean_dev_mm": 11.8,
+   "rva_len_v5_mm": 267.0,
+   "rva_replaced": true
+  },
+  "case_w_052_left__topcow_mr_020_L": {
+   "rva_max_dev_mm": 17.1,
+   "rva_mean_dev_mm": 8.4,
+   "rva_len_v5_mm": 262.0,
+   "rva_replaced": true
+  },
+  "case_w_052_left__topcow_mr_026": {
+   "rva_max_dev_mm": 27.1,
+   "rva_mean_dev_mm": 12.2,
+   "rva_len_v5_mm": 267.8,
+   "rva_replaced": true
+  },
+  "case_w_052_left__topcow_mr_027": {
+   "rva_max_dev_mm": 30.6,
+   "rva_mean_dev_mm": 11.9,
+   "rva_len_v5_mm": 260.8,
+   "rva_replaced": true
+  },
+  "case_w_052_left__topcow_mr_027_L": {
+   "rva_max_dev_mm": 20.4,
+   "rva_mean_dev_mm": 10.5,
+   "rva_len_v5_mm": 280.8,
+   "rva_replaced": true
+  }
+ }
+}
