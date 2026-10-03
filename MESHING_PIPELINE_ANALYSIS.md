@@ -28,10 +28,20 @@ texture) never reaches the simulator for any of the grafted anatomies.
 | D. centerline → mesh | `bake_meshes.py` → `generate_mesh()` | voxel cube **[0.6, 0.6, 0.9] mm**, 5 padding layers, mark every centerline point as a binary sphere (`dist < r`), `gaussian_smooth(1)` **twice**, `marching_cubes(level=None)`, `decimate(0.99)` | σ = √2 voxels = 0.85 mm x/y, **1.27 mm z**; iso level = (min+max)/2; quadric decimation, no volume preservation |
 | E. into SOFA | `sofabeamadapter.py` | `MeshObjLoader` → `TriangleCollisionModel` + `LineCollisionModel`; `LocalMinDistance(contactDistance=0.3, alarmDistance=0.5)` | the device is a zero-proximity line; the wall is effectively **0.3 mm thicker** than the mesh |
 
-The shipped host patient is different again: its `vessel_architecture_collision.obj`
-is the real VMR surface, `decimate(0.9)`, written unwelded (3,583 triangles,
-10,750 points, every edge open). So the one test anatomy is a real segmented
-surface while every training anatomy is a smooth tube.
+The shipped host patient is different again. It is the stEVE_bench patient, a
+manual CTA (aorta) and MRA (cerebral) segmentation assembled by hand (arXiv
+2410.01956 §3.3), not a VMR model. Its dense surface,
+`vessel_architecture_visual.obj` (44,877 triangles, about 1.4 mm edges in the
+neck), is only rendered; `Centrelines_comb` is VMTK run on it (radius ratio
+1.000). SOFA collides with `vessel_architecture_collision.obj`, a coarse copy:
+1,786 vertices and 3,582 triangles plus 1 quad, welded and closed in the file
+(genus 4). Its neck edges are about 6 mm (about two around a vessel), and its
+neck lumen is 1.3–2.1× the declared radius, with vertices 1.7–3.0 mm outside the
+visual wall. So the one test anatomy collides with a coarse, inflated, faceted
+surface, while every training anatomy's host part is a smooth tube built from
+the visual surface's centerlines. How SOFA receives it is item 10 of §3.
+(Corrected 2026-10-01 from measurements; an earlier version called this mesh
+"the real VMR surface, `decimate(0.9)`, written unwelded (3,583 triangles)".)
 
 ---
 
@@ -183,17 +193,22 @@ Reading it:
    navigable radius is smaller still.
 7. **Real lumen shape discarded (A→D).** The label surface / Zenodo STL is used
    only to seed VMTK. Stenoses, elliptical sections and the bulb become
-   circular tubes. The host test anatomy, by contrast, *is* its real surface —
-   a train/test mismatch in wall geometry on top of the anatomy split.
+   circular tubes. The host test anatomy, by contrast, collides with a coarse,
+   inflated copy of its segmented surface (§1) — a train/test mismatch in wall
+   geometry on top of the anatomy split.
 8. **End caps.** Spheres at the terminus blurred to nothing → `DISTAL_TRIM_MM`.
    An SDF cap is a hemisphere of full radius; the trim becomes unnecessary,
    and a 2–3 mm flow-extension-style overshoot would put every terminal target
    in real lumen.
 9. **Label necks are not screened (A).** One-voxel necks in the label predict
    both known failures (§2.2); the pipeline discovers them four stages later.
-10. **Unwelded host mesh (E).** The shipped `.obj` is a triangle soup with
-    10,750 open edges. SOFA copes, but it is not what the baked meshes are,
-    and any manifold-dependent check on it is meaningless.
+10. **Unwelded host mesh (E).** The shipped `.obj` itself is welded (1,786
+    vertices, every edge shared by two faces). But `FromMesh` reads it through
+    VTK and writes the temporary OBJ that SOFA loads as a triangle soup:
+    10,750 points, every edge open, and the one quad dropped by the
+    triangle-only topology, which leaves a hole 7.0 mm from the RCCA centerline
+    at s 87.5. SOFA copes, but it is not what the baked meshes are, and any
+    manifold-dependent check on the loaded mesh is meaningless.
 
 ## 4. Inefficiencies
 
@@ -319,7 +334,7 @@ Not in VMTK but the same category: `scipy.ndimage.binary_fill_holes`,
    `max(f_tube_host, f_donor_surface)`: voxelise the TopBrain label surface /
    Zenodo STL (`vmtksurfacetobinaryimage` → EDT, or `vtkImplicitPolyDataDistance`)
    in the same grid and combine. Real siphon and bulb geometry, circular tube
-   only where the host is procedural. Same operation would give the host test
+   only where the host is still built from its centerlines. Same operation would give the host test
    anatomy the same wall character as the training set.
 9. **One environment** with `vmtk` + `scipy` + `scikit-image`; stage A and B
    become one script and `carotidprofiles`/`Resampling` replace the hand-rolled
@@ -468,9 +483,10 @@ into the house colour groups by nearest branch) and `saved/figs/carotid_v3/`
 (112, the existing carotid figure script reading the baked `.obj`).
 
 What v3 still does not do: the host arch, trunk, RVA and the other shipped
-branches remain tubes (the host is procedural — there is no segmentation to
-use); the ICA extension templates on 34 short carotid donors are synthetic and
-stay tubes; and the test anatomy is unchanged. If train and test are to share
-construction exactly, the shipped VMR surface can go through the same union
+branches remain tubes built from `Centrelines_comb` (the host's segmented
+surface, `vessel_architecture_visual.obj`, is not used; see §1); the ICA
+extension templates on 34 short carotid donors are synthetic and stay tubes;
+and the test anatomy is unchanged. If train and test are to share
+construction exactly, the shipped visual surface can go through the same union
 (`host_v2_control` shows the tube half of that already passes).
 
