@@ -527,6 +527,14 @@ changed. The final swap re-ran the check stage's own tools instead.
   everywhere (`notes/verify_v5_mesh.md`, before the move, which fixed two more such points on
   case_m_022_left__topcow_mr_021_L). Median VA lumen minimum over all 446 VAs: 0.834 mm in v5, 0.978 mm in v4
   (`results/v5_final_summary.json` → `lumen.va_lumen_obj`).
+  **Corrected by the orientation audit** (`reports/TopBrain piece orientation audit (v5).md`), which sampled the
+  centreline polyline at 0.05–0.1 mm instead of the control points: 4 VAs fall below 0.65 mm, the fourth being
+  case_w_047_left__topcow_mr_023 RVA (0.637, donor). The w_025 RVA has two such points: 0.547 mm on the donor stretch
+  (the deepest) and the quoted 0.632 mm, which lies in the TopBrain piece (a pinch in the topcow_mr_021 left-VA label,
+  the same point as in v4). None is a narrowing the CT supports: on the donor stretches the CT-edge wall stops short on
+  the bone side, the 1.0 mm floor holds the union at about 0.93 mm and decimation takes the OBJ below 0.65. Every OBJ
+  keeps a wire path with at least 0.71 mm of clearance. The artefact is systematic (377 of 429 donor VAs use floored
+  stretches); its fix is a v6 item.
 - **Smooth donors are near-tube on the OBJ.** 17 VAs from the two smoothest donor sides, ia172_190 L and ia172_141 L
   (union 0.029–0.037), read 0.010–0.019 on the collision OBJ (`notes/verify_v5_wall.md`, section 4; measured before
   the move).
@@ -550,6 +558,9 @@ changed. The final swap re-ran the check stage's own tools instead.
 
 ## Follow-ups
 
+**Done in v6** (`CAROTID_V6.md`, `carotid_data/anatomies_v6`): every v6 item below, except the 17 VA sides with no
+donor (left for later) and the donor colour in the figures (later).
+
 - **v6: the donor's own subclavian junction** (user, `notes/V5_BUILD_LOG.md` 2026-10-03 14:02, first noted as
   v5.1, named v6 by the user later the same day). Graft a short
   stretch of the donor's own subclavian around the ostium, from about 10 mm after the subclavian origin (keeping the
@@ -564,10 +575,11 @@ changed. The final swap re-ran the check stage's own tools instead.
 - **v6: TopBrain piece orientation.** The user saw TopBrain pieces that do not rise as they should (left ICA siphons in
   case_k_011_left mr_012_L / 013_L / 016_L / 023_L and case_w_003_left mr_007_L / 010; the TopBrain VA top in
   case_m_006_left mr_025_L / 027_L) — the mistake the frame-matching fix (tangent and superior, `TOPBRAIN_PIPELINE.md`,
-  `CAROTID_THREE_SOURCE.md`) removed in the earlier sets. An audit of every v5 and v4 anatomy and of the code paths
-  runs before v6; its fixes go into v6.
-- **v6: the three VAs narrower than 0.65 mm** — checked in the same audit (real narrowing or artefact); any fix goes into
-  v6.
+  `CAROTID_THREE_SOURCE.md`) removed in the earlier sets. The audit (`reports/TopBrain piece orientation audit
+  (v5).md`) found that the frame match pins only the roll, so tilt and heading follow an anchor tangent nothing checks,
+  and the rise check was never a gate. 141 of 223 v5 anatomies have a visibly wrong piece (v4 171, v3 11); the siphons
+  and ECA tips are inherited from v4, the VA tops come from v5's fit, which has no superior term. Its fixes go into v6.
+- **v6: the narrow VAs and the donor wall's bone side** — see the corrected limitation above.
 - Later: the donor VA colour in the figures (dark teal, near-black on the page).
 
 ## Records
