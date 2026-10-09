@@ -1,0 +1,260 @@
+{
+ "name": "case_w_008_right__topcow_mr_001",
+ "part_versions": {
+  "coverage": "checks_v6 1.6",
+  "folds": "checks_v6 1.6"
+ },
+ "script": "checks_v6 1.6 (2026-10-08; s3_fix: 1.6 = part coverage: the right-route pieces against the v4 / v5 SHIPPED wall (real scanned wall lost < 1 % of the piece, D27; >= 0.1 % flagged); 1.5 = D27 bake repair window (capsule-clipped cells off both references) reported not gated, only for pieces failing under 1.4; 1.4 = D26 own scanned surface as the D22 reference where v4 hid it, every cell gated, + part_versions; 1.3 2026-10-06 s2_integrate2: 1.3 =D22 surface-preserved right-route gate (fork / siphon) replaces the relief-ratio gate (ratio kept as information) + coverage report, D23 tier-A acceptance, geom_v6 1.1; 1.2 2026-10-04 s2_harden_wall_bake; 1.1: D19/D20 route gate per real section on the moved surface + RCCA prefix gate; loader_one 1.1; 1.2: part geom = geom_v6 whole-tree clearance + 1 mm kinks)",
+ "coverage": {
+  "dev_mm": 0.3,
+  "loss_max": 0.01,
+  "flag_min": 0.001,
+  "union": "/full/iso/case_w_008_right__topcow_mr_001.vtp",
+  "v4": {
+   "fork": {
+    "surface_v6": "case_w_008_right_lumen.stl",
+    "surface_ref": "case_w_008_right_lumen.stl",
+    "gate_v6": [
+     26.03,
+     127.978
+    ],
+    "gate_ref": [
+     26.03,
+     128.0
+    ],
+    "handle_windows_v6": [
+     [
+      72.53,
+      74.03
+     ]
+    ],
+    "mirror_v6": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_ref": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "cells": 2159,
+    "area_mm2": 1755.36,
+    "coverage": 0.99519,
+    "uncovered_mm2": 8.44,
+    "uncovered": {
+     "on_own_scan_mm2": 7.53,
+     "inside_v6_union_mm2": 0.0,
+     "s_runs_v6": [
+      [
+       114.75,
+       117.75
+      ]
+     ],
+     "depth_mm": {
+      "min": 0.898,
+      "median": 1.804,
+      "max": 2.085
+     }
+    },
+    "lost_mm2": 7.53,
+    "deficit": 0.004291,
+    "lost": {
+     "s_runs_v6": [
+      [
+       114.75,
+       117.75
+      ]
+     ],
+     "depth_mm": {
+      "min": 0.898,
+      "median": 1.558,
+      "max": 2.032
+     },
+     "near_window_2mm_mm2": 0.0
+    },
+    "ok": true,
+    "flag": true
+   },
+   "siphon": {
+    "surface_v6": "topcow_mr_001_rICA.vtp",
+    "surface_ref": "topcow_mr_001_rICA.vtp",
+    "gate_v6": [
+     136.978,
+     242.75
+    ],
+    "gate_ref": [
+     137.0,
+     243.0
+    ],
+    "handle_windows_v6": [
+     [
+      212.48,
+      213.98
+     ],
+     [
+      222.23,
+      226.17
+     ]
+    ],
+    "mirror_v6": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_ref": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "cells": 2965,
+    "area_mm2": 1733.79,
+    "coverage": 1.0,
+    "uncovered_mm2": 0.0,
+    "lost_mm2": 0.0,
+    "deficit": 0.0,
+    "ok": true,
+    "flag": false
+   }
+  },
+  "v5": {
+   "fork": {
+    "surface_v6": "case_w_008_right_lumen.stl",
+    "surface_ref": "case_w_008_right_lumen.stl",
+    "gate_v6": [
+     26.03,
+     127.978
+    ],
+    "gate_ref": [
+     26.03,
+     128.0
+    ],
+    "handle_windows_v6": [
+     [
+      72.53,
+      74.03
+     ]
+    ],
+    "mirror_v6": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_ref": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "cells": 2081,
+    "area_mm2": 1755.9,
+    "coverage": 0.995192,
+    "uncovered_mm2": 8.44,
+    "uncovered": {
+     "on_own_scan_mm2": 7.53,
+     "inside_v6_union_mm2": 0.0,
+     "s_runs_v6": [
+      [
+       114.75,
+       117.75
+      ]
+     ],
+     "depth_mm": {
+      "min": 0.898,
+      "median": 1.804,
+      "max": 2.085
+     }
+    },
+    "lost_mm2": 7.53,
+    "deficit": 0.00429,
+    "lost": {
+     "s_runs_v6": [
+      [
+       114.75,
+       117.75
+      ]
+     ],
+     "depth_mm": {
+      "min": 0.898,
+      "median": 1.558,
+      "max": 2.032
+     },
+     "near_window_2mm_mm2": 0.0
+    },
+    "ok": true,
+    "flag": true
+   },
+   "siphon": {
+    "surface_v6": "topcow_mr_001_rICA.vtp",
+    "surface_ref": "topcow_mr_001_rICA.vtp",
+    "gate_v6": [
+     136.978,
+     242.75
+    ],
+    "gate_ref": [
+     137.0,
+     243.0
+    ],
+    "handle_windows_v6": [
+     [
+      212.48,
+      213.98
+     ],
+     [
+      222.23,
+      226.17
+     ]
+    ],
+    "mirror_v6": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_ref": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "cells": 2865,
+    "area_mm2": 1733.18,
+    "coverage": 1.0,
+    "uncovered_mm2": 0.0,
+    "lost_mm2": 0.0,
+    "deficit": 0.0,
+    "ok": true,
+    "flag": false
+   }
+  },
+  "fork": {
+   "deficit_max": 0.004291,
+   "ok": true,
+   "flag": true,
+   "lost_mm2_max": 7.53
+  },
+  "siphon": {
+   "deficit_max": 0.0,
+   "ok": true,
+   "flag": false,
+   "lost_mm2_max": 0.0
+  }
+ },
+ "seconds": {
+  "coverage": 12.2,
+  "folds": 0.5
+ },
+ "gates": {
+  "route_fork_coverage_loss_lt_1pct": true,
+  "route_siphon_coverage_loss_lt_1pct": true,
+  "obj_no_fold_over": true
+ },
+ "pass": true,
+ "folds": {
+  "obj": {
+   "fold_pairs": 0,
+   "pairs": []
+  },
+  "full": {
+   "fold_pairs": 0,
+   "pairs": []
+  }
+ }
+}

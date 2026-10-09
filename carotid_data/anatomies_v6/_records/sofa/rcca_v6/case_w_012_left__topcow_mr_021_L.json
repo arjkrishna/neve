@@ -1,0 +1,1137 @@
+{
+ "name": "case_w_012_left__topcow_mr_021_L",
+ "anatomy_dir": "/repo/carotid_data/anatomies_v6",
+ "steps_budget": 300,
+ "seeds": [
+  777,
+  778,
+  779
+ ],
+ "exception": null,
+ "tool": "sofa_rcca_v6 1.0 (s2_integrate, 2026-10-06; = sofa_va_entry 1.1 with the RCCA training route)",
+ "reset_s": 3.3,
+ "branches": 18,
+ "has_RVA_LVA": [
+  true,
+  true
+ ],
+ "loader_mesh_path": "/repo/carotid_data/anatomies_v6/case_w_012_left__topcow_mr_021_L/vessel_architecture_collision.obj",
+ "loader_mesh_is_this_obj": true,
+ "target_vessel_frame": {
+  "dist_to_rcca_mm": 0.0,
+  "rcca_s_mm": 181.0
+ },
+ "insertion_inside": true,
+ "rcca": {
+  "length_mm": 249.9,
+  "host_cut_mm": 48.2,
+  "eca_takeoff_mm": 72.1,
+  "path_s_fork1_mm": 33.5,
+  "path_s_fork2_mm": 105.5,
+  "fork_placement": "v6_map",
+  "fork_mirror": [
+   -1.0,
+   1.0,
+   1.0
+  ]
+ },
+ "per_seed": [
+  {
+   "seed": 777,
+   "max_rcca_s_mm": 205.0,
+   "past_seam1_20mm": true,
+   "past_bifurcation": true,
+   "reached_siphon": true,
+   "reached_target": true,
+   "final_tip": {
+    "branch": "RCCA",
+    "s_mm": 204.0
+   },
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     3.8396,
+     2.4053
+    ]
+   }
+  },
+  {
+   "seed": 778,
+   "max_rcca_s_mm": 151.0,
+   "past_seam1_20mm": true,
+   "past_bifurcation": true,
+   "reached_siphon": true,
+   "reached_target": false,
+   "final_tip": {
+    "branch": "RCCA",
+    "s_mm": 152.0
+   },
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     1.6547,
+     0.0537
+    ]
+   }
+  },
+  {
+   "seed": 779,
+   "max_rcca_s_mm": 83.0,
+   "past_seam1_20mm": true,
+   "past_bifurcation": true,
+   "reached_siphon": false,
+   "reached_target": false,
+   "final_tip": {
+    "branch": "RCCA",
+    "s_mm": 57.0
+   },
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     2.4813,
+     0.0043
+    ]
+   }
+  }
+ ],
+ "route": {
+  "n_seeds": 3,
+  "past_seam1_20mm": 3,
+  "past_bifurcation": 3,
+  "reached_siphon": 2,
+  "reached_target": 1,
+  "max_rcca_s_mm_median": 151.0
+ },
+ "episodes": 3,
+ "steps": 900,
+ "nonfinite_steps": 0,
+ "tip_outside_steps": 0,
+ "tip_outside_max_mm": 0.0,
+ "tip_outside_gt_0.5mm_steps": 0,
+ "dev_pts_checked": 786960,
+ "dev_pts_outside": 1313,
+ "dev_out_gt_0.3mm_pts": 609,
+ "dev_outside_max_mm": 2.148486097771985,
+ "dev_out_worst": {
+  "mm": 2.148,
+  "step": 196,
+  "branch": "RECA",
+  "s_mm": 23.0,
+  "dof_index": 24,
+  "point": [
+   -8.0,
+   14.56,
+   503.55
+  ],
+  "d_centreline_mm": 4.36
+ },
+ "tip_out_sites": {},
+ "max_rcca_s_mm": 205.0,
+ "fork_attempts": [
+  [
+   0,
+   0
+  ],
+  [
+   0,
+   1
+  ],
+  [
+   0,
+   3
+  ]
+ ],
+ "unbuckles": 3,
+ "ms_per_step": 448.4,
+ "episode_records": [
+  {
+   "nonfinite_steps": 0,
+   "tip_outside_steps": 0,
+   "tip_outside_max_mm": 0.0,
+   "tip_outside_gt_0.5mm_steps": 0,
+   "dev_pts_checked": 309922,
+   "dev_pts_outside": 506,
+   "dev_outside_max_mm": 1.103098518343865,
+   "max_rcca_s_mm": 205.0,
+   "first_step_past_seam1_20": 101,
+   "first_step_past_bif": 123,
+   "first_step_siphon": 164,
+   "mode_counts": {
+    "advance": 167,
+    "align": 19,
+    "approach": 18,
+    "exercise": 96
+   },
+   "branch_visits": {
+    "(11)": 39,
+    "RCCA": 261
+   },
+   "dev_out_gt_0.3mm_by_branch": {
+    "(11)@40": 3,
+    "RCCA@0": 6,
+    "RVA@0": 1,
+    "RCCA@10": 28,
+    "RCCA@20": 6,
+    "RCCA@40": 5,
+    "RCCA@80": 2,
+    "RCCA@70": 1,
+    "RCCA@130": 16,
+    "RCCA@120": 1,
+    "RCCA@160": 13,
+    "RCCA@180": 35,
+    "RCCA@170": 1
+   },
+   "dev_out_gt_0.3mm_pts": 118,
+   "dev_out_worst": {
+    "mm": 1.103,
+    "step": 288,
+    "branch": "RCCA",
+    "s_mm": 182.0,
+    "dof_index": 25,
+    "point": [
+     -0.54,
+     13.24,
+     573.5
+    ],
+    "d_centreline_mm": 3.71
+   },
+   "unbuckles": 0,
+   "tip_out_sites": {},
+   "tip_out_worst": null,
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     3.8396,
+     2.4053
+    ]
+   },
+   "steps": 300,
+   "ms_per_step": 480.7,
+   "fork_attempts": [
+    0,
+    0
+   ],
+   "final_tip": {
+    "branch": "RCCA",
+    "s_mm": 204.0
+   },
+   "past_seam1_20mm": true,
+   "past_bifurcation": true,
+   "reached_siphon": true,
+   "reached_target": true,
+   "trace": [
+    [
+     9,
+     "advance",
+     "(11)",
+     21.7,
+     9.5,
+     0.0
+    ],
+    [
+     19,
+     "advance",
+     "(11)",
+     33.8,
+     20.1,
+     0.0
+    ],
+    [
+     29,
+     "align",
+     "(11)",
+     40.8,
+     27.5,
+     5.5
+    ],
+    [
+     39,
+     "align",
+     "RCCA",
+     2.0,
+     34.1,
+     11.9
+    ],
+    [
+     49,
+     "advance",
+     "RCCA",
+     9.0,
+     44.2,
+     22.2
+    ],
+    [
+     59,
+     "advance",
+     "RCCA",
+     16.0,
+     54.8,
+     32.7
+    ],
+    [
+     69,
+     "advance",
+     "RCCA",
+     26.0,
+     65.3,
+     43.3
+    ],
+    [
+     79,
+     "advance",
+     "RCCA",
+     34.0,
+     75.9,
+     53.9
+    ],
+    [
+     89,
+     "advance",
+     "RCCA",
+     50.9,
+     86.5,
+     64.4
+    ],
+    [
+     99,
+     "approach",
+     "RCCA",
+     67.1,
+     95.2,
+     73.4
+    ],
+    [
+     109,
+     "approach",
+     "RCCA",
+     71.1,
+     100.5,
+     78.1
+    ],
+    [
+     119,
+     "advance",
+     "RCCA",
+     77.1,
+     108.4,
+     85.5
+    ],
+    [
+     129,
+     "advance",
+     "RCCA",
+     88.0,
+     118.9,
+     96.1
+    ],
+    [
+     139,
+     "advance",
+     "RCCA",
+     98.0,
+     129.5,
+     106.7
+    ],
+    [
+     149,
+     "advance",
+     "RCCA",
+     110.0,
+     140.1,
+     117.2
+    ],
+    [
+     159,
+     "advance",
+     "RCCA",
+     124.1,
+     150.6,
+     127.8
+    ],
+    [
+     169,
+     "advance",
+     "RCCA",
+     135.1,
+     161.2,
+     138.3
+    ],
+    [
+     179,
+     "advance",
+     "RCCA",
+     145.1,
+     171.7,
+     148.9
+    ],
+    [
+     189,
+     "advance",
+     "RCCA",
+     156.0,
+     182.3,
+     159.5
+    ],
+    [
+     199,
+     "advance",
+     "RCCA",
+     165.0,
+     192.9,
+     170.0
+    ],
+    [
+     209,
+     "exercise",
+     "RCCA",
+     177.0,
+     193.9,
+     176.4
+    ],
+    [
+     219,
+     "exercise",
+     "RCCA",
+     181.0,
+     204.5,
+     185.9
+    ],
+    [
+     229,
+     "exercise",
+     "RCCA",
+     186.0,
+     212.7,
+     195.4
+    ],
+    [
+     239,
+     "exercise",
+     "RCCA",
+     185.0,
+     213.7,
+     195.4
+    ],
+    [
+     249,
+     "exercise",
+     "RCCA",
+     187.0,
+     224.3,
+     205.9
+    ],
+    [
+     259,
+     "exercise",
+     "RCCA",
+     183.0,
+     222.9,
+     208.0
+    ],
+    [
+     269,
+     "exercise",
+     "RCCA",
+     188.0,
+     233.5,
+     215.4
+    ],
+    [
+     279,
+     "exercise",
+     "RCCA",
+     190.0,
+     236.9,
+     222.8
+    ],
+    [
+     289,
+     "exercise",
+     "RCCA",
+     200.0,
+     242.7,
+     223.9
+    ],
+    [
+     299,
+     "exercise",
+     "RCCA",
+     204.0,
+     253.3,
+     234.4
+    ]
+   ],
+   "episode": 0,
+   "seed": 777,
+   "seconds": 144.2
+  },
+  {
+   "nonfinite_steps": 0,
+   "tip_outside_steps": 0,
+   "tip_outside_max_mm": 0.0,
+   "tip_outside_gt_0.5mm_steps": 0,
+   "dev_pts_checked": 256756,
+   "dev_pts_outside": 272,
+   "dev_outside_max_mm": 1.4613925843322622,
+   "max_rcca_s_mm": 151.0,
+   "first_step_past_seam1_20": 117,
+   "first_step_past_bif": 216,
+   "first_step_siphon": 257,
+   "mode_counts": {
+    "advance": 139,
+    "align": 35,
+    "approach": 50,
+    "hook": 26,
+    "recover": 7,
+    "turn": 3,
+    "exercise": 40
+   },
+   "branch_visits": {
+    "(11)": 57,
+    "RCCA": 212,
+    "RECA": 31
+   },
+   "dev_out_gt_0.3mm_by_branch": {
+    "(11)@20": 10,
+    "(11)@30": 40,
+    "(11)@40": 26,
+    "RVA@0": 2,
+    "RCCA@0": 4,
+    "RCCA@10": 3,
+    "RCCA@20": 8,
+    "RCCA@30": 3,
+    "RCCA@60": 12,
+    "RCCA@70": 5,
+    "RCCA@100": 1,
+    "RCCA@110": 6,
+    "RCCA@120": 1
+   },
+   "dev_out_gt_0.3mm_pts": 121,
+   "dev_out_worst": {
+    "mm": 1.461,
+    "step": 57,
+    "branch": "(11)",
+    "s_mm": 32.8,
+    "dof_index": 25,
+    "point": [
+     15.47,
+     18.35,
+     418.6
+    ],
+    "d_centreline_mm": 6.15
+   },
+   "unbuckles": 0,
+   "tip_out_sites": {},
+   "tip_out_worst": null,
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     1.6547,
+     0.0537
+    ]
+   },
+   "steps": 300,
+   "ms_per_step": 430.7,
+   "fork_attempts": [
+    0,
+    1
+   ],
+   "final_tip": {
+    "branch": "RCCA",
+    "s_mm": 152.0
+   },
+   "past_seam1_20mm": true,
+   "past_bifurcation": true,
+   "reached_siphon": true,
+   "reached_target": false,
+   "trace": [
+    [
+     9,
+     "advance",
+     "(11)",
+     22.7,
+     9.5,
+     0.0
+    ],
+    [
+     19,
+     "advance",
+     "(11)",
+     32.8,
+     20.1,
+     0.0
+    ],
+    [
+     29,
+     "align",
+     "(11)",
+     38.8,
+     25.9,
+     3.7
+    ],
+    [
+     39,
+     "align",
+     "(11)",
+     39.8,
+     30.9,
+     9.2
+    ],
+    [
+     49,
+     "align",
+     "(11)",
+     41.8,
+     36.7,
+     14.8
+    ],
+    [
+     59,
+     "advance",
+     "RCCA",
+     5.0,
+     43.7,
+     21.4
+    ],
+    [
+     69,
+     "advance",
+     "RCCA",
+     15.0,
+     54.3,
+     31.9
+    ],
+    [
+     79,
+     "advance",
+     "RCCA",
+     33.0,
+     64.8,
+     42.5
+    ],
+    [
+     89,
+     "advance",
+     "RCCA",
+     44.0,
+     75.4,
+     53.1
+    ],
+    [
+     99,
+     "advance",
+     "RCCA",
+     56.0,
+     85.9,
+     63.6
+    ],
+    [
+     109,
+     "approach",
+     "RCCA",
+     65.1,
+     96.0,
+     73.9
+    ],
+    [
+     119,
+     "approach",
+     "RCCA",
+     70.1,
+     101.2,
+     79.5
+    ],
+    [
+     129,
+     "advance",
+     "RCCA",
+     76.1,
+     107.6,
+     85.3
+    ],
+    [
+     139,
+     "hook",
+     "RECA",
+     9.0,
+     108.1,
+     87.4
+    ],
+    [
+     149,
+     "hook",
+     "RECA",
+     7.0,
+     105.5,
+     87.4
+    ],
+    [
+     159,
+     "recover",
+     "RECA",
+     2.0,
+     98.7,
+     86.3
+    ],
+    [
+     169,
+     "advance",
+     "RCCA",
+     58.0,
+     86.5,
+     75.8
+    ],
+    [
+     179,
+     "approach",
+     "RCCA",
+     66.1,
+     96.3,
+     74.4
+    ],
+    [
+     189,
+     "approach",
+     "RCCA",
+     70.1,
+     98.9,
+     76.8
+    ],
+    [
+     199,
+     "approach",
+     "RCCA",
+     72.1,
+     99.5,
+     77.6
+    ],
+    [
+     209,
+     "advance",
+     "RCCA",
+     76.1,
+     104.7,
+     82.4
+    ],
+    [
+     219,
+     "advance",
+     "RCCA",
+     86.0,
+     115.3,
+     92.9
+    ],
+    [
+     229,
+     "advance",
+     "RCCA",
+     99.0,
+     125.9,
+     103.5
+    ],
+    [
+     239,
+     "advance",
+     "RCCA",
+     111.0,
+     136.4,
+     114.0
+    ],
+    [
+     249,
+     "advance",
+     "RCCA",
+     122.1,
+     147.0,
+     124.6
+    ],
+    [
+     259,
+     "advance",
+     "RCCA",
+     132.0,
+     157.5,
+     135.2
+    ],
+    [
+     269,
+     "exercise",
+     "RCCA",
+     132.0,
+     158.6,
+     140.4
+    ],
+    [
+     279,
+     "exercise",
+     "RCCA",
+     146.1,
+     169.2,
+     151.0
+    ],
+    [
+     289,
+     "exercise",
+     "RCCA",
+     146.1,
+     167.8,
+     156.3
+    ],
+    [
+     299,
+     "exercise",
+     "RCCA",
+     151.0,
+     178.4,
+     159.5
+    ]
+   ],
+   "episode": 1,
+   "seed": 778,
+   "seconds": 129.2
+  },
+  {
+   "nonfinite_steps": 0,
+   "tip_outside_steps": 0,
+   "tip_outside_max_mm": 0.0,
+   "tip_outside_gt_0.5mm_steps": 0,
+   "dev_pts_checked": 220282,
+   "dev_pts_outside": 535,
+   "dev_outside_max_mm": 2.148486097771985,
+   "max_rcca_s_mm": 83.0,
+   "first_step_past_seam1_20": 116,
+   "first_step_past_bif": 137,
+   "first_step_siphon": null,
+   "mode_counts": {
+    "advance": 159,
+    "align": 36,
+    "approach": 18,
+    "hook": 43,
+    "unbuckle": 12,
+    "recover": 29,
+    "turn": 3
+   },
+   "branch_visits": {
+    "(11)": 56,
+    "RCCA": 178,
+    "RECA": 66
+   },
+   "dev_out_gt_0.3mm_by_branch": {
+    "(11)@20": 12,
+    "(11)@30": 38,
+    "(11)@40": 28,
+    "RCCA@0": 7,
+    "RVA@0": 2,
+    "RCCA@10": 2,
+    "RCCA@20": 22,
+    "RECA@0": 59,
+    "RECA@10": 131,
+    "RECA@20": 69
+   },
+   "dev_out_gt_0.3mm_pts": 370,
+   "dev_out_worst": {
+    "mm": 2.148,
+    "step": 196,
+    "branch": "RECA",
+    "s_mm": 23.0,
+    "dof_index": 24,
+    "point": [
+     -8.0,
+     14.56,
+     503.55
+    ],
+    "d_centreline_mm": 4.36
+   },
+   "unbuckles": 3,
+   "tip_out_sites": {},
+   "tip_out_worst": null,
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     2.4813,
+     0.0043
+    ]
+   },
+   "steps": 300,
+   "ms_per_step": 433.8,
+   "fork_attempts": [
+    0,
+    3
+   ],
+   "final_tip": {
+    "branch": "RCCA",
+    "s_mm": 57.0
+   },
+   "past_seam1_20mm": true,
+   "past_bifurcation": true,
+   "reached_siphon": false,
+   "reached_target": false,
+   "trace": [
+    [
+     9,
+     "advance",
+     "(11)",
+     21.7,
+     9.5,
+     0.0
+    ],
+    [
+     19,
+     "advance",
+     "(11)",
+     35.8,
+     20.1,
+     0.0
+    ],
+    [
+     29,
+     "align",
+     "(11)",
+     38.8,
+     26.7,
+     4.8
+    ],
+    [
+     39,
+     "align",
+     "(11)",
+     39.8,
+     31.3,
+     9.5
+    ],
+    [
+     49,
+     "align",
+     "(11)",
+     41.8,
+     37.5,
+     15.0
+    ],
+    [
+     59,
+     "advance",
+     "RCCA",
+     7.0,
+     44.9,
+     22.7
+    ],
+    [
+     69,
+     "advance",
+     "RCCA",
+     17.0,
+     55.4,
+     33.3
+    ],
+    [
+     79,
+     "advance",
+     "RCCA",
+     35.0,
+     66.0,
+     43.8
+    ],
+    [
+     89,
+     "advance",
+     "RCCA",
+     45.0,
+     76.6,
+     54.4
+    ],
+    [
+     99,
+     "advance",
+     "RCCA",
+     57.0,
+     87.1,
+     64.9
+    ],
+    [
+     109,
+     "approach",
+     "RCCA",
+     66.1,
+     96.6,
+     74.2
+    ],
+    [
+     119,
+     "approach",
+     "RCCA",
+     70.1,
+     101.9,
+     79.7
+    ],
+    [
+     129,
+     "advance",
+     "RCCA",
+     77.1,
+     109.3,
+     86.9
+    ],
+    [
+     139,
+     "advance",
+     "RCCA",
+     83.0,
+     118.2,
+     96.1
+    ],
+    [
+     149,
+     "advance",
+     "RCCA",
+     77.1,
+     128.8,
+     106.7
+    ],
+    [
+     159,
+     "advance",
+     "RCCA",
+     76.1,
+     127.4,
+     107.7
+    ],
+    [
+     169,
+     "hook",
+     "RECA",
+     7.0,
+     136.8,
+     114.0
+    ],
+    [
+     179,
+     "hook",
+     "RECA",
+     7.0,
+     134.8,
+     114.0
+    ],
+    [
+     189,
+     "advance",
+     "RCCA",
+     77.1,
+     138.7,
+     116.2
+    ],
+    [
+     199,
+     "hook",
+     "RECA",
+     12.0,
+     140.4,
+     119.3
+    ],
+    [
+     209,
+     "hook",
+     "RECA",
+     12.0,
+     138.5,
+     119.3
+    ],
+    [
+     219,
+     "recover",
+     "RECA",
+     10.0,
+     134.0,
+     119.3
+    ],
+    [
+     229,
+     "recover",
+     "RECA",
+     10.0,
+     107.6,
+     108.8
+    ],
+    [
+     239,
+     "recover",
+     "RCCA",
+     73.1,
+     81.2,
+     98.2
+    ],
+    [
+     249,
+     "turn",
+     "RCCA",
+     61.0,
+     60.1,
+     87.6
+    ],
+    [
+     259,
+     "advance",
+     "RCCA",
+     49.0,
+     68.6,
+     77.1
+    ],
+    [
+     269,
+     "advance",
+     "RCCA",
+     40.0,
+     67.3,
+     66.5
+    ],
+    [
+     279,
+     "advance",
+     "RCCA",
+     47.0,
+     77.8,
+     58.1
+    ],
+    [
+     289,
+     "advance",
+     "RCCA",
+     46.0,
+     76.5,
+     58.1
+    ],
+    [
+     299,
+     "advance",
+     "RCCA",
+     57.0,
+     87.1,
+     64.4
+    ]
+   ],
+   "episode": 2,
+   "seed": 779,
+   "seconds": 130.2
+  }
+ ],
+ "seconds": 407.7,
+ "passed": true,
+ "rcca_exercised": true
+}

@@ -1,0 +1,613 @@
+{
+ "name": "case_k_011_left__topcow_mr_012_L",
+ "part_versions": {
+  "route": "checks_v6 1.5"
+ },
+ "script": "checks_v6 1.5 (2026-10-07; s2_build: 1.5 = D27 bake repair window (capsule-clipped cells off both references) reported not gated, only for pieces failing under 1.4; 1.4 = D26 own scanned surface as the D22 reference where v4 hid it, every cell gated, + part_versions; 1.3 2026-10-06 s2_integrate2: 1.3 =D22 surface-preserved right-route gate (fork / siphon) replaces the relief-ratio gate (ratio kept as information) + coverage report, D23 tier-A acceptance, geom_v6 1.1; 1.2 2026-10-04 s2_harden_wall_bake; 1.1: D19/D20 route gate per real section on the moved surface + RCCA prefix gate; loader_one 1.1; 1.2: part geom = geom_v6 whole-tree clearance + 1 mm kinks)",
+ "route": {
+  "cut6": 38.573542975590286,
+  "cut4": 38.573542975590286,
+  "mesh_v6_record_k24": {
+   "fork": {
+    "frac_0.3mm": 0.1965,
+    "frac_0.5mm": 0.0729
+   },
+   "siphon": {
+    "frac_0.3mm": 0.3969,
+    "frac_0.5mm": 0.2147
+   }
+  },
+  "mesh_v4_record": {
+   "fork": {
+    "frac_0.3mm": 0.2181,
+    "frac_0.5mm": 0.0914
+   },
+   "siphon": {
+    "frac_0.3mm": 0.3892,
+    "frac_0.5mm": 0.2062
+   }
+  },
+  "sections": {
+   "spans_v6": {
+    "fork": [
+     38.573542975590286,
+     130.03511738925658
+    ],
+    "siphon": [
+     130.03511738925658,
+     1000000000.0
+    ]
+   },
+   "spans_v4": {
+    "fork": [
+     38.573542975590286,
+     130.0
+    ],
+    "siphon": [
+     130.0,
+     1000000000.0
+    ]
+   },
+   "tube_only_v6": [],
+   "tube_only_v4": [],
+   "v6_k24": {
+    "fork": {
+     "area_mm2": 1303.11,
+     "cells": 18944,
+     "frac_0.3mm": 0.20404,
+     "frac_0.5mm": 0.07529,
+     "frac_rel_0.15": 0.1593,
+     "range_mm": [
+      38.57,
+      130.04
+     ]
+    },
+    "siphon": {
+     "area_mm2": 1863.21,
+     "cells": 27256,
+     "frac_0.3mm": 0.39495,
+     "frac_0.5mm": 0.20764,
+     "frac_rel_0.15": 0.26347,
+     "range_mm": [
+      130.04,
+      1000000000.0
+     ]
+    }
+   },
+   "v4_k24": {
+    "fork": {
+     "area_mm2": 1323.05,
+     "cells": 18656,
+     "frac_0.3mm": 0.22147,
+     "frac_0.5mm": 0.09322,
+     "frac_rel_0.15": 0.18101,
+     "range_mm": [
+      38.57,
+      130.0
+     ]
+    },
+    "siphon": {
+     "area_mm2": 1842.12,
+     "cells": 27572,
+     "frac_0.3mm": 0.38584,
+     "frac_0.5mm": 0.19844,
+     "frac_rel_0.15": 0.25324,
+     "range_mm": [
+      130.0,
+      1000000000.0
+     ]
+    }
+   },
+   "ratio_k24": {
+    "fork": 0.9212774876376362,
+    "siphon": 1.0236198435185608
+   },
+   "v6_exact": {
+    "fork": {
+     "area_mm2": 1303.11,
+     "cells": 18944,
+     "frac_0.3mm": 0.20404,
+     "frac_0.5mm": 0.07529,
+     "frac_rel_0.15": 0.1593,
+     "range_mm": [
+      38.57,
+      130.04
+     ]
+    },
+    "siphon": {
+     "area_mm2": 1863.21,
+     "cells": 27256,
+     "frac_0.3mm": 0.39495,
+     "frac_0.5mm": 0.20761,
+     "frac_rel_0.15": 0.26346,
+     "range_mm": [
+      130.04,
+      1000000000.0
+     ]
+    }
+   },
+   "v4_exact": {
+    "fork": {
+     "area_mm2": 1323.05,
+     "cells": 18656,
+     "frac_0.3mm": 0.22147,
+     "frac_0.5mm": 0.09322,
+     "frac_rel_0.15": 0.18101,
+     "range_mm": [
+      38.57,
+      130.0
+     ]
+    },
+    "siphon": {
+     "area_mm2": 1843.66,
+     "cells": 27628,
+     "frac_0.3mm": 0.38629,
+     "frac_0.5mm": 0.19911,
+     "frac_rel_0.15": 0.25376,
+     "range_mm": [
+      130.0,
+      1000000000.0
+     ]
+    }
+   },
+   "ratio_exact": {
+    "fork": 0.9212774876376362,
+    "siphon": 1.0224016770843167
+   }
+  },
+  "rcca_prefix": {
+   "points_compared_v4": 39,
+   "identical_v4": true,
+   "points_compared_host": 39,
+   "identical_host": false,
+   "max_diff_host_mm": 4.231292724609375
+  },
+  "k24": {
+   "rrd_v6": {
+    "fork": {
+     "frac_0.3mm": 0.1965,
+     "frac_0.5mm": 0.0729
+    },
+    "siphon": {
+     "frac_0.3mm": 0.3969,
+     "frac_0.5mm": 0.2147
+    }
+   },
+   "rrd_v4": {
+    "fork": {
+     "frac_0.3mm": 0.2181,
+     "frac_0.5mm": 0.0914
+    },
+    "siphon": {
+     "frac_0.3mm": 0.3892,
+     "frac_0.5mm": 0.2062
+    }
+   },
+   "ratio": {
+    "fork": {
+     "frac_0.3mm": 0.9010078900145293,
+     "frac_0.5mm": 0.7974927558213816
+    },
+    "siphon": {
+     "frac_0.3mm": 1.0198309108001515,
+     "frac_0.5mm": 1.0413270902375227
+    }
+   },
+   "beyond_8mm_of_VAs": {
+    "fork": {
+     "v6": 0.19650318065663092,
+     "v4": 0.23236462006229858
+    },
+    "siphon": {
+     "v6": 0.37412403620816,
+     "v4": 0.43712440617881787
+    }
+   },
+   "area_mm2": {
+    "fork": {
+     "v6": 1374.7545206613488,
+     "v4": 1395.8905877387165
+    },
+    "siphon": {
+     "v6": 1981.6109737052093,
+     "v4": 1957.6144352810484
+    }
+   }
+  },
+  "exact": {
+   "rrd_v6": {
+    "fork": {
+     "frac_0.3mm": 0.1965,
+     "frac_0.5mm": 0.0729
+    },
+    "siphon": {
+     "frac_0.3mm": 0.3969,
+     "frac_0.5mm": 0.2147
+    }
+   },
+   "rrd_v4": {
+    "fork": {
+     "frac_0.3mm": 0.2181,
+     "frac_0.5mm": 0.0914
+    },
+    "siphon": {
+     "frac_0.3mm": 0.3896,
+     "frac_0.5mm": 0.2068
+    }
+   },
+   "ratio": {
+    "fork": {
+     "frac_0.3mm": 0.9010078900145293,
+     "frac_0.5mm": 0.7974927558213816
+    },
+    "siphon": {
+     "frac_0.3mm": 1.0187055583184104,
+     "frac_0.5mm": 1.0380314531335184
+    }
+   },
+   "beyond_8mm_of_VAs": {
+    "fork": {
+     "v6": 0.19650318065663092,
+     "v4": 0.23236462006229858
+    },
+    "siphon": {
+     "v6": 0.37412403620816,
+     "v4": 0.4370239742379259
+    }
+   },
+   "area_mm2": {
+    "fork": {
+     "v6": 1374.7545206613488,
+     "v4": 1395.8905877387165
+    },
+    "siphon": {
+     "v6": 1981.6109737052093,
+     "v4": 1959.1599484524204
+    }
+   }
+  },
+  "d13": {
+   "reca_tip_v6_vs_v4": "reposed",
+   "declared": "v4_no_tip",
+   "rrd_v4_without_tip": {
+    "fork": {
+     "frac_0.3mm": 0.2034,
+     "frac_0.5mm": 0.0743
+    },
+    "siphon": {
+     "frac_0.3mm": 0.3896,
+     "frac_0.5mm": 0.2068
+    }
+   },
+   "join_at_mm_v4": 29.881626114241232,
+   "ratio_vs_v4_without_tip": {
+    "fork": 0.9662661574783576,
+    "siphon": 1.0187061229511283
+   },
+   "v4_tip_owned_rcca_wall": true,
+   "sections_v4_without_tip": {
+    "fork": {
+     "area_mm2": 1297.25,
+     "cells": 18272,
+     "frac_0.3mm": 0.20598,
+     "frac_0.5mm": 0.07518,
+     "frac_rel_0.15": 0.16471,
+     "range_mm": [
+      38.57,
+      130.0
+     ]
+    },
+    "siphon": {
+     "area_mm2": 1843.66,
+     "cells": 27628,
+     "frac_0.3mm": 0.38629,
+     "frac_0.5mm": 0.19911,
+     "frac_rel_0.15": 0.25376,
+     "range_mm": [
+      130.0,
+      1000000000.0
+     ]
+    }
+   },
+   "ratio_sections_vs_v4_without_tip": {
+    "fork": 0.9905539025005645,
+    "siphon": 1.0224023405078033
+   },
+   "baseline_used": "v4_no_tip"
+  },
+  "gate_ratio_legacy_130": {
+   "fork": 0.9662661574783576,
+   "siphon": 1.0187061229511283
+  },
+  "gate_ratio": {
+   "fork": 0.9905539025005645,
+   "siphon": 1.0224023405078033
+  },
+  "gate_basis": "per section (fork = lower_R slice [host_cut, host_cut + cca + min(ica, ica_real)], siphon = siphon_R slice), exact ownership, baseline v4_no_tip",
+  "v5_exact_ratio": {
+   "fork": {
+    "frac_0.3mm": 1.0,
+    "frac_0.5mm": 1.0
+   },
+   "siphon": {
+    "frac_0.3mm": 1.01714902133415,
+    "frac_0.5mm": 1.0389447391287914
+   }
+  },
+  "d22": {
+   "baseline": "v4_no_tip",
+   "min": 0.99,
+   "dev_mm": 0.3,
+   "fork": {
+    "surface_v6": "case_k_011_left_lumen.stl",
+    "surface_v4": "case_k_011_left_lumen.stl",
+    "same_surface": true,
+    "mirror_v6": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_v4": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "span_v6": [
+     38.574,
+     130.035
+    ],
+    "span_v4": [
+     38.574,
+     130.0
+    ],
+    "zone_mm": 8.0,
+    "gate_v6": [
+     46.574,
+     128.035
+    ],
+    "arclength_offset_mm": 0.0,
+    "rcca_carried_max_mm": 0.0351,
+    "rcca_carried_p95_mm": 0.0351,
+    "handle_windows_v6": [],
+    "handle_windows_v4_mapped": [],
+    "own_surface": {
+     "path": "/opt/eve_training/carotid_data/v2/carotid_bifurcation_database/case_k_011/case_k_011_left_lumen.stl",
+     "mirror": [
+      -1.0,
+      1.0,
+      1.0
+     ],
+     "tris": 74744
+    },
+    "gate": {
+     "area_mm2": 1172.44,
+     "cells": 17032,
+     "within_0.3": 1.0,
+     "p50_mm": 0.0046,
+     "p95_mm": 0.0178,
+     "max_mm": 0.081,
+     "area_gt_0.3_mm2": 0.0,
+     "within_0.3_own": 1.0,
+     "area_off_v4_on_own_mm2": 0.0,
+     "area_off_both_mm2": 0.0,
+     "max_off_both_own_mm": null
+    },
+    "gate_strict": {
+     "area_mm2": 1172.44,
+     "cells": 17032,
+     "within_0.3": 1.0,
+     "p50_mm": 0.0046,
+     "p95_mm": 0.0178,
+     "max_mm": 0.081,
+     "area_gt_0.3_mm2": 0.0,
+     "within_0.3_own": 1.0,
+     "area_off_v4_on_own_mm2": 0.0,
+     "area_off_both_mm2": 0.0,
+     "max_off_both_own_mm": null
+    },
+    "v4_occupied": null,
+    "zone": {
+     "area_mm2": 169.55,
+     "cells": 2469,
+     "within_0.3": 0.63271,
+     "p50_mm": 0.1995,
+     "p95_mm": 0.762,
+     "max_mm": 1.185,
+     "area_gt_0.3_mm2": 62.27,
+     "within_0.3_own": 0.667395,
+     "area_off_v4_on_own_mm2": 5.88,
+     "area_off_both_mm2": 56.39,
+     "max_off_both_own_mm": 1.021
+    },
+    "windows": null,
+    "coverage": {
+     "area_mm2": 1172.76,
+     "within_0.3": 1.0,
+     "p95_mm": 0.018,
+     "max_mm": 0.108,
+     "area_gt_0.3_mm2": 0.0
+    },
+    "value_1p3": 1.0,
+    "value_v4": 1.0,
+    "value_own": 1.0,
+    "value_strict": 1.0,
+    "no_wall_lost": true,
+    "d22_reference": "v4",
+    "d26_flag": false,
+    "value": 1.0,
+    "ok": true,
+    "strict_flag": false,
+    "coverage_flag": false,
+    "d27_flag": false
+   },
+   "siphon": {
+    "surface_v6": "topcow_mr_012_lICA.vtp",
+    "surface_v4": "topcow_mr_012_lICA.vtp",
+    "same_surface": true,
+    "mirror_v6": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_v4": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "span_v6": [
+     130.035,
+     225.25
+    ],
+    "span_v4": [
+     130.0,
+     225.0
+    ],
+    "zone_mm": 8.0,
+    "gate_v6": [
+     138.035,
+     223.25
+    ],
+    "arclength_offset_mm": 0.25,
+    "rcca_carried_max_mm": 0.0009,
+    "rcca_carried_p95_mm": 0.0009,
+    "handle_windows_v6": [],
+    "handle_windows_v4_mapped": [],
+    "own_surface": {
+     "path": "topbrain_data/surfaces_left/topcow_mr_012_lICA.vtp",
+     "mirror": [
+      -1.0,
+      1.0,
+      1.0
+     ],
+     "tris": 48358
+    },
+    "gate": {
+     "area_mm2": 1697.69,
+     "cells": 24791,
+     "within_0.3": 1.0,
+     "p50_mm": 0.005,
+     "p95_mm": 0.0218,
+     "max_mm": 0.243,
+     "area_gt_0.3_mm2": 0.0,
+     "within_0.3_own": 1.0,
+     "area_off_v4_on_own_mm2": 0.0,
+     "area_off_both_mm2": 0.0,
+     "max_off_both_own_mm": null
+    },
+    "gate_strict": {
+     "area_mm2": 1751.22,
+     "cells": 25563,
+     "within_0.3": 0.977601,
+     "p50_mm": 0.0052,
+     "p95_mm": 0.0309,
+     "max_mm": 1.492,
+     "area_gt_0.3_mm2": 39.23,
+     "within_0.3_own": 0.989842,
+     "area_off_v4_on_own_mm2": 21.44,
+     "area_off_both_mm2": 17.79,
+     "max_off_both_own_mm": 2.324
+    },
+    "v4_occupied": {
+     "area_mm2": 53.53,
+     "cells": 772,
+     "within_0.3": 0.267195,
+     "p50_mm": 0.6176,
+     "p95_mm": 1.3047,
+     "max_mm": 1.492,
+     "area_gt_0.3_mm2": 39.23,
+     "within_0.3_own": 0.667651,
+     "area_off_v4_on_own_mm2": 21.44,
+     "area_off_both_mm2": 17.79,
+     "max_off_both_own_mm": 2.324
+    },
+    "zone": {
+     "area_mm2": 148.95,
+     "cells": 2226,
+     "within_0.3": 0.816145,
+     "p50_mm": 0.0981,
+     "p95_mm": 0.3868,
+     "max_mm": 0.454,
+     "area_gt_0.3_mm2": 27.38,
+     "within_0.3_own": 0.831139,
+     "area_off_v4_on_own_mm2": 2.23,
+     "area_off_both_mm2": 25.15,
+     "max_off_both_own_mm": 0.462
+    },
+    "windows": null,
+    "coverage": {
+     "area_mm2": 1718.04,
+     "within_0.3": 0.991458,
+     "p95_mm": 0.0242,
+     "max_mm": 1.812,
+     "area_gt_0.3_mm2": 14.68
+    },
+    "value_1p3": 1.0,
+    "value_v4": 0.977601,
+    "value_own": 0.989842,
+    "value_strict": 0.977601,
+    "no_wall_lost": true,
+    "d22_reference": "own_surface",
+    "d26_flag": true,
+    "value": 1.0,
+    "ok": true,
+    "strict_flag": true,
+    "coverage_flag": false,
+    "d27_flag": true,
+    "value_before_d27": 0.989842,
+    "d22_repair_window": {
+     "rule": "D27 (USER 2026-10-07 16:25): bake repair window reported, not gated",
+     "section": "siphon_R",
+     "off_both_cells": 244,
+     "off_both_area_mm2": 17.79,
+     "cells": 244,
+     "area_mm2": 17.79,
+     "share_of_off_both_area": 1.0,
+     "s_range_mm": [
+      206.75,
+      207.5
+     ],
+     "lumen_beyond_capsule_mm": {
+      "min": 0.275,
+      "median": 0.914,
+      "max": 2.366
+     },
+     "f_real_mm": {
+      "min": 0.303,
+      "median": 0.921,
+      "max": 2.324
+     },
+     "capsule_value_mm": {
+      "min": -0.056,
+      "median": 0.008,
+      "max": 0.08
+     },
+     "dist_own_surface_mm": {
+      "min": 0.303,
+      "median": 0.921,
+      "max": 2.324
+     },
+     "clipped_in_v4_world_frac": 1.0,
+     "value_v4_without_window": 0.987634,
+     "value_own_without_window": 1.0,
+     "reference_after": "own_surface"
+    }
+   },
+   "reference": {
+    "fork": "v4",
+    "siphon": "own_surface"
+   },
+   "d26_flag": true,
+   "d27_flag": true
+  },
+  "gate_ratio_note": "information since checks_v6 1.3 (the gate is D22: rec.d22)"
+ },
+ "seconds": {
+  "route": 400.3
+ },
+ "gates": {
+  "route_fork_d22_ge_0.99": true,
+  "route_siphon_d22_ge_0.99": true,
+  "rcca_prefix_unchanged": true
+ },
+ "pass": true
+}

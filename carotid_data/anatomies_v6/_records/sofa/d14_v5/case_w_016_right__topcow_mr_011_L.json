@@ -1,0 +1,1162 @@
+{
+ "name": "case_w_016_right__topcow_mr_011_L",
+ "anatomy_dir": "/repo/carotid_data/anatomies_v5",
+ "steps_budget": 300,
+ "seed": 777,
+ "seeds": [
+  777,
+  778,
+  779
+ ],
+ "exception": null,
+ "tool": "sofa_va_entry 1.1 (s2_harden_va, D14; 1.1: device reset per seed)",
+ "reset_s": 2.9,
+ "branches": 18,
+ "has_RVA_LVA": [
+  true,
+  true
+ ],
+ "loader_mesh_path": "/repo/carotid_data/anatomies_v5/case_w_016_right__topcow_mr_011_L/vessel_architecture_collision.obj",
+ "loader_mesh_is_this_obj": true,
+ "v6_junction": false,
+ "rva": {
+  "donor": "ia172_164 L",
+  "v4_va_kept": false,
+  "length_mm": 204.5,
+  "s_17_takeoff_mm": 26.9,
+  "ostium_mm": 33.9,
+  "donor_lo_mm": 33.9,
+  "cut_mm": 169.5,
+  "path_s_fork1_mm": 33.5,
+  "path_s_fork2_mm": 60.4
+ },
+ "target_vessel_frame": {
+  "dist_to_rcca_mm": 0.0,
+  "rcca_s_mm": 181.1
+ },
+ "insertion_inside": true,
+ "per_seed": [
+  {
+   "seed": 777,
+   "entered_mm": 0.0,
+   "entered_20mm": false,
+   "reached_donor_20mm": false,
+   "max_rva_s_mm": 27.9,
+   "final_tip": {
+    "branch": "RVA",
+    "s_mm": 18.0
+   },
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     3.8396,
+     2.4053
+    ]
+   }
+  },
+  {
+   "seed": 778,
+   "entered_mm": 0.0,
+   "entered_20mm": false,
+   "reached_donor_20mm": false,
+   "max_rva_s_mm": 27.9,
+   "final_tip": {
+    "branch": "RVA",
+    "s_mm": 12.0
+   },
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     1.6547,
+     0.0537
+    ]
+   }
+  },
+  {
+   "seed": 779,
+   "entered_mm": 0.0,
+   "entered_20mm": false,
+   "reached_donor_20mm": false,
+   "max_rva_s_mm": 27.9,
+   "final_tip": {
+    "branch": "RVA",
+    "s_mm": 21.0
+   },
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     2.4813,
+     0.0043
+    ]
+   }
+  }
+ ],
+ "d14": {
+  "n_seeds": 3,
+  "n_entered_20mm": 0,
+  "n_reached_donor_20mm": 0,
+  "entered_mm_median": 0.0,
+  "s_o_mm": 33.9
+ },
+ "episodes": 3,
+ "steps": 900,
+ "steps_per_episode": 300,
+ "exercised_in_episode": null,
+ "nonfinite_steps": 0,
+ "tip_outside_steps": 0,
+ "tip_outside_max_mm": 0.0,
+ "tip_outside_gt_0.5mm_steps": 0,
+ "dev_pts_checked": 735139,
+ "dev_pts_outside": 6807,
+ "dev_out_gt_0.3mm_pts": 3764,
+ "dev_outside_max_mm": 2.684035339384959,
+ "dev_out_worst": {
+  "mm": 2.684,
+  "step": 155,
+  "branch": "RVA",
+  "s_mm": 31.9,
+  "dof_index": 25,
+  "dist_from_tip_mm": 20.2,
+  "point": [
+   -9.85,
+   41.77,
+   433.76
+  ],
+  "d_centreline_mm": 5.24
+ },
+ "tip_out_worst": null,
+ "tip_out_sites": {},
+ "dev_out_gt_0.3mm_by_branch": {
+  "(11)@20": 49,
+  "(11)@30": 452,
+  "(11)@40": 290,
+  "(17)@0": 968,
+  "(17)@10": 29,
+  "RCCA@0": 605,
+  "RVA@0": 342,
+  "RVA@10": 59,
+  "RVA@20": 704,
+  "RVA@30": 265,
+  "RVA@40": 1
+ },
+ "max_rva_s_mm": 27.9,
+ "donor_traversed_mm": 0.0,
+ "reached_donor_20mm": false,
+ "reached_topbrain": false,
+ "steps_in_donor_stretch": 0,
+ "first_step_in_donor": null,
+ "fork_attempts": [
+  [
+   0,
+   0
+  ],
+  [
+   1,
+   0
+  ],
+  [
+   0,
+   0
+  ]
+ ],
+ "unbuckles": 28,
+ "ms_per_step": 344.6,
+ "final_tip": {
+  "branch": "RVA",
+  "s_mm": 21.0
+ },
+ "episode_records": [
+  {
+   "nonfinite_steps": 0,
+   "tip_outside_steps": 0,
+   "tip_outside_max_mm": 0.0,
+   "tip_outside_gt_0.5mm_steps": 0,
+   "dev_pts_checked": 245896,
+   "dev_pts_outside": 2569,
+   "dev_outside_max_mm": 2.684035339384959,
+   "max_rva_s_mm": 27.9,
+   "first_step_in_rva_past_17": null,
+   "first_step_in_donor": null,
+   "first_step_past_cut": null,
+   "steps_in_donor_stretch": 0,
+   "mode_counts": {
+    "advance": 216,
+    "align": 30,
+    "unbuckle": 44,
+    "approach": 10
+   },
+   "branch_visits": {
+    "(11)": 48,
+    "RCCA": 1,
+    "RVA": 244,
+    "(17)": 7
+   },
+   "dev_out_gt_0.3mm_by_branch": {
+    "(11)@40": 116,
+    "RCCA@0": 225,
+    "RVA@0": 188,
+    "RVA@10": 54,
+    "(11)@30": 149,
+    "RVA@20": 241,
+    "RVA@30": 57,
+    "(17)@0": 328,
+    "(17)@10": 22,
+    "(11)@20": 1
+   },
+   "dev_out_gt_0.3mm_pts": 1381,
+   "dev_out_worst": {
+    "mm": 2.684,
+    "step": 155,
+    "branch": "RVA",
+    "s_mm": 31.9,
+    "dof_index": 25,
+    "dist_from_tip_mm": 20.2,
+    "point": [
+     -9.85,
+     41.77,
+     433.76
+    ],
+    "d_centreline_mm": 5.24
+   },
+   "unbuckles": 11,
+   "tip_out_sites": {},
+   "tip_out_worst": null,
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     3.8396,
+     2.4053
+    ]
+   },
+   "steps": 300,
+   "ms_per_step": 353.4,
+   "fork_attempts": [
+    0,
+    0
+   ],
+   "final_tip": {
+    "branch": "RVA",
+    "s_mm": 18.0
+   },
+   "donor_traversed_mm": 0.0,
+   "reached_donor_20mm": false,
+   "reached_topbrain": false,
+   "entered_mm": 0.0,
+   "entered_20mm": false,
+   "trace": [
+    [
+     9,
+     "advance",
+     "(11)",
+     21.7,
+     9.5,
+     0.0
+    ],
+    [
+     19,
+     "advance",
+     "(11)",
+     34.8,
+     20.1,
+     0.0
+    ],
+    [
+     29,
+     "align",
+     "(11)",
+     38.8,
+     24.3,
+     2.4
+    ],
+    [
+     39,
+     "align",
+     "(11)",
+     40.8,
+     26.9,
+     4.8
+    ],
+    [
+     49,
+     "align",
+     "RVA",
+     2.0,
+     33.1,
+     10.6
+    ],
+    [
+     59,
+     "advance",
+     "RVA",
+     13.0,
+     42.5,
+     20.3
+    ],
+    [
+     69,
+     "unbuckle",
+     "RVA",
+     12.0,
+     53.1,
+     30.9
+    ],
+    [
+     79,
+     "advance",
+     "RVA",
+     10.0,
+     51.7,
+     29.8
+    ],
+    [
+     89,
+     "unbuckle",
+     "RVA",
+     15.0,
+     59.9,
+     38.3
+    ],
+    [
+     99,
+     "advance",
+     "RVA",
+     14.0,
+     61.0,
+     38.3
+    ],
+    [
+     109,
+     "advance",
+     "RVA",
+     21.0,
+     71.5,
+     48.8
+    ],
+    [
+     119,
+     "approach",
+     "RVA",
+     26.9,
+     81.0,
+     58.9
+    ],
+    [
+     129,
+     "advance",
+     "(17)",
+     0.0,
+     87.9,
+     64.9
+    ],
+    [
+     139,
+     "unbuckle",
+     "RVA",
+     17.0,
+     90.6,
+     72.1
+    ],
+    [
+     149,
+     "advance",
+     "RVA",
+     16.0,
+     96.4,
+     74.2
+    ],
+    [
+     159,
+     "advance",
+     "RVA",
+     15.0,
+     97.4,
+     80.5
+    ],
+    [
+     169,
+     "advance",
+     "RVA",
+     6.0,
+     105.6,
+     82.6
+    ],
+    [
+     179,
+     "advance",
+     "RVA",
+     11.0,
+     104.3,
+     87.9
+    ],
+    [
+     189,
+     "advance",
+     "RVA",
+     6.0,
+     114.8,
+     92.1
+    ],
+    [
+     199,
+     "advance",
+     "RVA",
+     16.0,
+     113.5,
+     96.4
+    ],
+    [
+     209,
+     "advance",
+     "RVA",
+     17.0,
+     124.1,
+     101.6
+    ],
+    [
+     219,
+     "advance",
+     "RVA",
+     16.0,
+     122.8,
+     103.8
+    ],
+    [
+     229,
+     "advance",
+     "RVA",
+     9.0,
+     133.3,
+     111.1
+    ],
+    [
+     239,
+     "advance",
+     "RVA",
+     15.0,
+     132.0,
+     112.2
+    ],
+    [
+     249,
+     "advance",
+     "RVA",
+     16.0,
+     142.6,
+     119.6
+    ],
+    [
+     259,
+     "advance",
+     "RVA",
+     16.0,
+     141.2,
+     120.6
+    ],
+    [
+     269,
+     "unbuckle",
+     "RVA",
+     15.0,
+     151.8,
+     129.1
+    ],
+    [
+     279,
+     "advance",
+     "RVA",
+     16.0,
+     150.5,
+     129.1
+    ],
+    [
+     289,
+     "unbuckle",
+     "RVA",
+     18.0,
+     158.7,
+     137.5
+    ],
+    [
+     299,
+     "advance",
+     "RVA",
+     18.0,
+     159.7,
+     137.5
+    ]
+   ],
+   "episode": 0,
+   "seed": 777,
+   "seconds": 106.0
+  },
+  {
+   "nonfinite_steps": 0,
+   "tip_outside_steps": 0,
+   "tip_outside_max_mm": 0.0,
+   "tip_outside_gt_0.5mm_steps": 0,
+   "dev_pts_checked": 246180,
+   "dev_pts_outside": 1792,
+   "dev_outside_max_mm": 2.622802934176994,
+   "max_rva_s_mm": 27.9,
+   "first_step_in_rva_past_17": null,
+   "first_step_in_donor": null,
+   "first_step_past_cut": null,
+   "steps_in_donor_stretch": 0,
+   "mode_counts": {
+    "advance": 180,
+    "align": 77,
+    "recover": 9,
+    "turn": 3,
+    "approach": 3,
+    "unbuckle": 28
+   },
+   "branch_visits": {
+    "(11)": 97,
+    "RVA": 192,
+    "RCCA": 8,
+    "(17)": 3
+   },
+   "dev_out_gt_0.3mm_by_branch": {
+    "(11)@20": 26,
+    "(11)@30": 128,
+    "(11)@40": 50,
+    "RCCA@0": 151,
+    "RVA@0": 28,
+    "(17)@0": 302,
+    "RVA@20": 200,
+    "RVA@30": 95,
+    "RVA@10": 3,
+    "(17)@10": 3
+   },
+   "dev_out_gt_0.3mm_pts": 986,
+   "dev_out_worst": {
+    "mm": 2.623,
+    "step": 248,
+    "branch": "(17)",
+    "s_mm": 8.7,
+    "dof_index": 25,
+    "dist_from_tip_mm": 20.7,
+    "point": [
+     -19.84,
+     38.21,
+     424.23
+    ],
+    "d_centreline_mm": 4.85
+   },
+   "unbuckles": 7,
+   "tip_out_sites": {},
+   "tip_out_worst": null,
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     1.6547,
+     0.0537
+    ]
+   },
+   "steps": 300,
+   "ms_per_step": 334.0,
+   "fork_attempts": [
+    1,
+    0
+   ],
+   "final_tip": {
+    "branch": "RVA",
+    "s_mm": 12.0
+   },
+   "donor_traversed_mm": 0.0,
+   "reached_donor_20mm": false,
+   "reached_topbrain": false,
+   "entered_mm": 0.0,
+   "entered_20mm": false,
+   "trace": [
+    [
+     9,
+     "advance",
+     "(11)",
+     22.7,
+     9.5,
+     0.0
+    ],
+    [
+     19,
+     "advance",
+     "(11)",
+     32.8,
+     20.1,
+     0.0
+    ],
+    [
+     29,
+     "align",
+     "(11)",
+     38.8,
+     25.9,
+     3.7
+    ],
+    [
+     39,
+     "align",
+     "(11)",
+     39.8,
+     28.5,
+     6.9
+    ],
+    [
+     49,
+     "align",
+     "(11)",
+     40.8,
+     33.5,
+     11.6
+    ],
+    [
+     59,
+     "align",
+     "(11)",
+     44.8,
+     40.1,
+     18.0
+    ],
+    [
+     69,
+     "recover",
+     "RCCA",
+     3.0,
+     34.7,
+     21.6
+    ],
+    [
+     79,
+     "advance",
+     "(11)",
+     32.8,
+     22.6,
+     11.1
+    ],
+    [
+     89,
+     "align",
+     "(11)",
+     37.8,
+     28.4,
+     7.9
+    ],
+    [
+     99,
+     "align",
+     "(11)",
+     41.8,
+     35.0,
+     12.7
+    ],
+    [
+     109,
+     "align",
+     "RVA",
+     3.0,
+     41.6,
+     19.0
+    ],
+    [
+     119,
+     "advance",
+     "RVA",
+     10.0,
+     51.3,
+     29.0
+    ],
+    [
+     129,
+     "advance",
+     "RVA",
+     15.0,
+     61.9,
+     39.6
+    ],
+    [
+     139,
+     "approach",
+     "RVA",
+     27.9,
+     71.9,
+     49.9
+    ],
+    [
+     149,
+     "advance",
+     "RVA",
+     20.0,
+     81.4,
+     58.9
+    ],
+    [
+     159,
+     "advance",
+     "RVA",
+     20.0,
+     80.1,
+     61.0
+    ],
+    [
+     169,
+     "advance",
+     "RVA",
+     17.0,
+     90.7,
+     68.4
+    ],
+    [
+     179,
+     "advance",
+     "RVA",
+     18.0,
+     89.4,
+     69.4
+    ],
+    [
+     189,
+     "advance",
+     "RVA",
+     9.0,
+     99.9,
+     77.9
+    ],
+    [
+     199,
+     "advance",
+     "RVA",
+     17.0,
+     98.6,
+     77.9
+    ],
+    [
+     209,
+     "unbuckle",
+     "RVA",
+     8.0,
+     109.2,
+     86.3
+    ],
+    [
+     219,
+     "advance",
+     "RVA",
+     14.0,
+     107.8,
+     86.3
+    ],
+    [
+     229,
+     "unbuckle",
+     "RVA",
+     18.0,
+     116.0,
+     94.8
+    ],
+    [
+     239,
+     "advance",
+     "RVA",
+     17.0,
+     117.1,
+     94.8
+    ],
+    [
+     249,
+     "unbuckle",
+     "RVA",
+     16.0,
+     122.9,
+     103.2
+    ],
+    [
+     259,
+     "advance",
+     "RVA",
+     5.0,
+     126.3,
+     104.3
+    ],
+    [
+     269,
+     "advance",
+     "RVA",
+     4.0,
+     127.4,
+     106.1
+    ],
+    [
+     279,
+     "advance",
+     "RVA",
+     5.0,
+     137.9,
+     115.6
+    ],
+    [
+     289,
+     "advance",
+     "RVA",
+     13.0,
+     136.6,
+     116.7
+    ],
+    [
+     299,
+     "advance",
+     "RVA",
+     12.0,
+     147.2,
+     125.1
+    ]
+   ],
+   "episode": 1,
+   "seed": 778,
+   "seconds": 100.2
+  },
+  {
+   "nonfinite_steps": 0,
+   "tip_outside_steps": 0,
+   "tip_outside_max_mm": 0.0,
+   "tip_outside_gt_0.5mm_steps": 0,
+   "dev_pts_checked": 243063,
+   "dev_pts_outside": 2446,
+   "dev_outside_max_mm": 2.478155891370611,
+   "max_rva_s_mm": 27.9,
+   "first_step_in_rva_past_17": null,
+   "first_step_in_donor": null,
+   "first_step_past_cut": null,
+   "steps_in_donor_stretch": 0,
+   "mode_counts": {
+    "advance": 199,
+    "align": 56,
+    "approach": 5,
+    "unbuckle": 40
+   },
+   "branch_visits": {
+    "(11)": 61,
+    "RVA": 236,
+    "(17)": 3
+   },
+   "dev_out_gt_0.3mm_by_branch": {
+    "(11)@20": 22,
+    "(11)@30": 175,
+    "(11)@40": 124,
+    "RVA@0": 126,
+    "RCCA@0": 229,
+    "(17)@0": 338,
+    "RVA@30": 113,
+    "RVA@20": 263,
+    "RVA@40": 1,
+    "RVA@10": 2,
+    "(17)@10": 4
+   },
+   "dev_out_gt_0.3mm_pts": 1397,
+   "dev_out_worst": {
+    "mm": 2.478,
+    "step": 143,
+    "branch": "(17)",
+    "s_mm": 5.7,
+    "dof_index": 25,
+    "dist_from_tip_mm": 20.2,
+    "point": [
+     -14.8,
+     37.6,
+     432.75
+    ],
+    "d_centreline_mm": 4.99
+   },
+   "unbuckles": 10,
+   "tip_out_sites": {},
+   "tip_out_worst": null,
+   "reset_devices": {
+    "inserted_mm": [
+     0.0,
+     0.0
+    ],
+    "rotations_rad": [
+     2.4813,
+     0.0043
+    ]
+   },
+   "steps": 300,
+   "ms_per_step": 346.4,
+   "fork_attempts": [
+    0,
+    0
+   ],
+   "final_tip": {
+    "branch": "RVA",
+    "s_mm": 21.0
+   },
+   "donor_traversed_mm": 0.0,
+   "reached_donor_20mm": false,
+   "reached_topbrain": false,
+   "entered_mm": 0.0,
+   "entered_20mm": false,
+   "trace": [
+    [
+     9,
+     "advance",
+     "(11)",
+     21.7,
+     9.5,
+     0.0
+    ],
+    [
+     19,
+     "advance",
+     "(11)",
+     35.8,
+     20.1,
+     0.0
+    ],
+    [
+     29,
+     "align",
+     "(11)",
+     37.8,
+     24.3,
+     2.4
+    ],
+    [
+     39,
+     "align",
+     "(11)",
+     39.8,
+     26.9,
+     4.8
+    ],
+    [
+     49,
+     "align",
+     "(11)",
+     40.8,
+     32.7,
+     10.3
+    ],
+    [
+     59,
+     "align",
+     "(11)",
+     45.8,
+     39.3,
+     17.4
+    ],
+    [
+     69,
+     "advance",
+     "RVA",
+     12.0,
+     46.7,
+     24.3
+    ],
+    [
+     79,
+     "advance",
+     "RVA",
+     15.0,
+     57.3,
+     34.8
+    ],
+    [
+     89,
+     "advance",
+     "RVA",
+     24.0,
+     67.8,
+     45.4
+    ],
+    [
+     99,
+     "advance",
+     "RVA",
+     25.0,
+     75.8,
+     53.9
+    ],
+    [
+     109,
+     "advance",
+     "RVA",
+     21.0,
+     76.8,
+     59.1
+    ],
+    [
+     119,
+     "advance",
+     "RVA",
+     18.0,
+     85.0,
+     62.3
+    ],
+    [
+     129,
+     "advance",
+     "RVA",
+     17.0,
+     83.7,
+     67.6
+    ],
+    [
+     139,
+     "advance",
+     "RVA",
+     17.0,
+     94.2,
+     71.8
+    ],
+    [
+     149,
+     "advance",
+     "RVA",
+     16.0,
+     92.9,
+     75.0
+    ],
+    [
+     159,
+     "advance",
+     "RVA",
+     9.0,
+     103.5,
+     81.3
+    ],
+    [
+     169,
+     "advance",
+     "RVA",
+     16.0,
+     102.2,
+     83.4
+    ],
+    [
+     179,
+     "advance",
+     "RVA",
+     12.0,
+     112.7,
+     89.8
+    ],
+    [
+     189,
+     "advance",
+     "RVA",
+     16.0,
+     111.4,
+     91.9
+    ],
+    [
+     199,
+     "advance",
+     "RVA",
+     16.0,
+     122.0,
+     99.3
+    ],
+    [
+     209,
+     "advance",
+     "RVA",
+     15.0,
+     120.6,
+     100.3
+    ],
+    [
+     219,
+     "unbuckle",
+     "RVA",
+     10.0,
+     131.2,
+     108.8
+    ],
+    [
+     229,
+     "align",
+     "RVA",
+     2.0,
+     126.7,
+     107.7
+    ],
+    [
+     239,
+     "advance",
+     "RVA",
+     4.0,
+     129.9,
+     107.7
+    ],
+    [
+     249,
+     "unbuckle",
+     "RVA",
+     4.0,
+     138.1,
+     117.2
+    ],
+    [
+     259,
+     "advance",
+     "RVA",
+     16.0,
+     139.1,
+     116.2
+    ],
+    [
+     269,
+     "unbuckle",
+     "RVA",
+     12.0,
+     144.9,
+     124.6
+    ],
+    [
+     279,
+     "advance",
+     "RVA",
+     17.0,
+     148.4,
+     125.7
+    ],
+    [
+     289,
+     "unbuckle",
+     "RVA",
+     21.0,
+     151.8,
+     133.1
+    ],
+    [
+     299,
+     "advance",
+     "RVA",
+     21.0,
+     157.6,
+     135.2
+    ]
+   ],
+   "episode": 2,
+   "seed": 779,
+   "seconds": 103.9
+  }
+ ],
+ "seconds": 314.1,
+ "passed": true,
+ "rva_exercised": false
+}

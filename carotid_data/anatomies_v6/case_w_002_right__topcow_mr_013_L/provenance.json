@@ -1,0 +1,6425 @@
+{
+ "lower": "case_w_002_right",
+ "siphon": "topcow_mr_013_L",
+ "mismatch_mm": 0.10500574947745056,
+ "repairs": null,
+ "host_cut_mm": 50.187409427123896,
+ "cca_mm": 12.340428368203746,
+ "ica_mm": 67.76092621024269,
+ "trim_cca_mm": 0.0,
+ "inlet_trim_mm": 10.997757237155007,
+ "blend_mm": 25.0,
+ "join_r_mm": 3.646362271510895,
+ "cca_face_r_mm": 3.650126474107872,
+ "total_mm": 237.02645562768654,
+ "max_kink": 32.587131500249825,
+ "seam1_kink": 25.4,
+ "eca_mm": 29.148391227351777,
+ "eca_floored_frac": 0.0,
+ "route_min_r_raw": 2.0108822002528246,
+ "route_floor_mm": 1.0,
+ "route_floored_frac": 0.0,
+ "siphon_min_r_raw": 1.0917532033214432,
+ "siphon_floor_mm": 1.0,
+ "siphon_floored_frac": 0.0,
+ "v3_clearance_mm": 12.49843575708936,
+ "v4": true,
+ "new_graft_clearance_mm": 0.6,
+ "v3_name": "case_w_002_right__topcow_mr_013_L",
+ "handedness": "mirrored",
+ "patient": "topcow_mr_013",
+ "left": {
+  "lower": "case_w_002_left",
+  "lower_side": "left",
+  "lower_fallback": null,
+  "lower_extended": false,
+  "siphon": "topcow_mr_013 (mirrored)",
+  "siphon_fallback": null,
+  "seam_target_mm": 157.56286587981097,
+  "clearance_mm": 0.7830268294298135,
+  "clearance_at_gate_mm": 0.7642800769305962,
+  "repairs": "ECA re-picked (calibre rank 2 fused with the ICA; this one clears at 15.8 mm); LVA deflected 1.2 mm",
+  "rejected_candidates": null,
+  "host_cut_mm": 110.0,
+  "cca_mm": 15.97466931400934,
+  "ica_mm": 29.549489612484297,
+  "trim_cca_mm": 0.0,
+  "inlet_trim_mm": 0.0,
+  "blend_mm": 25.0,
+  "join_r_mm": 3.702246087233448,
+  "cca_face_r_mm": 2.4981257509506727,
+  "total_mm": 253.66478991378634,
+  "max_kink": 44.924686415838636,
+  "seam1_kink": 20.01,
+  "eca_mm": 29.83508885266164,
+  "eca_floored_frac": 0.0,
+  "route_min_r_raw": 1.811304036887521,
+  "route_floor_mm": 1.0,
+  "route_floored_frac": 0.0,
+  "siphon_min_r_raw": 0.8028505424993433,
+  "siphon_floor_mm": 1.0,
+  "siphon_floored_frac": 0.03,
+  "eca_fused_mm": 15.82923746394583,
+  "v6_cca_blend_adjust_mm": 0.045,
+  "v6_fork_pose": "zenodo_map",
+  "v6_fork_pose_flag": false,
+  "v6_ladder_rung": 1,
+  "v6_ladder_label": "own fork, siphon re-posed",
+  "v6_tubed_ica_mm": 0.0
+ },
+ "vertebrals": {
+  "right": {
+   "patient_side": "left",
+   "donor_len_mm": 69.25906921668597,
+   "host_len_mm": 235.63232184113772,
+   "cut_mm": 167.03972489530472,
+   "total_mm": 235.75703678772774,
+   "repair": null,
+   "clearance_mm": 1.9838011855735012,
+   "clearance_at_gate_mm": 1.9838011855735012,
+   "join_kink_deg": 20.53809037440301,
+   "donor_start_trim_mm": 0.0,
+   "seed_trim_pts": [
+    0,
+    0
+   ]
+  },
+  "left": {
+   "patient_side": "right",
+   "donor_len_mm": 18.471162433598384,
+   "host_len_mm": 208.19116399611036,
+   "cut_mm": 190.71165696675092,
+   "total_mm": 208.51554962272,
+   "repair": "host LVA deflected 1.2 mm for the left carotid",
+   "clearance_mm": 2.935896295325538,
+   "clearance_at_gate_mm": 2.935896295325538,
+   "join_kink_deg": 17.004462032390794,
+   "donor_start_trim_mm": 0.0,
+   "seed_trim_pts": [
+    1,
+    0
+   ]
+  }
+ },
+ "eca_extension": {
+  "right": {
+   "extended": true,
+   "join_at_mm": 28.802795618593077,
+   "join_kink_deg": 22.95,
+   "added_mm": 11.109860772474658,
+   "kind": "eca",
+   "patient": "topcow_mr_013",
+   "patient_side": "left",
+   "centerline_src": "./topbrain_data/centerlines_leca/topcow_mr_013_eca.json",
+   "surface": "./topbrain_data/surfaces_eca/topcow_mr_013_lECA.vtp",
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "seed_trim_pts": [
+    0,
+    0
+   ],
+   "anchor_trim_idx": 0,
+   "len_mm": 23.56892711914582,
+   "v6_pose": "grid",
+   "v6_route_guard": {
+    "excess": 0.0,
+    "rcca_clear_mm": 6.734250793178366,
+    "rcca_clear_need_mm": 0.8725355110758541
+   }
+  },
+  "left": {
+   "extended": false,
+   "join_at_mm": 29.731234540006266,
+   "join_kink_deg": 17.633895235319432,
+   "added_mm": 29.869579342374518,
+   "kind": "eca",
+   "patient": "topcow_mr_013",
+   "patient_side": "right",
+   "centerline_src": "./topbrain_data/centerlines_reca/topcow_mr_013_eca.json",
+   "surface": "./topbrain_data/surfaces_eca/topcow_mr_013_rECA.vtp",
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "seed_trim_pts": [
+    0,
+    0
+   ],
+   "anchor_trim_idx": 0,
+   "len_mm": 30.00821853589765,
+   "why": "anchor_low: fork ECA tip rises 11.7 deg < 20 (D4 skip)",
+   "v6_skipped": true,
+   "anchor_elev_deg": 11.708351943815714,
+   "restored": "fork ECA truncated at the join"
+  }
+ },
+ "notes": null,
+ "xform": {
+  "lower": {
+   "R": [
+    [
+     -1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     -1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "origin": [
+    20.678092014271627,
+    9.766905710085243,
+    -99.64627551308648
+   ],
+   "anchor": [
+    -9.04613509426218,
+    25.85786375983152,
+    460.9353049556294
+   ],
+   "kind": "zenodo",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "/opt/eve_training/carotid_data/v2/carotid_bifurcation_database/case_w_002/case_w_002_right_lumen.stl",
+   "ica_real_mm": 67.96845675871741,
+   "extend_mm": 0.0,
+   "ica_extended": false,
+   "placement": "v6_map",
+   "v6": {
+    "rung": 3,
+    "pose_source": "map_bend60",
+    "seam1_deg": 55.68,
+    "blend_mm": 8,
+    "shift_mm": 0.0,
+    "dev_deg": 0.0,
+    "yaw_vs_map_deg": 0.0,
+    "tilt_deg": 0.0,
+    "seam1_join_deg": 25.4,
+    "route_kink_max_deg": 24.58,
+    "hard_clear_mm": 21.337,
+    "soft_clear_mm": 4.823,
+    "c0": null,
+    "flag": true
+   },
+   "blend_mm": 8,
+   "blend_disp": [
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     1.0004,
+     0.35575,
+     0.56466,
+     0.2375
+    ],
+    [
+     2.0009,
+     0.52044,
+     0.82843,
+     0.3489
+    ],
+    [
+     3.0013,
+     0.56204,
+     0.84267,
+     0.36343
+    ],
+    [
+     4.0015,
+     0.47263,
+     0.71717,
+     0.30781
+    ],
+    [
+     5.0018,
+     0.29564,
+     0.52437,
+     0.21504
+    ],
+    [
+     6.0023,
+     0.10252,
+     0.29925,
+     0.10297
+    ],
+    [
+     7.0014,
+     -0.02391,
+     0.10414,
+     0.01699
+    ],
+    [
+     8.0018,
+     0.0,
+     0.0,
+     0.0
+    ]
+   ],
+   "blend": "cubic Hermite over the donor CCA's first blend_mm (fork side, at the start of the lower_R section)",
+   "chirality": {
+    "fork_side": "right",
+    "route_side": "right",
+    "contralateral": false,
+    "mirrored": false,
+    "mirror": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "chirality": "proper (no mirror)",
+    "d20_applied": true
+   }
+  },
+  "siphon": {
+   "R": [
+    [
+     -1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     -1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "origin": [
+    32.452050120120575,
+    -6.871414243806232,
+    -102.27812911545662
+   ],
+   "anchor": [
+    -8.91449498757396,
+    9.26354593660865,
+    524.7135949409953
+   ],
+   "kind": "topbrain",
+   "centerline_src": "topbrain_data/centerlines_left/topcow_mr_013_ica.json",
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "topbrain_data/surfaces_left/topcow_mr_013_lICA.vtp",
+   "placement": "v6_anat",
+   "v6": {
+    "psi": 0.0,
+    "phi": 0.0,
+    "omega": 0.0,
+    "dev_deg": 0.0,
+    "seam5_deg": 39.1,
+    "blend_mm": 6,
+    "blend_dev_mm": 1.004,
+    "join_deg": 25.12
+   },
+   "blend_mm": 6,
+   "blend": "cubic Hermite over the piece's first blend_mm (piece side)",
+   "blend_disp": [
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.9798,
+     -0.52267,
+     0.50191,
+     0.22569
+    ],
+    [
+     1.975,
+     -0.63247,
+     0.73639,
+     0.25755
+    ],
+    [
+     2.9755,
+     -0.54587,
+     0.68611,
+     0.20614
+    ],
+    [
+     3.9752,
+     -0.35877,
+     0.5551,
+     0.1476
+    ],
+    [
+     4.9744,
+     -0.17561,
+     0.36683,
+     0.095
+    ],
+    [
+     5.9741,
+     -0.05256,
+     0.14781,
+     0.04279
+    ],
+    [
+     6.9721,
+     0.0,
+     0.0,
+     0.0
+    ]
+   ]
+  },
+  "lower_L": {
+   "R": [
+    [
+     -0.954788011072248,
+     0.07830946193410802,
+     0.2867882181755229
+    ],
+    [
+     0.07830946193410802,
+     -0.8643640332167439,
+     0.496731764892154
+    ],
+    [
+     0.2867882181755229,
+     0.496731764892154,
+     0.8191520442889919
+    ]
+   ],
+   "origin": [
+    -29.008403598305016,
+    14.517563041322301,
+    -103.88607829040627
+   ],
+   "anchor": [
+    45.05041899640239,
+    16.54322621504696,
+    487.5040161567128
+   ],
+   "kind": "zenodo",
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "/opt/eve_training/carotid_data/v2/carotid_bifurcation_database/case_w_002/case_w_002_left_lumen.stl",
+   "ica_real_mm": 29.734857295469595,
+   "extend_mm": 0.0,
+   "placement": "v6_map",
+   "v6": {
+    "frame": "RAS",
+    "psi": 0.0,
+    "phi": 35.0,
+    "omega": 150.0,
+    "dev_deg": 35.0,
+    "yaw_vs_map_deg": 0.0,
+    "tilt_deg": 35.0,
+    "seam1_deg": 39.18,
+    "blend_mm": 6,
+    "seam1_join_deg": 20.01,
+    "route_kink_max_deg": 24.29,
+    "hard_clear_mm": 53.248,
+    "self_clear_mm": 3.936,
+    "soft_clear_mm": 11.568,
+    "lica_anchor_deg": 30.84
+   },
+   "blend_mm": 6,
+   "blend_disp": [
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.9986,
+     -0.36765,
+     -0.15048,
+     0.06333
+    ],
+    [
+     1.9917,
+     -0.58282,
+     -0.30274,
+     0.11445
+    ],
+    [
+     2.9862,
+     -0.64172,
+     -0.31035,
+     0.16415
+    ],
+    [
+     3.9862,
+     -0.51137,
+     -0.22894,
+     0.14788
+    ],
+    [
+     4.987,
+     -0.29777,
+     -0.14556,
+     0.09082
+    ],
+    [
+     5.9875,
+     -0.10142,
+     -0.06435,
+     0.03613
+    ],
+    [
+     6.9883,
+     0.0,
+     0.0,
+     0.0
+    ]
+   ],
+   "blend": "cubic Hermite over the donor CCA's first blend_mm (fork side, at the start of the lower_L section)",
+   "chirality": {
+    "fork_side": "left",
+    "route_side": "left",
+    "contralateral": false,
+    "mirrored": false,
+    "mirror": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "chirality": "proper (no mirror)",
+    "d20_applied": true
+   }
+  },
+  "siphon_L": {
+   "R": [
+    [
+     -0.9971460235688091,
+     -0.0016477440608089289,
+     -0.0754790873051733
+    ],
+    [
+     -0.0016477440608089289,
+     -0.9990486745229363,
+     0.043577871373829125
+    ],
+    [
+     -0.0754790873051733,
+     0.043577871373829125,
+     0.9961946980917454
+    ]
+   ],
+   "origin": [
+    -12.605628432024119,
+    2.2503319935984485,
+    -103.07523003382265
+   ],
+   "anchor": [
+    60.07615336397535,
+    16.14755545321516,
+    522.403031018468
+   ],
+   "kind": "topbrain",
+   "centerline_src": "./topbrain_data/centerlines/topcow_mr_013_ica.json",
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "./topbrain_data/surfaces/topcow_mr_013_rICA.vtp",
+   "placement": "v6_anat",
+   "v6": {
+    "psi": 0.0,
+    "phi": 5.0,
+    "omega": 240.0,
+    "dev_deg": 5.000000000000138,
+    "seam5_deg": 38.55,
+    "blend_mm": 6,
+    "blend_dev_mm": 0.79,
+    "join_deg": 30.27
+   },
+   "blend_mm": 6,
+   "blend": "cubic Hermite over the piece's first blend_mm (piece side)",
+   "blend_disp": [
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.9994,
+     -0.26672,
+     0.42242,
+     -0.22134
+    ],
+    [
+     1.9911,
+     -0.36575,
+     0.63251,
+     -0.30075
+    ],
+    [
+     2.9861,
+     -0.32898,
+     0.6018,
+     -0.29348
+    ],
+    [
+     3.9812,
+     -0.30335,
+     0.42297,
+     -0.23065
+    ],
+    [
+     4.9813,
+     -0.23829,
+     0.19176,
+     -0.12145
+    ],
+    [
+     5.9822,
+     -0.11759,
+     0.01676,
+     -0.01755
+    ],
+    [
+     6.983,
+     0.0,
+     0.0,
+     0.0
+    ]
+   ]
+  },
+  "va_R": {
+   "R": [
+    [
+     -0.9498221253899498,
+     -0.24515632519387065,
+     0.19425834946574502
+    ],
+    [
+     0.307316158010571,
+     -0.8470985428318731,
+     0.4335675700023458
+    ],
+    [
+     0.058264132580346045,
+     0.47151080045907157,
+     0.8799334383378696
+    ]
+   ],
+   "origin": [
+    28.102095505409654,
+    -15.817501878135388,
+    -98.64459855139349
+   ],
+   "anchor": [
+    -13.644691898917365,
+    29.48990467353166,
+    549.8828233434833
+   ],
+   "placement": "v6_anat",
+   "bend_deg": 33.025608820544505,
+   "kind": "topbrain",
+   "centerline_src": "/repo/topbrain_data/centerlines_lva/topcow_mr_013_va.json",
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "/repo/topbrain_data/surfaces_va/topcow_mr_013_lVA.vtp",
+   "cut_mm": 214.05518267422667,
+   "donor_start_trim_mm": 1.0,
+   "v5_cut_mm": 171.10909913927117,
+   "v4_cut_mm": 167.03972489530472
+  },
+  "va_L": {
+   "R": [
+    [
+     -0.7676331770148309,
+     0.35671184439231945,
+     -0.5324433919360322
+    ],
+    [
+     -0.2542571877897975,
+     -0.9321147907274399,
+     -0.2579056016537151
+    ],
+    [
+     -0.5882963436936705,
+     -0.06259933687644632,
+     0.8062187885551217
+    ]
+   ],
+   "origin": [
+    -16.223174196783738,
+    -11.925925961185472,
+    -100.86145271490369
+   ],
+   "anchor": [
+    30.964342899377822,
+    24.648645024479027,
+    549.024480451193
+   ],
+   "placement": "v6_anat",
+   "bend_deg": 41.1505275770089,
+   "kind": "topbrain",
+   "centerline_src": "/repo/topbrain_data/centerlines_rva/topcow_mr_013_va.json",
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "/repo/topbrain_data/surfaces_va/topcow_mr_013_rVA.vtp",
+   "cut_mm": 196.7312591802905,
+   "donor_start_trim_mm": 0.0,
+   "v5_cut_mm": 195.57240403593158,
+   "v4_cut_mm": 190.71165696675092
+  },
+  "ecaext_R": {
+   "R": [
+    [
+     -1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     -1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "origin": [
+    45.86055620837124,
+    -8.422076336868756,
+    -99.8787842710281
+   ],
+   "anchor": [
+    -14.062179984400967,
+    10.519540629819566,
+    495.59449503189614
+   ],
+   "donor_start_trim_mm": 0.0,
+   "kind": "topbrain",
+   "centerline_src": "./topbrain_data/centerlines_leca/topcow_mr_013_eca.json",
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "surface": "./topbrain_data/surfaces_eca/topcow_mr_013_lECA.vtp",
+   "join_at_mm": 28.802795618593077,
+   "placement": "v6_grid",
+   "blend_mm": 6,
+   "blend_disp": [
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.9853,
+     0.19066,
+     0.36919,
+     -0.00105
+    ],
+    [
+     1.9789,
+     0.1686,
+     0.4574,
+     -0.0399
+    ],
+    [
+     2.9684,
+     0.10168,
+     0.47402,
+     -0.02621
+    ],
+    [
+     3.9625,
+     0.04694,
+     0.41672,
+     0.01875
+    ],
+    [
+     4.9558,
+     0.06342,
+     0.23079,
+     0.03106
+    ],
+    [
+     5.9468,
+     0.0561,
+     0.05658,
+     0.01177
+    ],
+    [
+     6.9363,
+     0.0,
+     0.0,
+     0.0
+    ]
+   ]
+  },
+  "vaC_R": {
+   "R": [
+    [
+     -0.936626137869939,
+     0.35005180363854743,
+     -0.013971851281854478
+    ],
+    [
+     -0.35024851824024816,
+     -0.9365247695031325,
+     0.01572677899682577
+    ],
+    [
+     -0.007579797448007509,
+     0.019623732481473442,
+     0.9997787034109811
+    ]
+   ],
+   "origin": [
+    15.24,
+    -16.999,
+    -170.314
+   ],
+   "anchor": [
+    -5.6290169845514,
+    37.08502505375451,
+    416.47382231215846
+   ],
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "donor_id": "song_AHMU1218040",
+   "donor_side": "L",
+   "surface": "/repo/carotid_data/v6_work/wall/donors_local/song_AHMU1218040/L_surface.vtp",
+   "surface_md5": "c4abb9692673307229621f69e8719d82",
+   "donor_record": "/repo/carotid_data/v6_work/wall/donors_local/song_AHMU1218040/L.json",
+   "kind": "v6 donor VA (song, real_surface)",
+   "lo_mm": 40.37873505711393,
+   "hi_mm": 214.05518267422667,
+   "branch": "RVA",
+   "real_from_mm_past_ostium": 0.0,
+   "real_surface": true
+  },
+  "vaC_L": {
+   "R": [
+    [
+     -0.2927350527673578,
+     -0.9435897517645709,
+     -0.1547403284414487
+    ],
+    [
+     0.9383818034058118,
+     -0.25240523739015036,
+     -0.23607453732852562
+    ],
+    [
+     0.183700244741666,
+     -0.2143128006043899,
+     0.9593353134222442
+    ]
+   ],
+   "origin": [
+    -26.297,
+    2.483,
+    -163.485
+   ],
+   "anchor": [
+    51.069175720214844,
+    41.48394775390625,
+    412.73333740234375
+   ],
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "donor_id": "song_AHMU1218040",
+   "donor_side": "R",
+   "surface": "/repo/carotid_data/v6_work/wall/donors_local/song_AHMU1218040/R_surface.vtp",
+   "surface_md5": "51ff5974a6026ce2e198d7999ad6adef",
+   "donor_record": "/repo/carotid_data/v6_work/wall/donors_local/song_AHMU1218040/R.json",
+   "kind": "v6 donor VA (song, real_surface)",
+   "lo_mm": 0.0,
+   "hi_mm": 196.7312591802905,
+   "branch": "LVA",
+   "real_from_mm_past_ostium": 0.0,
+   "real_surface": true
+  },
+  "scC_R": {
+   "R": [
+    [
+     -0.936626137869939,
+     0.35005180363854743,
+     -0.013971851281854478
+    ],
+    [
+     -0.35024851824024816,
+     -0.9365247695031325,
+     0.01572677899682577
+    ],
+    [
+     -0.007579797448007509,
+     0.019623732481473442,
+     0.9997787034109811
+    ]
+   ],
+   "origin": [
+    15.24,
+    -16.999,
+    -170.314
+   ],
+   "anchor": [
+    -5.6290169845514,
+    37.08502505375451,
+    416.47382231215846
+   ],
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "donor_id": "song_AHMU1218040",
+   "donor_side": "L",
+   "surface": "/repo/carotid_data/v6_work/wall/d17/local/song_AHMU1218040/ljunction_stageA.vtp",
+   "kind": "v6 donor subclavian + junction (ct_seg4-style CT edge)",
+   "lo_mm": 18.013173931001162,
+   "hi_mm": 57.87253795272748,
+   "branch": "RVA",
+   "real_surface": true,
+   "siblings": [
+    "(17)",
+    "RVA"
+   ]
+  },
+  "scD_R": {
+   "R": [
+    [
+     -0.936626137869939,
+     0.35005180363854743,
+     -0.013971851281854478
+    ],
+    [
+     -0.35024851824024816,
+     -0.9365247695031325,
+     0.01572677899682577
+    ],
+    [
+     -0.007579797448007509,
+     0.019623732481473442,
+     0.9997787034109811
+    ]
+   ],
+   "origin": [
+    15.24,
+    -16.999,
+    -170.314
+   ],
+   "anchor": [
+    -5.6290169845514,
+    37.08502505375451,
+    416.47382231215846
+   ],
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "donor_id": "song_AHMU1218040",
+   "donor_side": "L",
+   "surface": "/repo/carotid_data/v6_work/wall/d17/local/song_AHMU1218040/ljunction_stageA.vtp",
+   "kind": "v6 donor subclavian distal stretch to the donor's cut end (D17)",
+   "lo_mm": 0.0,
+   "hi_mm": 74.18722129688295,
+   "branch": "(17)",
+   "real_surface": true,
+   "siblings": [
+    "RVA"
+   ],
+   "d17": {
+    "cut_end": true,
+    "end_mm": 74.18722129688295,
+    "foot_mm": 5.017469700361084,
+    "past_ostium_mm": 69.16975159652186,
+    "label_end_mm": 74.18722129688295,
+    "tube_from_mm": null,
+    "tube_mm": 0.0,
+    "trimmed_mm": 0.0,
+    "host_distal_dropped_mm": 102.37622347541082
+   }
+  },
+  "scC_L": {
+   "R": [
+    [
+     -0.2927350527673578,
+     -0.9435897517645709,
+     -0.1547403284414487
+    ],
+    [
+     0.9383818034058118,
+     -0.25240523739015036,
+     -0.23607453732852562
+    ],
+    [
+     0.183700244741666,
+     -0.2143128006043899,
+     0.9593353134222442
+    ]
+   ],
+   "origin": [
+    -26.297,
+    2.483,
+    -163.485
+   ],
+   "anchor": [
+    51.069175720214844,
+    41.48394775390625,
+    412.73333740234375
+   ],
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "donor_id": "song_AHMU1218040",
+   "donor_side": "R",
+   "surface": "/repo/carotid_data/v6_work/wall/d17/local/song_AHMU1218040/rjunction_stageA.vtp",
+   "kind": "v6 donor subclavian + junction (ct_seg4-style CT edge)",
+   "lo_mm": 24.861089194586743,
+   "hi_mm": 36.180264289603656,
+   "branch": "(18)",
+   "real_surface": true,
+   "siblings": [
+    "(19)",
+    "LVA"
+   ]
+  },
+  "scD_L": {
+   "R": [
+    [
+     -0.2927350527673578,
+     -0.9435897517645709,
+     -0.1547403284414487
+    ],
+    [
+     0.9383818034058118,
+     -0.25240523739015036,
+     -0.23607453732852562
+    ],
+    [
+     0.183700244741666,
+     -0.2143128006043899,
+     0.9593353134222442
+    ]
+   ],
+   "origin": [
+    -26.297,
+    2.483,
+    -163.485
+   ],
+   "anchor": [
+    51.069175720214844,
+    41.48394775390625,
+    412.73333740234375
+   ],
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "donor_id": "song_AHMU1218040",
+   "donor_side": "R",
+   "surface": "/repo/carotid_data/v6_work/wall/d17/local/song_AHMU1218040/rjunction_stageA.vtp",
+   "kind": "v6 donor subclavian distal stretch to the donor's cut end (D17)",
+   "lo_mm": 0.0,
+   "hi_mm": 24.44278272973148,
+   "branch": "(19)",
+   "real_surface": true,
+   "siblings": [
+    "(18)"
+   ],
+   "d17": {
+    "cut_end": true,
+    "end_mm": 34.2710985900415,
+    "foot_mm": 5.03661749343318,
+    "past_ostium_mm": 29.234481096608317,
+    "label_end_mm": 24.44278272973148,
+    "tube_from_mm": 24.44278272973148,
+    "tube_mm": 9.828315860310017,
+    "trimmed_mm": 0.0,
+    "host_distal_dropped_mm": 114.89067124225858
+   }
+  },
+  "scJ_L": {
+   "R": [
+    [
+     -0.2927350527673578,
+     -0.9435897517645709,
+     -0.1547403284414487
+    ],
+    [
+     0.9383818034058118,
+     -0.25240523739015036,
+     -0.23607453732852562
+    ],
+    [
+     0.183700244741666,
+     -0.2143128006043899,
+     0.9593353134222442
+    ]
+   ],
+   "origin": [
+    -26.297,
+    2.483,
+    -163.485
+   ],
+   "anchor": [
+    51.069175720214844,
+    41.48394775390625,
+    412.73333740234375
+   ],
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "donor_id": "song_AHMU1218040",
+   "donor_side": "R",
+   "surface": "/repo/carotid_data/v6_work/wall/d17/local/song_AHMU1218040/rjunction_stageA.vtp",
+   "kind": "v6 donor junction on the LVA start",
+   "lo_mm": 0.0,
+   "hi_mm": 18.366517335967316,
+   "branch": "LVA",
+   "real_surface": true,
+   "siblings": [
+    "(18)",
+    "(19)"
+   ]
+  }
+ },
+ "v5_va": {
+  "version": "graft_v5_reg 1.1 (2026-10-02; v5_assign: calibre at the cut splice, min ostium advance, plan handedness check, assignment provenance)",
+  "strategy": "B: donor cervical VA (origin -> splice in V3) + v4's TopBrain distal piece",
+  "tb_placement": "fit",
+  "ramp_rule": "v4",
+  "handedness_rule": "follow",
+  "new_graft_clearance_mm": 0.6,
+  "exit_max_mm": 12.0,
+  "gates": {
+   "origin_turn_max_deg": 60.0,
+   "course_rms_max_mm": 20.0,
+   "tip_move_max_mm": 60.0,
+   "takeoff_band_deg": [
+    20.0,
+    120.0
+   ],
+   "rise_min_deg": 15.0,
+   "calibre_pref": 1.25,
+   "calibre_max": 1.6,
+   "join_max_deg": 60.0
+  },
+  "seconds": 0.58,
+  "licences": {
+   "song_AHMU1218040": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8); VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL"
+  },
+  "right": {
+   "donor_id": "song_AHMU1218040",
+   "donor_side": "L",
+   "donor_mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "wall_class": "real_surface",
+   "real_surface": true,
+   "donor_qc": "review",
+   "donor_coarseness": 0.0005,
+   "splice_window_mm": [
+    121.97516516885192,
+    190.3905785507885
+   ],
+   "splice_window_rule": "[C2, dura]",
+   "n_candidates_evaluated": 28,
+   "first_fail_counts": {
+    "calibre": 1518,
+    "splice_window": 46,
+    "course_rms": 8,
+    "clearance": 2,
+    "join_kink": 1
+   },
+   "first_rejections": [
+    "adv 0: pose +12x: course_rms 20.1",
+    "adv 0: pose -12x: course_rms 24.2",
+    "adv 0: pose +12y: course_rms 20.7",
+    "adv 0: pose -12y: course_rms 23.7"
+   ],
+   "base": {
+    "rotation_proper": {
+     "pass": true,
+     "value": 0.9999999999999992
+    },
+    "course_rms": {
+     "pass": true,
+     "value": 10.095143785428824
+    },
+    "takeoff_band": {
+     "pass": true,
+     "value": 75.80999775011523
+    },
+    "rise": {
+     "pass": true,
+     "value": 59.19784306840461
+    },
+    "origin_turn": {
+     "pass": true,
+     "value": 17.980625875853267,
+     "detail": {
+      "at_O_h": 17.980625875853267,
+      "at_ostium": 13.334090921781094
+     }
+    },
+    "splice_window": {
+     "pass": true,
+     "value": 147.78919227776106
+    },
+    "calibre": {
+     "pass": false,
+     "value": 1.6223383226666082,
+     "preferred": false
+    },
+    "join_kink": {
+     "pass": false,
+     "value": 63.18568655119129
+    },
+    "tip_move": {
+     "pass": true,
+     "value": 12.477980287413837
+    },
+    "clearance": {
+     "pass": true,
+     "value": 1.3636370179049946,
+     "why": null,
+     "exit_mm": 8.99531538327675
+    },
+    "_geometry": {
+     "p": [
+      [
+       -0.35,
+       24.14,
+       416.22
+      ],
+      [
+       -1.12,
+       25.76,
+       415.33
+      ],
+      [
+       -1.89,
+       27.38,
+       414.44
+      ],
+      [
+       -2.53,
+       29.12,
+       413.7
+      ],
+      [
+       -3.01,
+       31.01,
+       413.22
+      ],
+      [
+       -3.59,
+       32.92,
+       413.15
+      ],
+      [
+       -4.32,
+       34.69,
+       413.67
+      ],
+      [
+       -4.85,
+       36.18,
+       414.88
+      ],
+      [
+       -5.63,
+       37.09,
+       416.47
+      ],
+      [
+       -6.6,
+       37.61,
+       418.15
+      ],
+      [
+       -7.55,
+       38.13,
+       419.83
+      ],
+      [
+       -8.54,
+       38.48,
+       421.53
+      ],
+      [
+       -9.59,
+       39.03,
+       423.14
+      ],
+      [
+       -10.53,
+       39.61,
+       424.81
+      ],
+      [
+       -10.75,
+       40.24,
+       426.63
+      ],
+      [
+       -10.79,
+       40.66,
+       428.59
+      ],
+      [
+       -11.01,
+       41.2,
+       430.48
+      ],
+      [
+       -11.63,
+       42.17,
+       432.11
+      ],
+      [
+       -12.12,
+       43.45,
+       433.56
+      ],
+      [
+       -11.81,
+       44.56,
+       435.15
+      ],
+      [
+       -10.78,
+       45.32,
+       436.68
+      ],
+      [
+       -9.43,
+       45.65,
+       438.11
+      ],
+      [
+       -8.01,
+       45.83,
+       439.52
+      ],
+      [
+       -6.61,
+       45.68,
+       440.92
+      ],
+      [
+       -5.78,
+       45.51,
+       442.72
+      ],
+      [
+       -5.3,
+       45.27,
+       444.65
+      ],
+      [
+       -4.97,
+       44.91,
+       446.59
+      ],
+      [
+       -4.72,
+       44.49,
+       448.53
+      ],
+      [
+       -3.9,
+       44.2,
+       450.32
+      ],
+      [
+       -3.13,
+       44.29,
+       452.17
+      ],
+      [
+       -2.44,
+       44.87,
+       453.95
+      ],
+      [
+       -1.96,
+       45.85,
+       455.63
+      ],
+      [
+       -1.34,
+       47.13,
+       457.03
+      ],
+      [
+       -0.79,
+       48.44,
+       458.44
+      ],
+      [
+       -0.65,
+       49.34,
+       460.12
+      ],
+      [
+       -0.33,
+       48.96,
+       462.04
+      ],
+      [
+       0.08,
+       48.89,
+       463.99
+      ],
+      [
+       0.01,
+       48.76,
+       465.98
+      ],
+      [
+       -0.11,
+       48.47,
+       467.94
+      ],
+      [
+       -0.25,
+       47.33,
+       469.56
+      ],
+      [
+       -0.86,
+       46.51,
+       471.28
+      ],
+      [
+       -0.89,
+       45.74,
+       473.12
+      ],
+      [
+       -1.0,
+       45.04,
+       474.98
+      ],
+      [
+       -1.06,
+       44.72,
+       476.94
+      ],
+      [
+       -1.0,
+       44.61,
+       478.94
+      ],
+      [
+       -0.97,
+       44.27,
+       480.91
+      ],
+      [
+       -0.83,
+       44.02,
+       482.89
+      ],
+      [
+       -0.74,
+       43.55,
+       484.84
+      ],
+      [
+       -0.77,
+       43.48,
+       486.84
+      ],
+      [
+       -0.98,
+       43.6,
+       488.82
+      ],
+      [
+       -1.29,
+       43.6,
+       490.79
+      ],
+      [
+       -1.57,
+       43.39,
+       492.76
+      ],
+      [
+       -2.03,
+       43.04,
+       494.68
+      ],
+      [
+       -2.26,
+       42.64,
+       496.62
+      ],
+      [
+       -2.56,
+       42.03,
+       498.51
+      ],
+      [
+       -2.96,
+       41.49,
+       500.39
+      ],
+      [
+       -3.25,
+       40.88,
+       502.28
+      ],
+      [
+       -3.25,
+       40.16,
+       504.14
+      ],
+      [
+       -3.32,
+       39.26,
+       505.89
+      ],
+      [
+       -4.13,
+       38.83,
+       507.66
+      ],
+      [
+       -4.91,
+       38.09,
+       509.32
+      ],
+      [
+       -5.14,
+       37.15,
+       511.07
+      ],
+      [
+       -5.18,
+       36.26,
+       512.87
+      ],
+      [
+       -5.02,
+       35.49,
+       514.69
+      ],
+      [
+       -4.27,
+       35.2,
+       516.51
+      ],
+      [
+       -3.16,
+       35.27,
+       518.16
+      ],
+      [
+       -1.99,
+       35.57,
+       519.73
+      ],
+      [
+       -1.43,
+       34.8,
+       521.41
+      ],
+      [
+       -1.92,
+       33.32,
+       522.51
+      ],
+      [
+       -3.77,
+       32.8,
+       522.39
+      ],
+      [
+       -5.75,
+       32.92,
+       522.19
+      ],
+      [
+       -7.73,
+       32.91,
+       522.04
+      ],
+      [
+       -9.68,
+       32.84,
+       521.68
+      ],
+      [
+       -11.62,
+       33.17,
+       521.35
+      ],
+      [
+       -13.51,
+       33.69,
+       520.99
+      ],
+      [
+       -15.47,
+       33.98,
+       520.86
+      ],
+      [
+       -17.46,
+       34.11,
+       520.93
+      ],
+      [
+       -18.99,
+       33.5,
+       521.95
+      ],
+      [
+       -19.21,
+       32.22,
+       523.44
+      ],
+      [
+       -18.32,
+       31.02,
+       524.75
+      ],
+      [
+       -16.72,
+       30.35,
+       525.75
+      ],
+      [
+       -15.1,
+       29.82,
+       526.8
+      ],
+      [
+       -13.69,
+       29.18,
+       528.06
+      ],
+      [
+       -12.19,
+       29.04,
+       529.38
+      ],
+      [
+       -11.09,
+       28.72,
+       531.01
+      ],
+      [
+       -10.37,
+       28.12,
+       532.78
+      ],
+      [
+       -10.29,
+       27.4,
+       534.63
+      ],
+      [
+       -10.79,
+       26.62,
+       536.4
+      ],
+      [
+       -11.74,
+       26.19,
+       538.09
+      ],
+      [
+       -13.27,
+       25.98,
+       539.32
+      ],
+      [
+       -13.86,
+       26.14,
+       540.82
+      ],
+      [
+       -14.27,
+       26.43,
+       542.75
+      ],
+      [
+       -15.26,
+       26.75,
+       544.44
+      ],
+      [
+       -16.8,
+       27.39,
+       545.51
+      ],
+      [
+       -18.49,
+       28.29,
+       546.06
+      ],
+      [
+       -20.05,
+       29.49,
+       546.25
+      ],
+      [
+       -21.08,
+       31.16,
+       545.92
+      ],
+      [
+       -21.63,
+       32.98,
+       545.36
+      ],
+      [
+       -21.59,
+       34.91,
+       544.84
+      ],
+      [
+       -21.25,
+       36.8,
+       544.3
+      ],
+      [
+       -20.51,
+       38.59,
+       543.87
+      ],
+      [
+       -19.22,
+       40.01,
+       543.36
+      ],
+      [
+       -17.64,
+       41.15,
+       543.01
+      ],
+      [
+       -15.81,
+       41.94,
+       543.12
+      ],
+      [
+       -13.9,
+       42.51,
+       543.12
+      ],
+      [
+       -11.91,
+       42.48,
+       543.25
+      ],
+      [
+       -10.0,
+       42.15,
+       543.4
+      ],
+      [
+       -8.4,
+       41.45,
+       544.35
+      ],
+      [
+       -7.14,
+       40.42,
+       545.52
+      ],
+      [
+       -6.02,
+       39.29,
+       546.71
+      ],
+      [
+       -5.53,
+       37.99,
+       548.12
+      ],
+      [
+       -5.01,
+       37.03,
+       549.79
+      ],
+      [
+       -4.52,
+       36.14,
+       551.51
+      ],
+      [
+       -3.98,
+       35.24,
+       553.22
+      ],
+      [
+       -3.49,
+       34.5,
+       555.0
+      ],
+      [
+       -2.88,
+       33.85,
+       556.79
+      ],
+      [
+       -2.38,
+       33.1,
+       558.58
+      ],
+      [
+       -1.82,
+       32.04,
+       560.18
+      ],
+      [
+       -1.07,
+       30.7,
+       561.47
+      ],
+      [
+       -0.43,
+       29.13,
+       562.53
+      ],
+      [
+       0.32,
+       27.65,
+       563.63
+      ],
+      [
+       1.17,
+       26.27,
+       564.81
+      ],
+      [
+       2.13,
+       25.06,
+       566.07
+      ],
+      [
+       3.08,
+       23.97,
+       567.45
+      ],
+      [
+       4.19,
+       22.98,
+       568.79
+      ]
+     ],
+     "splice_on_donor_mm": 147.78919227776106,
+     "cut_at_mm": 178.68396275361877,
+     "ostium_at_mm": 30.99469832525081
+    },
+    "all_pass": false
+   },
+   "host_subclavian_elevation_deg": 23.396013322113944,
+   "donor_subclavian_elevation_deg_native": 6.700662615825848,
+   "tb_patient_side": "left",
+   "tb_mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "tb_len_mm": 69.25906921668597,
+   "donor_source": "song",
+   "donor_licence": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8); VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL",
+   "donor_eligible": {
+    "class": "primary",
+    "rank": 25,
+    "patient_key": "song:AHMU1218040",
+    "dataset_ref": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8)",
+    "licence": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8); VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL",
+    "non_commercial": true,
+    "arterial_derived": true,
+    "attributions": [
+     "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8)",
+     "TotalSegmentator (CC BY 4.0, Wasserthal et al. 2023, doi 10.1148/ryai.230024) used for vertebra landmarks / QC references: attribution"
+    ],
+    "scanner": {
+     "manufacturer": "GE (inferred)",
+     "model": null,
+     "kernel": "STANDARD",
+     "series_description": "S to I"
+    },
+    "acquisition_voxel_mm": [
+     0.42188,
+     0.42188,
+     0.625
+    ],
+    "provenance_flags": [],
+    "side_flags": [
+     "L review: BCV min 824.0 HU >= 200 (visual check); contralateral BCV 788 HU on the native CT"
+    ],
+    "qc_status": "donor_review",
+    "provisional_only": false,
+    "wall_truncated": false,
+    "v1_rescue_used": false,
+    "flag_level": 1,
+    "eye": [
+     {
+      "verdict": "kept",
+      "by": "scaleup_lane_song",
+      "when": "2026-10-02 09:15"
+     }
+    ]
+   },
+   "donor_coarseness_detail": {
+    "score": 0.0005,
+    "score_def": "final tally (scaleup_tally.json): donor-stretch union > 0.3 mm on the CT-edge wall, contact-free 10 mm bins (validated ranking rule, decision 03:50 item 4)",
+    "tally_contact_free_u03": 0.0005,
+    "tally_all_bins_u03": 0.0988,
+    "builder_score": 0.0357
+   },
+   "donor_surface_seg_tag": "ct_seg4",
+   "donor_surface_genus": 7.0,
+   "min_ostium_advance_mm": 0.0,
+   "replaced": true,
+   "pose_deg": 0.0,
+   "pose_axis": null,
+   "splice_move_mm": -10,
+   "tb_start_trim_mm": 1,
+   "splice_on_donor_mm": 139.83636033123182,
+   "cut_at_mm": 171.10909913927117,
+   "ostium_at_mm": 30.978817412718556,
+   "stub_mm": 4.351335097026147,
+   "join_kink_deg": 19.29341259982678,
+   "origin_turn_deg": {
+    "at_O_h": 17.980625875853022,
+    "at_ostium": 12.981172286159087
+   },
+   "tb_len_used_mm": 67.35393963464705,
+   "ramp": {
+    "side": "donor",
+    "rule": "v4",
+    "from_r": 1.2815776247897803,
+    "to_r": 1.9577544617816927,
+    "span_mm": [
+     -25.0,
+     0.0
+    ]
+   },
+   "tb_placement": "fit",
+   "gate": {
+    "exit_mm": 8.95903862947674,
+    "parent_reentry": false,
+    "parent_min_after_exit_mm": 1.3285056157996111,
+    "clear_others_mm": 0.9399155219925046,
+    "clear_others_who": "cc - LCCA",
+    "clear_others_at_mm": 169.94785254209427,
+    "self_mm": 3.415186646800768,
+    "self_pair_mm": [
+     147.34639786137143,
+     160.19342537613267
+    ],
+    "clear": 0.9399155219925046,
+    "who": "cc - LCCA",
+    "ok": true
+   },
+   "total_mm": 237.77467835723988,
+   "splice_calibre_ratio": 1.527612860830683,
+   "splice_calibre_q_tb_over_donor": 1.527612860830683,
+   "splice_calibre_preferred": false,
+   "splice_calibre_pass": 2,
+   "takeoff_5mm_deg": 54.48415752762265,
+   "takeoff_10mm_deg": 74.33501016869428,
+   "donor_takeoff_10mm_deg_native": 105.75562590827768,
+   "donor_takeoff_5mm_deg_native": 86.66002378983669,
+   "takeoff_delta_10mm_deg": -31.420615739583397,
+   "takeoff_not_preserved": true,
+   "parent_tangent_mismatch_deg": 32.31346296195797,
+   "va_10mm_elevation_deg": 59.72771562390808,
+   "course_rms_to_corridor_mm": 10.095143785428824,
+   "tip_moved_vs_v4_mm": 14.49014843061517,
+   "tip_to_donor_confluence_mm": 10.498269692110012,
+   "rotation_det": 0.9999999999999992,
+   "pose_gates": {
+    "rotation_proper": [
+     true,
+     0.9999999999999992
+    ],
+    "course_rms": [
+     true,
+     10.095143785428824
+    ],
+    "takeoff_band": [
+     true,
+     75.80999775011523
+    ],
+    "rise": [
+     true,
+     59.19784306840461
+    ]
+   },
+   "real_from_mm_past_ostium": 0.0,
+   "ostium_advance_mm": 0,
+   "final": {
+    "ok": true,
+    "clear": 0.9399155219925046,
+    "who": "cc - LCCA",
+    "exit_mm": 8.95903862947674,
+    "self_mm": 3.415186646800768,
+    "clear_others_mm": 0.9399155219925046,
+    "clear_others_who": "cc - LCCA",
+    "exact_all_pairs_from_exit_mm": 0.9399155219925046
+   },
+   "pass": true
+  },
+  "left": {
+   "donor_id": "song_AHMU1218040",
+   "donor_side": "R",
+   "donor_mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "wall_class": "real_surface",
+   "real_surface": true,
+   "donor_qc": "review",
+   "donor_coarseness": 0.0155,
+   "splice_window_mm": [
+    125.19186719523479,
+    190.53673824365399
+   ],
+   "splice_window_rule": "[C2, dura]",
+   "n_candidates_evaluated": 7,
+   "first_fail_counts": {
+    "clearance": 6,
+    "splice_window": 12,
+    "calibre": 24
+   },
+   "first_rejections": [
+    "adv 0: pose +0 splice +0 trim 0: clearance -1.96 mm with cc - LCCA",
+    "adv 0: pose +0 splice -5 trim 0: clearance -1.96 mm with cc - LCCA",
+    "adv 0: pose +0 splice -15 trim 0: clearance -1.96 mm with cc - LCCA",
+    "adv 0: pose +3x splice +0 trim 0: clearance -0.52 mm with cc - LCCA"
+   ],
+   "base": {
+    "rotation_proper": {
+     "pass": true,
+     "value": 1.0000000000000007
+    },
+    "course_rms": {
+     "pass": true,
+     "value": 6.320251636212386
+    },
+    "takeoff_band": {
+     "pass": true,
+     "value": 110.74176281960379
+    },
+    "rise": {
+     "pass": true,
+     "value": 49.92205975507914
+    },
+    "origin_turn": {
+     "pass": true,
+     "value": 15.640037940704586,
+     "detail": {
+      "at_O_h": 8.537736462515939e-07,
+      "at_ostium": 15.640037940704586
+     }
+    },
+    "splice_window": {
+     "pass": true,
+     "value": 190.53673824365399
+    },
+    "calibre": {
+     "pass": true,
+     "value": 1.0,
+     "preferred": true
+    },
+    "join_kink": {
+     "pass": true,
+     "value": 21.544032633337707
+    },
+    "tip_move": {
+     "pass": true,
+     "value": 10.22870552562109
+    },
+    "clearance": {
+     "pass": false,
+     "value": -1.9589094537647656,
+     "why": "clearance -1.96 mm with cc - LCCA",
+     "exit_mm": 7.002459019543024
+    },
+    "_geometry": {
+     "p": [
+      [
+       47.54,
+       34.47,
+       430.11
+      ],
+      [
+       46.65,
+       35.51,
+       431.57
+      ],
+      [
+       45.76,
+       36.55,
+       433.03
+      ],
+      [
+       45.03,
+       37.66,
+       434.52
+      ],
+      [
+       44.23,
+       38.7,
+       435.99
+      ],
+      [
+       43.06,
+       39.46,
+       437.43
+      ],
+      [
+       41.81,
+       40.1,
+       438.85
+      ],
+      [
+       40.63,
+       40.76,
+       440.33
+      ],
+      [
+       39.6,
+       41.05,
+       442.01
+      ],
+      [
+       39.05,
+       41.38,
+       443.9
+      ],
+      [
+       38.87,
+       41.4,
+       445.87
+      ],
+      [
+       39.39,
+       41.03,
+       447.76
+      ],
+      [
+       40.26,
+       40.44,
+       449.46
+      ],
+      [
+       41.17,
+       39.43,
+       450.93
+      ],
+      [
+       41.76,
+       38.3,
+       452.46
+      ],
+      [
+       41.84,
+       36.95,
+       453.93
+      ],
+      [
+       41.34,
+       35.78,
+       455.47
+      ],
+      [
+       40.55,
+       34.98,
+       457.12
+      ],
+      [
+       39.48,
+       34.58,
+       458.74
+      ],
+      [
+       38.41,
+       34.93,
+       460.4
+      ],
+      [
+       37.66,
+       35.41,
+       462.19
+      ],
+      [
+       37.19,
+       36.14,
+       463.99
+      ],
+      [
+       36.9,
+       37.08,
+       465.72
+      ],
+      [
+       36.95,
+       37.95,
+       467.52
+      ],
+      [
+       36.78,
+       38.32,
+       469.47
+      ],
+      [
+       36.66,
+       38.29,
+       471.47
+      ],
+      [
+       36.73,
+       38.0,
+       473.44
+      ],
+      [
+       36.92,
+       37.48,
+       475.36
+      ],
+      [
+       37.08,
+       36.57,
+       477.14
+      ],
+      [
+       37.15,
+       35.64,
+       478.9
+      ],
+      [
+       36.97,
+       34.74,
+       480.68
+      ],
+      [
+       36.62,
+       33.93,
+       482.47
+      ],
+      [
+       36.25,
+       33.4,
+       484.36
+      ],
+      [
+       36.29,
+       33.1,
+       486.33
+      ],
+      [
+       36.19,
+       32.68,
+       488.29
+      ],
+      [
+       35.98,
+       32.22,
+       490.22
+      ],
+      [
+       35.49,
+       31.78,
+       492.11
+      ],
+      [
+       34.96,
+       31.41,
+       493.99
+      ],
+      [
+       34.61,
+       31.07,
+       495.93
+      ],
+      [
+       34.18,
+       30.71,
+       497.85
+      ],
+      [
+       33.73,
+       30.28,
+       499.76
+      ],
+      [
+       33.39,
+       29.88,
+       501.68
+      ],
+      [
+       33.15,
+       29.55,
+       503.64
+      ],
+      [
+       32.96,
+       29.29,
+       505.61
+      ],
+      [
+       32.9,
+       28.84,
+       507.56
+      ],
+      [
+       32.89,
+       28.28,
+       509.48
+      ],
+      [
+       33.1,
+       27.71,
+       511.38
+      ],
+      [
+       33.12,
+       27.19,
+       513.31
+      ],
+      [
+       32.65,
+       26.68,
+       515.17
+      ],
+      [
+       32.14,
+       26.41,
+       517.06
+      ],
+      [
+       32.1,
+       25.62,
+       518.86
+      ],
+      [
+       32.29,
+       24.95,
+       520.72
+      ],
+      [
+       32.04,
+       24.37,
+       522.61
+      ],
+      [
+       31.75,
+       23.8,
+       524.51
+      ],
+      [
+       31.61,
+       23.17,
+       526.4
+      ],
+      [
+       31.35,
+       22.66,
+       528.31
+      ],
+      [
+       31.18,
+       22.11,
+       530.23
+      ],
+      [
+       31.43,
+       21.46,
+       532.07
+      ],
+      [
+       32.75,
+       21.18,
+       533.44
+      ],
+      [
+       34.33,
+       21.58,
+       534.59
+      ],
+      [
+       35.87,
+       22.46,
+       535.46
+      ],
+      [
+       37.11,
+       23.87,
+       536.1
+      ],
+      [
+       38.34,
+       25.43,
+       536.27
+      ],
+      [
+       39.76,
+       26.81,
+       536.25
+      ],
+      [
+       41.21,
+       28.17,
+       536.02
+      ],
+      [
+       42.77,
+       29.09,
+       535.21
+      ],
+      [
+       44.61,
+       29.39,
+       534.64
+      ],
+      [
+       46.35,
+       28.55,
+       534.79
+      ],
+      [
+       46.83,
+       27.05,
+       535.88
+      ],
+      [
+       46.09,
+       25.85,
+       537.24
+      ],
+      [
+       44.75,
+       25.26,
+       538.57
+      ],
+      [
+       43.38,
+       25.22,
+       540.03
+      ],
+      [
+       42.24,
+       25.06,
+       541.66
+      ],
+      [
+       41.51,
+       24.89,
+       543.52
+      ],
+      [
+       40.97,
+       24.75,
+       545.44
+      ],
+      [
+       40.86,
+       24.47,
+       547.41
+      ],
+      [
+       41.27,
+       24.48,
+       549.36
+      ],
+      [
+       42.23,
+       24.66,
+       551.1
+      ],
+      [
+       43.51,
+       25.26,
+       552.49
+      ],
+      [
+       45.02,
+       26.26,
+       553.34
+      ],
+      [
+       46.54,
+       27.48,
+       553.77
+      ],
+      [
+       47.81,
+       29.01,
+       553.93
+      ],
+      [
+       48.71,
+       30.79,
+       553.9
+      ],
+      [
+       48.85,
+       32.78,
+       554.01
+      ],
+      [
+       48.37,
+       34.71,
+       554.14
+      ],
+      [
+       47.2,
+       36.29,
+       554.34
+      ],
+      [
+       45.61,
+       37.45,
+       554.65
+      ],
+      [
+       43.79,
+       37.81,
+       555.16
+      ],
+      [
+       41.91,
+       37.42,
+       555.57
+      ],
+      [
+       39.96,
+       37.31,
+       555.97
+      ],
+      [
+       38.05,
+       36.82,
+       556.18
+      ],
+      [
+       36.51,
+       35.61,
+       556.2
+      ],
+      [
+       35.45,
+       34.11,
+       556.97
+      ],
+      [
+       34.4,
+       32.74,
+       557.98
+      ],
+      [
+       33.22,
+       31.93,
+       559.33
+      ],
+      [
+       32.24,
+       31.44,
+       561.0
+      ],
+      [
+       30.97,
+       30.82,
+       562.38
+      ],
+      [
+       29.58,
+       29.86,
+       563.42
+      ],
+      [
+       27.9,
+       29.18,
+       564.01
+      ],
+      [
+       26.18,
+       28.33,
+       563.6
+      ],
+      [
+       24.84,
+       26.91,
+       563.23
+      ],
+      [
+       23.79,
+       25.22,
+       563.27
+      ],
+      [
+       23.03,
+       23.47,
+       563.74
+      ],
+      [
+       22.62,
+       21.93,
+       564.93
+      ],
+      [
+       22.39,
+       20.68,
+       566.46
+      ],
+      [
+       22.22,
+       20.51,
+       568.35
+      ],
+      [
+       22.01,
+       21.16,
+       570.23
+      ],
+      [
+       21.43,
+       22.1,
+       571.81
+      ]
+     ],
+     "splice_on_donor_mm": 190.53673824365399,
+     "cut_at_mm": 195.57240403593175,
+     "ostium_at_mm": 5.003391750414583
+    },
+    "all_pass": false
+   },
+   "host_subclavian_elevation_deg": 13.216712150360763,
+   "donor_subclavian_elevation_deg_native": 0.6582053703005926,
+   "tb_patient_side": "right",
+   "tb_mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "tb_len_mm": 18.471162433598384,
+   "donor_source": "song",
+   "donor_licence": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8); VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL",
+   "donor_eligible": {
+    "class": "primary",
+    "rank": 25,
+    "patient_key": "song:AHMU1218040",
+    "dataset_ref": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8)",
+    "licence": "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8); VA trace derived through Arterial (CC BY-NC 4.0 weights, PolyForm-NC code): the derived anatomy is NON-COMMERCIAL",
+    "non_commercial": true,
+    "arterial_derived": true,
+    "attributions": [
+     "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8)",
+     "TotalSegmentator (CC BY 4.0, Wasserthal et al. 2023, doi 10.1148/ryai.230024) used for vertebra landmarks / QC references: attribution"
+    ],
+    "scanner": {
+     "manufacturer": "GE (inferred)",
+     "model": null,
+     "kernel": "STANDARD",
+     "series_description": "S to I"
+    },
+    "acquisition_voxel_mm": [
+     0.42188,
+     0.42188,
+     0.625
+    ],
+    "provenance_flags": [],
+    "side_flags": [
+     "R review: BCV min 824.0 HU >= 200 (visual check); contralateral BCV 788 HU on the native CT"
+    ],
+    "qc_status": "donor_review",
+    "provisional_only": false,
+    "wall_truncated": false,
+    "v1_rescue_used": false,
+    "flag_level": 1,
+    "eye": [
+     {
+      "verdict": "kept",
+      "by": "scaleup_lane_song",
+      "when": "2026-10-02 09:15"
+     }
+    ]
+   },
+   "donor_coarseness_detail": {
+    "score": 0.0155,
+    "score_def": "final tally (scaleup_tally.json): donor-stretch union > 0.3 mm on the CT-edge wall, contact-free 10 mm bins (validated ranking rule, decision 03:50 item 4)",
+    "tally_contact_free_u03": 0.0155,
+    "tally_all_bins_u03": 0.0463,
+    "builder_score": 0.0253
+   },
+   "donor_surface_seg_tag": "ct_seg4",
+   "donor_surface_genus": 1.0,
+   "min_ostium_advance_mm": 0.0,
+   "replaced": true,
+   "pose_deg": -3.0,
+   "pose_axis": "x",
+   "splice_move_mm": 0,
+   "tb_start_trim_mm": 0,
+   "splice_on_donor_mm": 190.53673824365399,
+   "cut_at_mm": 195.57240403593158,
+   "ostium_at_mm": 5.003391750414604,
+   "stub_mm": 5.137266240491979,
+   "join_kink_deg": 21.54403263333254,
+   "origin_turn_deg": {
+    "at_O_h": 8.537736462515939e-07,
+    "at_ostium": 15.640037940705245
+   },
+   "tb_len_used_mm": 18.471162433598384,
+   "ramp": {
+    "side": "donor",
+    "rule": "v4",
+    "from_r": 1.0,
+    "to_r": 1.0,
+    "span_mm": [
+     -25.0,
+     0.0
+    ]
+   },
+   "tb_placement": "fit",
+   "gate": {
+    "exit_mm": 7.002459019543012,
+    "parent_reentry": false,
+    "parent_min_after_exit_mm": 0.9036455686851648,
+    "clear_others_mm": 2.683447826745681,
+    "clear_others_who": "cc - LCCA",
+    "clear_others_at_mm": 107.95337518220053,
+    "self_mm": 2.349753501100545,
+    "self_pair_mm": [
+     127.85250747961643,
+     140.74448939829873
+    ],
+    "clear": 0.9036455686851648,
+    "who": "parent (after exit)",
+    "ok": true
+   },
+   "total_mm": 213.45977473651476,
+   "splice_calibre_ratio": 1.0,
+   "splice_calibre_q_tb_over_donor": 1.0,
+   "splice_calibre_preferred": true,
+   "splice_calibre_pass": 1,
+   "takeoff_5mm_deg": 117.84583455584202,
+   "takeoff_10mm_deg": 113.44514435553194,
+   "donor_takeoff_10mm_deg_native": 117.95326811637344,
+   "donor_takeoff_5mm_deg_native": 114.26277282252438,
+   "takeoff_delta_10mm_deg": -4.5081237608414995,
+   "takeoff_not_preserved": false,
+   "parent_tangent_mismatch_deg": 80.25204780941161,
+   "va_10mm_elevation_deg": 48.01590085088122,
+   "course_rms_to_corridor_mm": 8.375141755885585,
+   "tip_moved_vs_v4_mm": 16.841330575741118,
+   "tip_to_donor_confluence_mm": 13.097726936133027,
+   "rotation_det": 1.0000000000000007,
+   "pose_gates": {
+    "rotation_proper": [
+     true,
+     1.0000000000000007
+    ],
+    "course_rms": [
+     true,
+     8.375141755885585
+    ],
+    "takeoff_band": [
+     true,
+     113.21516951022012
+    ],
+    "rise": [
+     true,
+     48.16112581011759
+    ]
+   },
+   "real_from_mm_past_ostium": 0.0,
+   "ostium_advance_mm": 0,
+   "final": {
+    "ok": true,
+    "clear": 0.9036455686851648,
+    "who": "parent (after exit)",
+    "exit_mm": 7.002459019543012,
+    "self_mm": 2.349753501100545,
+    "clear_others_mm": 2.683447826745681,
+    "clear_others_who": "cc - LCCA",
+    "exact_all_pairs_from_exit_mm": 2.683447826745681
+   },
+   "pass": true
+  },
+  "assignment": {
+   "tool": "graft_v5_assign 1.1 (2026-10-02; v5_assign: --donor-root, --score v5, --reserve-units, patient_key)",
+   "patient": "topcow_mr_013",
+   "handedness": "mirrored",
+   "assigned_units": [
+    "song_AHMU1218040"
+   ],
+   "assigned_class": {
+    "song_AHMU1218040": "primary"
+   },
+   "rule": "strict one-to-one donor pair <-> TopBrain patient; follow handedness (native: donor R -> RVA, donor L -> LVA; mirrored: donor L mirrored -> RVA, donor R mirrored -> LVA); a side whose donor fails a gate keeps v4's VA (flagged)",
+   "served": {
+    "right": true,
+    "left": true
+   },
+   "flags": []
+  },
+  "summary": {
+   "v4_va_kept": {
+    "right": false,
+    "left": false
+   },
+   "replaced": {
+    "right": true,
+    "left": true
+   },
+   "donor": {
+    "right": {
+     "donor_id": "song_AHMU1218040",
+     "donor_side": "L",
+     "mirrored": true,
+     "source": "song",
+     "wall_class": "real_surface",
+     "real_surface": true,
+     "takeoff_10mm_native_deg": 105.75562590827768,
+     "takeoff_10mm_placed_deg": 74.33501016869428,
+     "takeoff_not_preserved": true,
+     "flags": [
+      "L review: BCV min 824.0 HU >= 200 (visual check); contralateral BCV 788 HU on the native CT"
+     ]
+    },
+    "left": {
+     "donor_id": "song_AHMU1218040",
+     "donor_side": "R",
+     "mirrored": true,
+     "source": "song",
+     "wall_class": "real_surface",
+     "real_surface": true,
+     "takeoff_10mm_native_deg": 117.95326811637344,
+     "takeoff_10mm_placed_deg": 113.44514435553194,
+     "takeoff_not_preserved": false,
+     "flags": [
+      "R review: BCV min 824.0 HU >= 200 (visual check); contralateral BCV 788 HU on the native CT"
+     ]
+    }
+   },
+   "non_commercial": true,
+   "attributions": [
+    "CMHA intracranial aneurysm CTA dataset (Song et al. 2024, figshare 26965450, doi 10.6084/m9.figshare.26965450), CC BY 4.0 image record -- attribution required (article Sci Data 2024 doi 10.1038/s41597-024-04056-8)",
+    "TotalSegmentator (CC BY 4.0, Wasserthal et al. 2023, doi 10.1148/ryai.230024) used for vertebra landmarks / QC references: attribution"
+   ],
+   "flags": []
+  }
+ },
+ "bake_v5": {
+  "script": "v5_va/bake_v5b.py (bake_meshes_v4 unchanged + bake_v5 sections + the handle rule, D1-D8)",
+  "date": "2026-10-03 00:41:37",
+  "report": "mesh_v5.json",
+  "pass": true,
+  "files": [
+   "vessel_architecture_collision.obj",
+   "collision_full.vtp",
+   "mesh_v5.json"
+  ],
+  "spacing_mm": 0.45,
+  "obj_tris": 23498,
+  "obj_tris_budget": 23500,
+  "full_tris": 60000,
+  "union": "owned (sdf_union_v4)",
+  "rung": "1 pinned, VA whole (va margin 0.5)",
+  "flags": [],
+  "carotid_margin_mm": 0.5,
+  "va_margin_mm": 0.5,
+  "far_clamp": {
+   "used": false,
+   "why": null
+  },
+  "sections_tube_only": [],
+  "suppressed_stretches_mm": {
+   "siphon_L": [
+    [
+     239.48,
+     243.48
+    ]
+   ]
+  },
+  "va_tubed": {
+   "va_R": {
+    "stretch_mm": [
+     171.11,
+     237.77
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "va_L": {
+    "stretch_mm": [
+     195.57,
+     213.46
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "vaC_R": {
+    "stretch_mm": [
+     30.98,
+     171.11
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "vaC_L": {
+    "stretch_mm": [
+     5.0,
+     195.57
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   }
+  },
+  "right_route_detail": {
+   "fork": {
+    "frac_0.3mm": 0.2379,
+    "frac_0.5mm": 0.1345
+   },
+   "siphon": {
+    "frac_0.3mm": 0.3655,
+    "frac_0.5mm": 0.1834
+   }
+  },
+  "seconds": 171.2,
+  "gates": {
+   "union_clean_tree": true,
+   "full_clean_tree": true,
+   "obj_clean_tree": true,
+   "self_intersecting_faces": {
+    "union": 0,
+    "full": 0,
+    "obj": 0
+   },
+   "union_tris": 950118,
+   "full_tris": 60000,
+   "obj_tris": 23498,
+   "obj_budget": 23500,
+   "obj_budget_ok": true,
+   "full_budget": 60000,
+   "full_budget_ok": true,
+   "routes_navigable": true,
+   "route_lumen_min_mm": {
+    "RCCA": 1.087,
+    "LCCA": 0.743
+   },
+   "centerline_pts_outside": 0,
+   "bake_pass": true,
+   "va_real_wall_owned": {
+    "right": true,
+    "left": true
+   },
+   "right_route_detail_identical_v4": true,
+   "right_route_detail_ratio_0.3mm": {
+    "fork": 1.0,
+    "siphon": 1.0
+   },
+   "right_route_identical_beyond_mm": 0,
+   "rung": "1 pinned, VA whole (va margin 0.5)",
+   "flags": [],
+   "all_pass": true
+  },
+  "va_detail": {
+   "right": {
+    "donor": "song_AHMU1218040 L",
+    "donor_surface_genus": 7.0,
+    "real_surface": true,
+    "whole_tube": false,
+    "donor_stretch_mm": [
+     30.98,
+     171.11
+    ],
+    "n_windows": 0,
+    "windows_from_ostium_mm": [],
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "donor_real_frac_0.3mm": 0.0944,
+    "donor_real_frac_0.5mm": 0.0623,
+    "donor_real_frac_rel_0.15": 0.1309,
+    "topbrain_frac_0.3mm": 0.2354,
+    "whole_va_conservative_frac_0.3mm": 0.1385,
+    "A2_donor_alone_frac_0.3mm": 0.0795,
+    "A2_donor_in_situ_frac_0.3mm": 0.0789,
+    "A2_detail_kept_in_situ_over_alone": 0.992,
+    "A2_error": null,
+    "v4_host_core_frac_0.3mm": 0.0009,
+    "A3_whole_va_frac_0.3mm_v5_v4": [
+     0.1385,
+     0.0821
+    ]
+   },
+   "left": {
+    "donor": "song_AHMU1218040 R",
+    "donor_surface_genus": 1.0,
+    "real_surface": true,
+    "whole_tube": false,
+    "donor_stretch_mm": [
+     5.0,
+     195.57
+    ],
+    "n_windows": 0,
+    "windows_from_ostium_mm": [],
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "donor_real_frac_0.3mm": 0.0354,
+    "donor_real_frac_0.5mm": 0.0136,
+    "donor_real_frac_rel_0.15": 0.0758,
+    "topbrain_frac_0.3mm": 0.0,
+    "whole_va_conservative_frac_0.3mm": 0.0294,
+    "A2_donor_alone_frac_0.3mm": 0.0387,
+    "A2_donor_in_situ_frac_0.3mm": 0.0388,
+    "A2_detail_kept_in_situ_over_alone": 1.003,
+    "A2_error": null,
+    "v4_host_core_frac_0.3mm": 0.0,
+    "A3_whole_va_frac_0.3mm_v5_v4": [
+     0.0294,
+     0.0
+    ]
+   }
+  }
+ },
+ "v6_host_cut_shift_mm": 0.0,
+ "v6_host_cut_mm_base": 50.187409427123896,
+ "v6_cca_mm_base": 12.05166436263341,
+ "v6_cca_trim_mm": 0.0,
+ "v6_section_arith_offset_mm": -0.1164,
+ "v6_right_fork": {
+  "rung": 3,
+  "pose_source": "map_bend60",
+  "mirrored": false,
+  "shift_mm": 0.0,
+  "seam1_deg": 55.68,
+  "blend_mm": 8,
+  "seam1_join_deg": 25.4,
+  "route_kink_max_deg": 24.58,
+  "yaw_vs_map_deg": 0.0,
+  "tilt_deg": 0.0,
+  "dev_deg": 0.0,
+  "hard_clear_mm": 21.337,
+  "hard_who": "cc (17)",
+  "self_clear_mm": 3.468,
+  "soft_clear_mm": 4.823,
+  "soft_who": "cc - RVA",
+  "host_ext": null,
+  "d22": {
+   "gate_keep_hard": 1.0,
+   "gate_keep_all": 1.0,
+   "zone_keep_hard": 1.0,
+   "gate_area_mm2_hard": 1381.309,
+   "gate_changed_mm2_hard": 0.0,
+   "gate_changed_by_hard": {
+    "ownership": 0.0,
+    "cover": 0.0
+   },
+   "gate_cov_keep_hard": 1.0,
+   "gate_owner_lost_mm2_hard": 0.0,
+   "gate_keep_strict_hard": 1.0,
+   "gate_v4_occupied_mm2_hard": 0.0,
+   "ok": true,
+   "soft_ok": true,
+   "error": null
+  },
+  "lower": "case_w_002_right",
+  "frame": "RAS",
+  "placement": "v6_map",
+  "chirality": {
+   "fork_side": "right",
+   "route_side": "right",
+   "contralateral": false,
+   "mirrored": false,
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "chirality": "proper (no mirror)",
+   "d20_applied": true
+  },
+  "flag": true,
+  "host_cut_mm_base": 50.187409427123896,
+  "host_cut_mm": 50.1874
+ },
+ "v6_carotid": {
+  "version": "compose_v6 3.2.0 (2026-10-07; s2_build: 3.2.0 = U-TG the bake's tube-only union of the right fork group (RCCA + RECA) must be genus 0 in the final check + U-C3F post-bake D22 feedback (right ECA tip C3) for the listed anatomies; 3.1.0 2026-10-06; s2_integrate2: 3.1.0 = D22 surface-preserved right-route guard replaces the C0 gate (C0 recorded), D25 1 mm joins at every sampling phase; 3.0.3 = + --va-hard-root (s2_integrate: the joint pass's carotid re-check with the VA tool's final VAs as HARD neighbours; default off = 3.0.2 exactly); 3.0.2 = + siphon C0 gate (seam-2 zone skipped); 3.0.1 = light left ladder on non-final right-fork variants; s2_harden_carotid2: D19 right forks re-posed by the Zenodo map (host-cut search, bend 60, deviation, fallbacks), D20 contralateral forks x-mirrored, C0 fork-detail guard, C1/C2 on the moved fork, D13 relative to the fork; 2.0.1 = base tree, C1/C2, D1 rungs 1-6, D11 left forks, D13)",
+  "base": "/full/build2/w1",
+  "fork_mode": "map",
+  "right_fork_pose_mode": "map",
+  "mirror_contralateral": true,
+  "right_fork": {
+   "rung": 3,
+   "pose_source": "map_bend60",
+   "mirrored": false,
+   "shift_mm": 0.0,
+   "seam1_deg": 55.68,
+   "blend_mm": 8,
+   "seam1_join_deg": 25.4,
+   "route_kink_max_deg": 24.58,
+   "yaw_vs_map_deg": 0.0,
+   "tilt_deg": 0.0,
+   "dev_deg": 0.0,
+   "hard_clear_mm": 21.337,
+   "hard_who": "cc (17)",
+   "self_clear_mm": 3.468,
+   "soft_clear_mm": 4.823,
+   "soft_who": "cc - RVA",
+   "host_ext": null,
+   "d22": {
+    "gate_keep_hard": 1.0,
+    "gate_keep_all": 1.0,
+    "zone_keep_hard": 1.0,
+    "gate_area_mm2_hard": 1381.309,
+    "gate_changed_mm2_hard": 0.0,
+    "gate_changed_by_hard": {
+     "ownership": 0.0,
+     "cover": 0.0
+    },
+    "gate_cov_keep_hard": 1.0,
+    "gate_owner_lost_mm2_hard": 0.0,
+    "gate_keep_strict_hard": 1.0,
+    "gate_v4_occupied_mm2_hard": 0.0,
+    "ok": true,
+    "soft_ok": true,
+    "error": null
+   },
+   "lower": "case_w_002_right",
+   "frame": "RAS",
+   "placement": "v6_map",
+   "chirality": {
+    "fork_side": "right",
+    "route_side": "right",
+    "contralateral": false,
+    "mirrored": false,
+    "mirror": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "chirality": "proper (no mirror)",
+    "d20_applied": true
+   },
+   "flag": true,
+   "host_cut_mm_base": 50.187409427123896,
+   "host_cut_mm": 50.1874
+  },
+  "left_fork_pose_mode": "map",
+  "ok": true,
+  "changed_files": [
+   "Centerline curve - LCCA.mrk.json",
+   "Centerline curve - LECA.mrk.json",
+   "Centerline curve - RCCA.mrk.json",
+   "Centerline curve - RECA.mrk.json"
+  ],
+  "summary": {
+   "ok": true,
+   "right_fork_pose": "map_bend60",
+   "right_fork_rung": 3,
+   "right_fork_flag": true,
+   "right_fork_placement": "v6_map",
+   "right_fork_mirrored": false,
+   "right_fork_contralateral": false,
+   "right_fork_d20_applied": true,
+   "right_seam1_bend_deg": 55.68,
+   "right_blend_mm": 8,
+   "host_cut_shift_mm": 0.0,
+   "host_cut_mm": 50.1874,
+   "right_dev_deg": 0.0,
+   "right_yaw_vs_map_deg": 0.0,
+   "c0_fork_ratio": 0.99561,
+   "c0_fork_ratio_all": 0.99561,
+   "c0_siphon_ratio": 0.99989,
+   "c0_siphon_ratio_full_segment": 1.05479,
+   "c0_siphon_flag": false,
+   "c0_fork_ratio_full_segment": 1.17407,
+   "d22_fork_keep": 1.0,
+   "d22_fork_keep_all": 1.0,
+   "d22_fork_zone_keep": 1.0,
+   "d22_siphon_keep": 0.999952,
+   "d22_siphon_keep_all": 0.999952,
+   "d22_fork_gated": true,
+   "d22_fork_keep_strict": 1.0,
+   "d22_siphon_keep_strict": 0.999952,
+   "d22_fork_v4_occupied_mm2": 0.0,
+   "d22_siphon_v4_occupied_mm2": 0.0,
+   "d22_fork_cov_keep": 0.999957,
+   "d22_siphon_cov_keep": 0.999952,
+   "d22_cov_flag": false,
+   "d22_ok": true,
+   "d22_error": null,
+   "right_d22_refused_n": 0,
+   "right_fork_tube_genus": 0.0,
+   "left_fork_tube_genus": 0.0,
+   "fork_rung": 1,
+   "left_fork_decision": "kept",
+   "left_fork_lower": "case_w_002_left",
+   "left_fork_pose": "zenodo_map",
+   "left_fork_pose_flag": false,
+   "left_fork_pose_why_not_map": null,
+   "left_fork_mirrored": false,
+   "left_fork_contralateral": false,
+   "left_fork_d20_applied": true,
+   "left_seam1_bend_deg": 39.18,
+   "tubed_ica_mm": 0.0,
+   "ica_ap_post_mm": {
+    "RICA": 8.46,
+    "LICA": 27.47
+   },
+   "ica_ap_flag_R": false,
+   "ica_ap_flag_L": false,
+   "ica_ap_flag": false,
+   "skipped_eca_tips": [
+    {
+     "side": "left",
+     "v5_extended": true,
+     "new_fork": false,
+     "why": "anchor_low: fork ECA tip rises 11.7 deg < 20 (D4 skip)",
+     "anchor_elev_deg": 11.708351943815714
+    }
+   ],
+   "eca_right": "v6_search",
+   "route_baseline": "v4_no_tip",
+   "route_baseline_why": "v6 re-poses v4's RECA tip, which ran along the ICA (min wall gap 0.89 mm at RCCA s 111.3; 8.8 mm of the tip within 8 mm): D13, reference = v4 rebuilt without that tip",
+   "soft_contacts": [],
+   "right_fork_va_gap_mm": 4.823,
+   "rung3_needs_split_check": false
+  },
+  "left_fork": {
+   "decision": "kept",
+   "lower": "case_w_002_left",
+   "rung": 1,
+   "rung_label": "own fork, siphon re-posed",
+   "pose": "zenodo_map",
+   "pose_flag": false,
+   "map": {
+    "frame": "RAS",
+    "psi": 0.0,
+    "phi": 35.0,
+    "omega": 150.0,
+    "dev_deg": 35.0,
+    "yaw_vs_map_deg": 0.0,
+    "tilt_deg": 35.0,
+    "seam1_deg": 39.18,
+    "blend_mm": 6,
+    "seam1_join_deg": 20.01,
+    "route_kink_max_deg": 24.29,
+    "hard_clear_mm": 53.248,
+    "self_clear_mm": 3.936,
+    "soft_clear_mm": 11.568,
+    "lica_anchor_deg": 30.84
+   },
+   "chirality": {
+    "fork_side": "left",
+    "route_side": "left",
+    "contralateral": false,
+    "mirrored": false,
+    "mirror": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "chirality": "proper (no mirror)",
+    "d20_applied": true
+   }
+  },
+  "ica_ap": {
+   "RICA": {
+    "post_mm": 8.46,
+    "err_mm": 35.14,
+    "dx_mm": 14.1,
+    "dz_mm": -31.06,
+    "target": [
+     -11.17,
+     -7.04,
+     624.26
+    ],
+    "end": [
+     2.93,
+     1.42,
+     593.2
+    ],
+    "native": "back-mapped piece end (D12) vs raw VA ends mid"
+   },
+   "LICA": {
+    "post_mm": 27.47,
+    "err_mm": 54.22,
+    "dx_mm": 32.84,
+    "dz_mm": -33.28,
+    "target": [
+     14.55,
+     -11.06,
+     623.96
+    ],
+    "end": [
+     47.39,
+     16.41,
+     590.68
+    ],
+    "native": "back-mapped piece end (D12) vs raw VA ends mid"
+   }
+  },
+  "route_baseline": {
+   "version": "route_baseline 1.1 (2026-10-04; 1.0 s2_harden_carotid: D13 per-anatomy right-route baseline; 1.1 s2_harden_carotid2: the tip is compared RELATIVE TO ITS FORK -- D19 moves the right fork, so a tip carried rigidly with it is 'kept', a tip re-posed on a mirrored (D20) or re-posed fork is not)",
+   "v4_tip": {
+    "has_tip": true,
+    "join_at_mm": 29.148,
+    "tip_len_mm": 9.92,
+    "min_wall_gap_mm": 0.886,
+    "rcca_s_at_min_mm": 111.3,
+    "len_within_near_mm": 8.75,
+    "rcca_s_range_within_near_mm": [
+     108.3,
+     111.3
+    ],
+    "near_mm": 8.0,
+    "along_ica": true
+   },
+   "v6_tip": "reposed",
+   "v6_tip_detail": {
+    "rigid_map_dev_mm": 8.54884,
+    "blend_mm": 6,
+    "comparison": "relative to the fork (1.1)"
+   },
+   "baseline": "v4_no_tip",
+   "why": "v6 re-poses v4's RECA tip, which ran along the ICA (min wall gap 0.89 mm at RCCA s 111.3; 8.8 mm of the tip within 8 mm): D13, reference = v4 rebuilt without that tip"
+  },
+  "checks": {
+   "clearance": {
+    "RCCA_siphon_hard": [
+     17.784,
+     "cc - RECA"
+    ],
+    "RCCA_siphon_soft": [
+     2.268,
+     "cc - RVA"
+    ],
+    "RCCA_siphon_self": [
+     4.508,
+     "itself"
+    ],
+    "RCCA_fork_hard": [
+     21.337,
+     "cc (17)"
+    ],
+    "RCCA_fork_soft": [
+     4.823,
+     "cc - RVA"
+    ],
+    "RCCA_fork_self": [
+     3.468,
+     "itself"
+    ],
+    "RECA_fork_hard": [
+     28.884,
+     "cc (17)"
+    ],
+    "RECA_fork_soft": [
+     12.316,
+     "cc - RVA"
+    ],
+    "LCCA_hard": [
+     36.111,
+     "cc - RCCA"
+    ],
+    "LCCA_soft": [
+     11.568,
+     "cc - LVA"
+    ],
+    "LCCA_self": [
+     3.936,
+     "itself"
+    ],
+    "RECA_ext_hard": [
+     6.713,
+     "cc - RCCA"
+    ],
+    "RECA_ext_soft": [
+     21.39,
+     "cc - RVA"
+    ],
+    "RECA_ext_self": [
+     7.801,
+     "itself"
+    ],
+    "LECA_new_hard": [
+     58.902,
+     "cc - RCCA"
+    ],
+    "LECA_new_soft": [
+     22.677,
+     "cc - LVA"
+    ]
+   },
+   "hard_clear_fail": [],
+   "soft_clear_fail": [],
+   "soft_detail": {},
+   "orient_blocking": [],
+   "orient_flags": {
+    "RICA": [],
+    "LICA": [],
+    "RECA_tip": []
+   },
+   "ica_pair": {
+    "end_sep_mm": 46.98402140089757,
+    "end_sep_native_mm": 26.02947479800543,
+    "end_dz_mm": 2.5190000000000055,
+    "end_dz_native_mm": 0.29690000000000083,
+    "end_du_mm": 44.459,
+    "end_du_native_mm": 25.715899999999998,
+    "same_native_frame": true,
+    "native_convention": "backmapped_piece_ends"
+   },
+   "join_deg": {
+    "RICA": 25.12,
+    "LICA": 30.27,
+    "RECA_ext": 22.95,
+    "seam1_R": 25.4,
+    "seam1_L": 20.01
+   },
+   "left_route_max_kink_below_seam": 24.29,
+   "left_seam_s_mm": 155.881,
+   "left_seam_err_mm_after_pose": -1.682,
+   "right_route_max_kink_below_seam": 24.58,
+   "rcca_prefix_identical": true,
+   "right_route_len_change_mm": 0.439,
+   "right_section_arith_mm": 0.116,
+   "fork_metrics": {
+    "right": {
+     "lower": "case_w_002_right",
+     "route_side": "right",
+     "fork_side": "right",
+     "contralateral": false,
+     "mirror": [
+      1.0,
+      1.0,
+      1.0
+     ],
+     "mirrored": false,
+     "effective_side": "right",
+     "contralateral_effective": false,
+     "chirality": "proper",
+     "frame": "RAS",
+     "up_tilt_deg": 0.0,
+     "yaw_deg": 0.0,
+     "seam1_elev_in_deg": 76.41763397094677,
+     "bend_for_anat_deg": 0.0,
+     "eca_anterior_mm": 11.668803010558936,
+     "eca_medial_mm": -0.3019726350153409,
+     "u_seam2_mm": 23.71449498757396,
+     "flags": []
+    },
+    "left": {
+     "lower": "case_w_002_left",
+     "route_side": "left",
+     "fork_side": "left",
+     "contralateral": false,
+     "mirror": [
+      1.0,
+      1.0,
+      1.0
+     ],
+     "mirrored": false,
+     "effective_side": "left",
+     "contralateral_effective": false,
+     "chirality": "proper",
+     "frame": "RAS",
+     "up_tilt_deg": 34.999999999999986,
+     "yaw_deg": 0.0,
+     "seam1_elev_in_deg": 82.18705290410188,
+     "bend_for_anat_deg": 27.159495970411843,
+     "eca_anterior_mm": -5.3180500833333255,
+     "eca_medial_mm": -0.34510143246118474,
+     "u_seam2_mm": 45.276153363975354,
+     "flags": []
+    }
+   },
+   "left_fork_gates_ok": true,
+   "right_fork_gates_ok": true,
+   "c0": {
+    "fork": {
+     "frac_hard": 0.331653,
+     "frac_all": 0.331653,
+     "v4_frac_hard": 0.333116,
+     "v4_frac_all": 0.333116,
+     "ratio_hard": 0.99561,
+     "ratio_all": 0.99561,
+     "skip_mm": 10.0
+    },
+    "fork_full_segment": {
+     "frac_hard": 0.375384,
+     "v4_frac_hard": 0.319729,
+     "ratio_hard": 1.17407,
+     "note": "from the host cut (seam-1 zone included; biased up pre-bake)"
+    },
+    "siphon": {
+     "frac_hard": 0.386902,
+     "frac_all": 0.386902,
+     "v4_frac_hard": 0.386943,
+     "v4_frac_all": 0.386943,
+     "ratio_hard": 0.99989,
+     "ratio_all": 0.99989,
+     "skip_mm": 10.0
+    },
+    "siphon_full_segment": {
+     "frac_hard": 0.395633,
+     "v4_frac_hard": 0.375082,
+     "ratio_hard": 1.05479,
+     "ratio_all": 1.05479,
+     "note": "from seam 2 (seam-2 zone included; 3.0.0 / 3.0.1's recorded siphon ratio; reads 0.98-1.11 on rigid re-poses pre-bake)"
+    },
+    "min_ratio": 0.995,
+    "note": "pre-bake estimate (route_guard.SectionDetail, RECA excluded); the authority is the post-bake exact-ownership check",
+    "fork_gate_ok": true,
+    "siphon_gate_ok": true,
+    "siphon_min_ratio": 0.99,
+    "siphon_flag": false,
+    "gate": false,
+    "note_310": "information only since compose_v6 3.1.0 (D22 replaces C0 as the gate)"
+   },
+   "d22": {
+    "fork": {
+     "n_vertices": 45142,
+     "gate_span_mm": [
+      60.187,
+      128.289
+     ],
+     "zone_mm": [
+      50.187,
+      60.187
+     ],
+     "margin_mm": 0.5,
+     "dev_mm": 0.3,
+     "min": 0.99,
+     "gate_keep_strict_hard": 1.0,
+     "gate_v4_occupied_mm2_hard": 0.0,
+     "gate_v4_occupied_changed_mm2_hard": 0.0,
+     "gate_area_mm2_hard": 1237.668,
+     "gate_changed_mm2_hard": 0.0,
+     "gate_keep_hard": 1.0,
+     "gate_changed_by_hard": {
+      "ownership": 0.0,
+      "cover": 0.0
+     },
+     "gate_cov_area_mm2_hard": 1237.814,
+     "gate_cov_keep_hard": 0.999957,
+     "gate_owner_lost_mm2_hard": 0.324,
+     "zone_area_mm2_hard": 252.661,
+     "zone_changed_mm2_hard": 0.0,
+     "zone_keep_hard": 1.0,
+     "gate_keep_strict_all": 1.0,
+     "gate_v4_occupied_mm2_all": 0.0,
+     "gate_v4_occupied_changed_mm2_all": 0.0,
+     "gate_area_mm2_all": 1237.668,
+     "gate_changed_mm2_all": 0.0,
+     "gate_keep_all": 1.0,
+     "gate_changed_by_all": {
+      "ownership": 0.0,
+      "cover": 0.0
+     },
+     "gate_cov_area_mm2_all": 1237.814,
+     "gate_cov_keep_all": 0.999957,
+     "gate_owner_lost_mm2_all": 0.324,
+     "zone_area_mm2_all": 243.466,
+     "zone_changed_mm2_all": 2.463,
+     "zone_keep_all": 0.989882,
+     "ok": true,
+     "soft_ok": true,
+     "section": "lower_R",
+     "baseline": "v4_no_tip",
+     "seam2_only": false,
+     "with_reca": true
+    },
+    "siphon": {
+     "n_vertices": 19080,
+     "gate_span_mm": [
+      138.172,
+      235.026
+     ],
+     "zone_mm": [
+      130.172,
+      138.172
+     ],
+     "margin_mm": 0.5,
+     "dev_mm": 0.3,
+     "min": 0.99,
+     "gate_keep_strict_hard": 0.999952,
+     "gate_v4_occupied_mm2_hard": 0.0,
+     "gate_v4_occupied_changed_mm2_hard": 0.0,
+     "gate_area_mm2_hard": 1573.774,
+     "gate_changed_mm2_hard": 0.075,
+     "gate_keep_hard": 0.999952,
+     "gate_changed_by_hard": {
+      "ownership": 0.075,
+      "cover": 0.0
+     },
+     "gate_cov_area_mm2_hard": 1573.774,
+     "gate_cov_keep_hard": 0.999952,
+     "gate_owner_lost_mm2_hard": 0.0,
+     "zone_area_mm2_hard": 108.243,
+     "zone_changed_mm2_hard": 0.0,
+     "zone_keep_hard": 1.0,
+     "gate_keep_strict_all": 0.999952,
+     "gate_v4_occupied_mm2_all": 0.0,
+     "gate_v4_occupied_changed_mm2_all": 0.0,
+     "gate_area_mm2_all": 1573.774,
+     "gate_changed_mm2_all": 0.075,
+     "gate_keep_all": 0.999952,
+     "gate_changed_by_all": {
+      "ownership": 0.075,
+      "cover": 0.0
+     },
+     "gate_cov_area_mm2_all": 1573.774,
+     "gate_cov_keep_all": 0.999952,
+     "gate_owner_lost_mm2_all": 0.0,
+     "zone_area_mm2_all": 108.243,
+     "zone_changed_mm2_all": 0.0,
+     "zone_keep_all": 1.0,
+     "ok": true,
+     "soft_ok": true,
+     "section": "siphon_R",
+     "baseline": "v4_no_tip",
+     "seam2_only": false,
+     "with_reca": true
+    },
+    "fork_gated": true,
+    "fork_ok": true,
+    "siphon_ok": true,
+    "min": 0.99,
+    "baseline": "v4_no_tip",
+    "note": "pre-bake estimate (route_guard 1.3 SurfaceKeep: union ownership / cover per source vertex, v6 vs v4 world, hard competitors); the authority is checks_v6's post-bake D22 (distance of the baked RCCA-owned cells beyond the seam zone to v4's surface carried by the piece's own transform)"
+   },
+   "right_fork_tube_genus": {
+    "genus": 0.0,
+    "seconds": 0.55,
+    "curves": [
+     "cc - RCCA",
+     "cc - RECA"
+    ],
+    "spacing_mm": 0.45,
+    "ok": true,
+    "gate": true
+   },
+   "left_fork_tube_genus": {
+    "genus": 0.0,
+    "seconds": 0.93,
+    "curves": [
+     "cc - LCCA",
+     "cc - LECA"
+    ],
+    "spacing_mm": 0.45,
+    "ok": true,
+    "gate": false
+   },
+   "carotid_ok": true,
+   "va_hard": false
+  },
+  "note": "carotid side only; the VA keys (va_R/va_L/vaC_*/sc*) are the base's"
+ },
+ "v6_va": {
+  "version": "graft_v6_va 1.4.2 (2026-10-07; s2_build: 1.4.2 = + a fold-ONLY failing side re-runs its rung-1 pose search once with folding poses refused; 1.4.1 = U3 no tube self-contact (fold) of the side's new curves as a final side gate only (recorded per pose, no pose filter); 1.4 = U3 also as a pose filter; 1.3 2026-10-06;s2_integrate2: 1.3 = D25 D17 direction gate + 1 mm turns at every sampling phase; s2_integrate: 1.2.3 = + T6 D8 on the post-bake measure; 1.2.2 = + T5 host-VA extension join <= 60 deg; 1.2.1 = + T4 splice join as written on top-only placements; 1.2: 1 mm turns gated on the curves AS WRITTEN -- fillet, D17 branch from F, final gates (geom_v6 rule); 1.1 (2026-10-04; s2_harden_va): 0.8 + route guard G1-G3, G4, route13 slot, base from files, D8, D9, D10; D17 own distal subclavian to a cut end, D16 tube-bridged junctions, D19/D20 guard sanity)",
+  "record": {
+   "name": "case_w_002_right__topcow_mr_013_L",
+   "version": "graft_v6_va 1.4.2 (2026-10-07; s2_build: 1.4.2 = + a fold-ONLY failing side re-runs its rung-1 pose search once with folding poses refused; 1.4.1 = U3 no tube self-contact (fold) of the side's new curves as a final side gate only (recorded per pose, no pose filter); 1.4 = U3 also as a pose filter; 1.3 2026-10-06;s2_integrate2: 1.3 = D25 D17 direction gate + 1 mm turns at every sampling phase; s2_integrate: 1.2.3 = + T6 D8 on the post-bake measure; 1.2.2 = + T5 host-VA extension join <= 60 deg; 1.2.1 = + T4 splice join as written on top-only placements; 1.2: 1 mm turns gated on the curves AS WRITTEN -- fillet, D17 branch from F, final gates (geom_v6 rule); 1.1 (2026-10-04; s2_harden_va): 0.8 + route guard G1-G3, G4, route13 slot, base from files, D8, D9, D10; D17 own distal subclavian to a cut end, D16 tube-bridged junctions, D19/D20 guard sanity)",
+   "patient": "topcow_mr_013",
+   "handedness": "mirrored",
+   "sides": {
+    "right": {
+     "side": "right",
+     "replaced": true,
+     "donor_id": "song_AHMU1218040",
+     "donor_side": "L",
+     "donor_mirror": [
+      -1.0,
+      1.0,
+      1.0
+     ],
+     "donor_source": "song",
+     "real_surface_va": true,
+     "splice_window_mm": [
+      124.35936937557177,
+      192.01709443475102
+     ],
+     "splice_window_rule": "[C2, dura]",
+     "donor_seam_s_path": 31.85838004021072,
+     "donor_exit_s_path": 21.85838004021072,
+     "donor_exit_how": "TS contact",
+     "donor_foot_s_path": 60.585155726861956,
+     "donor_end_s_path": 80.58515572686196,
+     "donor_origin_to_ostium_mm": 60.556702225670186,
+     "donor_seam_note": null,
+     "host_exit_mm": 6.0074733309439425,
+     "host_seam1_mm": 16.013173931001162,
+     "host_ostium_mm": 26.987465807758074,
+     "junction_wall": "/repo/carotid_data/v6_work/wall/d17/local/song_AHMU1218040/ljunction_stageA.vtp",
+     "radius_how": "junction label inscribed radius, clipped to [0.70, 1.15] x Arterial; label/Arterial median 0.79",
+     "junction_wall_info": {
+      "label_to_arterial_ratio": 0.7931350070880505,
+      "narrow_label": false,
+      "surface_info": {
+       "n_points": 18050,
+       "components": 1,
+       "open_or_nonmanifold_edges": 0,
+       "genus_largest": 0.0
+      },
+      "ostial_fill": null,
+      "wall_detail_proxy": {
+       "share_gt_0.3mm": 0.30994075049374586,
+       "n_points": 7595
+      },
+      "covered_s_mm": [
+       20.469614442451142,
+       131.59229007966968
+      ],
+      "want_s_mm": [
+       31.85838004021072,
+       80.5567022256702
+      ],
+      "marker": "local (D15) junction: local_sub 1.1 (2026-10-04, s2_harden_wall_bake: D15 zone-local subclavian / junction; 1.1: run roots by env (D17 re-run), D16 ostial tube bridge) from v5-rule /v6w/d17/v5rule/song_AHMU1218040 + plateau /v6w/d17/plateau/song_AHMU1218040, 2026-10-04 19:45:40",
+      "junction_bridge": {
+       "bridge_s_mm": 6.0,
+       "pad_mm": 1.0,
+       "Q_xyz": [
+        -22.399850827381734,
+        -8.153408051409277,
+        -151.10343552664742
+       ],
+       "va_P0_xyz": [
+        -21.644570901976135,
+        -8.807368402422464,
+        -147.5432647560346
+       ],
+       "gap_Q_P0_mm": 3.6976922292618966,
+       "rb_mm": 2.8708111418331765,
+       "va_edge_r_mm": 1.8708111418331765,
+       "T_lo": 192.89706322669062,
+       "T_hi": 593.4546625119975,
+       "T_va": 200.12415392090173,
+       "T_sub": 185.6699725324795,
+       "Ic": 393.4546625119975,
+       "before": {
+        "components": 2,
+        "va_fraction_connected": 0.0,
+        "touch6_voxels": 0,
+        "bottleneck_r_mm": 0.0,
+        "va_inscribed_r_s10_mm": 1.644,
+        "bottleneck_ratio": 0.0
+       },
+       "after": {
+        "components_before_pick": 1,
+        "va_fraction_connected": 1.0,
+        "bridge_voxels_added": 193,
+        "fallback_tube": false,
+        "bottleneck_r_mm": 1.508,
+        "va_inscribed_r_s10_mm": 1.644,
+        "bottleneck_ratio": 0.917
+       },
+       "local": {
+        "measured_on": "local junction mask (largest component)",
+        "v5rule_after": {
+         "components_before_pick": 1,
+         "va_fraction_connected": 1.0,
+         "bridge_voxels_added": 193,
+         "fallback_tube": false,
+         "bottleneck_r_mm": 1.508,
+         "va_inscribed_r_s10_mm": 1.644,
+         "bottleneck_ratio": 0.917
+        },
+        "w_at_Q": 0.0
+       }
+      }
+     },
+     "junction_tube_bridge": null,
+     "d17_donor": {
+      "path_file": "/repo/carotid_data/v6_work/va_s2/paths_d17/song_AHMU1218040_L.json",
+      "prefix_dev_mm": 0.0,
+      "path_end_how": "Arterial xSA chain end (inside the CT)",
+      "label_end_s_path": 131.09229007966968,
+      "path_end_s": 131.59229007966968,
+      "end_how": "junction label end",
+      "label_past_ostium_mm": 70.50713435280773,
+      "real_past_ostium_mm": 69.71192210239619,
+      "tube_mm": 0.0,
+      "n_real_ext": 50,
+      "ext_len_mm": 50.09999615787621,
+      "tube_from_ext_index": 50
+     },
+     "va_rise_native_deg": 56.36686821372584,
+     "va_rise_floor_deg": 15.0,
+     "d10_native": {
+      "native_mm": 16.721365492280334,
+      "how": "spinal_cord"
+     },
+     "n_pose_candidates": 220,
+     "first_fail_counts": {
+      "top": 37,
+      "rcca_sep_soft": 55,
+      "d17_distal": 53,
+      "d17: distal: clearance #with cc #RCCA": 53,
+      "stretch_clear": 47,
+      "va_target": 114,
+      "corridor": 1,
+      "course_rms_pre": 3
+     },
+     "pass": true,
+     "soft_fail": [
+      "rcca_sep_soft"
+     ],
+     "pose": "aim6_80:turn+15z",
+     "R": [
+      [
+       -0.936626137869939,
+       0.35005180363854743,
+       -0.013971851281854478
+      ],
+      [
+       -0.35024851824024816,
+       -0.9365247695031325,
+       0.01572677899682577
+      ],
+      [
+       -0.007579797448007509,
+       0.019623732481473442,
+       0.9997787034109811
+      ]
+     ],
+     "D0": [
+      15.24,
+      -16.999,
+      -170.314
+     ],
+     "H0": [
+      -5.6290169845514,
+      37.08502505375451,
+      416.47382231215846
+     ],
+     "row": {
+      "pose": "aim6_80:turn+15z",
+      "gates": {
+       "rotation_proper": true,
+       "rise": true,
+       "arm_dir": true,
+       "course_rms_pre": true,
+       "corridor": true,
+       "seam1_join": true,
+       "fillet_turn": true,
+       "fillet_inside": true
+      },
+      "seam1_join": 33.791949572811795,
+      "fillet_turn": 46.693105984024065,
+      "fillet_turn_written": 46.693105984024065,
+      "junc_sigma_mm": 1.0,
+      "takeoff_native_in_v5_band": true,
+      "sub_rms_mm": 21.00624200538799,
+      "sub_dir_deg": 48.66595648625943,
+      "arm_dir_deg": 13.665188431950138,
+      "fillet_inside_mm": 1.2283060306847786,
+      "course_rms_pinned": 11.799281180978234,
+      "course_rms_abs": 12.585210070229452,
+      "va_rise_deg": 56.08691414819411,
+      "bridge": null,
+      "stretch_gate": {
+       "exit_mm": 0.0,
+       "reentry": false,
+       "parent_min_after_exit": 3.058183848801489,
+       "clear_others_mm": 28.12208983895539,
+       "clear_others_who": "cc (0)",
+       "ok": true,
+       "self_fold_mm": 1.322886102568221
+      },
+      "distal_gate": {
+       "exit_mm": 11.029943884537765,
+       "reentry": false,
+       "parent_min_after_exit": 1.3796752214436339,
+       "clear_others_mm": 0.6527187061399444,
+       "clear_others_who": "cc - RCCA",
+       "ok": true
+      },
+      "d17": {
+       "label_end_s_path": 131.09229007966968,
+       "label_past_ostium_mm": 70.50713435280773,
+       "end_how": "junction label end",
+       "path_file": "/repo/carotid_data/v6_work/va_s2/paths_d17/song_AHMU1218040_L.json",
+       "path_note": null,
+       "tube_mm": 0.0,
+       "tube_r_mm": null,
+       "trimmed_mm": 0.0,
+       "trims": [],
+       "corner_spread": null,
+       "max_turn_deg": 19.454631056712838,
+       "max_turn_branch_deg": 19.454631056712838,
+       "hairpin_max_deg": 32.7439436088526,
+       "arch_deg": 48.897816906277924,
+       "self_gap_mm": 13.363874453063666,
+       "past_ostium_mm": 69.16975159652186,
+       "end_mm_on_branch": 74.18722129688295,
+       "foot_s_on_branch": 5.017469700361084,
+       "ok": true,
+       "direction": {
+        "lateral_mm": 53.74,
+        "angle_vs_host_distal_deg": 30.6,
+        "chord_mm": 65.7,
+        "ap_mm": -31.7,
+        "dz_mm": -20.7,
+        "end_x": -63.9,
+        "host_distal_len_mm": 102.4,
+        "ok": true
+       }
+      },
+      "course_rms_composite": 22.599374304411317,
+      "course_rms_composite_abs": 15.716571950905665,
+      "pair": null,
+      "course_ok": true,
+      "course_rms_composite_vs_host_end": 18.126634699993453,
+      "course_rms_composite_abs_vs_host_end": 13.40654718356339,
+      "course_rms_reference": "D9: donor stretch (fillet .. splice) vs the host VA corridor up to its height",
+      "course_rms_donor_mm": 15.167640104240656,
+      "course_rms_donor_pinned_mm": 12.463141142613965,
+      "course_corridor_len_mm": 144.43355364068213,
+      "corridor": {
+       "version": "va_corridor 1.0 (s2_harden_va, 2026-10-04; D10)",
+       "window_z": [
+        440.0,
+        540.0
+       ],
+       "tol_mm": 8.0,
+       "n": 137,
+       "native_mm": 16.721365492280334,
+       "native_how": "spinal_cord",
+       "stat": "median",
+       "evaluable": true,
+       "placed_mm": 16.946485621671663,
+       "lat_p10": 14.471339038315826,
+       "lat_p90": 28.979379118583584,
+       "lat_min": 12.492223381762397,
+       "lat_max": 33.16211511371131,
+       "z_span": [
+        440.6162368417133,
+        539.7519961558789
+       ],
+       "how": "native",
+       "dev_mm": 0.2251201293913283,
+       "ok_median": true,
+       "frac_outside_tol": 0.22627737226277372,
+       "native_p10_mm": 14.54196567489663,
+       "native_p90_mm": 22.188636258727918,
+       "tail_dev_mm": -0.07062663658080481,
+       "tail90_dev_mm": 6.790742859855666,
+       "medial_excursion": false,
+       "lateral_excursion": false,
+       "ok_tails": true,
+       "ok": true
+      },
+      "route_excess": 0.01364,
+      "route_taken": {
+       "fork_mm2": 6.906,
+       "siphon_mm2": 0.0,
+       "fork_share": 0.01364,
+       "siphon_share": 0.0
+      },
+      "route13": null,
+      "top": {
+       "k": 160,
+       "cut_s": 159.20761402334287,
+       "trim": 1,
+       "bend": 33.025608820544505,
+       "err": 27.84168729728566,
+       "join": 48.196646042404744,
+       "calibre": 1.2497199794728004,
+       "n_eval": 1
+      },
+      "rcca_sep_mm": 1.2068206558604055,
+      "cost": 49.505655157486935
+     },
+     "positions": {
+      "branch_va": "Centerline curve - RVA.mrk.json",
+      "s_seam1": 16.013173931001162,
+      "s_F": 40.37873505711393,
+      "s_splice": 213.83092291920028,
+      "s_fillet_end": 54.87253795272748,
+      "s_E_on_dist": 24.100150529570325,
+      "va_len": 280.91969593021975,
+      "s_H_on_dist": 74.18722129688295,
+      "d17": {
+       "cut_end": true,
+       "end_mm": 74.18722129688295,
+       "foot_mm": 5.017469700361084,
+       "past_ostium_mm": 69.16975159652186,
+       "label_end_mm": 74.18722129688295,
+       "tube_from_mm": null,
+       "tube_mm": 0.0,
+       "trimmed_mm": 0.0,
+       "host_distal_dropped_mm": 102.37622347541082
+      }
+     },
+     "takeoff_10mm_native_deg": 104.84698089973443,
+     "takeoff_10mm_native_record_deg": 105.78845693415823,
+     "takeoff_10mm_placed_deg": 105.00743102584671,
+     "takeoff_error_vs_native_deg": 0.1604501261122806,
+     "takeoff_vs_host_distal_tangent_deg": 81.04886982119639,
+     "junction_geometry": {
+      "donor_stretch_mm": 48.51945252673635,
+      "sub_rms_mm": 21.00624200538799,
+      "sub_dir_deg": 48.66595648625943,
+      "arm_dir_deg": 13.665188431950138,
+      "donor_pre_ostium_mm": 29.0,
+      "fillet_mm": 14.553420606698282,
+      "fillet_turn_deg": 46.693105984024065,
+      "junc_sigma_mm": 1.0,
+      "junc_sigma_tries": [
+       [
+        1.0,
+        46.69
+       ]
+      ],
+      "fillet_inside_mm": 1.2283060306847786,
+      "seam1_join_deg": 33.791949572811795,
+      "seam2": null,
+      "d17": {
+       "cut_end": true,
+       "end_mm": 74.18722129688295,
+       "foot_mm": 5.017469700361084,
+       "past_ostium_mm": 69.16975159652186,
+       "label_end_mm": 74.18722129688295,
+       "tube_from_mm": null,
+       "tube_mm": 0.0,
+       "trimmed_mm": 0.0,
+       "host_distal_dropped_mm": 102.37622347541082
+      },
+      "ostium_to_seam1_mm_donor": 29.0,
+      "ostium_to_seam1_mm_host": 10.974291876756912,
+      "ostium_shift_vs_host_O_h_mm": 16.77018959157518
+     },
+     "course_rms_pinned_mm": 22.599374304411317,
+     "course_rms_abs_mm": 15.716571950905665,
+     "rcca_sep_mm": 1.2068206558604055,
+     "course_rms_donor_mm": 15.167640104240656,
+     "course_rms_donor_pinned_mm": 12.463141142613965,
+     "d10": {
+      "version": "va_corridor 1.0 (s2_harden_va, 2026-10-04; D10)",
+      "window_z": [
+       440.0,
+       540.0
+      ],
+      "tol_mm": 8.0,
+      "n": 137,
+      "native_mm": 16.721365492280334,
+      "native_how": "spinal_cord",
+      "stat": "median",
+      "evaluable": true,
+      "placed_mm": 16.946485621671663,
+      "lat_p10": 14.471339038315826,
+      "lat_p90": 28.979379118583584,
+      "lat_min": 12.492223381762397,
+      "lat_max": 33.16211511371131,
+      "z_span": [
+       440.6162368417133,
+       539.7519961558789
+      ],
+      "how": "native",
+      "dev_mm": 0.2251201293913283,
+      "ok_median": true,
+      "frac_outside_tol": 0.22627737226277372,
+      "native_p10_mm": 14.54196567489663,
+      "native_p90_mm": 22.188636258727918,
+      "tail_dev_mm": -0.07062663658080481,
+      "tail90_dev_mm": 6.790742859855666,
+      "medial_excursion": false,
+      "lateral_excursion": false,
+      "ok_tails": true,
+      "ok": true
+     },
+     "route_excess": 0.01364,
+     "route13": null,
+     "va_10mm_elevation_deg": 56.08691414819411,
+     "top": {
+      "splice_on_donor_mm": 165.16520168313295,
+      "trim_mm": 1,
+      "bend_deg": 33.025608820544505,
+      "target_err_mm_before_stop": 27.84168729728566,
+      "pair_err_mm": 0.0,
+      "join_deg": 48.196646042404744,
+      "calibre_ratio": 1.2497199794728004,
+      "calibre_pass": 1,
+      "R": [
+       [
+        -0.9498221253899498,
+        -0.24515632519387065,
+        0.19425834946574502
+       ],
+       [
+        0.307316158010571,
+        -0.8470985428318731,
+        0.4335675700023458
+       ],
+       [
+        0.058264132580346045,
+        0.47151080045907157,
+        0.8799334383378696
+       ]
+      ],
+      "anchor": [
+       -13.688893502408705,
+       29.307130464636806,
+       549.6816401123027
+      ],
+      "n_eval": 1
+     },
+     "tb_patient_side": "left",
+     "tb_mirror": [
+      -1.0,
+      1.0,
+      1.0
+     ],
+     "d17": {
+      "gate": {
+       "label_end_s_path": 131.09229007966968,
+       "label_past_ostium_mm": 70.50713435280773,
+       "end_how": "junction label end",
+       "path_file": "/repo/carotid_data/v6_work/va_s2/paths_d17/song_AHMU1218040_L.json",
+       "path_note": null,
+       "tube_mm": 0.0,
+       "tube_r_mm": null,
+       "trimmed_mm": 0.0,
+       "trims": [],
+       "corner_spread": null,
+       "max_turn_deg": 19.454631056712838,
+       "max_turn_branch_deg": 19.454631056712838,
+       "hairpin_max_deg": 32.7439436088526,
+       "arch_deg": 48.897816906277924,
+       "self_gap_mm": 13.363874453063666,
+       "past_ostium_mm": 69.16975159652186,
+       "end_mm_on_branch": 74.18722129688295,
+       "foot_s_on_branch": 5.017469700361084,
+       "ok": true,
+       "direction": {
+        "lateral_mm": 53.74,
+        "angle_vs_host_distal_deg": 30.6,
+        "chord_mm": 65.7,
+        "ap_mm": -31.7,
+        "dz_mm": -20.7,
+        "end_x": -63.9,
+        "host_distal_len_mm": 102.4,
+        "ok": true
+       }
+      },
+      "positions": {
+       "cut_end": true,
+       "end_mm": 74.18722129688295,
+       "foot_mm": 5.017469700361084,
+       "past_ostium_mm": 69.16975159652186,
+       "label_end_mm": 74.18722129688295,
+       "tube_from_mm": null,
+       "tube_mm": 0.0,
+       "trimmed_mm": 0.0,
+       "host_distal_dropped_mm": 102.37622347541082
+      }
+     },
+     "rung": 1,
+     "ladder": [],
+     "va_target_mm_final": 27.84168729728566,
+     "va_target_mm_post_bake_measure": 27.83131375025261,
+     "final": {
+      "ok": true,
+      "clear": 0.7494333248913811,
+      "who": "parent (after exit)",
+      "exit_mm": 9.964824847452626,
+      "self_mm": 3.540741117632293,
+      "exact_from_exit_mm": 1.2088109809674559,
+      "turn1mm": {
+       "ok": true,
+       "curves": {
+        "cc - RVA": {
+         "max_new_deg": 45.1,
+         "at_s_mm": 45.4,
+         "v5_max_deg": 40.8,
+         "ok": true
+        },
+        "cc (17)": {
+         "max_new_deg": 19.5,
+         "at_s_mm": 62.2,
+         "v5_max_deg": 25.3,
+         "ok": true
+        }
+       }
+      },
+      "self_fold": {
+       "ok": true,
+       "curves": {
+        "cc - RVA": {
+         "gap_mm": 1.322886102568221,
+         "s_mm": [
+          21.07,
+          6.01
+         ],
+         "ok": true
+        },
+        "cc (17)": {
+         "gap_mm": Infinity,
+         "s_mm": null,
+         "ok": true
+        }
+       }
+      },
+      "stretch": {
+       "ok": true,
+       "exit_mm": 0.0,
+       "clear_others_mm": 28.12208983895539,
+       "clear_others_who": "cc (0)",
+       "why": null
+      },
+      "distal": {
+       "ok": true,
+       "exit_mm": 11.029943884537765,
+       "clear_others_mm": 0.6527187061399444,
+       "clear_others_who": "cc - RCCA",
+       "why": null
+      },
+      "d17_direction": {
+       "lateral_mm": 53.74,
+       "angle_vs_host_distal_deg": 30.6,
+       "chord_mm": 65.7,
+       "ap_mm": -31.7,
+       "dz_mm": -20.7,
+       "end_x": -63.9,
+       "host_distal_len_mm": 102.4,
+       "ok": true
+      },
+      "rva_prefix_identical": true,
+      "ok_without_self_fold": true
+     },
+     "orient_blocking": [],
+     "orient_blocking_d8_accepted": [
+      "va_target"
+     ],
+     "pass_all": true,
+     "flags": [
+      "va_target_20_30",
+      "route_guard_best_effort"
+     ],
+     "recheck": {
+      "kind": "donor_junction",
+      "pos": {
+       "branch_va": "Centerline curve - RVA.mrk.json",
+       "s_seam1": 16.013173931001162,
+       "s_F": 40.37873505711393,
+       "s_splice": 213.83092291920028,
+       "s_fillet_end": 54.87253795272748,
+       "s_E_on_dist": 24.100150529570325,
+       "va_len": 280.91969593021975,
+       "s_H_on_dist": 74.18722129688295,
+       "d17": {
+        "cut_end": true,
+        "end_mm": 74.18722129688295,
+        "foot_mm": 5.017469700361084,
+        "past_ostium_mm": 69.16975159652186,
+        "label_end_mm": 74.18722129688295,
+        "tube_from_mm": null,
+        "tube_mm": 0.0,
+        "trimmed_mm": 0.0,
+        "host_distal_dropped_mm": 102.37622347541082
+       }
+      },
+      "i_o": 27,
+      "k_seam": 16,
+      "prox_name": "Centerline curve - RVA.mrk.json",
+      "dist_name": "Centerline curve (17).mrk.json",
+      "par_names": [
+       "Centerline curve (11).mrk.json",
+       "Centerline curve - RCCA.mrk.json"
+      ],
+      "ostial_untraced_mm": 4.448094299837457
+     }
+    },
+    "left": {
+     "side": "left",
+     "replaced": true,
+     "donor_id": "song_AHMU1218040",
+     "donor_side": "R",
+     "donor_mirror": [
+      -1.0,
+      1.0,
+      1.0
+     ],
+     "donor_source": "song",
+     "real_surface_va": true,
+     "splice_window_mm": [
+      125.54286916923463,
+      191.14227238303562
+     ],
+     "splice_window_rule": "[C2, dura]",
+     "donor_seam_s_path": 27.731831186824373,
+     "donor_exit_s_path": 17.731831186824373,
+     "donor_exit_how": "TS contact",
+     "donor_foot_s_path": 45.296776548904624,
+     "donor_end_s_path": 64.80541453764806,
+     "donor_origin_to_ostium_mm": 45.25393123493972,
+     "donor_seam_note": null,
+     "host_exit_mm": 12.720216222603828,
+     "host_seam1_mm": 22.861089194586743,
+     "host_ostium_mm": 43.35419214864655,
+     "junction_wall": "/repo/carotid_data/v6_work/wall/d17/local/song_AHMU1218040/rjunction_stageA.vtp",
+     "radius_how": "junction label inscribed radius, clipped to [0.70, 1.15] x Arterial; label/Arterial median 0.69",
+     "junction_wall_info": {
+      "label_to_arterial_ratio": 0.6900844911443043,
+      "narrow_label": true,
+      "surface_info": {
+       "n_points": 10989,
+       "components": 1,
+       "open_or_nonmanifold_edges": 0,
+       "genus_largest": 1.0
+      },
+      "ostial_fill": null,
+      "wall_detail_proxy": {
+       "share_gt_0.3mm": 0.528051622154508,
+       "n_points": 5579
+      },
+      "covered_s_mm": [
+       15.951326307119766,
+       65.80541453764806
+      ],
+      "want_s_mm": [
+       27.731831186824373,
+       65.25393123493973
+      ],
+      "marker": "local (D15) junction: local_sub 1.1 (2026-10-04, s2_harden_wall_bake: D15 zone-local subclavian / junction; 1.1: run roots by env (D17 re-run), D16 ostial tube bridge) from v5-rule /v6w/d17/v5rule/song_AHMU1218040 + plateau /v6w/d17/plateau/song_AHMU1218040, 2026-10-04 19:45:40",
+      "junction_bridge": {
+       "bridge_s_mm": 6.0,
+       "pad_mm": 1.0,
+       "Q_xyz": [
+        38.07100113113469,
+        -5.496949864997174,
+        -155.40583445751986
+       ],
+       "va_P0_xyz": [
+        34.861549904426,
+        -7.5096996916890975,
+        -152.71195459873303
+       ],
+       "gap_Q_P0_mm": 4.648518875410495,
+       "rb_mm": 2.97394684105455,
+       "va_edge_r_mm": 1.971181875030945,
+       "T_lo": 206.71325032350808,
+       "T_hi": 590.1488796902988,
+       "T_va": 188.30812781763655,
+       "T_sub": 225.1183728293796,
+       "Ic": 390.1488796902988,
+       "before": {
+        "components": 2,
+        "va_fraction_connected": 0.0,
+        "touch6_voxels": 0,
+        "bottleneck_r_mm": 0.0,
+        "va_inscribed_r_s10_mm": 1.473,
+        "bottleneck_ratio": 0.0
+       },
+       "after": {
+        "components_before_pick": 1,
+        "va_fraction_connected": 1.0,
+        "bridge_voxels_added": 237,
+        "fallback_tube": false,
+        "bottleneck_r_mm": 1.347,
+        "va_inscribed_r_s10_mm": 1.473,
+        "bottleneck_ratio": 0.914
+       },
+       "local": {
+        "measured_on": "local junction mask (largest component)",
+        "v5rule_after": {
+         "components_before_pick": 1,
+         "va_fraction_connected": 1.0,
+         "bridge_voxels_added": 237,
+         "fallback_tube": false,
+         "bottleneck_r_mm": 1.347,
+         "va_inscribed_r_s10_mm": 1.473,
+         "bottleneck_ratio": 0.914
+        },
+        "w_at_Q": 0.0
+       }
+      }
+     },
+     "junction_tube_bridge": null,
+     "d17_donor": {
+      "path_file": "/repo/carotid_data/v6_work/va_s2/paths_d17/song_AHMU1218040_R.json",
+      "prefix_dev_mm": 0.0,
+      "path_end_how": "Arterial xSA chain end (inside the CT)",
+      "label_end_s_path": 65.30541453764806,
+      "path_end_s": 65.80541453764806,
+      "end_how": "junction label end",
+      "label_past_ostium_mm": 20.008637988743438,
+      "real_past_ostium_mm": 19.4061652362983,
+      "tube_mm": 10.5938347637017,
+      "n_real_ext": 1,
+      "tube_r_mm": 2.0136869126441317,
+      "tube_dir": [
+       -0.8446926321745776,
+       0.20458735184740093,
+       -0.4946093131088939
+      ],
+      "ext_len_mm": 11.09347863687538,
+      "tube_from_ext_index": 1
+     },
+     "va_rise_native_deg": 43.45574233362309,
+     "va_rise_floor_deg": 15.0,
+     "d10_native": {
+      "native_mm": 14.058716389059537,
+      "how": "spinal_cord"
+     },
+     "n_pose_candidates": 220,
+     "first_fail_counts": {
+      "top": 1,
+      "corridor": 4,
+      "course_rms_pre": 141,
+      "arm_dir": 59,
+      "seam1_join": 1,
+      "va_target": 4,
+      "course_rms": 2,
+      "rise": 114
+     },
+     "pass": true,
+     "soft_fail": [],
+     "pose": "w2:turn+3x",
+     "R": [
+      [
+       -0.2927350527673578,
+       -0.9435897517645709,
+       -0.1547403284414487
+      ],
+      [
+       0.9383818034058118,
+       -0.25240523739015036,
+       -0.23607453732852562
+      ],
+      [
+       0.183700244741666,
+       -0.2143128006043899,
+       0.9593353134222442
+      ]
+     ],
+     "D0": [
+      -26.297,
+      2.483,
+      -163.485
+     ],
+     "H0": [
+      51.069175720214844,
+      41.48394775390625,
+      412.73333740234375
+     ],
+     "row": {
+      "pose": "w2:turn+3x",
+      "gates": {
+       "rotation_proper": true,
+       "rise": true,
+       "arm_dir": true,
+       "course_rms_pre": true,
+       "corridor": true,
+       "seam1_join": true,
+       "fillet_turn": true,
+       "fillet_inside": true
+      },
+      "seam1_join": 53.99819469673932,
+      "fillet_turn": 56.55222522436291,
+      "fillet_turn_written": 56.55222522436291,
+      "junc_sigma_mm": 1.0,
+      "takeoff_native_in_v5_band": false,
+      "sub_rms_mm": 18.037731490328436,
+      "sub_dir_deg": 55.73111232470784,
+      "arm_dir_deg": 55.4259731656047,
+      "fillet_inside_mm": 1.1906433543678026,
+      "course_rms_pinned": 15.95220166092932,
+      "course_rms_abs": 15.121876662231962,
+      "va_rise_deg": 55.74156637592493,
+      "bridge": null,
+      "stretch_gate": {
+       "exit_mm": 0.0,
+       "reentry": false,
+       "parent_min_after_exit": 4.292373312981287,
+       "clear_others_mm": 13.69141085455191,
+       "clear_others_who": "cc - LCCA",
+       "ok": true,
+       "self_fold_mm": 0.8424141791359627
+      },
+      "distal_gate": {
+       "exit_mm": 10.08055806987218,
+       "reentry": false,
+       "parent_min_after_exit": 1.0292941670899278,
+       "clear_others_mm": 11.397396659012372,
+       "clear_others_who": "cc (0)",
+       "ok": true
+      },
+      "d17": {
+       "label_end_s_path": 65.30541453764806,
+       "label_past_ostium_mm": 20.008637988743438,
+       "end_how": "junction label end",
+       "path_file": "/repo/carotid_data/v6_work/va_s2/paths_d17/song_AHMU1218040_R.json",
+       "path_note": null,
+       "tube_mm": 10.5938347637017,
+       "tube_r_mm": 2.0136869126441317,
+       "trimmed_mm": 0.0,
+       "trims": [],
+       "corner_spread": null,
+       "max_turn_deg": 16.529254385841266,
+       "max_turn_branch_deg": 16.529254385841266,
+       "hairpin_max_deg": 35.891189936125016,
+       "arch_deg": 40.762493944526696,
+       "self_gap_mm": 13.90425146791512,
+       "past_ostium_mm": 29.234481096608317,
+       "end_mm_on_branch": 34.2710985900415,
+       "foot_s_on_branch": 5.03661749343318,
+       "ok": true,
+       "direction": {
+        "lateral_mm": 9.69,
+        "angle_vs_host_distal_deg": 48.0,
+        "chord_mm": 27.4,
+        "ap_mm": -20.7,
+        "dz_mm": -15.1,
+        "end_x": 71.6,
+        "host_distal_len_mm": 114.9,
+        "ok": true
+       }
+      },
+      "course_rms_composite": 18.517065499067307,
+      "course_rms_composite_abs": 19.02256652343203,
+      "pair": {
+       "sep_mm": 26.130813370485964,
+       "native_sep_mm": 36.017869473398875,
+       "du_mm": 15.1836244830586
+      },
+      "course_ok": true,
+      "course_rms_composite_vs_host_end": 14.5948224727018,
+      "course_rms_composite_abs_vs_host_end": 22.441543505131254,
+      "course_rms_reference": "D9: donor stretch (fillet .. splice) vs the host VA corridor up to its height",
+      "course_rms_donor_mm": 13.62586480015923,
+      "course_rms_donor_pinned_mm": 20.17135061179923,
+      "course_corridor_len_mm": 133.0804233930546,
+      "corridor": {
+       "version": "va_corridor 1.0 (s2_harden_va, 2026-10-04; D10)",
+       "window_z": [
+        440.0,
+        540.0
+       ],
+       "tol_mm": 8.0,
+       "n": 137,
+       "native_mm": 14.058716389059537,
+       "native_how": "spinal_cord",
+       "stat": "median",
+       "evaluable": true,
+       "placed_mm": 21.271409665567404,
+       "lat_p10": 13.219683842104667,
+       "lat_p90": 30.538051221659778,
+       "lat_min": 10.697743352400906,
+       "lat_max": 36.20623635837269,
+       "z_span": [
+        440.07908376049596,
+        539.9830123704382
+       ],
+       "how": "native",
+       "dev_mm": 7.212693276507867,
+       "ok_median": true,
+       "frac_outside_tol": 0.45985401459854014,
+       "native_p10_mm": 11.882999578818046,
+       "native_p90_mm": 19.217966937694683,
+       "tail_dev_mm": 1.336684263286621,
+       "tail90_dev_mm": 11.320084283965095,
+       "medial_excursion": false,
+       "lateral_excursion": true,
+       "ok_tails": true,
+       "ok": true
+      },
+      "route_excess": 0.0,
+      "route_taken": {
+       "fork_mm2": 0.0,
+       "siphon_mm2": 0.0,
+       "fork_share": 0.0,
+       "siphon_share": 0.0
+      },
+      "route13": null,
+      "top": {
+       "k": 182,
+       "cut_s": 181.17246256820403,
+       "trim": 0,
+       "bend": 41.1505275770089,
+       "err": 18.67725017414113,
+       "join": 24.92122431079933,
+       "calibre": 1.0820416073946977,
+       "n_eval": 1
+      },
+      "rcca_sep_mm": 26.130813370485964,
+      "cost": 53.00081785724803
+     },
+     "positions": {
+      "branch_va": "Centerline curve - LVA.mrk.json",
+      "s_seam1": 22.861089194586743,
+      "s_F": 0.0,
+      "s_F_on_18": 36.180264289603656,
+      "s_splice": 196.29192459450215,
+      "s_fillet_end": 15.366517335967316,
+      "s_E_on_dist": 23.18059401222397,
+      "va_len": 214.62482132607616,
+      "s_H_on_dist": 34.2710985900415,
+      "d17": {
+       "cut_end": true,
+       "end_mm": 34.2710985900415,
+       "foot_mm": 5.03661749343318,
+       "past_ostium_mm": 29.234481096608317,
+       "label_end_mm": 24.44278272973148,
+       "tube_from_mm": 24.44278272973148,
+       "tube_mm": 9.828315860310017,
+       "trimmed_mm": 0.0,
+       "host_distal_dropped_mm": 114.89067124225858
+      }
+     },
+     "takeoff_10mm_native_deg": 120.5401066537133,
+     "takeoff_10mm_native_record_deg": 117.94120016944098,
+     "takeoff_10mm_placed_deg": 120.28900557058073,
+     "takeoff_error_vs_native_deg": -0.25110108313256774,
+     "takeoff_vs_host_distal_tangent_deg": 110.73767770764908,
+     "junction_geometry": {
+      "donor_stretch_mm": 36.64501574376127,
+      "sub_rms_mm": 18.037731490328436,
+      "sub_dir_deg": 55.73111232470784,
+      "arm_dir_deg": 55.4259731656047,
+      "donor_pre_ostium_mm": 18.0,
+      "fillet_mm": 15.437072996454772,
+      "fillet_turn_deg": 56.55222522436291,
+      "junc_sigma_mm": 1.0,
+      "junc_sigma_tries": [
+       [
+        1.0,
+        56.55
+       ]
+      ],
+      "fillet_inside_mm": 1.1906433543678026,
+      "seam1_join_deg": 53.99819469673932,
+      "seam2": null,
+      "d17": {
+       "cut_end": true,
+       "end_mm": 34.2710985900415,
+       "foot_mm": 5.03661749343318,
+       "past_ostium_mm": 29.234481096608317,
+       "label_end_mm": 24.44278272973148,
+       "tube_from_mm": 24.44278272973148,
+       "tube_mm": 9.828315860310017,
+       "trimmed_mm": 0.0,
+       "host_distal_dropped_mm": 114.89067124225858
+      },
+      "ostium_to_seam1_mm_donor": 18.0,
+      "ostium_to_seam1_mm_host": 20.493102954059804,
+      "ostium_shift_vs_host_O_h_mm": 18.30100782360389
+     },
+     "course_rms_pinned_mm": 18.517065499067307,
+     "course_rms_abs_mm": 19.02256652343203,
+     "rcca_sep_mm": 26.130813370485964,
+     "course_rms_donor_mm": 13.62586480015923,
+     "course_rms_donor_pinned_mm": 20.17135061179923,
+     "d10": {
+      "version": "va_corridor 1.0 (s2_harden_va, 2026-10-04; D10)",
+      "window_z": [
+       440.0,
+       540.0
+      ],
+      "tol_mm": 8.0,
+      "n": 137,
+      "native_mm": 14.058716389059537,
+      "native_how": "spinal_cord",
+      "stat": "median",
+      "evaluable": true,
+      "placed_mm": 21.271409665567404,
+      "lat_p10": 13.219683842104667,
+      "lat_p90": 30.538051221659778,
+      "lat_min": 10.697743352400906,
+      "lat_max": 36.20623635837269,
+      "z_span": [
+       440.07908376049596,
+       539.9830123704382
+      ],
+      "how": "native",
+      "dev_mm": 7.212693276507867,
+      "ok_median": true,
+      "frac_outside_tol": 0.45985401459854014,
+      "native_p10_mm": 11.882999578818046,
+      "native_p90_mm": 19.217966937694683,
+      "tail_dev_mm": 1.336684263286621,
+      "tail90_dev_mm": 11.320084283965095,
+      "medial_excursion": false,
+      "lateral_excursion": true,
+      "ok_tails": true,
+      "ok": true
+     },
+     "route_excess": 0.0,
+     "route13": null,
+     "va_10mm_elevation_deg": 55.74156637592493,
+     "top": {
+      "splice_on_donor_mm": 187.1597311129213,
+      "trim_mm": 0,
+      "bend_deg": 41.1505275770089,
+      "target_err_mm_before_stop": 18.67725017414113,
+      "pair_err_mm": 11.678365918525778,
+      "join_deg": 24.92122431079933,
+      "calibre_ratio": 1.0820416073946977,
+      "calibre_pass": 1,
+      "R": [
+       [
+        -0.7676331770148309,
+        0.35671184439231945,
+        -0.5324433919360322
+       ],
+       [
+        -0.2542571877897975,
+        -0.9321147907274399,
+        -0.2579056016537151
+       ],
+       [
+        -0.5882963436936705,
+        -0.06259933687644632,
+        0.8062187885551217
+       ]
+      ],
+      "anchor": [
+       31.15721268095654,
+       24.605351306991285,
+       548.6178068619455
+      ],
+      "n_eval": 1
+     },
+     "tb_patient_side": "right",
+     "tb_mirror": [
+      -1.0,
+      1.0,
+      1.0
+     ],
+     "d17": {
+      "gate": {
+       "label_end_s_path": 65.30541453764806,
+       "label_past_ostium_mm": 20.008637988743438,
+       "end_how": "junction label end",
+       "path_file": "/repo/carotid_data/v6_work/va_s2/paths_d17/song_AHMU1218040_R.json",
+       "path_note": null,
+       "tube_mm": 10.5938347637017,
+       "tube_r_mm": 2.0136869126441317,
+       "trimmed_mm": 0.0,
+       "trims": [],
+       "corner_spread": null,
+       "max_turn_deg": 16.529254385841266,
+       "max_turn_branch_deg": 16.529254385841266,
+       "hairpin_max_deg": 35.891189936125016,
+       "arch_deg": 40.762493944526696,
+       "self_gap_mm": 13.90425146791512,
+       "past_ostium_mm": 29.234481096608317,
+       "end_mm_on_branch": 34.2710985900415,
+       "foot_s_on_branch": 5.03661749343318,
+       "ok": true,
+       "direction": {
+        "lateral_mm": 9.69,
+        "angle_vs_host_distal_deg": 48.0,
+        "chord_mm": 27.4,
+        "ap_mm": -20.7,
+        "dz_mm": -15.1,
+        "end_x": 71.6,
+        "host_distal_len_mm": 114.9,
+        "ok": true
+       }
+      },
+      "positions": {
+       "cut_end": true,
+       "end_mm": 34.2710985900415,
+       "foot_mm": 5.03661749343318,
+       "past_ostium_mm": 29.234481096608317,
+       "label_end_mm": 24.44278272973148,
+       "tube_from_mm": 24.44278272973148,
+       "tube_mm": 9.828315860310017,
+       "trimmed_mm": 0.0,
+       "host_distal_dropped_mm": 114.89067124225858
+      }
+     },
+     "rung": 1,
+     "ladder": [],
+     "va_target_mm_final": 18.67725017414113,
+     "va_target_mm_post_bake_measure": 18.668686021383525,
+     "final": {
+      "ok": true,
+      "clear": 0.9646898315087062,
+      "who": "parent (after exit)",
+      "exit_mm": 9.948107631871798,
+      "self_mm": 2.3606972365715473,
+      "exact_from_exit_mm": 8.11276017838502,
+      "turn1mm": {
+       "ok": true,
+       "curves": {
+        "cc (18)": {
+         "max_new_deg": 54.0,
+         "at_s_mm": 22.9,
+         "v5_max_deg": 19.1,
+         "ok": true
+        },
+        "cc - LVA": {
+         "max_new_deg": 52.5,
+         "at_s_mm": 5.0,
+         "v5_max_deg": 30.1,
+         "ok": true
+        },
+        "cc (19)": {
+         "max_new_deg": 16.5,
+         "at_s_mm": 4.0,
+         "v5_max_deg": 37.2,
+         "ok": true
+        }
+       }
+      },
+      "self_fold": {
+       "ok": true,
+       "curves": {
+        "cc (18)": {
+         "gap_mm": 0.8424141791359627,
+         "s_mm": [
+          29.97,
+          13.73
+         ],
+         "ok": true
+        },
+        "cc - LVA": {
+         "gap_mm": 2.284589578381699,
+         "s_mm": [
+          144.87,
+          132.89
+         ],
+         "ok": true
+        },
+        "cc (19)": {
+         "gap_mm": Infinity,
+         "s_mm": null,
+         "ok": true
+        }
+       }
+      },
+      "stretch": {
+       "ok": true,
+       "exit_mm": 0.0,
+       "clear_others_mm": 13.69141085455191,
+       "clear_others_who": "cc - LCCA",
+       "why": null
+      },
+      "distal": {
+       "ok": true,
+       "exit_mm": 10.08055806987218,
+       "clear_others_mm": 11.397396659012372,
+       "clear_others_who": "cc (0)",
+       "why": null
+      },
+      "d17_direction": {
+       "lateral_mm": 9.69,
+       "angle_vs_host_distal_deg": 48.0,
+       "chord_mm": 27.4,
+       "ap_mm": -20.7,
+       "dz_mm": -15.1,
+       "end_x": 71.6,
+       "host_distal_len_mm": 114.9,
+       "ok": true
+      },
+      "ok_without_self_fold": true
+     },
+     "orient_blocking": [],
+     "orient_blocking_d8_accepted": [],
+     "pass_all": true,
+     "flags": [
+      "corridor_lateral_excursion",
+      "d17_tube"
+     ],
+     "recheck": {
+      "kind": "donor_junction",
+      "pos": {
+       "branch_va": "Centerline curve - LVA.mrk.json",
+       "s_seam1": 22.861089194586743,
+       "s_F": 0.0,
+       "s_F_on_18": 36.180264289603656,
+       "s_splice": 196.29192459450215,
+       "s_fillet_end": 15.366517335967316,
+       "s_E_on_dist": 23.18059401222397,
+       "va_len": 214.62482132607616,
+       "s_H_on_dist": 34.2710985900415,
+       "d17": {
+        "cut_end": true,
+        "end_mm": 34.2710985900415,
+        "foot_mm": 5.03661749343318,
+        "past_ostium_mm": 29.234481096608317,
+        "label_end_mm": 24.44278272973148,
+        "tube_from_mm": 24.44278272973148,
+        "tube_mm": 9.828315860310017,
+        "trimmed_mm": 0.0,
+        "host_distal_dropped_mm": 114.89067124225858
+       }
+      },
+      "i_o": 32,
+      "k_seam": 12,
+      "prox_name": "Centerline curve (18).mrk.json",
+      "dist_name": "Centerline curve (19).mrk.json",
+      "par_names": [
+       "Centerline curve (0).mrk.json",
+       "Centerline curve (2).mrk.json"
+      ],
+      "ostial_untraced_mm": 5.372204132792938
+     }
+    }
+   },
+   "base": {
+    "carotid_root": "/full/build2/car",
+    "va_side": "v5 (reset in memory)",
+    "carotid_side": "compose_v6 3.2.0 (2026-10-07; s2_build: 3.2.0 = U-TG the bake's tube-only union of the right fork group (RCCA + RECA) must be genus 0 in the final check + U-C3F post-bake D22 feedback (right ECA tip C3) for the listed anatomies; 3.1.0 2026-10-06; s2_integrate2: 3.1.0 = D22 surface-preserved right-route guard replaces the C0 gate (C0 recorded), D25 1 mm joins at every sampling phase; 3.0.3 = + --va-hard-root (s2_integrate: the joint pass's carotid re-check with the VA tool's final VAs as HARD neighbours; default off = 3.0.2 exactly); 3.0.2 = + siphon C0 gate (seam-2 zone skipped); 3.0.1 = light left ladder on non-final right-fork variants; s2_harden_carotid2: D19 right forks re-posed by the Zenodo map (host-cut search, bend 60, deviation, fallbacks), D20 contralateral forks x-mirrored, C0 fork-detail guard, C1/C2 on the moved fork, D13 relative to the fork; 2.0.1 = base tree, C1/C2, D1 rungs 1-6, D11 left forks, D13)",
+    "curves_changed_vs_v5": [
+     "Centerline curve - LCCA.mrk.json",
+     "Centerline curve - LECA.mrk.json",
+     "Centerline curve - RCCA.mrk.json",
+     "Centerline curve - RECA.mrk.json"
+    ],
+    "unexpected_changed_vs_v5": [],
+    "missing_vs_v5": [],
+    "extra_vs_v5": [],
+    "carotid_changed_files_record": [
+     "Centerline curve - LCCA.mrk.json",
+     "Centerline curve - LECA.mrk.json",
+     "Centerline curve - RCCA.mrk.json",
+     "Centerline curve - RECA.mrk.json"
+    ]
+   },
+   "compat_pilot": false,
+   "cfg": {
+    "donor_root": "/repo/carotid_data/v6_work/wall/donors_local",
+    "seg": "/repo/carotid_data/v6_work/wall/donors_local/_junction_records",
+    "paths": "/repo/carotid_data/v6_work/va/subclavian/paths",
+    "native": "/repo/carotid_data/v6_work/va_s2/native_offsets/native_offsets.json",
+    "guard_tol": 0.003,
+    "d9_inherit": true,
+    "va_target_accept_mm": 30.0,
+    "d10_stat": "median",
+    "guard_on": true,
+    "paths_d17": "/repo/carotid_data/v6_work/va_s2/paths_d17",
+    "d17": true,
+    "d17_trim": true
+   },
+   "route_guard_setup": {
+    "on": true,
+    "tol": 0.003,
+    "relief_area": {
+     "fork": 506.1061671519607,
+     "siphon": 738.1104946684494
+    },
+    "relief_area_v4": {
+     "fork": 380.140085630759,
+     "siphon": 688.1518540160096
+    },
+    "area_ratio_v6_v4": {
+     "fork": 1.3313675307674764,
+     "siphon": 1.0725982795234577
+    },
+    "area_off": [],
+    "v4": {
+     "right": {
+      "fork_mm2": 0.0,
+      "siphon_mm2": 0.0,
+      "fork_share": 0.0,
+      "siphon_share": 0.0
+     },
+     "left": {
+      "fork_mm2": 0.0,
+      "siphon_mm2": 0.0,
+      "fork_share": 0.0,
+      "siphon_share": 0.0
+     }
+    },
+    "base_fork": {
+     "mirror": [
+      1.0,
+      1.0,
+      1.0
+     ],
+     "chirality": {
+      "fork_side": "right",
+      "route_side": "right",
+      "contralateral": false,
+      "mirrored": false,
+      "mirror": [
+       1.0,
+       1.0,
+       1.0
+      ],
+      "chirality": "proper (no mirror)",
+      "d20_applied": true
+     },
+     "host_cut_mm": 50.187409427123896
+    },
+    "route_guard": "route_guard.py (v6_pilot): a cheap, pre-bake estimate of how much of the RIGHT ROUTE's real wall relief a candidate"
+   },
+   "targets": {
+    "right": [
+     3.105391506757943,
+     6.4219103112670375,
+     584.2725176013811
+    ],
+    "left": [
+     26.49460849324206,
+     18.57808968873296,
+     559.7274823986189
+    ],
+    "native_end_sep_mm": 36.01786947339884
+   },
+   "stop_short": {
+    "trim_R_mm": 0,
+    "trim_L_mm": 0,
+    "gap_mm": 18.966450352873863
+   },
+   "final": {
+    "right": {
+     "ok": true,
+     "clear": 0.7494333248913811,
+     "who": "parent (after exit)",
+     "exit_mm": 9.964824847452626,
+     "self_mm": 3.540741117632293,
+     "exact_from_exit_mm": 1.2088109809674559,
+     "turn1mm": {
+      "ok": true,
+      "curves": {
+       "cc - RVA": {
+        "max_new_deg": 45.1,
+        "at_s_mm": 45.4,
+        "v5_max_deg": 40.8,
+        "ok": true
+       },
+       "cc (17)": {
+        "max_new_deg": 19.5,
+        "at_s_mm": 62.2,
+        "v5_max_deg": 25.3,
+        "ok": true
+       }
+      }
+     },
+     "self_fold": {
+      "ok": true,
+      "curves": {
+       "cc - RVA": {
+        "gap_mm": 1.322886102568221,
+        "s_mm": [
+         21.07,
+         6.01
+        ],
+        "ok": true
+       },
+       "cc (17)": {
+        "gap_mm": Infinity,
+        "s_mm": null,
+        "ok": true
+       }
+      }
+     },
+     "stretch": {
+      "ok": true,
+      "exit_mm": 0.0,
+      "clear_others_mm": 28.12208983895539,
+      "clear_others_who": "cc (0)",
+      "why": null
+     },
+     "distal": {
+      "ok": true,
+      "exit_mm": 11.029943884537765,
+      "clear_others_mm": 0.6527187061399444,
+      "clear_others_who": "cc - RCCA",
+      "why": null
+     },
+     "d17_direction": {
+      "lateral_mm": 53.74,
+      "angle_vs_host_distal_deg": 30.6,
+      "chord_mm": 65.7,
+      "ap_mm": -31.7,
+      "dz_mm": -20.7,
+      "end_x": -63.9,
+      "host_distal_len_mm": 102.4,
+      "ok": true
+     },
+     "rva_prefix_identical": true,
+     "ok_without_self_fold": true
+    },
+    "left": {
+     "ok": true,
+     "clear": 0.9646898315087062,
+     "who": "parent (after exit)",
+     "exit_mm": 9.948107631871798,
+     "self_mm": 2.3606972365715473,
+     "exact_from_exit_mm": 8.11276017838502,
+     "turn1mm": {
+      "ok": true,
+      "curves": {
+       "cc (18)": {
+        "max_new_deg": 54.0,
+        "at_s_mm": 22.9,
+        "v5_max_deg": 19.1,
+        "ok": true
+       },
+       "cc - LVA": {
+        "max_new_deg": 52.5,
+        "at_s_mm": 5.0,
+        "v5_max_deg": 30.1,
+        "ok": true
+       },
+       "cc (19)": {
+        "max_new_deg": 16.5,
+        "at_s_mm": 4.0,
+        "v5_max_deg": 37.2,
+        "ok": true
+       }
+      }
+     },
+     "self_fold": {
+      "ok": true,
+      "curves": {
+       "cc (18)": {
+        "gap_mm": 0.8424141791359627,
+        "s_mm": [
+         29.97,
+         13.73
+        ],
+        "ok": true
+       },
+       "cc - LVA": {
+        "gap_mm": 2.284589578381699,
+        "s_mm": [
+         144.87,
+         132.89
+        ],
+        "ok": true
+       },
+       "cc (19)": {
+        "gap_mm": Infinity,
+        "s_mm": null,
+        "ok": true
+       }
+      }
+     },
+     "stretch": {
+      "ok": true,
+      "exit_mm": 0.0,
+      "clear_others_mm": 13.69141085455191,
+      "clear_others_who": "cc - LCCA",
+      "why": null
+     },
+     "distal": {
+      "ok": true,
+      "exit_mm": 10.08055806987218,
+      "clear_others_mm": 11.397396659012372,
+      "clear_others_who": "cc (0)",
+      "why": null
+     },
+     "d17_direction": {
+      "lateral_mm": 9.69,
+      "angle_vs_host_distal_deg": 48.0,
+      "chord_mm": 27.4,
+      "ap_mm": -20.7,
+      "dz_mm": -15.1,
+      "end_x": 71.6,
+      "host_distal_len_mm": 114.9,
+      "ok": true
+     },
+     "ok_without_self_fold": true
+    }
+   },
+   "orient": {
+    "pieces": {
+     "RVA_top": {
+      "rise_mm": 22.412590681981783,
+      "rise_native_mm": 24.799972765917104,
+      "rise_err_mm": -2.3873820839353215,
+      "up_tilt_deg": 28.365664826103934,
+      "yaw_deg": -17.09031431185548,
+      "seam_angle_deg": 42.266206802281495,
+      "medial_end_mm": -4.691326394609231,
+      "cross_mm": 0.0,
+      "end": [
+       10.109,
+       30.56,
+       572.295
+      ],
+      "len_mm": 66.86451325599319
+     },
+     "LVA_top": {
+      "rise_mm": 2.547674005986096,
+      "rise_native_mm": 2.317256642251806,
+      "rise_err_mm": 0.2304173637342899,
+      "up_tilt_deg": 36.2718750362421,
+      "yaw_deg": 19.770813818062123,
+      "seam_angle_deg": 45.678553020294345,
+      "medial_end_mm": -10.492298088449374,
+      "cross_mm": 0.0,
+      "end": [
+       25.292,
+       35.338,
+       551.572
+      ],
+      "len_mm": 17.893562145785676
+     }
+    },
+    "flags": {
+     "RVA_top": [
+      "va_target"
+     ],
+     "LVA_top": []
+    },
+    "blocking": [
+     [
+      "RVA_top",
+      "va_target"
+     ]
+    ],
+    "ok": false,
+    "pairs": {
+     "va": {
+      "end_sep_mm": 26.13035594858972,
+      "end_sep_native_mm": 36.019060685420435,
+      "end_dz_mm": 20.722999999999956,
+      "end_dz_native_mm": 24.699600000000004,
+      "end_du_mm": 15.183000000000002,
+      "end_du_native_mm": 23.2611,
+      "same_native_frame": true,
+      "lumen_gap_mm": 18.96645035287387,
+      "target_R": [
+       3.17,
+       6.45,
+       584.35
+      ],
+      "target_L": [
+       26.43,
+       18.55,
+       559.65
+      ],
+      "tip_move_anat_R_mm": 27.83131375025261,
+      "tip_move_anat_L_mm": 18.668686021383525
+     }
+    }
+   },
+   "route_guard": {
+    "tol": 0.003,
+    "final": {
+     "right": {
+      "excess": 0.01787,
+      "taken": {
+       "fork_mm2": 9.044,
+       "siphon_mm2": 0.0,
+       "fork_share": 0.01787,
+       "siphon_share": 0.0
+      },
+      "v4": {
+       "fork_mm2": 0.0,
+       "siphon_mm2": 0.0,
+       "fork_share": 0.0,
+       "siphon_share": 0.0
+      }
+     },
+     "left": {
+      "excess": 0.0,
+      "taken": {
+       "fork_mm2": 0.0,
+       "siphon_mm2": 0.0,
+       "fork_share": 0.0,
+       "siphon_share": 0.0
+      },
+      "v4": {
+       "fork_mm2": 0.0,
+       "siphon_mm2": 0.0,
+       "fork_share": 0.0,
+       "siphon_share": 0.0
+      }
+     }
+    },
+    "relief_area": {
+     "fork": 506.1061671519607,
+     "siphon": 738.1104946684494
+    }
+   },
+   "summary": {
+    "right": {
+     "rung": 1,
+     "junction": null,
+     "pass_all": true,
+     "va_target_mm_final": 27.84168729728566,
+     "flags": [
+      "va_target_20_30",
+      "route_guard_best_effort"
+     ],
+     "course_rms_donor_mm": 15.167640104240656,
+     "route_excess": 0.01364,
+     "d10": {
+      "ok": true,
+      "evaluable": true,
+      "placed_mm": 16.946485621671663,
+      "native_mm": 16.721365492280334,
+      "dev_mm": 0.2251201293913283,
+      "how": "native"
+     }
+    },
+    "left": {
+     "rung": 1,
+     "junction": null,
+     "pass_all": true,
+     "va_target_mm_final": 18.67725017414113,
+     "flags": [
+      "corridor_lateral_excursion",
+      "d17_tube"
+     ],
+     "course_rms_donor_mm": 13.62586480015923,
+     "route_excess": 0.0,
+     "d10": {
+      "ok": true,
+      "evaluable": true,
+      "placed_mm": 21.271409665567404,
+      "native_mm": 14.058716389059537,
+      "dev_mm": 7.212693276507867,
+      "how": "native"
+     }
+    }
+   },
+   "seconds": 110.9
+  },
+  "bake_sections": [
+   "vaC_R",
+   "scC_R",
+   "scD_R",
+   "vaC_L",
+   "scC_L",
+   "scD_L",
+   "scJ_L"
+  ],
+  "summary": {
+   "right": {
+    "rung": 1,
+    "junction": null,
+    "pass_all": true,
+    "va_target_mm_final": 27.84168729728566,
+    "flags": [
+     "va_target_20_30",
+     "route_guard_best_effort"
+    ],
+    "course_rms_donor_mm": 15.167640104240656,
+    "route_excess": 0.01364,
+    "d10": {
+     "ok": true,
+     "evaluable": true,
+     "placed_mm": 16.946485621671663,
+     "native_mm": 16.721365492280334,
+     "dev_mm": 0.2251201293913283,
+     "how": "native"
+    }
+   },
+   "left": {
+    "rung": 1,
+    "junction": null,
+    "pass_all": true,
+    "va_target_mm_final": 18.67725017414113,
+    "flags": [
+     "corridor_lateral_excursion",
+     "d17_tube"
+    ],
+    "course_rms_donor_mm": 13.62586480015923,
+    "route_excess": 0.0,
+    "d10": {
+     "ok": true,
+     "evaluable": true,
+     "placed_mm": 21.271409665567404,
+     "native_mm": 14.058716389059537,
+     "dev_mm": 7.212693276507867,
+     "how": "native"
+    }
+   }
+  },
+  "carotid_side": "compose_v6 3.2.0 (2026-10-07; s2_build: 3.2.0 = U-TG the bake's tube-only union of the right fork group (RCCA + RECA) must be genus 0 in the final check + U-C3F post-bake D22 feedback (right ECA tip C3) for the listed anatomies; 3.1.0 2026-10-06; s2_integrate2: 3.1.0 = D22 surface-preserved right-route guard replaces the C0 gate (C0 recorded), D25 1 mm joins at every sampling phase; 3.0.3 = + --va-hard-root (s2_integrate: the joint pass's carotid re-check with the VA tool's final VAs as HARD neighbours; default off = 3.0.2 exactly); 3.0.2 = + siphon C0 gate (seam-2 zone skipped); 3.0.1 = light left ladder on non-final right-fork variants; s2_harden_carotid2: D19 right forks re-posed by the Zenodo map (host-cut search, bend 60, deviation, fallbacks), D20 contralateral forks x-mirrored, C0 fork-detail guard, C1/C2 on the moved fork, D13 relative to the fork; 2.0.1 = base tree, C1/C2, D1 rungs 1-6, D11 left forks, D13) (/full/build2/car)",
+  "base": {
+   "carotid_root": "/full/build2/car",
+   "va_side": "v5 (reset in memory)",
+   "carotid_side": "compose_v6 3.2.0 (2026-10-07; s2_build: 3.2.0 = U-TG the bake's tube-only union of the right fork group (RCCA + RECA) must be genus 0 in the final check + U-C3F post-bake D22 feedback (right ECA tip C3) for the listed anatomies; 3.1.0 2026-10-06; s2_integrate2: 3.1.0 = D22 surface-preserved right-route guard replaces the C0 gate (C0 recorded), D25 1 mm joins at every sampling phase; 3.0.3 = + --va-hard-root (s2_integrate: the joint pass's carotid re-check with the VA tool's final VAs as HARD neighbours; default off = 3.0.2 exactly); 3.0.2 = + siphon C0 gate (seam-2 zone skipped); 3.0.1 = light left ladder on non-final right-fork variants; s2_harden_carotid2: D19 right forks re-posed by the Zenodo map (host-cut search, bend 60, deviation, fallbacks), D20 contralateral forks x-mirrored, C0 fork-detail guard, C1/C2 on the moved fork, D13 relative to the fork; 2.0.1 = base tree, C1/C2, D1 rungs 1-6, D11 left forks, D13)",
+   "curves_changed_vs_v5": [
+    "Centerline curve - LCCA.mrk.json",
+    "Centerline curve - LECA.mrk.json",
+    "Centerline curve - RCCA.mrk.json",
+    "Centerline curve - RECA.mrk.json"
+   ],
+   "unexpected_changed_vs_v5": [],
+   "missing_vs_v5": [],
+   "extra_vs_v5": [],
+   "carotid_changed_files_record": [
+    "Centerline curve - LCCA.mrk.json",
+    "Centerline curve - LECA.mrk.json",
+    "Centerline curve - RCCA.mrk.json",
+    "Centerline curve - RECA.mrk.json"
+   ]
+  },
+  "date": "2026-10-07 20:57:34"
+ },
+ "v6_build": {
+  "version": "build_v6 1.2 (s2_integrate2, 2026-10-06; 1.2 = ONE frozen toolchain: every stage refuses to run unless every file of the md5 manifest matches (--manifest, default build/TOOLCHAIN_s2i2.md5); provenance v6_build.toolchain (manifest md5 + each tool's md5); records: va.<side>.donor_id / donor_side from xform.vaC_* on rung 2 / 3 sides, d17 direction; D22 pre-bake fields + coverage flag; D23 acceptance block for w_017_left mr_002_L; finalcheck + checks_v6 part orient (D8 / D23) on the final tree; summary D22 / D23 / D25 counts. 1.1 = + stage redo (frozen build_v6_v1_1.py); 1.0 frozen build_v6_v1_0.py)",
+  "date": "2026-10-07 21:27:08",
+  "source": "w2",
+  "tools": {
+   "compose_v6": "compose_v6 3.2.0 (2026-10-07; s2_build: 3.2.0 = U-TG the bake's tube-only union of the right fork group (RCCA + RECA) must be genus 0 in the final check + U-C3F post-bake D22 feedback (right ECA tip C3) for the listed anatomies; 3.1.0 2026-10-06; s2_integrate2: 3.1.0 = D22 surface-preserved right-route guard replaces the C0 gate (C0 recorded), D25 1 mm joins at every sampling phase; 3.0.3 = + --va-hard-root (s2_integrate: the joint pass's carotid re-check with the VA tool's final VAs as HARD neighbours; default off = 3.0.2 exactly); 3.0.2 = + siphon C0 gate (seam-2 zone skipped); 3.0.1 = light left ladder on non-final right-fork variants; s2_harden_carotid2: D19 right forks re-posed by the Zenodo map (host-cut search, bend 60, deviation, fallbacks), D20 contralateral forks x-mirrored, C0 fork-detail guard, C1/C2 on the moved fork, D13 relative to the fork; 2.0.1 = base tree, C1/C2, D1 rungs 1-6, D11 left forks, D13)",
+   "graft_v6_va": "graft_v6_va 1.4.2 (2026-10-07; s2_build: 1.4.2 = + a fold-ONLY failing side re-runs its rung-1 pose search once with folding poses refused; 1.4.1 = U3 no tube self-contact (fold) of the side's new curves as a final side gate only (recorded per pose, no pose filter); 1.4 = U3 also as a pose filter; 1.3 2026-10-06;s2_integrate2: 1.3 = D25 D17 direction gate + 1 mm turns at every sampling phase; s2_integrate: 1.2.3 = + T6 D8 on the post-bake measure; 1.2.2 = + T5 host-VA extension join <= 60 deg; 1.2.1 = + T4 splice join as written on top-only placements; 1.2: 1 mm turns gated on the curves AS WRITTEN -- fillet, D17 branch from F, final gates (geom_v6 rule); 1.1 (2026-10-04; s2_harden_va): 0.8 + route guard G1-G3, G4, route13 slot, base from files, D8, D9, D10; D17 own distal subclavian to a cut end, D16 tube-bridged junctions, D19/D20 guard sanity)"
+  },
+  "toolchain": {
+   "manifest": "/sp/v6/build/TOOLCHAIN_s2build.md5",
+   "manifest_md5": "a80644e04bbcbd46635d47f7656dcf7d",
+   "md5": {
+    "build_v6.py": "d5e55fdd0d89247eb96a71f69a88afed",
+    "route13_table_v6.py": "6df2cfe0c06e63489d74b037fd2a91c9",
+    "precheck_orient.py": "5a18f6c198666d5c783364b59fd80b99",
+    "compose_v6.py": "d0291221f09fdddb8d0716fa02259afe",
+    "route_guard.py": "3052027b7cc745d4afc63812fd7d6a77",
+    "route_baseline.py": "e0c7ed72b9927c01c173bebc02b08b72",
+    "verify_s3.py": "8964561dee55a663fff5dd12d950fa5d",
+    "graft_v6_va.py": "2da1f9e4f822924004b6e2eb6ee44cd2",
+    "va_corridor.py": "97db59d512c298f9141641c87101ea0b",
+    "native_offsets.py": "18de33d861713336c9925d8054239d82",
+    "va_entry_geom.py": "5aa007b0de3d65597725f6fb013434e5",
+    "sofa_va_entry.py": "0c5a80dcfc30c1c18bffcd2def75a26c",
+    "orient_gates.py": "03c75583c1b42dbc472ac24f2216d619",
+    "checks_v6.py": "eb6921a99dddff99f4c98779173f57ce",
+    "geom_v6.py": "011b850c2998068f4610ca076c6311f9",
+    "loader_one.py": "e50424672ca776274428da3b60176cfc",
+    "bake_v6.py": "b3731df4be40704ba9412e88bae89c97",
+    "va_lumen_poly.py": "4c5482e98a6e3cbb0462c69f36c4ba73",
+    "sofa_rcca_v6.py": "0ecf6fe6d30bdd2e82dde17eeb96c6df",
+    "fig_v6_repilot.py": "0a57147ec94313e0f5f8389ab1d19e63",
+    "fig_v6_pilot.py": "3a5f2573abbae8a2db0badc043692822",
+    "cmp_build2.py": "7dc917c495cccce1d72fa081481508bf",
+    "cmp_build2_classify.py": "d4d9d9af15188bfb50531cea45c2bf4e",
+    "merge_tree3.py": "5c25fb9a0b63469e2f40987a38529495",
+    "gen_license.py": "1f49c4a979fde0f1589ad790eed2cc36",
+    "scan_tube_genus.py": "63a90bfad3444023b50c28c7f30948e5",
+    "scan_self.py": "b9d587d9e7bfd2be79ff1d916faf1419"
+   }
+  },
+  "d23_accepted": null,
+  "carotid": {
+   "ok": true,
+   "right_fork": {
+    "right_fork_pose": "map_bend60",
+    "right_fork_rung": 3,
+    "right_fork_flag": true,
+    "right_fork_placement": "v6_map",
+    "right_fork_mirrored": false,
+    "right_fork_contralateral": false,
+    "right_fork_d20_applied": true,
+    "right_seam1_bend_deg": 55.68,
+    "right_blend_mm": 8,
+    "host_cut_shift_mm": 0.0,
+    "host_cut_mm": 50.1874,
+    "right_dev_deg": 0.0,
+    "right_yaw_vs_map_deg": 0.0,
+    "c0_fork_ratio": 0.99561,
+    "c0_siphon_ratio": 0.99989,
+    "c0_siphon_flag": false,
+    "right_fork_va_gap_mm": 4.823,
+    "d22_fork_keep": 1.0,
+    "d22_fork_keep_all": 1.0,
+    "d22_fork_zone_keep": 1.0,
+    "d22_siphon_keep": 0.999952,
+    "d22_siphon_keep_all": 0.999952,
+    "d22_fork_gated": true,
+    "d22_ok": true,
+    "d22_fork_cov_keep": 0.999957,
+    "d22_siphon_cov_keep": 0.999952,
+    "d22_cov_flag": false,
+    "right_d22_refused_n": 0
+   },
+   "left_fork": {
+    "fork_rung": 1,
+    "left_fork_decision": "kept",
+    "left_fork_lower": "case_w_002_left",
+    "left_fork_pose": "zenodo_map",
+    "left_fork_pose_flag": false,
+    "left_fork_mirrored": false,
+    "left_fork_contralateral": false,
+    "left_fork_d20_applied": true,
+    "left_seam1_bend_deg": 39.18,
+    "tubed_ica_mm": 0.0
+   },
+   "ica_ap_post_mm": {
+    "RICA": 8.46,
+    "LICA": 27.47
+   },
+   "ica_ap_flag_R": false,
+   "ica_ap_flag_L": false,
+   "eca_right": "v6_search",
+   "skipped_eca_tips": [
+    {
+     "side": "left",
+     "v5_extended": true,
+     "new_fork": false,
+     "why": "anchor_low: fork ECA tip rises 11.7 deg < 20 (D4 skip)",
+     "anchor_elev_deg": 11.708351943815714
+    }
+   ],
+   "route_baseline": "v4_no_tip",
+   "route_baseline_why": "v6 re-poses v4's RECA tip, which ran along the ICA (min wall gap 0.89 mm at RCCA s 111.3; 8.8 mm of the tip within 8 mm): D13, reference = v4 rebuilt without that tip",
+   "soft_contacts_at_compose": []
+  },
+  "va": {
+   "right": {
+    "rung": 1,
+    "junction_type": "donor_own_junction",
+    "donor_id": "song_AHMU1218040",
+    "donor_side": "L",
+    "donor_id_from": "va_record",
+    "d17_direction": {
+     "lateral_mm": 53.74,
+     "angle_vs_host_distal_deg": 30.6,
+     "chord_mm": 65.7,
+     "ap_mm": -31.7,
+     "dz_mm": -20.7,
+     "end_x": -63.9,
+     "host_distal_len_mm": 102.4,
+     "ok": true
+    },
+    "turn1mm_final": {
+     "cc - RVA": 45.1,
+     "cc (17)": 19.5
+    },
+    "pass_all": true,
+    "flags": [
+     "va_target_20_30",
+     "route_guard_best_effort"
+    ],
+    "va_target_mm": 27.842,
+    "va_target_band": "20-30",
+    "course_rms_donor_mm": 15.168,
+    "corridor_d10": {
+     "ok": 1.0,
+     "evaluable": 1.0,
+     "placed_mm": 16.946,
+     "native_mm": 16.721,
+     "dev_mm": 0.225,
+     "how": "native"
+    },
+    "takeoff_error_vs_native_deg": 0.16,
+    "d16_tube_mm": null,
+    "tube_bridge_mm": null,
+    "d17": {
+     "cut_end": true,
+     "past_ostium_mm": 69.17,
+     "label_past_ostium_mm": 70.507,
+     "tube_mm": 0.0,
+     "trimmed_mm": 0.0,
+     "end_mm_on_branch": 74.187,
+     "host_distal_dropped_mm": 102.376,
+     "max_turn_branch_deg": 19.455,
+     "hairpin_max_deg": 32.744
+    },
+    "route_excess": 0.01364,
+    "pose": "aim6_80:turn+15z"
+   },
+   "left": {
+    "rung": 1,
+    "junction_type": "donor_own_junction",
+    "donor_id": "song_AHMU1218040",
+    "donor_side": "R",
+    "donor_id_from": "va_record",
+    "d17_direction": {
+     "lateral_mm": 9.69,
+     "angle_vs_host_distal_deg": 48.0,
+     "chord_mm": 27.4,
+     "ap_mm": -20.7,
+     "dz_mm": -15.1,
+     "end_x": 71.6,
+     "host_distal_len_mm": 114.9,
+     "ok": true
+    },
+    "turn1mm_final": {
+     "cc (18)": 54.0,
+     "cc - LVA": 52.5,
+     "cc (19)": 16.5
+    },
+    "pass_all": true,
+    "flags": [
+     "corridor_lateral_excursion",
+     "d17_tube"
+    ],
+    "va_target_mm": 18.677,
+    "va_target_band": "<=20",
+    "course_rms_donor_mm": 13.626,
+    "corridor_d10": {
+     "ok": 1.0,
+     "evaluable": 1.0,
+     "placed_mm": 21.271,
+     "native_mm": 14.059,
+     "dev_mm": 7.213,
+     "how": "native"
+    },
+    "takeoff_error_vs_native_deg": -0.251,
+    "d16_tube_mm": null,
+    "tube_bridge_mm": null,
+    "d17": {
+     "cut_end": true,
+     "past_ostium_mm": 29.234,
+     "label_past_ostium_mm": 20.009,
+     "tube_mm": 10.594,
+     "trimmed_mm": 0.0,
+     "end_mm_on_branch": 34.271,
+     "host_distal_dropped_mm": 114.891,
+     "max_turn_branch_deg": 16.529,
+     "hairpin_max_deg": 35.891
+    },
+    "route_excess": 0.0,
+    "pose": "w2:turn+3x"
+   }
+  },
+  "fix_loop": null,
+  "route13": null,
+  "c4": {
+   "script": "bake_v6 1.1 (2026-10-04; s2_harden_wall_bake: bake_v5b + E1-E7 + C4 + D20; = pilot bake_v6p 1.2 + bake_sections_v6 + obj_fix_va + c4_apply, generalised; 1.0.1: the E6 source-centreline fallback tested and switched off by default; 1.1: D20 mirrored / re-posed forks -- E4 mirror-only = same surface, E6 forks + mirror-aware back-map + the composer's blend_disp, chirality record)",
+   "spec": "/repo/carotid_data/v6_work/wall/c4/c4_tube_override.json",
+   "applied": false,
+   "why_not": "no topcow_mr_021_lVA top in this anatomy",
+   "applied_planned": false,
+   "note": "planned only (write=False); bake_v6 applies C4 inside the bake (gated, revert on bake failure)"
+  },
+  "recheck_pre_final": {
+   "va_recheck_ok": true,
+   "geom_ok": true,
+   "geom_gates": {
+    "geom_clearance_new_ge_0.6": true,
+    "geom_kink_new_le_60": true
+   },
+   "geom_min_new_mm": 0.653,
+   "geom_fails": [],
+   "geom_kink_fails": [],
+   "carotid_verify_ok": true,
+   "carotid_verify_fail": null,
+   "va_vs_carotid_contact": [],
+   "ok": true
+  },
+  "flags": [
+   "right_fork_R3_map_bend60",
+   "right_seam1_bend_gt45",
+   "eca_tip_skipped:left",
+   "route_baseline_v4_no_tip",
+   "va_right_rung1",
+   "va_right:va_target_20_30",
+   "va_right:route_guard_best_effort",
+   "va_left_rung1",
+   "va_left:corridor_lateral_excursion",
+   "va_left:d17_tube"
+  ]
+ },
+ "bake_v6": {
+  "script": "bake_v6 1.2 (2026-10-08; s3_fix: 1.2 = L1 opt-in lattice shift + L2 opt-in route-island bridge (defaults off = 1.1); 1.1 2026-10-04; s2_harden_wall_bake: bake_v5b + E1-E7 + C4 + D20; = pilot bake_v6p 1.2 + bake_sections_v6 + obj_fix_va + c4_apply, generalised; 1.0.1: the E6 source-centreline fallback tested and switched off by default; 1.1: D20 mirrored / re-posed forks -- E4 mirror-only = same surface, E6 forks + mirror-aware back-map + the composer's blend_disp, chirality record)",
+  "date": "2026-10-08 06:28:37",
+  "report": "mesh_v6.json",
+  "pass": true,
+  "files": [
+   "vessel_architecture_collision.obj",
+   "collision_full.vtp",
+   "mesh_v6.json"
+  ],
+  "spacing_mm": 0.45,
+  "obj_tris": 23500,
+  "obj_tris_budget": 23500,
+  "full_tris": 60000,
+  "union": "owned (sdf_union_v4)",
+  "rung": "2 VA-local windows",
+  "flags": [],
+  "carotid_margin_mm": 0.5,
+  "va_margin_mm": 0.5,
+  "far_clamp": {
+   "used": false,
+   "why": null
+  },
+  "sections_tube_only": [],
+  "suppressed_stretches_mm": {
+   "siphon_L": [
+    [
+     156.46,
+     157.78
+    ],
+    [
+     238.04,
+     239.41
+    ]
+   ],
+   "siphon_R": [
+    [
+     134.21,
+     136.21
+    ]
+   ],
+   "lower_L": [
+    [
+     110.5,
+     111.81
+    ]
+   ]
+  },
+  "va_tubed": {
+   "lower_R": {
+    "stretch_mm": [
+     50.19,
+     129.36
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "eca_R": {
+    "stretch_mm": [
+     0.0,
+     28.8
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "ecaext_R": {
+    "stretch_mm": [
+     28.8,
+     38.99
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "siphon_R": {
+    "stretch_mm": [
+     130.29,
+     236.22
+    ],
+    "windows_mm": [
+     [
+      134.21,
+      136.21
+     ]
+    ],
+    "n_windows": 1,
+    "tubed_mm": 2.0,
+    "tubed_frac": 0.0189,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "lower_L": {
+    "stretch_mm": [
+     110.0,
+     154.87
+    ],
+    "windows_mm": [
+     [
+      110.5,
+      111.81
+     ]
+    ],
+    "n_windows": 1,
+    "tubed_mm": 1.31,
+    "tubed_frac": 0.0293,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "eca_L": {
+    "stretch_mm": [
+     0.0,
+     29.84
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "siphon_L": {
+    "stretch_mm": [
+     155.52,
+     253.31
+    ],
+    "windows_mm": [
+     [
+      156.46,
+      157.78
+     ],
+     [
+      238.04,
+      239.41
+     ]
+    ],
+    "n_windows": 2,
+    "tubed_mm": 2.68,
+    "tubed_frac": 0.0275,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "va_R": {
+    "stretch_mm": [
+     214.06,
+     279.92
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "va_L": {
+    "stretch_mm": [
+     196.73,
+     214.62
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "vaC_R": {
+    "stretch_mm": [
+     40.38,
+     214.06
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "vaC_L": {
+    "stretch_mm": [
+     0.0,
+     196.73
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "scC_R": {
+    "stretch_mm": [
+     18.01,
+     57.87
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "scD_R": {
+    "stretch_mm": [
+     0.0,
+     74.19
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "scC_L": {
+    "stretch_mm": [
+     24.86,
+     36.18
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "scD_L": {
+    "stretch_mm": [
+     0.0,
+     24.44
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   },
+   "scJ_L": {
+    "stretch_mm": [
+     0.0,
+     18.37
+    ],
+    "windows_mm": [],
+    "n_windows": 0,
+    "tubed_mm": 0.0,
+    "tubed_frac": 0.0,
+    "tubed_beyond_mm": 0.0,
+    "whole_tube": false
+   }
+  },
+  "right_route_detail": {
+   "fork": {
+    "frac_0.3mm": 0.2745,
+    "frac_0.5mm": 0.1663
+   },
+   "siphon": {
+    "frac_0.3mm": 0.3685,
+    "frac_0.5mm": 0.1931
+   }
+  },
+  "seconds": 644.8,
+  "changed_carotid": [
+   "eca_L",
+   "eca_R",
+   "ecaext_R",
+   "lower_L",
+   "lower_R",
+   "siphon_L",
+   "siphon_R"
+  ],
+  "lattice_shift_mm": [
+   0.225,
+   0.0,
+   0.0
+  ],
+  "route_island_bridge": {
+   "rule": "bake_v6 1.2 L2 route-island bridge (s3_fix, D27)",
+   "params": {
+    "on": true,
+    "radius_mm": 0.5,
+    "extend_mm": 0.3,
+    "min_cells": 30,
+    "on_surface_frac": 0.5,
+    "max_tube_dist_mm": 6.0,
+    "sections": [
+     "lower_R",
+     "siphon_R"
+    ]
+   },
+   "islands": [
+    {
+     "cells": 644,
+     "volume_mm3": 12.84,
+     "section": "lower_R",
+     "on_surface_frac": 0.747,
+     "rcca_s": [
+      111.21,
+      117.21
+     ],
+     "tube_dist_median_mm": 2.72,
+     "gap_mm": 1.177,
+     "p": [
+      -12.375,
+      9.0,
+      510.087
+     ],
+     "q": [
+      -12.375,
+      9.973,
+      510.75
+     ]
+    },
+    {
+     "cells": 480,
+     "volume_mm3": 8.06,
+     "section": "lower_R",
+     "on_surface_frac": 0.988,
+     "rcca_s": [
+      108.21,
+      113.21
+     ],
+     "tube_dist_median_mm": 2.09,
+     "gap_mm": 1.048,
+     "p": [
+      -14.175,
+      13.5,
+      505.988
+     ],
+     "q": [
+      -14.175,
+      13.95,
+      506.934
+     ]
+    },
+    {
+     "cells": 378,
+     "volume_mm3": 4.4,
+     "section": "siphon_R",
+     "on_surface_frac": 0.644,
+     "rcca_s": [
+      222.03,
+      228.02
+     ],
+     "tube_dist_median_mm": 2.56,
+     "gap_mm": 0.779,
+     "p": [
+      5.625,
+      -3.6,
+      580.95
+     ],
+     "q": [
+      5.175,
+      -3.15,
+      580.5
+     ]
+    }
+   ],
+   "bridged": [
+    {
+     "island": 0,
+     "section": "lower_R",
+     "rcca_s": [
+      111.21,
+      117.21
+     ],
+     "volume_mm3": 12.84,
+     "length_mm": 1.777,
+     "radius_mm": 0.5
+    },
+    {
+     "island": 1,
+     "section": "lower_R",
+     "rcca_s": [
+      108.21,
+      113.21
+     ],
+     "volume_mm3": 8.06,
+     "length_mm": 1.648,
+     "radius_mm": 0.5
+    },
+    {
+     "island": 2,
+     "section": "siphon_R",
+     "rcca_s": [
+      222.03,
+      228.02
+     ],
+     "volume_mm3": 4.4,
+     "length_mm": 1.379,
+     "radius_mm": 0.5
+    }
+   ],
+   "final_state_rebuilt_cells": 922026,
+   "ladder_full_cells": 922026,
+   "tries": [
+    {
+     "bridges": 3,
+     "genus": 0.0,
+     "nonmanifold_edges": 0,
+     "dropped_volume_mm3": 27.17
+    }
+   ],
+   "seconds": 21.3,
+   "result": "bridged 3 of 3 route islands",
+   "union_cells_before_after": [
+    922026,
+    923636
+   ],
+   "dropped_volume_after_mm3": 27.17
+  },
+  "pin_report": "/s3/pin/final/case_w_002_right__topcow_mr_013_L/mesh_v4.json",
+  "blend_morph": {
+   "lower_R": {
+    "morphed": true,
+    "blend_mm": 8.0,
+    "rigid_from": "v5 back-map",
+    "max_disp_mm": 1.076,
+    "vertices_moved": 14059,
+    "rigid_rebuild_err_mm": 4e-05
+   },
+   "ecaext_R": {
+    "morphed": true,
+    "blend_mm": 6.0,
+    "rigid_from": "v5 back-map",
+    "max_disp_mm": 0.489,
+    "vertices_moved": 1252,
+    "rigid_rebuild_err_mm": 3e-05
+   },
+   "siphon_R": {
+    "morphed": true,
+    "blend_mm": 6.0,
+    "rigid_from": "v5 back-map",
+    "max_disp_mm": 1.004,
+    "vertices_moved": 1409,
+    "rigid_rebuild_err_mm": 6e-05
+   },
+   "lower_L": {
+    "morphed": true,
+    "blend_mm": 6.0,
+    "rigid_from": "v5 back-map",
+    "max_disp_mm": 0.731,
+    "vertices_moved": 7932,
+    "rigid_rebuild_err_mm": 5e-05
+   },
+   "siphon_L": {
+    "morphed": true,
+    "blend_mm": 6.0,
+    "rigid_from": "v5 back-map",
+    "max_disp_mm": 0.79,
+    "vertices_moved": 1158,
+    "rigid_rebuild_err_mm": 5e-05
+   }
+  },
+  "chirality": {
+   "lower_R": {
+    "mirror": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": false,
+    "signed_volume_mm3": 3390.9,
+    "outward": true
+   },
+   "eca_R": {
+    "mirror": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": false,
+    "signed_volume_mm3": 3391.91,
+    "outward": true
+   },
+   "ecaext_R": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 221.72,
+    "outward": true
+   },
+   "siphon_R": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 2364.75,
+    "outward": true
+   },
+   "lower_L": {
+    "mirror": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": false,
+    "signed_volume_mm3": 3520.96,
+    "outward": true
+   },
+   "eca_L": {
+    "mirror": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": false,
+    "signed_volume_mm3": 3522.59,
+    "outward": true
+   },
+   "siphon_L": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 1822.73,
+    "outward": true
+   },
+   "va_R": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 1093.22,
+    "outward": true
+   },
+   "va_L": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 37.69,
+    "outward": true
+   },
+   "vaC_R": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 1508.75,
+    "outward": true
+   },
+   "vaC_L": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 1504.55,
+    "outward": true
+   },
+   "scC_R": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 3791.05,
+    "outward": true
+   },
+   "scD_R": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 3791.05,
+    "outward": true
+   },
+   "scC_L": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 2119.96,
+    "outward": true
+   },
+   "scD_L": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 2119.96,
+    "outward": true
+   },
+   "scJ_L": {
+    "mirror": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirrored": true,
+    "signed_volume_mm3": 2119.96,
+    "outward": true
+   }
+  },
+  "c4": {
+   "script": "bake_v6 1.2 (2026-10-08; s3_fix: 1.2 = L1 opt-in lattice shift + L2 opt-in route-island bridge (defaults off = 1.1); 1.1 2026-10-04; s2_harden_wall_bake: bake_v5b + E1-E7 + C4 + D20; = pilot bake_v6p 1.2 + bake_sections_v6 + obj_fix_va + c4_apply, generalised; 1.0.1: the E6 source-centreline fallback tested and switched off by default; 1.1: D20 mirrored / re-posed forks -- E4 mirror-only = same surface, E6 forks + mirror-aware back-map + the composer's blend_disp, chirality record)",
+   "spec": "/repo/carotid_data/v6_work/wall/c4/c4_tube_override.json",
+   "applied": false,
+   "why_not": "no topcow_mr_021_lVA top in this anatomy"
+  },
+  "e7": {
+   "script": "bake_v6 1.2 (2026-10-08; s3_fix: 1.2 = L1 opt-in lattice shift + L2 opt-in route-island bridge (defaults off = 1.1); 1.1 2026-10-04; s2_harden_wall_bake: bake_v5b + E1-E7 + C4 + D20; = pilot bake_v6p 1.2 + bake_sections_v6 + obj_fix_va + c4_apply, generalised; 1.0.1: the E6 source-centreline fallback tested and switched off by default; 1.1: D20 mirrored / re-posed forks -- E4 mirror-only = same surface, E6 forks + mirror-aware back-map + the composer's blend_disp, chirality record)",
+   "need_mm": 0.65,
+   "step_mm": 0.05,
+   "before": {
+    "RVA": 0.935,
+    "LVA": 0.789
+   },
+   "tried": [],
+   "date": "2026-10-08 06:28:38",
+   "result": "ok as baked"
+  }
+ },
+ "v6_checks": {
+  "version": "stamp_prov 1.1 (s3_fix, 2026-10-08)",
+  "date": "2026-10-08 06:36:44",
+  "checks_v6": "checks_v6 1.6",
+  "part_versions": {
+   "item1": "checks_v6 1.6",
+   "route": "checks_v6 1.6",
+   "coverage": "checks_v6 1.6",
+   "folds": "checks_v6 1.6",
+   "lumen": "checks_v6 1.6",
+   "va": "checks_v6 1.6",
+   "orient": "checks_v6 1.6",
+   "loader": "checks_v6 1.6",
+   "geom": "checks_v6 1.6"
+  },
+  "pass": true,
+  "gates": {
+   "strict_audit": true,
+   "route_fork_d22_ge_0.99": true,
+   "route_siphon_d22_ge_0.99": true,
+   "rcca_prefix_unchanged": true,
+   "route_fork_coverage_loss_lt_1pct": true,
+   "route_siphon_coverage_loss_lt_1pct": true,
+   "obj_no_fold_over": true,
+   "va_lumen_obj_ge_0.65": true,
+   "orient_tierA_0": true,
+   "orient_v6_blocking_after_D8_0": true,
+   "loader_ok": true,
+   "geom_clearance_new_ge_0.6": true,
+   "geom_kink_new_le_60": true
+  },
+  "d22_baseline": "v4_no_tip",
+  "d22": {
+   "fork": {
+    "reference": "own_surface",
+    "value": 0.997375,
+    "value_v4": 0.940965,
+    "value_own": 0.98779,
+    "value_before_d27": 0.98779,
+    "no_wall_lost": true,
+    "coverage": 0.999785,
+    "d26_flag": true,
+    "d27_flag": true,
+    "d22_repair_window": {
+     "cells": 178,
+     "area_mm2": 12.01,
+     "s_range_mm": [
+      108.25,
+      116.5
+     ],
+     "lumen_beyond_capsule_mm": {
+      "min": 0.151,
+      "median": 0.572,
+      "max": 1.072
+     },
+     "share_of_off_both_area": 0.7871,
+     "clipped_in_v4_world_frac": 0.7479
+    }
+   },
+   "siphon": {
+    "reference": "own_surface",
+    "value": 0.994412,
+    "value_v4": 0.984305,
+    "value_own": 0.994412,
+    "value_before_d27": null,
+    "no_wall_lost": true,
+    "coverage": 0.999739,
+    "d26_flag": true,
+    "d27_flag": false
+   }
+  },
+  "coverage_v4_v5_shipped": {
+   "fork": {
+    "deficit_v4": 0.0,
+    "deficit_v5": 0.0,
+    "lost_mm2_max": 0.0,
+    "ok": true,
+    "flag": false
+   },
+   "siphon": {
+    "deficit_v4": 0.0,
+    "deficit_v5": 0.0,
+    "lost_mm2_max": 0.0,
+    "ok": true,
+    "flag": false
+   }
+  },
+  "folds": {
+   "obj": 0,
+   "full": 0
+  },
+  "carried_from_source": [],
+  "flags": [
+   "d26_d22_fork_reference_own_surface",
+   "d27_d22_fork_repair_window_12.01_mm2",
+   "d26_d22_siphon_reference_own_surface",
+   "d27_bake_lattice_shift_0.225_0_0",
+   "d27_bake_route_island_bridge_3"
+  ],
+  "derived_flags": [
+   "orient:va_target_20_30:RVA_top",
+   "left_pose_map_bounded_dev"
+  ],
+  "s3_fix": {
+   "kind": "rebake",
+   "why": "final verifier must-fix 1: real scanned wall lost >= 1 % vs v4 / v5 shipped wall; D27 re-bake (bake_v6 1.2)"
+  },
+  "toolchain_manifest_md5": "2288f77871da585d9e32809b03df4a09",
+  "note": "check-level flags; compose flags are in v6_build.flags; derived_flags = flags v6_build_collect derives outside provenance. Full records: v6_work/s3fix/checks/final/<n>.json"
+ }
+}

@@ -1,0 +1,193 @@
+{
+ "name": "case_m_022_left__topcow_mr_020",
+ "part_versions": {
+  "coverage": "checks_v6 1.6",
+  "folds": "checks_v6 1.6"
+ },
+ "script": "checks_v6 1.6 (2026-10-08; s3_fix: 1.6 = part coverage: the right-route pieces against the v4 / v5 SHIPPED wall (real scanned wall lost < 1 % of the piece, D27; >= 0.1 % flagged); 1.5 = D27 bake repair window (capsule-clipped cells off both references) reported not gated, only for pieces failing under 1.4; 1.4 = D26 own scanned surface as the D22 reference where v4 hid it, every cell gated, + part_versions; 1.3 2026-10-06 s2_integrate2: 1.3 =D22 surface-preserved right-route gate (fork / siphon) replaces the relief-ratio gate (ratio kept as information) + coverage report, D23 tier-A acceptance, geom_v6 1.1; 1.2 2026-10-04 s2_harden_wall_bake; 1.1: D19/D20 route gate per real section on the moved surface + RCCA prefix gate; loader_one 1.1; 1.2: part geom = geom_v6 whole-tree clearance + 1 mm kinks)",
+ "coverage": {
+  "dev_mm": 0.3,
+  "loss_max": 0.01,
+  "flag_min": 0.001,
+  "union": "/full/iso/case_m_022_left__topcow_mr_020.vtp",
+  "v4": {
+   "fork": {
+    "surface_v6": "case_m_022_left_lumen.stl",
+    "surface_ref": "case_m_022_left_lumen.stl",
+    "gate_v6": [
+     61.537,
+     128.184
+    ],
+    "gate_ref": [
+     57.552,
+     128.0
+    ],
+    "handle_windows_v6": [],
+    "mirror_v6": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_ref": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "cells": 1506,
+    "area_mm2": 1121.54,
+    "coverage": 1.0,
+    "uncovered_mm2": 0.0,
+    "lost_mm2": 0.0,
+    "deficit": 0.0,
+    "ok": true,
+    "flag": false
+   },
+   "siphon": {
+    "surface_v6": "topcow_mr_020_rICA.vtp",
+    "surface_ref": "topcow_mr_020_rICA.vtp",
+    "gate_v6": [
+     136.184,
+     228.5
+    ],
+    "gate_ref": [
+     136.0,
+     228.25
+    ],
+    "handle_windows_v6": [],
+    "mirror_v6": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_ref": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "cells": 2444,
+    "area_mm2": 1465.61,
+    "coverage": 0.999149,
+    "uncovered_mm2": 1.25,
+    "uncovered": {
+     "on_own_scan_mm2": 0.0,
+     "inside_v6_union_mm2": 1.25,
+     "s_runs_v6": [
+      [
+       191.75,
+       191.75
+      ],
+      [
+       192.5,
+       193.0
+      ]
+     ],
+     "depth_mm": {
+      "min": 0.337,
+      "median": 0.352,
+      "max": 0.393
+     }
+    },
+    "lost_mm2": 0.0,
+    "deficit": 0.0,
+    "ok": true,
+    "flag": false
+   }
+  },
+  "v5": {
+   "fork": {
+    "surface_v6": "case_m_022_left_lumen.stl",
+    "surface_ref": "case_m_022_left_lumen.stl",
+    "gate_v6": [
+     61.537,
+     128.184
+    ],
+    "gate_ref": [
+     57.552,
+     128.0
+    ],
+    "handle_windows_v6": [],
+    "mirror_v6": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_ref": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "cells": 1402,
+    "area_mm2": 1120.54,
+    "coverage": 1.0,
+    "uncovered_mm2": 0.0,
+    "lost_mm2": 0.0,
+    "deficit": 0.0,
+    "ok": true,
+    "flag": false
+   },
+   "siphon": {
+    "surface_v6": "topcow_mr_020_rICA.vtp",
+    "surface_ref": "topcow_mr_020_rICA.vtp",
+    "gate_v6": [
+     136.184,
+     228.5
+    ],
+    "gate_ref": [
+     136.0,
+     228.25
+    ],
+    "handle_windows_v6": [],
+    "mirror_v6": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_ref": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "cells": 2333,
+    "area_mm2": 1465.01,
+    "coverage": 1.0,
+    "uncovered_mm2": 0.0,
+    "lost_mm2": 0.0,
+    "deficit": 0.0,
+    "ok": true,
+    "flag": false
+   }
+  },
+  "fork": {
+   "deficit_max": 0.0,
+   "ok": true,
+   "flag": false,
+   "lost_mm2_max": 0.0
+  },
+  "siphon": {
+   "deficit_max": 0.0,
+   "ok": true,
+   "flag": false,
+   "lost_mm2_max": 0.0
+  }
+ },
+ "seconds": {
+  "coverage": 10.3,
+  "folds": 2.5
+ },
+ "gates": {
+  "route_fork_coverage_loss_lt_1pct": true,
+  "route_siphon_coverage_loss_lt_1pct": true,
+  "obj_no_fold_over": true
+ },
+ "pass": true,
+ "folds": {
+  "obj": {
+   "fold_pairs": 0,
+   "pairs": []
+  },
+  "full": {
+   "fold_pairs": 0,
+   "pairs": []
+  }
+ }
+}

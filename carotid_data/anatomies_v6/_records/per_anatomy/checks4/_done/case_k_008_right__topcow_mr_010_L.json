@@ -1,0 +1,67 @@
+{
+ "pass": true,
+ "gates": {
+  "strict_audit": true,
+  "route_fork_d22_ge_0.99": true,
+  "route_siphon_d22_ge_0.99": true,
+  "rcca_prefix_unchanged": true,
+  "va_lumen_obj_ge_0.65": true,
+  "orient_tierA_0": true,
+  "orient_v6_blocking_after_D8_0": true,
+  "loader_ok": true,
+  "geom_clearance_new_ge_0.6": true,
+  "geom_kink_new_le_60": true
+ },
+ "script": "checks_v6 1.4 (2026-10-07; s2_build: 1.4 = D26 own scanned surface as the D22 reference where v4 hid it, every cell gated, + part_versions; 1.3 2026-10-06 s2_integrate2: 1.3 =D22 surface-preserved right-route gate (fork / siphon) replaces the relief-ratio gate (ratio kept as information) + coverage report, D23 tier-A acceptance, geom_v6 1.1; 1.2 2026-10-04 s2_harden_wall_bake; 1.1: D19/D20 route gate per real section on the moved surface + RCCA prefix gate; loader_one 1.1; 1.2: part geom = geom_v6 whole-tree clearance + 1 mm kinks)",
+ "part_versions": {
+  "item1": "checks_v6 1.3",
+  "route": "checks_v6 1.3",
+  "lumen": "checks_v6 1.3",
+  "va": "checks_v6 1.3",
+  "orient": "checks_v6 1.3",
+  "loader": "checks_v6 1.3",
+  "geom": "checks_v6 1.3",
+  "route_d22": "checks_v6 1.4"
+ },
+ "d22_only_rerun": {
+  "d22_by": "checks_v6 1.4",
+  "rest_of_route_from": "checks_v6 1.3",
+  "time": "2026-10-07 22:00:25",
+  "why": "geometry and bake unchanged since the carried route pass; D26 changed only route.d22 (USER 2026-10-07 15:15)"
+ },
+ "carried_from_source": [
+  "item1",
+  "route",
+  "lumen",
+  "va",
+  "orient",
+  "loader",
+  "geom"
+ ],
+ "d22_reference": {
+  "fork": "v4",
+  "siphon": "v4"
+ },
+ "d26_flag": false,
+ "d22_values": {
+  "fork": {
+   "value": 1.0,
+   "value_v4": 1.0,
+   "value_own": 1.0,
+   "value_1p3": 1.0,
+   "no_wall_lost": true
+  },
+  "siphon": {
+   "value": 1.0,
+   "value_v4": 1.0,
+   "value_own": 1.0,
+   "value_1p3": 1.0,
+   "no_wall_lost": true
+  }
+ },
+ "source_record": "/full/checks",
+ "worker": "c4a1",
+ "check_wall_s": 197,
+ "toolchain_manifest_md5": "88ab481d24b4d59087019cbf464aba96",
+ "time": "2026-10-07 22:00:25"
+}

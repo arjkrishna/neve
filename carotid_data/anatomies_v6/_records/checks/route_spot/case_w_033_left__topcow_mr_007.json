@@ -1,0 +1,548 @@
+{
+ "name": "case_w_033_left__topcow_mr_007",
+ "part_versions": {
+  "route": "checks_v6 1.5"
+ },
+ "script": "checks_v6 1.5 (2026-10-07; s2_build: 1.5 = D27 bake repair window (capsule-clipped cells off both references) reported not gated, only for pieces failing under 1.4; 1.4 = D26 own scanned surface as the D22 reference where v4 hid it, every cell gated, + part_versions; 1.3 2026-10-06 s2_integrate2: 1.3 =D22 surface-preserved right-route gate (fork / siphon) replaces the relief-ratio gate (ratio kept as information) + coverage report, D23 tier-A acceptance, geom_v6 1.1; 1.2 2026-10-04 s2_harden_wall_bake; 1.1: D19/D20 route gate per real section on the moved surface + RCCA prefix gate; loader_one 1.1; 1.2: part geom = geom_v6 whole-tree clearance + 1 mm kinks)",
+ "route": {
+  "cut6": 44.124002058404926,
+  "cut4": 44.124002058404926,
+  "mesh_v6_record_k24": {
+   "fork": {
+    "frac_0.3mm": 0.095,
+    "frac_0.5mm": 0.061
+   },
+   "siphon": {
+    "frac_0.3mm": 0.3852,
+    "frac_0.5mm": 0.2303
+   }
+  },
+  "mesh_v4_record": {
+   "fork": {
+    "frac_0.3mm": 0.0402,
+    "frac_0.5mm": 0.0037
+   },
+   "siphon": {
+    "frac_0.3mm": 0.4009,
+    "frac_0.5mm": 0.2341
+   }
+  },
+  "sections": {
+   "spans_v6": {
+    "fork": [
+     44.124002058404926,
+     122.71552204778627
+    ],
+    "siphon": [
+     130.11335910829848,
+     1000000000.0
+    ]
+   },
+   "spans_v4": {
+    "fork": [
+     44.124002058404926,
+     122.60216293948778
+    ],
+    "siphon": [
+     130.0,
+     1000000000.0
+    ]
+   },
+   "tube_only_v6": [],
+   "tube_only_v4": [],
+   "v6_k24": {
+    "fork": {
+     "area_mm2": 1351.07,
+     "cells": 19327,
+     "frac_0.3mm": 0.10764,
+     "frac_0.5mm": 0.0693,
+     "frac_rel_0.15": 0.0749,
+     "range_mm": [
+      44.12,
+      122.72
+     ]
+    },
+    "siphon": {
+     "area_mm2": 1990.49,
+     "cells": 29627,
+     "frac_0.3mm": 0.38664,
+     "frac_0.5mm": 0.23087,
+     "frac_rel_0.15": 0.31983,
+     "range_mm": [
+      130.11,
+      1000000000.0
+     ]
+    }
+   },
+   "v4_k24": {
+    "fork": {
+     "area_mm2": 1262.2,
+     "cells": 18440,
+     "frac_0.3mm": 0.04301,
+     "frac_0.5mm": 0.00423,
+     "frac_rel_0.15": 0.0099,
+     "range_mm": [
+      44.12,
+      122.6
+     ]
+    },
+    "siphon": {
+     "area_mm2": 2003.58,
+     "cells": 29625,
+     "frac_0.3mm": 0.40337,
+     "frac_0.5mm": 0.23595,
+     "frac_rel_0.15": 0.33338,
+     "range_mm": [
+      130.0,
+      1000000000.0
+     ]
+    }
+   },
+   "ratio_k24": {
+    "fork": 2.502688748740936,
+    "siphon": 0.9585104627128448
+   },
+   "v6_exact": {
+    "fork": {
+     "area_mm2": 1351.07,
+     "cells": 19327,
+     "frac_0.3mm": 0.10764,
+     "frac_0.5mm": 0.0693,
+     "frac_rel_0.15": 0.0749,
+     "range_mm": [
+      44.12,
+      122.72
+     ]
+    },
+    "siphon": {
+     "area_mm2": 1990.49,
+     "cells": 29627,
+     "frac_0.3mm": 0.38664,
+     "frac_0.5mm": 0.23087,
+     "frac_rel_0.15": 0.31983,
+     "range_mm": [
+      130.11,
+      1000000000.0
+     ]
+    }
+   },
+   "v4_exact": {
+    "fork": {
+     "area_mm2": 1262.12,
+     "cells": 18439,
+     "frac_0.3mm": 0.04295,
+     "frac_0.5mm": 0.00423,
+     "frac_rel_0.15": 0.0099,
+     "range_mm": [
+      44.12,
+      122.6
+     ]
+    },
+    "siphon": {
+     "area_mm2": 2003.58,
+     "cells": 29625,
+     "frac_0.3mm": 0.40337,
+     "frac_0.5mm": 0.23595,
+     "frac_rel_0.15": 0.33338,
+     "range_mm": [
+      130.0,
+      1000000000.0
+     ]
+    }
+   },
+   "ratio_exact": {
+    "fork": 2.50632151782733,
+    "siphon": 0.9585104627128448
+   }
+  },
+  "rcca_prefix": {
+   "points_compared_v4": 44,
+   "identical_v4": true,
+   "points_compared_host": 44,
+   "identical_host": false,
+   "max_diff_host_mm": 4.22515869140625
+  },
+  "k24": {
+   "rrd_v6": {
+    "fork": {
+     "frac_0.3mm": 0.095,
+     "frac_0.5mm": 0.061
+    },
+    "siphon": {
+     "frac_0.3mm": 0.3852,
+     "frac_0.5mm": 0.2303
+    }
+   },
+   "rrd_v4": {
+    "fork": {
+     "frac_0.3mm": 0.0402,
+     "frac_0.5mm": 0.0037
+    },
+    "siphon": {
+     "frac_0.3mm": 0.4009,
+     "frac_0.5mm": 0.2341
+    }
+   },
+   "ratio": {
+    "fork": {
+     "frac_0.3mm": 2.359821030770032,
+     "frac_0.5mm": 16.554795345676414
+    },
+    "siphon": {
+     "frac_0.3mm": 0.9609753362666184,
+     "frac_0.5mm": 0.9838498761693637
+    }
+   },
+   "beyond_8mm_of_VAs": {
+    "fork": {
+     "v6": 0.11385838190825312,
+     "v4": 0.039255992392490544
+    },
+    "siphon": {
+     "v6": 0.4326731516521497,
+     "v4": 0.40087626610535304
+    }
+   },
+   "area_mm2": {
+    "fork": {
+     "v6": 1537.9918703619128,
+     "v4": 1447.965598678527
+    },
+    "siphon": {
+     "v6": 2103.382603843418,
+     "v4": 2109.143434987089
+    }
+   }
+  },
+  "exact": {
+   "rrd_v6": {
+    "fork": {
+     "frac_0.3mm": 0.095,
+     "frac_0.5mm": 0.061
+    },
+    "siphon": {
+     "frac_0.3mm": 0.3852,
+     "frac_0.5mm": 0.2303
+    }
+   },
+   "rrd_v4": {
+    "fork": {
+     "frac_0.3mm": 0.0402,
+     "frac_0.5mm": 0.0037
+    },
+    "siphon": {
+     "frac_0.3mm": 0.4009,
+     "frac_0.5mm": 0.2341
+    }
+   },
+   "ratio": {
+    "fork": {
+     "frac_0.3mm": 2.363021247403479,
+     "frac_0.5mm": 16.553855370099257
+    },
+    "siphon": {
+     "frac_0.3mm": 0.9609753362666184,
+     "frac_0.5mm": 0.9838498761693637
+    }
+   },
+   "beyond_8mm_of_VAs": {
+    "fork": {
+     "v6": 0.11385838190825312,
+     "v4": 0.03919782623714293
+    },
+    "siphon": {
+     "v6": 0.4326731516521497,
+     "v4": 0.40087626610535304
+    }
+   },
+   "area_mm2": {
+    "fork": {
+     "v6": 1537.9918703619128,
+     "v4": 1447.8833836906094
+    },
+    "siphon": {
+     "v6": 2103.382603843418,
+     "v4": 2109.143434987089
+    }
+   }
+  },
+  "d13": {
+   "reca_tip_v6_vs_v4": "absent_v4",
+   "declared": "v4",
+   "baseline_used": "v4"
+  },
+  "gate_ratio_legacy_130": {
+   "fork": 2.363021247403479,
+   "siphon": 0.9609753362666184
+  },
+  "gate_ratio": {
+   "fork": 2.50632151782733,
+   "siphon": 0.9585104627128448
+  },
+  "gate_basis": "per section (fork = lower_R slice [host_cut, host_cut + cca + min(ica, ica_real)], siphon = siphon_R slice), exact ownership, baseline v4",
+  "v5_exact_ratio": {
+   "fork": {
+    "frac_0.3mm": 2.302818965293056,
+    "frac_0.5mm": 15.746762877170719
+   },
+   "siphon": {
+    "frac_0.3mm": 1.0,
+    "frac_0.5mm": 1.0
+   }
+  },
+  "d22": {
+   "baseline": "v4",
+   "min": 0.99,
+   "dev_mm": 0.3,
+   "fork": {
+    "surface_v6": "case_w_033_left_lumen.stl",
+    "surface_v4": "case_w_033_left_lumen.stl",
+    "same_surface": true,
+    "mirror_v6": [
+     -1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_v4": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "span_v6": [
+     44.124,
+     122.716
+    ],
+    "span_v4": [
+     44.124,
+     122.602
+    ],
+    "zone_mm": 7.0,
+    "gate_v6": [
+     51.124,
+     120.716
+    ],
+    "arclength_offset_mm": 0.0,
+    "rcca_carried_max_mm": 0.1134,
+    "rcca_carried_p95_mm": 0.1134,
+    "handle_windows_v6": [],
+    "handle_windows_v4_mapped": [],
+    "own_surface": {
+     "path": "/opt/eve_training/carotid_data/v2/carotid_bifurcation_database/case_w_033/case_w_033_left_lumen.stl",
+     "mirror": [
+      -1.0,
+      1.0,
+      1.0
+     ],
+     "tris": 119648
+    },
+    "gate": {
+     "area_mm2": 1242.76,
+     "cells": 17757,
+     "within_0.3": 0.938518,
+     "p50_mm": 0.0038,
+     "p95_mm": 1.9667,
+     "max_mm": 3.4,
+     "area_gt_0.3_mm2": 76.41,
+     "within_0.3_own": 0.996086,
+     "area_off_v4_on_own_mm2": 71.54,
+     "area_off_both_mm2": 4.86,
+     "max_off_both_own_mm": 0.673
+    },
+    "gate_strict": {
+     "area_mm2": 1254.82,
+     "cells": 17934,
+     "within_0.3": 0.929494,
+     "p50_mm": 0.0039,
+     "p95_mm": 2.2697,
+     "max_mm": 3.4,
+     "area_gt_0.3_mm2": 88.47,
+     "within_0.3_own": 0.995064,
+     "area_off_v4_on_own_mm2": 82.28,
+     "area_off_both_mm2": 6.19,
+     "max_off_both_own_mm": 0.673
+    },
+    "v4_occupied": {
+     "area_mm2": 12.07,
+     "cells": 177,
+     "within_0.3": 0.0,
+     "p50_mm": 2.7529,
+     "p95_mm": 3.167,
+     "max_mm": 3.185,
+     "area_gt_0.3_mm2": 12.07,
+     "within_0.3_own": 0.889796,
+     "area_off_v4_on_own_mm2": 10.74,
+     "area_off_both_mm2": 1.33,
+     "max_off_both_own_mm": 0.469
+    },
+    "zone": {
+     "area_mm2": 137.12,
+     "cells": 1959,
+     "within_0.3": 0.661698,
+     "p50_mm": 0.1829,
+     "p95_mm": 0.5959,
+     "max_mm": 1.217,
+     "area_gt_0.3_mm2": 46.39,
+     "within_0.3_own": 0.673234,
+     "area_off_v4_on_own_mm2": 1.58,
+     "area_off_both_mm2": 44.81,
+     "max_off_both_own_mm": 1.063
+    },
+    "windows": null,
+    "coverage": {
+     "area_mm2": 1166.06,
+     "within_0.3": 1.0,
+     "p95_mm": 0.0119,
+     "max_mm": 0.069,
+     "area_gt_0.3_mm2": 0.0
+    },
+    "value_1p3": 0.938518,
+    "value_v4": 0.929494,
+    "value_own": 0.995064,
+    "value_strict": 0.929494,
+    "no_wall_lost": true,
+    "d22_reference": "own_surface",
+    "d26_flag": true,
+    "value": 0.995064,
+    "ok": true,
+    "strict_flag": true,
+    "coverage_flag": false,
+    "d27_flag": false
+   },
+   "siphon": {
+    "surface_v6": "topcow_mr_007_rICA.vtp",
+    "surface_v4": "topcow_mr_007_rICA.vtp",
+    "same_surface": true,
+    "mirror_v6": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mirror_v4": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "span_v6": [
+     130.113,
+     244.25
+    ],
+    "span_v4": [
+     130.0,
+     244.25
+    ],
+    "zone_mm": 5.0,
+    "gate_v6": [
+     135.113,
+     242.25
+    ],
+    "arclength_offset_mm": 0.25,
+    "rcca_carried_max_mm": 0.1238,
+    "rcca_carried_p95_mm": 0.1238,
+    "handle_windows_v6": [
+     [
+      224.15,
+      228.09
+     ]
+    ],
+    "handle_windows_v4_mapped": [],
+    "own_surface": {
+     "path": "topbrain_data/surfaces/topcow_mr_007_rICA.vtp",
+     "mirror": [
+      1.0,
+      1.0,
+      1.0
+     ],
+     "tris": 47716
+    },
+    "gate": {
+     "area_mm2": 1853.84,
+     "cells": 27603,
+     "within_0.3": 1.0,
+     "p50_mm": 0.0049,
+     "p95_mm": 0.0206,
+     "max_mm": 0.298,
+     "area_gt_0.3_mm2": 0.0,
+     "within_0.3_own": 1.0,
+     "area_off_v4_on_own_mm2": 0.0,
+     "area_off_both_mm2": 0.0,
+     "max_off_both_own_mm": null
+    },
+    "gate_strict": {
+     "area_mm2": 1853.84,
+     "cells": 27603,
+     "within_0.3": 1.0,
+     "p50_mm": 0.0049,
+     "p95_mm": 0.0206,
+     "max_mm": 0.298,
+     "area_gt_0.3_mm2": 0.0,
+     "within_0.3_own": 1.0,
+     "area_off_v4_on_own_mm2": 0.0,
+     "area_off_both_mm2": 0.0,
+     "max_off_both_own_mm": null
+    },
+    "v4_occupied": null,
+    "zone": {
+     "area_mm2": 83.81,
+     "cells": 1181,
+     "within_0.3": 1.0,
+     "p50_mm": 0.0342,
+     "p95_mm": 0.1166,
+     "max_mm": 0.253,
+     "area_gt_0.3_mm2": 0.0,
+     "within_0.3_own": 1.0,
+     "area_off_v4_on_own_mm2": 0.0,
+     "area_off_both_mm2": 0.0,
+     "max_off_both_own_mm": null
+    },
+    "windows": {
+     "area_mm2": 88.45,
+     "cells": 1331,
+     "within_0.3": 0.643352,
+     "p50_mm": 0.2289,
+     "p95_mm": 0.573,
+     "max_mm": 0.778,
+     "area_gt_0.3_mm2": 31.54,
+     "within_0.3_own": 0.647425,
+     "area_off_v4_on_own_mm2": 0.36,
+     "area_off_both_mm2": 31.18,
+     "max_off_both_own_mm": 0.819
+    },
+    "coverage": {
+     "area_mm2": 1851.16,
+     "within_0.3": 1.0,
+     "p95_mm": 0.0206,
+     "max_mm": 0.25,
+     "area_gt_0.3_mm2": 0.0
+    },
+    "value_1p3": 1.0,
+    "value_v4": 1.0,
+    "value_own": 1.0,
+    "value_strict": 1.0,
+    "no_wall_lost": true,
+    "d22_reference": "v4",
+    "d26_flag": false,
+    "value": 1.0,
+    "ok": true,
+    "strict_flag": false,
+    "coverage_flag": false,
+    "d27_flag": false
+   },
+   "reference": {
+    "fork": "own_surface",
+    "siphon": "v4"
+   },
+   "d26_flag": true,
+   "d27_flag": false
+  },
+  "gate_ratio_note": "information since checks_v6 1.3 (the gate is D22: rec.d22)"
+ },
+ "seconds": {
+  "route": 255.6
+ },
+ "gates": {
+  "route_fork_d22_ge_0.99": true,
+  "route_siphon_d22_ge_0.99": true,
+  "rcca_prefix_unchanged": true
+ },
+ "pass": true
+}

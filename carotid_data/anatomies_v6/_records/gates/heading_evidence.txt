@@ -1,0 +1,53 @@
+== A. TopBrain raw centrelines (claimed RAS: +x patient right, +y anterior, +z superior)
+  A1 rICA at +x of lICA (mean x): 25/25 -> +x = patient right
+  A2 ICA at +y of the same-side VA (ICA anterior of VA): 50/50 -> +y = anterior
+  A3 ICA / VA rise in +z (end above start): 100/100 -> +z = superior
+  A4 ECA piece vs ICA at the same z: ECA at +y (anterior) 17/29 median dy 0.7 mm; ECA lateral of ICA 29/29, median 17.7 mm
+  A5 VA ends: separation median 5.5 mm, rVA end at +x of lVA end (right of it) in 25/25
+  chirality: (+x right, +y anterior, +z superior) = RAS, right-handed -> TopBrain sources are not mirrored
+== B. host branch frame (claimed LPS-like: +x patient left, +y posterior, +z superior)
+  z 440: RCCA x -11.3 y 20.7 | LCCA x 46.7 y 16.0 | RVA x -4.1 y 43.0 | LVA x 48.9 y 35.5
+  z 470: RCCA x -10.7 y 27.2 | LCCA x 45.8 y 18.1 | RVA x 6.2 y 38.2 | LVA x 37.0 y 35.1
+  z 500: RCCA x -13.1 y 24.7 | LCCA x 45.8 y 14.7 | RVA x 3.2 y 31.3 | LVA x 34.0 y 31.2
+  B1 RCCA at -x of LCCA at every level: True -> +x = patient left (if labels are anatomical)
+  B2 both VAs at +y of both CCAs at every level: True -> +y = posterior
+  B3a every route rises (end z - start z): {'RCCA': 185.1, 'LCCA': 210.6, 'RVA': 155.8, 'LVA': 141.9}
+  B3 route starts: RCCA at [-0.4, 24.1, 416.2] on [(' (11)', 'end')]; LCCA at [23.2, 15.7, 384.7] on [(' (0)', 'mid'), (' (11)', 'start')]; RVA at [-0.4, 24.1, 416.2] on [(' (11)', 'end')]; LVA at [47.5, 34.5, 430.1] on [(' (18)', 'end'), (' (19)', 'start')]
+  B3 RCCA and RVA start at the same point (a shared trunk = brachiocephalic): True; trunk segment [' (11)'] runs [23.2, 15.7, 384.7] -> [-0.4, 24.1, 416.2] (48.1 mm, toward - x)
+  B3 long segments ending near z 340-420 (subclavians to the arms), end x: [(' (17)', -87.8), (' (19)', 140.7)]
+  B5 arch segment  (0) from [3.9, 10.2, 367.5] to [46.7, 33.9, 392.0]: dx +42.8 (toward +x), dy +23.7 (toward +y); the arch runs from the ascending aorta (anterior, right) to the descending aorta (posterior, left)
+  B4 chirality: (+x left, +y posterior, +z superior) = LPS, right-handed (x cross y = z) -> proper
+  host CCA direction (z 420-470, branch frame): {'RCCA': [-0.087, 0.082, 0.993], 'LCCA': [0.081, -0.087, 0.993]}
+== C. Zenodo lower forks (carotid_bifurcation_database, scanner frame)
+  forks loaded 138 (errors 1); patients with both sides 61
+  C1 left-fork bifurcation x minus right-fork x: positive in 22/61 (median -50.3 mm, min -70.9, max 68.6)
+  C2 CCA-inlet -> ICA-tip direction z > 0 in 138/138 (median z 0.97)
+  C3 [w5_15 mm] ECA - ICA y: negative in 48/138, positive in 77/138 (median 1.38 mm; |dy| > 2 mm: neg 33 / pos 64)
+  C4 [w5_15 mm] ECA lateral of ICA (lateral = -x on a right fork, +x on a left, IF +x = left): 65/138 (median 0.00 mm)
+  C3 [w10_20 mm] ECA - ICA y: negative in 49/138, positive in 82/138 (median 2.64 mm; |dy| > 2 mm: neg 32 / pos 70)
+  C4 [w10_20 mm] ECA lateral of ICA (lateral = -x on a right fork, +x on a left, IF +x = left): 73/138 (median 0.09 mm)
+  C3b both sides of one patient agree on the ECA y sign: 37/61
+  C5 CCA distal 25 mm direction: y component median 0.14 (neg 48 / pos 90), z median 0.94
+  C6 per-patient frame (the scanner frames are NOT one frame):
+    bilateral patients: +x = left (LPS-like) 22, +x = right (RAS-like) 39
+    rule for one-sided patients (sign of the bifurcation x relative to the scanner origin) agrees with the bilateral answer on 121/122 forks; applied to 16 one-sided patients (LPS-like 7, RAS-like 9)
+    by group (LPS-like, RAS-like): {'k': [6, 6], 'm': [17, 0], 'w': [6, 42]}
+    CCA distal y-lean sign opposite to xdir (frames differ by a 180 deg turn about z, x and y flip together): 112/122; same sign (an x-only mirror) 10
+    landmarks in anatomical LPS coordinates, assuming proper frames (anterior = -y; medial = toward the midline):
+    CCA distal 25 mm, going up         n 138  anterior 127 (median +0.24)  medial  26 (median -0.15)
+    ECA - ICA, 10-20 mm window         n 138  anterior  91 (median +4.30)  medial  74 (median +0.13)
+    ICA tip - bifurcation              n 138  anterior 115 (median +7.50)  medial  90 (median +2.20)
+    ICA distal 10 mm direction         n 138  anterior 110 (median +0.28)  medial  88 (median +0.17)
+    ECA tip - bifurcation              n 138  anterior 127 (median +8.50)  medial  79 (median +1.13)
+    ECA - ICA, 5-15 mm window          n 138  anterior  90 (median +2.72)  medial  66 (median +0.00)
+    TopBrain ICA lowest 10 mm (known RAS) n  50  anterior  13 (median -0.17)  medial  17 (median -0.14)
+== D. v5 placed forks (seam 1), against the per-patient anatomical map (I for LPS-like, Rz(180) for RAS-like)
+  lower    n 223 (contralateral fork 113): |yaw vs map| median 135.5, >45 213, >90 181; tilt median 11.3; bend to the host tangent if posed by the map: median 38.5, <=30 55, <=45 168; placed ECA anterior of ICA 78/223
+      same-side: n 110, |yaw| median 155.8, >45 105, >90 95; bend for the map <=45 64 (median 42.9); map+180: |yaw| median 24.2, bend <=45 105; placed ECA anterior 26
+      contralateral: n 113, |yaw| median 117.1, >45 108, >90 86; bend for the map <=45 104 (median 34.7); map+180: |yaw| median 62.9, bend <=45 113; placed ECA anterior 52
+      siphon seam < 10 mm from the midline: 30 (|yaw| median 134.0) vs >= 10 mm: 193 (|yaw| median 137.3)
+  lower_L  n 223 (contralateral fork 101): |yaw vs map| median 66.1, >45 140, >90 87; tilt median 12.3; bend to the host tangent if posed by the map: median 22.4, <=30 160, <=45 216; placed ECA anterior of ICA 122/223
+      same-side: n 122, |yaw| median 75.0, >45 87, >90 58; bend for the map <=45 115 (median 22.9); map+180: |yaw| median 105.0, bend <=45 116; placed ECA anterior 52
+      contralateral: n 101, |yaw| median 48.2, >45 53, >90 29; bend for the map <=45 101 (median 21.9); map+180: |yaw| median 131.8, bend <=45 85; placed ECA anterior 70
+      siphon seam < 10 mm from the midline: 0 (|yaw| median nan) vs >= 10 mm: 223 (|yaw| median 66.1)
+  same Zenodo patient on both sides: n 168, |yaw_R - yaw_L| median 105.7, >45 136, >90 98

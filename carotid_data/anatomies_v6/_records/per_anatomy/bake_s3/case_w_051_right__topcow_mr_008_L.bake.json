@@ -1,0 +1,658 @@
+{
+ "name": "case_w_051_right__topcow_mr_008_L",
+ "script": "bake_v6 1.2 (2026-10-08; s3_fix: 1.2 = L1 opt-in lattice shift + L2 opt-in route-island bridge (defaults off = 1.1); 1.1 2026-10-04; s2_harden_wall_bake: bake_v5b + E1-E7 + C4 + D20; = pilot bake_v6p 1.2 + bake_sections_v6 + obj_fix_va + c4_apply, generalised; 1.0.1: the E6 source-centreline fallback tested and switched off by default; 1.1: D20 mirrored / re-posed forks -- E4 mirror-only = same surface, E6 forks + mirror-aware back-map + the composer's blend_disp, chirality record)",
+ "started": "2026-10-08 06:17:53",
+ "tree": "/s3/trees/final",
+ "lattice_shift_mm": [
+  0.0,
+  0.0,
+  0.225
+ ],
+ "route_island_bridge_on": false,
+ "c4": {
+  "script": "bake_v6 1.2 (2026-10-08; s3_fix: 1.2 = L1 opt-in lattice shift + L2 opt-in route-island bridge (defaults off = 1.1); 1.1 2026-10-04; s2_harden_wall_bake: bake_v5b + E1-E7 + C4 + D20; = pilot bake_v6p 1.2 + bake_sections_v6 + obj_fix_va + c4_apply, generalised; 1.0.1: the E6 source-centreline fallback tested and switched off by default; 1.1: D20 mirrored / re-posed forks -- E4 mirror-only = same surface, E6 forks + mirror-aware back-map + the composer's blend_disp, chirality record)",
+  "spec": "/repo/carotid_data/v6_work/wall/c4/c4_tube_override.json",
+  "applied": false,
+  "why_not": "no topcow_mr_021_lVA top in this anatomy"
+ },
+ "changed_carotid": [
+  "eca_L",
+  "eca_R",
+  "lower_L",
+  "lower_R",
+  "siphon_L",
+  "siphon_R"
+ ],
+ "pin": {
+  "eca_L": {
+   "changed": true,
+   "points_same": false,
+   "xform_same": false,
+   "same_surface": true,
+   "s0_v6": 0.0,
+   "s0_v4": 0.0,
+   "mirror_v6": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirror_v4": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored_vs_v4": false,
+   "v4_tube_only_kept": false
+  },
+  "eca_R": {
+   "changed": true,
+   "points_same": false,
+   "xform_same": false,
+   "same_surface": true,
+   "s0_v6": 0.0,
+   "s0_v4": 0.0,
+   "mirror_v6": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirror_v4": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored_vs_v4": false,
+   "v4_tube_only_kept": false
+  },
+  "lower_L": {
+   "changed": true,
+   "points_same": false,
+   "xform_same": false,
+   "same_surface": true,
+   "s0_v6": 82.70284082077569,
+   "s0_v4": 82.70284082077569,
+   "mirror_v6": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirror_v4": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored_vs_v4": false,
+   "v4_stretches": [
+    [
+     143.89,
+     148.32
+    ]
+   ],
+   "window_map_dev_from_shift_mm": 0.028296974294789834,
+   "pinned_stretches_shifted_by_mm": 0.0,
+   "v4_tube_only_kept": false
+  },
+  "lower_R": {
+   "changed": true,
+   "points_same": false,
+   "xform_same": false,
+   "same_surface": true,
+   "s0_v6": 46.77142677728345,
+   "s0_v4": 46.77142677728345,
+   "mirror_v6": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirror_v4": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored_vs_v4": false,
+   "v4_tube_only_kept": false
+  },
+  "siphon_L": {
+   "changed": true,
+   "points_same": false,
+   "xform_same": false,
+   "same_surface": true,
+   "s0_v6": 157.59116760141586,
+   "s0_v4": 157.56286587981097,
+   "mirror_v6": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirror_v4": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored_vs_v4": false,
+   "v4_stretches": [
+    [
+     225.94,
+     235.08
+    ]
+   ],
+   "window_map_dev_from_shift_mm": 0.06963547414093796,
+   "pinned_stretches_shifted_by_mm": 0.028301721604890417,
+   "v4_tube_only_kept": false
+  },
+  "siphon_R": {
+   "changed": true,
+   "points_same": false,
+   "xform_same": false,
+   "same_surface": true,
+   "s0_v6": 130.06876573526876,
+   "s0_v4": 130.0,
+   "mirror_v6": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirror_v4": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored_vs_v4": false,
+   "v4_stretches": [
+    [
+     201.62,
+     203.05
+    ]
+   ],
+   "window_map_dev_from_shift_mm": 9.462289938255708e-06,
+   "pinned_stretches_shifted_by_mm": 0.06876573526875518,
+   "v4_tube_only_kept": false
+  }
+ },
+ "seconds": 176.8,
+ "peak_rss_gb": 1.786,
+ "calls": [
+  {
+   "call": 0,
+   "far_clamp": false,
+   "why": null,
+   "started_s": 1.1,
+   "ok": true,
+   "passed": true,
+   "rung": "1 pinned, VA whole (va margin 0.5)",
+   "flags": [],
+   "attempts": 1,
+   "seconds": 174.6,
+   "vmhwm_gb_after": 1.786
+  }
+ ],
+ "error": null,
+ "passed": true,
+ "rung": "1 pinned, VA whole (va margin 0.5)",
+ "flags": [],
+ "union": "owned (sdf_union_v4)",
+ "margin_mm": 1.0,
+ "va_margin_mm": 0.5,
+ "far_clamp": {
+  "used": false,
+  "why": null
+ },
+ "sections_tube_only": [],
+ "suppressed_stretches_mm": {
+  "siphon_R": [
+   [
+    201.69,
+    203.12
+   ]
+  ],
+  "lower_L": [
+   [
+    143.89,
+    148.32
+   ]
+  ],
+  "siphon_L": [
+   [
+    225.97,
+    235.11
+   ]
+  ]
+ },
+ "va_tubed": {
+  "lower_R": {
+   "stretch_mm": [
+    46.77,
+    120.68
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "eca_R": {
+   "stretch_mm": [
+    0.0,
+    17.46
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "siphon_R": {
+   "stretch_mm": [
+    130.07,
+    215.76
+   ],
+   "windows_mm": [
+    [
+     201.69,
+     203.12
+    ]
+   ],
+   "n_windows": 1,
+   "tubed_mm": 1.43,
+   "tubed_frac": 0.0167,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "lower_L": {
+   "stretch_mm": [
+    82.7,
+    156.64
+   ],
+   "windows_mm": [
+    [
+     143.89,
+     148.32
+    ]
+   ],
+   "n_windows": 1,
+   "tubed_mm": 4.43,
+   "tubed_frac": 0.0599,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "eca_L": {
+   "stretch_mm": [
+    0.0,
+    29.57
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "siphon_L": {
+   "stretch_mm": [
+    157.59,
+    241.32
+   ],
+   "windows_mm": [
+    [
+     225.97,
+     235.11
+    ]
+   ],
+   "n_windows": 1,
+   "tubed_mm": 9.14,
+   "tubed_frac": 0.1092,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "va_R": {
+   "stretch_mm": [
+    184.39,
+    208.3
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "va_L": {
+   "stretch_mm": [
+    184.26,
+    212.19
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "vaC_R": {
+   "stretch_mm": [
+    42.17,
+    184.39
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "vaC_L": {
+   "stretch_mm": [
+    0.0,
+    184.26
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "scC_R": {
+   "stretch_mm": [
+    18.99,
+    60.4
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "scD_R": {
+   "stretch_mm": [
+    0.0,
+    81.37
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "scC_L": {
+   "stretch_mm": [
+    24.86,
+    46.59
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "scD_L": {
+   "stretch_mm": [
+    0.0,
+    93.64
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  },
+  "scJ_L": {
+   "stretch_mm": [
+    0.0,
+    18.44
+   ],
+   "windows_mm": [],
+   "n_windows": 0,
+   "tubed_mm": 0.0,
+   "tubed_frac": 0.0,
+   "tubed_beyond_mm": 0.0,
+   "whole_tube": false
+  }
+ },
+ "attempts": 1,
+ "bake_one_seconds": 174.1,
+ "obj_tris": 23500,
+ "obj_tris_budget": 23500,
+ "full_tris": 60000,
+ "routes": {
+  "RCCA": {
+   "lumen_min_mm": 1.543,
+   "lumen_min_at_mm": 189.6,
+   "declared_there_mm": 1.648,
+   "median_deficit_mm": 0.072,
+   "route_pts_outside": 0,
+   "navigable": true
+  },
+  "LCCA": {
+   "lumen_min_mm": 1.084,
+   "lumen_min_at_mm": 230.6,
+   "declared_there_mm": 1.161,
+   "median_deficit_mm": 0.092,
+   "route_pts_outside": 0,
+   "navigable": true
+  }
+ },
+ "centerline_pts_outside": 0,
+ "right_route_detail": {
+  "fork": {
+   "frac_0.3mm": 0.0845,
+   "frac_0.5mm": 0.0365
+  },
+  "siphon": {
+   "frac_0.3mm": 0.4412,
+   "frac_0.5mm": 0.3068
+  }
+ },
+ "decimation": {
+  "full": "vtk_quadric",
+  "full_budget": 60000,
+  "obj": "vcg_quadric_preserve_topology_area_weighted",
+  "obj_budgets_rejected": []
+ },
+ "iso": "/s3/iso/final/case_w_051_right__topcow_mr_008_L.vtp",
+ "blend_morph": {
+  "lower_R": {
+   "morphed": true,
+   "blend_mm": 6.0,
+   "rigid_from": "v5 back-map",
+   "max_disp_mm": 0.89,
+   "vertices_moved": 4838,
+   "rigid_rebuild_err_mm": 5e-05
+  },
+  "siphon_R": {
+   "morphed": false,
+   "why": "no blend"
+  },
+  "lower_L": {
+   "morphed": true,
+   "blend_mm": 5.0,
+   "rigid_from": "v5 back-map",
+   "max_disp_mm": 0.894,
+   "vertices_moved": 4563,
+   "rigid_rebuild_err_mm": 5e-05
+  },
+  "siphon_L": {
+   "morphed": true,
+   "blend_mm": 4.0,
+   "rigid_from": "v5 back-map",
+   "max_disp_mm": 0.3,
+   "vertices_moved": 1831,
+   "rigid_rebuild_err_mm": 5e-05
+  }
+ },
+ "chirality": {
+  "lower_R": {
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": false,
+   "signed_volume_mm3": 3422.88,
+   "outward": true
+  },
+  "eca_R": {
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": false,
+   "signed_volume_mm3": 3427.68,
+   "outward": true
+  },
+  "siphon_R": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 2441.33,
+   "outward": true
+  },
+  "lower_L": {
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": false,
+   "signed_volume_mm3": 3655.41,
+   "outward": true
+  },
+  "eca_L": {
+   "mirror": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": false,
+   "signed_volume_mm3": 3661.99,
+   "outward": true
+  },
+  "siphon_L": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 2531.23,
+   "outward": true
+  },
+  "va_R": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 483.39,
+   "outward": true
+  },
+  "va_L": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 248.86,
+   "outward": true
+  },
+  "vaC_R": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 1938.71,
+   "outward": true
+  },
+  "vaC_L": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 2439.05,
+   "outward": true
+  },
+  "scC_R": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 6047.32,
+   "outward": true
+  },
+  "scD_R": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 6047.32,
+   "outward": true
+  },
+  "scC_L": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 8465.09,
+   "outward": true
+  },
+  "scD_L": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 8465.09,
+   "outward": true
+  },
+  "scJ_L": {
+   "mirror": [
+    -1.0,
+    1.0,
+    1.0
+   ],
+   "mirrored": true,
+   "signed_volume_mm3": 8465.09,
+   "outward": true
+  }
+ },
+ "e7": {
+  "script": "bake_v6 1.2 (2026-10-08; s3_fix: 1.2 = L1 opt-in lattice shift + L2 opt-in route-island bridge (defaults off = 1.1); 1.1 2026-10-04; s2_harden_wall_bake: bake_v5b + E1-E7 + C4 + D20; = pilot bake_v6p 1.2 + bake_sections_v6 + obj_fix_va + c4_apply, generalised; 1.0.1: the E6 source-centreline fallback tested and switched off by default; 1.1: D20 mirrored / re-posed forks -- E4 mirror-only = same surface, E6 forks + mirror-aware back-map + the composer's blend_disp, chirality record)",
+  "need_mm": 0.65,
+  "step_mm": 0.05,
+  "before": {
+   "RVA": 0.853,
+   "LVA": 1.129
+  },
+  "tried": [],
+  "date": "2026-10-08 06:20:50",
+  "result": "ok as baked"
+ },
+ "bake_version": "bake_v6 1.2 (2026-10-08; s3_fix: 1.2 = L1 opt-in lattice shift + L2 opt-in route-island bridge (defaults off = 1.1); 1.1 2026-10-04; s2_harden_wall_bake: bake_v5b + E1-E7 + C4 + D20; = pilot bake_v6p 1.2 + bake_sections_v6 + obj_fix_va + c4_apply, generalised; 1.0.1: the E6 source-centreline fallback tested and switched off by default; 1.1: D20 mirrored / re-posed forks -- E4 mirror-only = same surface, E6 forks + mirror-aware back-map + the composer's blend_disp, chirality record)",
+ "md5": {
+  "vessel_architecture_collision.obj": "fa8ce0889c236f987c32f9756b64f4ee",
+  "collision_full.vtp": "401a8b3f47eddc56a319c41e73083ad0"
+ }
+}

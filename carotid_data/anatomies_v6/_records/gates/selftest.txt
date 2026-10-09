@@ -1,0 +1,39 @@
+== v5: anatomies 223 (errors 0); tier A 141 (siphon 47, VA 115); primary 218; v6 failing 223
+   tier A by piece {'RICA': 18, 'LICA': 43, 'RECA_tip': 5, 'LECA_tip': 11, 'RVA_top': 94, 'LVA_top': 94}
+   primary by piece {'RICA': 31, 'LICA': 58, 'RECA_tip': 16, 'LECA_tip': 23, 'RVA_top': 156, 'LVA_top': 177}
+   classes (pieces) {'ECA|any': 39, 'ECA|tierA': 16, 'ECA|tilt_only': 23, 'L_PITCH|any': 50, 'L_PITCH|tierA': 35, 'L_PITCH|tilt_only': 15, 'R_PITCH|any': 17, 'R_PITCH|tierA': 4, 'R_PITCH|tilt_only': 13, 'S_HEAD|any': 22, 'S_HEAD|tierA': 22, 'VA4|any': 14, 'VA4|tierA': 14, 'VA5|any': 319, 'VA5|tierA': 174, 'VA5|tilt_only': 145}
+   classes (anatomies) {'ECA|any': 36, 'ECA|tierA': 15, 'ECA|tilt_only': 23, 'L_PITCH|any': 50, 'L_PITCH|tierA': 35, 'L_PITCH|tilt_only': 15, 'R_PITCH|any': 17, 'R_PITCH|tierA': 4, 'R_PITCH|tilt_only': 13, 'S_HEAD|any': 16, 'S_HEAD|tierA': 16, 'VA4|any': 14, 'VA4|tierA': 14, 'VA5|any': 206, 'VA5|tierA': 109, 'VA5|tilt_only': 118}
+   v6 blocking flags (pieces) {'anchor_low': 68, 'droop': 26, 'heading': 604, 'ica_converge': 12, 'ica_cross': 16, 'ica_spacing': 286, 'midline': 46, 'neg_rise': 27, 'rise_err': 50, 'rise_lt20': 19, 'up_tilt_v6': 105, 'va_cross': 94, 'va_gap_v6': 208, 'va_lateral': 88, 'va_target': 331}
+   anchor elevation {'RICA': {'n': 223, 'min': 25.8, 'median': 66.9, 'lt30': 3, 'lt20': 0, 'lt10': 0}, 'LICA': {'n': 223, 'min': -58.6, 'median': 58.4, 'lt30': 35, 'lt20': 35, 'lt10': 35}, 'RECA_tip': {'n': 52, 'min': -79.3, 'median': 46.6, 'lt30': 18, 'lt20': 17, 'lt10': 10}, 'RVA_top': {'n': 223, 'min': -34.7, 'median': 16.6, 'lt30': 124, 'lt20': 114, 'lt10': 90}, 'LVA_top': {'n': 223, 'min': -38.4, 'median': 28.3, 'lt30': 117, 'lt20': 106, 'lt10': 69}, 'LECA_tip': {'n': 53, 'min': -80.6, 'median': 50.2, 'lt30': 18, 'lt20': 16, 'lt10': 13}}
+   forks {'lower': {'n': 223, 'frame_unknown': 0, 'contralateral': 113, 'yaw_abs_median': 135.47618103611205, 'yaw_gt45': 213, 'yaw_gt90': 181, 'tilt_gt40': 0, 'eca_anterior': 78, 'seam2_near_midline': 30}, 'lower_L': {'n': 223, 'frame_unknown': 0, 'contralateral': 101, 'yaw_abs_median': 66.12704268491521, 'yaw_gt45': 140, 'yaw_gt90': 87, 'tilt_gt40': 0, 'eca_anterior': 122, 'seam2_near_midline': 0}}
+   VA tops: tip_move to the anatomical target {'n': 446, 'median': 27.61083246816365, 'p90': 49.31765194386491, 'gt20': 331, 'gt60': 10} ; lumen gap {'n': 223, 'median': 12.26424283854147, 'lt0.6': 0}
+   per-piece vs tbo_geom: 997 pieces compared, worst abs diff {'rise_mm': 0.0, 'rise_native_mm': 0.0, 'up_tilt_deg': 0.0, 'yaw_deg': 0.0, 'droop_mm': 0.0, 'cross_mm': 0.0, 'medial_end_mm': 0.0, 'elev_in_deg': 0.0, 'seam_angle_deg': 0.0}, flag mismatches 0
+   SELFTEST v5: PASS
+   D12 v5: 223 ICA pairs; like-for-like identity worst 0 mm; piece end -> raw terminus {'median': 1.84, 'p90': 2.0, 'max': 2.38, 'gt1': 330}; verdicts the raw reading would flip {'ica_spacing:raw_passes_only': 4, 'ica_spacing:raw_fails_only': 1, 'ica_converge:raw_fails_only': 1}: PASS
+== v4: anatomies 223 (errors 0); tier A 171 (siphon 47, VA 158); primary 189; v6 failing 223
+   tier A by piece {'RICA': 18, 'LICA': 43, 'RECA_tip': 5, 'LECA_tip': 11, 'RVA_top': 128, 'LVA_top': 128}
+   primary by piece {'RICA': 31, 'LICA': 58, 'RECA_tip': 16, 'LECA_tip': 23, 'RVA_top': 132, 'LVA_top': 137}
+   classes (pieces) {'ECA|any': 39, 'ECA|tierA': 16, 'ECA|tilt_only': 23, 'L_PITCH|any': 50, 'L_PITCH|tierA': 35, 'L_PITCH|tilt_only': 15, 'R_PITCH|any': 17, 'R_PITCH|tierA': 4, 'R_PITCH|tilt_only': 13, 'S_HEAD|any': 22, 'S_HEAD|tierA': 22, 'VA4|any': 269, 'VA4|tierA': 256, 'VA4|tilt_only': 13}
+   classes (anatomies) {'ECA|any': 36, 'ECA|tierA': 15, 'ECA|tilt_only': 23, 'L_PITCH|any': 50, 'L_PITCH|tierA': 35, 'L_PITCH|tilt_only': 15, 'R_PITCH|any': 17, 'R_PITCH|tierA': 4, 'R_PITCH|tilt_only': 13, 'S_HEAD|any': 16, 'S_HEAD|tierA': 16, 'VA4|any': 165, 'VA4|tierA': 158, 'VA4|tilt_only': 13}
+   v6 blocking flags (pieces) {'anchor_low': 68, 'droop': 41, 'heading': 604, 'ica_converge': 12, 'ica_cross': 16, 'ica_spacing': 286, 'midline': 56, 'neg_rise': 35, 'rise_err': 89, 'rise_lt20': 19, 'up_tilt_v6': 105, 'va_cross': 134, 'va_gap_v6': 308, 'va_lateral': 114, 'va_target': 324}
+   anchor elevation {'RICA': {'n': 223, 'min': 25.8, 'median': 66.9, 'lt30': 3, 'lt20': 0, 'lt10': 0}, 'LICA': {'n': 223, 'min': -58.6, 'median': 58.4, 'lt30': 35, 'lt20': 35, 'lt10': 35}, 'RECA_tip': {'n': 52, 'min': -79.3, 'median': 46.6, 'lt30': 18, 'lt20': 17, 'lt10': 10}, 'RVA_top': {'n': 223, 'min': -18.8, 'median': 16.7, 'lt30': 139, 'lt20': 127, 'lt10': 91}, 'LVA_top': {'n': 223, 'min': -39.5, 'median': 26.4, 'lt30': 119, 'lt20': 96, 'lt10': 54}, 'LECA_tip': {'n': 53, 'min': -80.6, 'median': 50.2, 'lt30': 18, 'lt20': 16, 'lt10': 13}}
+   forks {'lower': {'n': 223, 'frame_unknown': 0, 'contralateral': 113, 'yaw_abs_median': 135.47618103611205, 'yaw_gt45': 213, 'yaw_gt90': 181, 'tilt_gt40': 0, 'eca_anterior': 78, 'seam2_near_midline': 30}, 'lower_L': {'n': 223, 'frame_unknown': 0, 'contralateral': 101, 'yaw_abs_median': 66.12704268491521, 'yaw_gt45': 140, 'yaw_gt90': 87, 'tilt_gt40': 0, 'eca_anterior': 122, 'seam2_near_midline': 0}}
+   VA tops: tip_move to the anatomical target {'n': 446, 'median': 32.34263484877114, 'p90': 57.207696845048744, 'gt20': 324, 'gt60': 37} ; lumen gap {'n': 223, 'median': 15.485806287951453, 'lt0.6': 0}
+   per-piece vs tbo_geom: 997 pieces compared, worst abs diff {'rise_mm': 0.0, 'rise_native_mm': 0.0, 'up_tilt_deg': 0.0, 'yaw_deg': 0.0, 'droop_mm': 0.0, 'cross_mm': 0.0, 'medial_end_mm': 0.0, 'elev_in_deg': 0.0, 'seam_angle_deg': 0.0}, flag mismatches 0
+   SELFTEST v4: PASS
+   D12 v4: 223 ICA pairs; like-for-like identity worst 0 mm; piece end -> raw terminus {'median': 1.84, 'p90': 2.0, 'max': 2.38, 'gt1': 330}; verdicts the raw reading would flip {'ica_spacing:raw_passes_only': 4, 'ica_spacing:raw_fails_only': 1, 'ica_converge:raw_fails_only': 1}: PASS
+== v3: anatomies 223 (errors 0); tier A 11 (siphon 11, VA 0); primary 25; v6 failing 164
+   tier A by piece {'RICA': 11, 'LICA': 0, 'RECA_tip': 0, 'LECA_tip': 0, 'RVA_top': 0, 'LVA_top': 0}
+   primary by piece {'RICA': 25, 'LICA': 0, 'RECA_tip': 0, 'LECA_tip': 0, 'RVA_top': 0, 'LVA_top': 0}
+   classes (pieces) {'R_PITCH|any': 17, 'R_PITCH|tierA': 3, 'R_PITCH|tilt_only': 14, 'S_HEAD|any': 8, 'S_HEAD|tierA': 8}
+   classes (anatomies) {'R_PITCH|any': 17, 'R_PITCH|tierA': 3, 'R_PITCH|tilt_only': 14, 'S_HEAD|any': 8, 'S_HEAD|tierA': 8}
+   v6 blocking flags (pieces) {'heading': 155, 'midline': 10, 'rise_err': 3, 'up_tilt_v6': 17}
+   anchor elevation {'RICA': {'n': 223, 'min': 25.8, 'median': 66.9, 'lt30': 3, 'lt20': 0, 'lt10': 0}}
+   forks {'lower': {'n': 223, 'frame_unknown': 0, 'contralateral': 113, 'yaw_abs_median': 135.47618103611205, 'yaw_gt45': 213, 'yaw_gt90': 181, 'tilt_gt40': 0, 'eca_anterior': 78, 'seam2_near_midline': 30}}
+   VA tops: tip_move to the anatomical target None ; lumen gap None
+   per-piece vs tbo_geom: 223 pieces compared, worst abs diff {'rise_mm': 0.0, 'rise_native_mm': 0.0, 'up_tilt_deg': 0.0, 'yaw_deg': 0.0, 'droop_mm': 0.0, 'cross_mm': 0.0, 'medial_end_mm': 0.0, 'elev_in_deg': 0.0, 'seam_angle_deg': 0.0}, flag mismatches 0
+   SELFTEST v3: PASS
+   D12 v3: 0 ICA pairs; like-for-like identity worst 0 mm; piece end -> raw terminus {'median': 0.0, 'p90': 0.0, 'max': 0.0, 'gt1': 0}; verdicts the raw reading would flip {}: PASS
+D12 pilot cases (verify_v6_pilot finding 4) on /pw/tree: {'case_m_006_left__topcow_mr_025_L': {'dd_backmapped': 19.37, 'dd_raw': 20.77, 'ica_spacing_flag': False}, 'case_m_006_left__topcow_mr_027_L': {'dd_backmapped': 18.82, 'dd_raw': 21.65, 'ica_spacing_flag': False}}: PASS
+VERSION orient_gates 1.1 (2026-10-04; D12: one ICA-pair native convention = back-mapped piece ends, self-tested)
+SELFTEST PASS

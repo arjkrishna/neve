@@ -1,0 +1,62 @@
+{
+ "script": "fold_fix 1.0 (2026-10-08; s3_fix)",
+ "date": "2026-10-08 06:17:58",
+ "folds_before": [
+  {
+   "faces": [
+    15297,
+    15302
+   ],
+   "edge": [
+    7647,
+    7648
+   ],
+   "at": [
+    42.72,
+    20.18,
+    590.16
+   ]
+  }
+ ],
+ "tried": [
+  {
+   "method": "edge flip",
+   "what": [
+    "edge (c, d) already exists (flip would make it non-manifold)"
+   ],
+   "ok": false
+  },
+  {
+   "method": "spike vertex removal",
+   "what": [
+    "removed spike vertex 7648 (3 faces [15297, 15302, 15315] -> 1 face [7738, 7647, 7737])"
+   ],
+   "clean": true,
+   "routes_ok": true,
+   "centreline_outside": 0,
+   "folds": 0,
+   "va_lumen": {
+    "RVA": 1.124,
+    "LVA": 0.854
+   },
+   "tris": 23498,
+   "ok": true
+  }
+ ],
+ "result": "spike vertex removal",
+ "after": {
+  "clean": true,
+  "routes_ok": true,
+  "centreline_outside": 0,
+  "folds": 0,
+  "va_lumen": {
+   "RVA": 1.124,
+   "LVA": 0.854
+  },
+  "tris": 23498,
+  "ok": true
+ },
+ "md5_before": "cf3d7af5f4a3bdb0de885d1d3d918173",
+ "md5_after": "d668d4d98750a4de1cdf45d6e000fe5a",
+ "seconds": 2.5
+}
